@@ -1,0 +1,61 @@
+# Spring配置
+spring:
+  application:
+    name: stock-ai-rule-system-service
+  # 资源信息
+  messages:
+    # 国际化资源文件路径
+    basename: i18n/messages
+  profiles:
+    active: dev
+  # 文件上传
+  servlet:
+    multipart:
+      # 单个文件大小
+      max-file-size: 10MB
+      # 设置总上传的文件大小
+      max-request-size: 20MB
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+# 开发环境配置
+server:
+  # 服务器的HTTP端口，默认为8080
+  port: 8080
+  servlet:
+    # 应用的访问路径
+    context-path: /
+  tomcat:
+    max-http-form-post-size: 102400000
+    max-swallow-size: 102400000
+
+# 日志配置
+logging:
+  level:
+    com.jx.tracker: debug
+    org.springframework: warn
+
+# MyBatis Plus配置
+mybatis-plus:
+  # 搜索指定包别名
+  type-aliases-package: com.jx.**.domain
+  # 配置mapper的扫描，找到所有的mapper.xml映射文件
+  mapper-locations: classpath*:mapper/**/*Mapper.xml
+  configuration:
+    # 自动驼峰命名规则（camel case）映射
+    mapUnderscoreToCamelCase: true
+    # MyBatis 自动映射策略
+    # PARTIAL：只对非嵌套 resultMap 自动映射
+    autoMappingBehavior: PARTIAL
+    # 更详细的日志输出 影响性能, 生产环境建议不开启
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+
+# 项目自定义配置
+jx:
+  tracker:
+
+
+remote:
+  authServiceAddress: "http://auth.ijianxin.com:8080"
