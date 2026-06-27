@@ -1,0 +1,22 @@
+16:21:59.927 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+16:22:00.009 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 44755 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+16:22:00.015 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+16:22:02.138 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+16:22:02.141 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+16:22:02.141 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+16:22:02.201 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+16:22:02.316 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+16:22:03.033 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+16:22:03.041 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+16:22:03.070 [Druid-ConnectionPool-Create-1458751976] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+16:32:53.638 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+16:32:53.707 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 51777 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+16:32:53.709 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+16:32:55.619 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+16:32:55.624 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+16:32:55.625 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+16:32:55.707 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+16:32:55.847 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+16:32:56.665 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+16:32:56.672 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+16:32:56.707 [Druid-ConnectionPool-Create-803175842] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
