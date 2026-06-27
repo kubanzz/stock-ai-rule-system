@@ -56,6 +56,13 @@ mybatis-plus:
 jx:
   tracker:
 
+stock-ai-rule:
+  scheduler:
+    # 默认禁用自动调度，避免在未显式配置前触发外部行情、AI 或回测任务。
+    daily-enabled: false
+    daily-cron: "-"
+    zone: Asia/Shanghai
+
 
 remote:
   authServiceAddress: "http://auth.ijianxin.com:8080"
