@@ -2,6 +2,7 @@ package com.jx.tracker;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestExecutionListeners;
 
 @SpringBootTest(properties = {
@@ -15,6 +16,7 @@ import org.springframework.test.context.TestExecutionListeners;
         "spring.datasource.druid.validationQuery=SELECT 1"
 })
 @TestExecutionListeners(value = {}, mergeMode = TestExecutionListeners.MergeMode.REPLACE_DEFAULTS)
+@ActiveProfiles("test")
 class TrackerApplicationTests {
 
     @Test
