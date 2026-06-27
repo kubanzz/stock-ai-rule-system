@@ -19,6 +19,7 @@
         <springdoc-openapi.version>2.8.17</springdoc-openapi.version>
         <pagehelper.version>2.1.1</pagehelper.version>
         <jjwt.version>0.11.5</jjwt.version>
+        <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
     </properties>
     <dependencies>
         <dependency>
@@ -146,6 +147,11 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
             </plugin>
         </plugins>
     </build>

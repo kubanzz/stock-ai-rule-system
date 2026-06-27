@@ -2,8 +2,9 @@ package com.jx.tracker;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestExecutionListeners;
 
-    @SpringBootTest(properties = {
+@SpringBootTest(properties = {
         "spring.datasource.druid.master.url=jdbc:h2:mem:stock_ai_rule_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false",
         "spring.datasource.druid.master.username=sa",
         "spring.datasource.druid.master.password=",
@@ -13,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
         "spring.datasource.druid.maxActive=2",
         "spring.datasource.druid.validationQuery=SELECT 1"
 })
+@TestExecutionListeners(value = {}, mergeMode = TestExecutionListeners.MergeMode.REPLACE_DEFAULTS)
 class TrackerApplicationTests {
 
     @Test
