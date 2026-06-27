@@ -3,7 +3,7 @@ package com.jx.tracker;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest(properties = {
+    @SpringBootTest(properties = {
         "spring.datasource.druid.master.url=jdbc:h2:mem:stock_ai_rule_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false",
         "spring.datasource.druid.master.username=sa",
         "spring.datasource.druid.master.password=",
