@@ -11,6 +11,7 @@ import com.jx.tracker.market.data.dto.StockDailyQuoteQueryDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
 import com.jx.tracker.market.data.service.StockDailyQuoteService;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
+import com.jx.tracker.market.data.util.SymbolNormalizer;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -57,7 +58,7 @@ public class StockDailyQuoteServiceImpl extends ServiceImpl<StockDailyQuoteMappe
     @Override
     public PageResult<StockDailyQuote> pageDailyQuotes(StockDailyQuoteQueryDto query) {
         StockDailyQuoteQueryDto safeQuery = query == null ? new StockDailyQuoteQueryDto() : query;
-        String symbol = MarketDataNormalizer.normalizeCode(safeQuery.getSymbol());
+        String symbol = SymbolNormalizer.normalize(safeQuery.getSymbol());
         LambdaQueryWrapper<StockDailyQuote> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(symbol != null, StockDailyQuote::getSymbol, symbol)
                 .ge(safeQuery.getStartDate() != null, StockDailyQuote::getTradeDate, safeQuery.getStartDate())
@@ -70,7 +71,7 @@ public class StockDailyQuoteServiceImpl extends ServiceImpl<StockDailyQuoteMappe
 
     @Override
     public StockDailyQuote getBySymbolAndTradeDate(String symbol, LocalDate tradeDate) {
-        String normalizedSymbol = MarketDataNormalizer.normalizeCode(symbol);
+        String normalizedSymbol = SymbolNormalizer.normalize(symbol);
         if (normalizedSymbol == null || tradeDate == null) {
             return null;
         }
@@ -88,9 +89,12 @@ public class StockDailyQuoteServiceImpl extends ServiceImpl<StockDailyQuoteMappe
                 .highPrice(dto.getHighPrice())
                 .lowPrice(dto.getLowPrice())
                 .closePrice(dto.getClosePrice())
+                .preClose(dto.getPreClose())
                 .volume(dto.getVolume())
                 .amount(dto.getAmount())
                 .changePct(dto.getChangePct())
+                .dataSource(dto.getDataSource())
+                .syncTime(dto.getSyncTime())
                 .build();
     }
 

@@ -11,6 +11,7 @@ import com.jx.tracker.market.data.dto.StockBaseQueryDto;
 import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.service.StockBaseService;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
+import com.jx.tracker.market.data.util.SymbolNormalizer;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
@@ -57,8 +58,8 @@ public class StockBaseServiceImpl extends ServiceImpl<StockBaseMapper, StockBase
     public PageResult<StockBase> pageStocks(StockBaseQueryDto query) {
         StockBaseQueryDto safeQuery = query == null ? new StockBaseQueryDto() : query;
         LambdaQueryWrapper<StockBase> wrapper = new LambdaQueryWrapper<>();
-        String symbol = MarketDataNormalizer.normalizeCode(safeQuery.getSymbol());
-        String market = MarketDataNormalizer.normalizeCode(safeQuery.getMarket());
+        String symbol = SymbolNormalizer.normalize(safeQuery.getSymbol());
+        String market = MarketDataNormalizer.normalizeMarket(safeQuery.getMarket());
         wrapper.eq(symbol != null, StockBase::getSymbol, symbol)
                 .eq(market != null, StockBase::getMarket, market)
                 .eq(safeQuery.getStatus() != null && !safeQuery.getStatus().isBlank(), StockBase::getStatus, safeQuery.getStatus())
@@ -69,8 +70,8 @@ public class StockBaseServiceImpl extends ServiceImpl<StockBaseMapper, StockBase
 
     @Override
     public StockBase getBySymbolAndMarket(String symbol, String market) {
-        String normalizedSymbol = MarketDataNormalizer.normalizeCode(symbol);
-        String normalizedMarket = MarketDataNormalizer.normalizeCode(market);
+        String normalizedSymbol = SymbolNormalizer.normalize(symbol);
+        String normalizedMarket = MarketDataNormalizer.normalizeMarket(market);
         if (normalizedSymbol == null || normalizedMarket == null) {
             return null;
         }
@@ -85,8 +86,11 @@ public class StockBaseServiceImpl extends ServiceImpl<StockBaseMapper, StockBase
                 .symbol(dto.getSymbol())
                 .name(dto.getName())
                 .market(dto.getMarket())
+                .exchange(dto.getExchange())
                 .industry(dto.getIndustry())
                 .status(dto.getStatus())
+                .dataSource(dto.getDataSource())
+                .lastSyncTime(dto.getLastSyncTime())
                 .build();
     }
 

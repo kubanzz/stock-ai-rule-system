@@ -59,8 +59,8 @@ public class DailyWorkflowOrchestrator {
         return List.of(
                 new DailyWorkflowDependencyVo(
                         "M1",
-                        "行情与新闻数据采集",
-                        "提供行情导入、新闻/宏观数据采集服务，并避免默认执行危险外部调用",
+                        "真实行情数据同步",
+                        "提供股票列表、交易日历、日 K 行情同步，并避免默认执行危险外部调用",
                         "数据源配置、限流、交易日历和幂等导入策略需要与调度参数对齐"),
                 new DailyWorkflowDependencyVo(
                         "M2",
@@ -69,8 +69,8 @@ public class DailyWorkflowOrchestrator {
                         "因子 JSON 结构、空行情处理和未来数据防泄露策略需要统一"),
                 new DailyWorkflowDependencyVo(
                         "M3",
-                        "Drools 规则推理",
-                        "读取因子快照与启用规则，输出规则命中结果",
+                        "JSON 规则推理",
+                        "读取因子快照与启用 JSON 规则，输出规则命中结果",
                         "规则状态、优先级、冲突处理和异常隔离策略需要统一"),
                 new DailyWorkflowDependencyVo(
                         "M4",

@@ -18,14 +18,28 @@ public final class MarketDataNormalizer {
         return normalized.isEmpty() ? null : normalized.toUpperCase();
     }
 
+    public static String normalizeMarket(String value) {
+        String normalized = normalizeCode(value);
+        if ("SZ".equals(normalized) || "SH".equals(normalized)) {
+            return "CN";
+        }
+        return normalized;
+    }
+
     public static StockBaseUpsertDto normalize(StockBaseUpsertDto dto) {
-        dto.setSymbol(normalizeCode(dto.getSymbol()));
-        dto.setMarket(normalizeCode(dto.getMarket()));
+        String originalMarket = dto.getMarket();
+        String originalExchange = dto.getExchange();
+        String normalizedSymbol = SymbolNormalizer.normalize(dto.getSymbol());
+        dto.setSymbol(normalizedSymbol);
+        String parsedMarket = SymbolNormalizer.parseMarket(normalizedSymbol);
+        String parsedExchange = SymbolNormalizer.parseExchange(normalizedSymbol);
+        dto.setMarket(parsedMarket == null ? normalizeMarket(originalMarket) : parsedMarket);
+        dto.setExchange(parsedExchange == null ? normalizeCode(originalExchange) : parsedExchange);
         return dto;
     }
 
     public static StockDailyQuoteUpsertDto normalize(StockDailyQuoteUpsertDto dto) {
-        dto.setSymbol(normalizeCode(dto.getSymbol()));
+        dto.setSymbol(SymbolNormalizer.normalize(dto.getSymbol()));
         return dto;
     }
 

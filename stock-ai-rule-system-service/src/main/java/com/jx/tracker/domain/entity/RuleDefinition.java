@@ -38,9 +38,17 @@ public class RuleDefinition {
 
     private String status;
 
+    private Long currentVersionId;
+
+    private String currentVersionNo;
+
+    private Boolean enabled;
+
     private Integer priority;
 
     private String createdBy;
+
+    private String updatedBy;
 
     @TableField(value = "created_at", fill = FieldFill.INSERT)
     private LocalDateTime createdTime;

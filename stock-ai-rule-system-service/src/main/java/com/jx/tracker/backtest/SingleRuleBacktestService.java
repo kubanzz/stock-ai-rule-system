@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Locale;
 
 @Service
-public class SingleRuleBacktestService {
+public class SingleRuleBacktestService implements BacktestService {
 
     private static final BigDecimal DEFAULT_FEE_RATE = new BigDecimal("0.0010");
     private static final BigDecimal DEFAULT_SLIPPAGE_RATE = new BigDecimal("0.0005");
@@ -79,6 +79,24 @@ public class SingleRuleBacktestService {
             candidateRuleMapper.updateById(candidateRule);
         }
         return result;
+    }
+
+    @Override
+    public BacktestResult runRuleBacktest(BacktestRequestDto request) {
+        if (request == null) {
+            request = new BacktestRequestDto();
+        }
+        request.setObjectType(RuleObjectType.RULE.getCode());
+        return runSingleRuleBacktest(request);
+    }
+
+    @Override
+    public BacktestResult runCandidateRuleBacktest(BacktestRequestDto request) {
+        if (request == null) {
+            request = new BacktestRequestDto();
+        }
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        return runSingleRuleBacktest(request);
     }
 
     private void validateRequest(BacktestRequestDto request) {
@@ -196,13 +214,27 @@ public class SingleRuleBacktestService {
                 .objectCode(request.getObjectCode())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
+                .holdingPeriod(request.getHoldingPeriod())
                 .triggerCount(triggerCount)
                 .winRate(scale(winRate))
                 .avgReturn(scale(avgReturn))
+                .avgHoldingReturn(scale(avgReturn))
                 .maxDrawdown(scale(maxDrawdown))
                 .sharpeRatio(scale(sharpeRatio))
+                .feeRate(scale(feeRate))
+                .slippageRate(scale(slippageRate))
+                .totalReturn(scale(compoundedReturn(returns)))
+                .status("success")
                 .resultJson(resultJson(request, feeRate, slippageRate, triggerCount))
                 .build();
+    }
+
+    private BigDecimal compoundedReturn(List<BigDecimal> returns) {
+        BigDecimal equity = BigDecimal.ONE;
+        for (BigDecimal value : returns) {
+            equity = equity.multiply(BigDecimal.ONE.add(value));
+        }
+        return equity.subtract(BigDecimal.ONE);
     }
 
     private BigDecimal average(List<BigDecimal> values) {

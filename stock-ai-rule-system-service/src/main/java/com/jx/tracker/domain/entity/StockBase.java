@@ -30,9 +30,15 @@ public class StockBase {
 
     private String market;
 
+    private String exchange;
+
     private String industry;
 
     private String status;
+
+    private String dataSource;
+
+    private LocalDateTime lastSyncTime;
 
     @TableField(value = "created_at", fill = FieldFill.INSERT)
     private LocalDateTime createdTime;

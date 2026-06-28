@@ -30,9 +30,17 @@ public class BacktestResult {
 
     private String objectCode;
 
+    private Long ruleId;
+
+    private Long candidateRuleId;
+
+    private String symbol;
+
     private LocalDate startDate;
 
     private LocalDate endDate;
+
+    private Integer holdingPeriod;
 
     private Integer triggerCount;
 
@@ -43,6 +51,18 @@ public class BacktestResult {
     private BigDecimal maxDrawdown;
 
     private BigDecimal sharpeRatio;
+
+    private BigDecimal profitLossRatio;
+
+    private BigDecimal feeRate;
+
+    private BigDecimal slippageRate;
+
+    private BigDecimal totalReturn;
+
+    private BigDecimal avgHoldingReturn;
+
+    private String status;
 
     private String resultJson;
 

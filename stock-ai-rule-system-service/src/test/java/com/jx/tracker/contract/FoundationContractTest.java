@@ -8,14 +8,25 @@ import com.jx.tracker.ai.review.MockLlmClient;
 import com.jx.tracker.domain.entity.AiReviewReport;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
+import com.jx.tracker.domain.entity.MarketDataSyncRun;
+import com.jx.tracker.domain.entity.RuleOperationLog;
 import com.jx.tracker.domain.entity.RuleDefinition;
+import com.jx.tracker.domain.entity.RuleVersion;
 import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockBase;
 import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.entity.TradeCalendar;
+import com.jx.tracker.domain.entity.WorkflowRun;
+import com.jx.tracker.domain.entity.WorkflowStepRun;
+import com.jx.tracker.domain.enums.BacktestStatus;
+import com.jx.tracker.domain.enums.CandidateRuleStatus;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
+import com.jx.tracker.domain.enums.RuleVersionApprovalStatus;
 import com.jx.tracker.domain.enums.SignalType;
+import com.jx.tracker.domain.enums.WorkflowRunStatus;
+import com.jx.tracker.domain.enums.WorkflowStepStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -61,16 +72,22 @@ class FoundationContractTest {
 
     @Test
     void coreEntitiesDeclareStableTableNames() {
-        Map<Class<?>, String> tableNames = Map.of(
-                StockBase.class, "stock_base",
-                StockDailyQuote.class, "stock_daily_quote",
-                StockFactorDaily.class, "stock_factor_daily",
-                RuleDefinition.class, "rule_definition",
-                StockSignalDaily.class, "stock_signal_daily",
-                StockActualResult.class, "stock_actual_result",
-                AiReviewReport.class, "ai_review_report",
-                CandidateRule.class, "candidate_rule",
-                BacktestResult.class, "backtest_result"
+        Map<Class<?>, String> tableNames = Map.ofEntries(
+                Map.entry(StockBase.class, "stock_base"),
+                Map.entry(StockDailyQuote.class, "stock_daily_quote"),
+                Map.entry(StockFactorDaily.class, "stock_factor_daily"),
+                Map.entry(RuleDefinition.class, "rule_definition"),
+                Map.entry(StockSignalDaily.class, "stock_signal_daily"),
+                Map.entry(StockActualResult.class, "stock_actual_result"),
+                Map.entry(AiReviewReport.class, "ai_review_report"),
+                Map.entry(CandidateRule.class, "candidate_rule"),
+                Map.entry(BacktestResult.class, "backtest_result"),
+                Map.entry(TradeCalendar.class, "trade_calendar"),
+                Map.entry(MarketDataSyncRun.class, "market_data_sync_run"),
+                Map.entry(RuleVersion.class, "rule_version"),
+                Map.entry(RuleOperationLog.class, "rule_operation_log"),
+                Map.entry(WorkflowRun.class, "workflow_run"),
+                Map.entry(WorkflowStepRun.class, "workflow_step_run")
         );
 
         tableNames.forEach((entityClass, expectedTableName) -> assertThat(entityClass.getAnnotation(TableName.class).value())
@@ -85,6 +102,65 @@ class FoundationContractTest {
         assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS stock_signal_daily");
         assertThat(ddl).contains("triggered_rules JSON");
         assertThat(ddl).contains("UNIQUE KEY uk_stock_daily_quote_symbol_trade_date");
+        assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS trade_calendar");
+        assertThat(ddl).contains("UNIQUE KEY uk_trade_calendar_market_trade_date (market, trade_date)");
+        assertThat(ddl).contains("UNIQUE KEY uk_stock_base_symbol (symbol)");
+        assertThat(ddl).contains("UNIQUE KEY uk_rule_version_rule_id_version_no (rule_id, version_no)");
+        assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS market_data_sync_run");
+        assertThat(ddl).contains("request_params JSON");
+        assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS rule_operation_log");
+        assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS workflow_run");
+        assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS workflow_step_run");
+    }
+
+    @Test
+    void governanceAndWorkflowEnumsExposeStableLowercaseCodes() {
+        assertThat(CandidateRuleStatus.codes()).containsExactly(
+                "generated",
+                "validated",
+                "backtested",
+                "pending_review",
+                "approved",
+                "rejected",
+                "published",
+                "disabled"
+        );
+        assertThat(BacktestStatus.codes()).containsExactly(
+                "pending",
+                "running",
+                "success",
+                "failed",
+                "skipped"
+        );
+        assertThat(RuleVersionApprovalStatus.codes()).containsExactly(
+                "pending",
+                "approved",
+                "rejected",
+                "published",
+                "rolled_back"
+        );
+        assertThat(WorkflowRunStatus.codes()).containsExactly(
+                "pending",
+                "running",
+                "success",
+                "failed",
+                "skipped"
+        );
+        assertThat(WorkflowStepStatus.codes()).containsExactly(
+                "pending",
+                "running",
+                "success",
+                "failed",
+                "skipped"
+        );
+    }
+
+    @Test
+    void developmentConfigDoesNotContainRealDefaultMysqlPassword() throws IOException {
+        String config = new String(getClass().getResourceAsStream("/application-dev.yml").readAllBytes(), StandardCharsets.UTF_8);
+
+        assertThat(config).contains("password: ${MYSQL_PASSWORD:}");
+        assertThat(config).doesNotContain("19970121");
     }
 
     @Test
