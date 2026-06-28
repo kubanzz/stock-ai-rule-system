@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -118,6 +119,21 @@ class AiReviewServiceImplTest {
         assertThatThrownBy(() -> service.transitionCandidateStatus("CR_20260620_0001", RuleLifecycleStatus.ACTIVE.getCode()))
                 .isInstanceOf(ServiceException.class)
                 .hasMessageContaining("不能直接流转为 active");
+    }
+
+    @Test
+    void listsCandidateRulesByStatusAndFindsByCode() {
+        LlmClient llmClient = request -> new LlmResponse("mock-llm", "{}");
+        AiReviewService service = new AiReviewServiceImpl(reportMapper, candidateRuleMapper, llmClient, parser, promptTemplate, objectMapper);
+        CandidateRule candidateRule = CandidateRule.builder()
+                .candidateCode("CR_20260620_0001")
+                .status(RuleLifecycleStatus.CANDIDATE.getCode())
+                .build();
+        when(candidateRuleMapper.selectList(any())).thenReturn(List.of(candidateRule));
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidateRule);
+
+        assertThat(service.listCandidateRules(RuleLifecycleStatus.CANDIDATE.getCode())).containsExactly(candidateRule);
+        assertThat(service.getCandidateRule("CR_20260620_0001")).isSameAs(candidateRule);
     }
 
     private AiReviewRequestDto reviewRequest() {

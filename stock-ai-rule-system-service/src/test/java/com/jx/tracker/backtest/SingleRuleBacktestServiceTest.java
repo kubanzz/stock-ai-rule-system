@@ -2,10 +2,12 @@ package com.jx.tracker.backtest;
 
 import com.jx.tracker.domain.dto.BacktestRequestDto;
 import com.jx.tracker.domain.entity.BacktestResult;
+import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.RuleObjectType;
 import com.jx.tracker.domain.enums.SignalType;
+import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
@@ -27,10 +29,12 @@ class SingleRuleBacktestServiceTest {
     private final FakeMapper<StockSignalDailyMapper, StockSignalDaily> signalMapper = fakeMapper(StockSignalDailyMapper.class);
     private final FakeMapper<StockActualResultMapper, StockActualResult> actualResultMapper = fakeMapper(StockActualResultMapper.class);
     private final FakeMapper<BacktestResultMapper, BacktestResult> backtestResultMapper = fakeMapper(BacktestResultMapper.class);
+    private final FakeMapper<CandidateRuleMapper, CandidateRule> candidateRuleMapper = fakeMapper(CandidateRuleMapper.class);
     private final SingleRuleBacktestService service = new SingleRuleBacktestService(
             signalMapper.mapper,
             actualResultMapper.mapper,
             backtestResultMapper.mapper,
+            candidateRuleMapper.mapper,
             new PredictionHitPolicy()
     );
 
@@ -73,6 +77,29 @@ class SingleRuleBacktestServiceTest {
         assertThat(backtestResultMapper.inserted).hasSize(1);
         assertThat(backtestResultMapper.inserted.getFirst().getTriggerCount()).isEqualTo(2);
         assertThat(actualResultMapper.selectCalls).isEqualTo(2);
+    }
+
+    @Test
+    void candidateRuleBacktestResolvesTargetRuleAndStoresSummaryOnCandidate() {
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        request.setObjectCode("CR_20260620_0001");
+        candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .candidateCode("CR_20260620_0001")
+                .targetRuleCode("R_TREND_BREAKOUT_001")
+                .build()));
+        StockSignalDaily bullish = signal(1L, "AAPL", LocalDate.of(2026, 1, 2), SignalType.BULLISH.getCode());
+        signalMapper.selectResponses.add(List.of(bullish));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", LocalDate.of(2026, 1, 2), "0.0200", true)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getObjectType()).isEqualTo(RuleObjectType.CANDIDATE_RULE.getCode());
+        assertThat(result.getObjectCode()).isEqualTo("CR_20260620_0001");
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(candidateRuleMapper.updated).hasSize(1);
+        assertThat(candidateRuleMapper.updated.getFirst().getBacktestResult())
+                .contains("\"triggerCount\":1", "\"winRate\":1.0000", "\"avgReturn\":0.0185");
     }
 
     private BacktestRequestDto request() {
@@ -119,6 +146,10 @@ class SingleRuleBacktestServiceTest {
                         fake.inserted.add((E) args[0]);
                         return 1;
                     }
+                    if ("updateById".equals(method.getName())) {
+                        fake.updated.add((E) args[0]);
+                        return 1;
+                    }
                     return null;
                 }
         );
@@ -129,6 +160,7 @@ class SingleRuleBacktestServiceTest {
         private M mapper;
         private final Queue<List<E>> selectResponses = new ArrayDeque<>();
         private final List<E> inserted = new ArrayList<>();
+        private final List<E> updated = new ArrayList<>();
         private int selectCalls;
     }
 }

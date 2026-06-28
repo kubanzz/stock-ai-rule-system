@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.common.AjaxResult;
 import com.jx.tracker.common.PageResult;
 import com.jx.tracker.constant.StockRiskConstants;
+import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.dto.SignalGenerateRequestDto;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.vo.StockAnalysisVo;
@@ -53,6 +54,14 @@ public class StockSignalController {
                 dto.getFactors()
         );
         return AjaxResult.success(signal);
+    }
+
+    @PostMapping("/api/signals/generate-from-factors")
+    public AjaxResult generateFromFactors(@RequestBody DailyWorkflowTriggerDto dto) {
+        return AjaxResult.success(stockSignalService.generateDailySignalsFromFactors(
+                dto.getTradeDate(),
+                dto.getSymbols()
+        ));
     }
 
     @GetMapping("/api/stocks/{symbol}/analysis")

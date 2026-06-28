@@ -2,11 +2,13 @@ package com.jx.tracker.signal;
 
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.entity.RuleDefinition;
+import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.RuleFormat;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
+import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
 import com.jx.tracker.signal.service.SignalScoringService;
@@ -45,6 +47,7 @@ class StockSignalServiceTest {
 
         StockSignalService service = new StockSignalService(
                 ruleDefinitionMapper,
+                fakeStockFactorDailyMapper(List.of()),
                 stockSignalDailyMapper,
                 new JsonRuleEngineExecutor(),
                 new SignalScoringService()
@@ -73,6 +76,45 @@ class StockSignalServiceTest {
         assertThat(inserted.getRiskDisclaimer()).isEqualTo(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
     }
 
+    @Test
+    void generatesSignalsFromPersistedFactorSnapshots() {
+        RuleDefinition bullishRule = rule("R_TREND_BREAKOUT_001", 100, """
+                {
+                  "conditions": [
+                    {"field": "short_term_trend", "operator": "eq", "value": "strong_up"},
+                    {"field": "volume_status", "operator": "eq", "value": "abnormal_high"}
+                  ],
+                  "actions": {
+                    "bullish_score": 75,
+                    "explanation": "因子快照触发强势规则"
+                  }
+                }
+                """);
+        AtomicReference<StockSignalDaily> insertedSignal = new AtomicReference<>();
+        StockSignalService service = new StockSignalService(
+                fakeRuleDefinitionMapper(List.of(bullishRule)),
+                fakeStockFactorDailyMapper(List.of(StockFactorDaily.builder()
+                        .symbol("AAPL")
+                        .tradeDate(LocalDate.of(2026, 6, 20))
+                        .factorJson("""
+                                {"short_term_trend":"strong_up","volume_status":"abnormal_high"}
+                                """)
+                        .build())),
+                fakeStockSignalDailyMapper(insertedSignal),
+                new JsonRuleEngineExecutor(),
+                new SignalScoringService()
+        );
+
+        List<StockSignalDaily> saved = service.generateDailySignalsFromFactors(
+                LocalDate.of(2026, 6, 20),
+                List.of("AAPL")
+        );
+
+        assertThat(saved).hasSize(1);
+        assertThat(saved.getFirst().getSignal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(saved.getFirst().getExplanation()).contains("因子快照触发强势规则");
+    }
+
     @SuppressWarnings("unchecked")
     private RuleDefinitionMapper fakeRuleDefinitionMapper(List<RuleDefinition> rules) {
         return (RuleDefinitionMapper) Proxy.newProxyInstance(
@@ -98,6 +140,20 @@ class StockSignalServiceTest {
                     if ("insert".equals(method.getName())) {
                         insertedSignal.set((StockSignalDaily) args[0]);
                         return 1;
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private StockFactorDailyMapper fakeStockFactorDailyMapper(List<StockFactorDaily> factors) {
+        return (StockFactorDailyMapper) Proxy.newProxyInstance(
+                StockFactorDailyMapper.class.getClassLoader(),
+                new Class<?>[]{StockFactorDailyMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectList".equals(method.getName())) {
+                        return factors;
                     }
                     throw new UnsupportedOperationException(method.getName());
                 }

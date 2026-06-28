@@ -1,14 +1,17 @@
 package com.jx.tracker.signal.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.entity.RuleDefinition;
+import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.RuleFormat;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
+import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.rule.engine.RuleEngineExecutor;
 import com.jx.tracker.rule.engine.RuleExecutionRequest;
@@ -26,15 +29,18 @@ public class StockSignalService {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final RuleDefinitionMapper ruleDefinitionMapper;
+    private final StockFactorDailyMapper stockFactorDailyMapper;
     private final StockSignalDailyMapper stockSignalDailyMapper;
     private final RuleEngineExecutor ruleEngineExecutor;
     private final SignalScoringService signalScoringService;
 
     public StockSignalService(RuleDefinitionMapper ruleDefinitionMapper,
+                              StockFactorDailyMapper stockFactorDailyMapper,
                               StockSignalDailyMapper stockSignalDailyMapper,
                               RuleEngineExecutor ruleEngineExecutor,
                               SignalScoringService signalScoringService) {
         this.ruleDefinitionMapper = ruleDefinitionMapper;
+        this.stockFactorDailyMapper = stockFactorDailyMapper;
         this.stockSignalDailyMapper = stockSignalDailyMapper;
         this.ruleEngineExecutor = ruleEngineExecutor;
         this.signalScoringService = signalScoringService;
@@ -101,6 +107,17 @@ public class StockSignalService {
                 .eq(StockSignalDaily::getSignalDate, signalDate));
     }
 
+    public List<StockSignalDaily> generateDailySignalsFromFactors(LocalDate signalDate, List<String> symbols) {
+        LambdaQueryWrapper<StockFactorDaily> wrapper = new LambdaQueryWrapper<StockFactorDaily>()
+                .eq(signalDate != null, StockFactorDaily::getTradeDate, signalDate)
+                .in(symbols != null && !symbols.isEmpty(), StockFactorDaily::getSymbol, symbols);
+
+        return stockFactorDailyMapper.selectList(wrapper)
+                .stream()
+                .map(factor -> generateDailySignal(factor.getSymbol(), factor.getTradeDate(), readFactors(factor.getFactorJson())))
+                .toList();
+    }
+
     private BigDecimal scaleScore(BigDecimal score) {
         return score == null ? BigDecimal.ZERO : score;
     }
@@ -110,6 +127,18 @@ public class StockSignalService {
             return OBJECT_MAPPER.writeValueAsString(values == null ? List.of() : values);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize triggered rules", e);
+        }
+    }
+
+    private Map<String, Object> readFactors(String factorJson) {
+        if (factorJson == null || factorJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(factorJson, new TypeReference<>() {
+            });
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid factor_json for signal generation", e);
         }
     }
 }

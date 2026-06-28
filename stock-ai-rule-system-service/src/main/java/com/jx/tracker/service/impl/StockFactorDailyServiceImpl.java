@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class StockFactorDailyServiceImpl implements IStockFactorDailyService {
@@ -73,6 +74,26 @@ public class StockFactorDailyServiceImpl implements IStockFactorDailyService {
                 .tradeDate(result.tradeDate())
                 .factors(result.factors())
                 .build();
+    }
+
+    @Override
+    public List<StockFactorDailyVo> calculateAndSaveBatch(List<String> symbols, LocalDate tradeDate) {
+        if (tradeDate == null) {
+            throw new ServiceException("目标交易日不能为空");
+        }
+        if (symbols == null || symbols.isEmpty()) {
+            return List.of();
+        }
+        return symbols.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .map(symbol -> calculateAndSave(TechnicalFactorCalculateRequestDto.builder()
+                        .symbol(symbol)
+                        .tradeDate(tradeDate)
+                        .build()))
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private static void validateRequest(TechnicalFactorCalculateRequestDto request) {
