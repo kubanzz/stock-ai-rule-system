@@ -102,6 +102,27 @@ public class AiReviewServiceImpl implements AiReviewService {
         return candidateRule;
     }
 
+    @Override
+    public List<CandidateRule> listCandidateRules(String status) {
+        return candidateRuleMapper.selectList(new LambdaQueryWrapper<CandidateRule>()
+                .eq(StringUtils.hasText(status), CandidateRule::getStatus, status)
+                .orderByDesc(CandidateRule::getUpdatedTime)
+                .orderByDesc(CandidateRule::getCreatedTime));
+    }
+
+    @Override
+    public CandidateRule getCandidateRule(String candidateCode) {
+        if (!StringUtils.hasText(candidateCode)) {
+            throw new ServiceException("候选规则编码不能为空");
+        }
+        CandidateRule candidateRule = candidateRuleMapper.selectOne(new LambdaQueryWrapper<CandidateRule>()
+                .eq(CandidateRule::getCandidateCode, candidateCode));
+        if (candidateRule == null) {
+            throw new ServiceException("候选规则不存在: " + candidateCode);
+        }
+        return candidateRule;
+    }
+
     private CandidateRule saveCandidateRule(AiReviewRequestDto request, AiReviewSuggestionDto suggestion, int sequence) {
         CandidateRule candidateRule = CandidateRule.builder()
                 .candidateCode(generateCandidateCode(resolveReviewDate(request), suggestion, sequence))

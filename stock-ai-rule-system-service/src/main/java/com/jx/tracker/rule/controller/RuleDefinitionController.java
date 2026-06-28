@@ -1,6 +1,8 @@
 package com.jx.tracker.rule.controller;
 
 import com.jx.tracker.common.AjaxResult;
+import com.jx.tracker.common.PageResult;
+import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.dto.RuleDefinitionUpsertDto;
 import com.jx.tracker.rule.service.RuleDefinitionService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,9 +27,10 @@ public class RuleDefinitionController {
     }
 
     @GetMapping
-    public AjaxResult list(@RequestParam(required = false) String status,
-                           @RequestParam(required = false) String ruleFormat) {
-        return AjaxResult.success(ruleDefinitionService.list(status, ruleFormat));
+    public PageResult<RuleDefinition> list(@RequestParam(required = false) String status,
+                                           @RequestParam(required = false) String ruleFormat) {
+        var rows = ruleDefinitionService.list(status, ruleFormat);
+        return PageResult.getDataTable(rows, (long) rows.size());
     }
 
     @PostMapping

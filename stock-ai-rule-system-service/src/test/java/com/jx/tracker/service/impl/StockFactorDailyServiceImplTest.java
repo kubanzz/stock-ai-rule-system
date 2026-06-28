@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,6 +71,32 @@ class StockFactorDailyServiceImplTest {
                 .containsEntry("technical_status", "bullish")
                 .containsEntry("risk_status", "normal")
                 .containsEntry("data_status", "normal");
+    }
+
+    @Test
+    void batchCalculationCalculatesEachRequestedSymbolForSameTradeDate() {
+        LocalDate targetDate = LocalDate.of(2026, 6, 26);
+        when(quoteMapper.selectList(any()))
+                .thenReturn(risingQuotes("000001.SZ", targetDate.minusDays(34), 35))
+                .thenReturn(risingQuotes("000002.SZ", targetDate.minusDays(34), 35));
+        when(factorMapper.selectOne(any())).thenReturn(null);
+
+        StockFactorDailyServiceImpl service = new StockFactorDailyServiceImpl(
+                quoteMapper,
+                factorMapper,
+                new TechnicalFactorCalculator(),
+                new ObjectMapper()
+        );
+
+        List<StockFactorDailyVo> results = service.calculateAndSaveBatch(
+                List.of("000001.SZ", "000002.SZ", "000001.SZ", " "),
+                targetDate
+        );
+
+        assertThat(results)
+                .extracting(StockFactorDailyVo::getSymbol)
+                .containsExactly("000001.SZ", "000002.SZ");
+        verify(factorMapper, times(2)).insert(any(StockFactorDaily.class));
     }
 
     private static List<StockDailyQuote> risingQuotes(String symbol, LocalDate startDate, int days) {

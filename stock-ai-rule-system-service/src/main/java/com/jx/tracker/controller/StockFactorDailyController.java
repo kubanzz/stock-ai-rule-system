@@ -1,6 +1,7 @@
 package com.jx.tracker.controller;
 
 import com.jx.tracker.common.AjaxResult;
+import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.dto.TechnicalFactorCalculateRequestDto;
 import com.jx.tracker.service.IStockFactorDailyService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,5 +26,11 @@ public class StockFactorDailyController {
     @Operation(summary = "计算并保存单只股票技术因子")
     public AjaxResult calculateTechnicalFactors(@RequestBody TechnicalFactorCalculateRequestDto request) {
         return AjaxResult.success(stockFactorDailyService.calculateAndSave(request));
+    }
+
+    @PostMapping("/technical/batch-calculate")
+    @Operation(summary = "批量计算并保存多只股票技术因子")
+    public AjaxResult calculateTechnicalFactorsBatch(@RequestBody DailyWorkflowTriggerDto request) {
+        return AjaxResult.success(stockFactorDailyService.calculateAndSaveBatch(request.getSymbols(), request.getTradeDate()));
     }
 }

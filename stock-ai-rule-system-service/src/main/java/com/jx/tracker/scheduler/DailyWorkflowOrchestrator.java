@@ -32,6 +32,8 @@ public class DailyWorkflowOrchestrator {
         boolean dryRun = safeRequest.getDryRun() == null || safeRequest.getDryRun();
         LocalDate tradeDate = safeRequest.getTradeDate() == null ? LocalDate.now() : safeRequest.getTradeDate();
         List<String> symbols = normalizeSymbols(safeRequest.getSymbols());
+        safeRequest.setTradeDate(tradeDate);
+        safeRequest.setSymbols(symbols);
         DailyWorkflowContext context = new DailyWorkflowContext(runId, safeRequest, triggerType);
 
         List<DailyWorkflowStepResultVo> steps = WorkflowStepCode.orderedSteps().stream()
@@ -136,10 +138,14 @@ public class DailyWorkflowOrchestrator {
         if (steps.stream().anyMatch(step -> "failed".equals(step.getStatus()))) {
             return "failed";
         }
-        if (steps.stream().anyMatch(step -> "skipped".equals(step.getStatus()))) {
+        if (steps.stream().anyMatch(step -> "skipped".equals(step.getStatus()) && !isOptionalSkip(step))) {
             return "partial";
         }
         return "success";
+    }
+
+    private boolean isOptionalSkip(DailyWorkflowStepResultVo step) {
+        return step.getDetails() != null && Boolean.TRUE.equals(step.getDetails().get("optional"));
     }
 
     private List<String> normalizeSymbols(List<String> symbols) {
