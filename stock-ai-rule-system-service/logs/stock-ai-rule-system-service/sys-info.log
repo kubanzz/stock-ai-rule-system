@@ -20,3 +20,13 @@
 16:32:56.665 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
 16:32:56.672 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
 16:32:56.707 [Druid-ConnectionPool-Create-803175842] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+13:44:30.363 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+13:44:30.418 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 70181 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+13:44:30.420 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+13:44:32.270 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+13:44:32.273 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+13:44:32.273 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+13:44:32.333 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+13:44:33.154 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+13:44:33.159 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+13:44:33.187 [Druid-ConnectionPool-Create-1214850053] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
