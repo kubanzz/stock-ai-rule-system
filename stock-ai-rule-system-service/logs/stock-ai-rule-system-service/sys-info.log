@@ -30,3 +30,24 @@
 13:44:33.154 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
 13:44:33.159 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
 13:44:33.187 [Druid-ConnectionPool-Create-1214850053] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+13:45:23.143 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+13:45:23.189 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 71175 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+13:45:23.191 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+13:45:24.692 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+13:45:24.694 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+13:45:24.695 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+13:45:24.744 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+13:45:25.444 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+13:45:25.449 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+13:45:25.485 [Druid-ConnectionPool-Create-1882695296] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+13:45:35.092 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+13:45:35.138 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 71534 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+13:45:35.140 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+13:45:36.572 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+13:45:36.574 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+13:45:36.575 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+13:45:36.625 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+13:45:37.391 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+13:45:37.757 [main] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+13:45:37.768 [main] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
+13:45:37.771 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
