@@ -31,7 +31,7 @@ public class AiReviewController {
 
     @PutMapping("/candidate-rules/{candidateCode}/status")
     @Operation(summary = "流转 AI 候选规则状态")
-    public AjaxResult transitionCandidateStatus(@PathVariable String candidateCode,
+    public AjaxResult transitionCandidateStatus(@PathVariable("candidateCode") String candidateCode,
                                                 @RequestBody CandidateRuleStatusUpdateDto request) {
         return AjaxResult.success(CandidateRuleDto.fromEntity(
                 aiReviewService.transitionCandidateStatus(candidateCode, request.getStatus())

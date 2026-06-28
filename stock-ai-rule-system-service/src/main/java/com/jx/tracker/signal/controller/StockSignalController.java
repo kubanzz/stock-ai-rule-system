@@ -36,9 +36,9 @@ public class StockSignalController {
     }
 
     @GetMapping("/api/signals")
-    public PageResult<StockSignalItemVo> list(@RequestParam(required = false) LocalDate date,
-                                              @RequestParam(required = false) String signal,
-                                              @RequestParam(required = false) String symbol) {
+    public PageResult<StockSignalItemVo> list(@RequestParam(value = "date", required = false) LocalDate date,
+                                              @RequestParam(value = "signal", required = false) String signal,
+                                              @RequestParam(value = "symbol", required = false) String symbol) {
         List<StockSignalItemVo> rows = stockSignalService.listSignals(date, signal, symbol)
                 .stream()
                 .map(this::toItemVo)
@@ -65,7 +65,7 @@ public class StockSignalController {
     }
 
     @GetMapping("/api/stocks/{symbol}/analysis")
-    public AjaxResult analysis(@PathVariable String symbol, @RequestParam LocalDate date) {
+    public AjaxResult analysis(@PathVariable("symbol") String symbol, @RequestParam("date") LocalDate date) {
         StockSignalDaily signal = stockSignalService.getSignal(symbol, date);
         if (signal == null) {
             return AjaxResult.success(StockAnalysisVo.builder()

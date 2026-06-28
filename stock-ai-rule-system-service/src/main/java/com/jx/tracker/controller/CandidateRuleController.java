@@ -28,7 +28,7 @@ public class CandidateRuleController {
 
     @GetMapping
     @Operation(summary = "分页查询 AI 候选规则")
-    public PageResult<CandidateRuleDto> list(@RequestParam(required = false) String status) {
+    public PageResult<CandidateRuleDto> list(@RequestParam(value = "status", required = false) String status) {
         var rows = aiReviewService.listCandidateRules(status).stream()
                 .map(CandidateRuleDto::fromEntity)
                 .toList();
@@ -37,13 +37,13 @@ public class CandidateRuleController {
 
     @GetMapping("/{candidateCode}")
     @Operation(summary = "按编码查询 AI 候选规则")
-    public AjaxResult detail(@PathVariable String candidateCode) {
+    public AjaxResult detail(@PathVariable("candidateCode") String candidateCode) {
         return AjaxResult.success(CandidateRuleDto.fromEntity(aiReviewService.getCandidateRule(candidateCode)));
     }
 
     @PutMapping("/{candidateCode}/status")
     @Operation(summary = "流转 AI 候选规则状态")
-    public AjaxResult transitionStatus(@PathVariable String candidateCode,
+    public AjaxResult transitionStatus(@PathVariable("candidateCode") String candidateCode,
                                        @RequestBody CandidateRuleStatusUpdateDto request) {
         return AjaxResult.success(CandidateRuleDto.fromEntity(
                 aiReviewService.transitionCandidateStatus(candidateCode, request.getStatus())

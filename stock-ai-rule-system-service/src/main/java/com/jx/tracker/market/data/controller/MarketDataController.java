@@ -59,7 +59,7 @@ public class MarketDataController {
 
     @GetMapping("/stocks/{symbol}")
     @Operation(summary = "按股票代码和市场查询股票基础信息")
-    public AjaxResult getStock(@PathVariable String symbol, @RequestParam String market) {
+    public AjaxResult getStock(@PathVariable("symbol") String symbol, @RequestParam("market") String market) {
         return AjaxResult.success(stockBaseService.getBySymbolAndMarket(symbol, market));
     }
 
@@ -94,7 +94,7 @@ public class MarketDataController {
 
     @GetMapping("/daily-quotes/{symbol}/{tradeDate}")
     @Operation(summary = "按股票代码和交易日查询日 K 行情")
-    public AjaxResult getDailyQuote(@PathVariable String symbol, @PathVariable LocalDate tradeDate) {
+    public AjaxResult getDailyQuote(@PathVariable("symbol") String symbol, @PathVariable("tradeDate") LocalDate tradeDate) {
         return AjaxResult.success(stockDailyQuoteService.getBySymbolAndTradeDate(symbol, tradeDate));
     }
 
@@ -124,9 +124,9 @@ public class MarketDataController {
     @PostMapping("/import/mock")
     @Operation(summary = "导入 mock 股票基础信息与日 K 行情")
     public AjaxResult importMockData(
-            @RequestParam(required = false) String symbol,
-            @RequestParam(required = false) LocalDate startDate,
-            @RequestParam(required = false) LocalDate endDate) {
+            @RequestParam(value = "symbol", required = false) String symbol,
+            @RequestParam(value = "startDate", required = false) LocalDate startDate,
+            @RequestParam(value = "endDate", required = false) LocalDate endDate) {
         MarketDataImportResultDto<StockBaseUpsertDto> stocks = stockBaseService.upsertStockBases(mockMarketDataProvider.fetchStockBases());
         MarketDataImportResultDto<StockDailyQuoteUpsertDto> quotes =
                 stockDailyQuoteService.upsertDailyQuotes(mockMarketDataProvider.fetchDailyQuotes(symbol, startDate, endDate));

@@ -29,7 +29,7 @@ public class UserController {
 
     @PostMapping("/oauth/{code}")
     @Operation(summary = "企业微信验证")
-    public ResponseEntity<AuthUserDto> validateTicket(@PathVariable String code) {
+    public ResponseEntity<AuthUserDto> validateTicket(@PathVariable("code") String code) {
         AuthUserDto authUserDto = userService.validateTicket(code);
         return ResponseEntity.ok(authUserDto);
     }
@@ -40,7 +40,7 @@ public class UserController {
     }
 
     @GetMapping("/users")
-    public AjaxResult getUser(@RequestParam String userId) {
+    public AjaxResult getUser(@RequestParam("userId") String userId) {
         return AjaxResult.success(userService.getUser(userId));
     }
 }

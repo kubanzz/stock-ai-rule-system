@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS stock_signal_daily (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     symbol VARCHAR(32) NOT NULL,
     signal_date DATE NOT NULL,
-    signal VARCHAR(32),
+    `signal` VARCHAR(32),
     signal_level VARCHAR(32),
     bullish_score DECIMAL(10,4),
     bearish_score DECIMAL(10,4),
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS stock_signal_daily (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_stock_signal_daily_symbol_signal_date (symbol, signal_date),
     KEY idx_stock_signal_daily_signal_date (signal_date),
-    KEY idx_stock_signal_daily_signal (signal)
+    KEY idx_stock_signal_daily_signal (`signal`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='信号结果表';
 
 CREATE TABLE IF NOT EXISTS stock_actual_result (

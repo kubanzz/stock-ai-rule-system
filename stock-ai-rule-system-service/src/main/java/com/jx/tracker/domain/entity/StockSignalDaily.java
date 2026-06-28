@@ -30,6 +30,7 @@ public class StockSignalDaily {
 
     private LocalDate signalDate;
 
+    @TableField("`signal`")
     private String signal;
 
     private String signalLevel;

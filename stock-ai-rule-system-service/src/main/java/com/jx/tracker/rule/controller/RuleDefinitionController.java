@@ -27,8 +27,8 @@ public class RuleDefinitionController {
     }
 
     @GetMapping
-    public PageResult<RuleDefinition> list(@RequestParam(required = false) String status,
-                                           @RequestParam(required = false) String ruleFormat) {
+    public PageResult<RuleDefinition> list(@RequestParam(value = "status", required = false) String status,
+                                           @RequestParam(value = "ruleFormat", required = false) String ruleFormat) {
         var rows = ruleDefinitionService.list(status, ruleFormat);
         return PageResult.getDataTable(rows, (long) rows.size());
     }
@@ -39,17 +39,17 @@ public class RuleDefinitionController {
     }
 
     @PutMapping("/{ruleCode}")
-    public AjaxResult update(@PathVariable String ruleCode, @RequestBody RuleDefinitionUpsertDto dto) {
+    public AjaxResult update(@PathVariable("ruleCode") String ruleCode, @RequestBody RuleDefinitionUpsertDto dto) {
         return AjaxResult.success(ruleDefinitionService.update(ruleCode, dto));
     }
 
     @PostMapping("/{ruleCode}/enable")
-    public AjaxResult enable(@PathVariable String ruleCode) {
+    public AjaxResult enable(@PathVariable("ruleCode") String ruleCode) {
         return AjaxResult.success(ruleDefinitionService.enable(ruleCode));
     }
 
     @PostMapping("/{ruleCode}/disable")
-    public AjaxResult disable(@PathVariable String ruleCode) {
+    public AjaxResult disable(@PathVariable("ruleCode") String ruleCode) {
         return AjaxResult.success(ruleDefinitionService.disable(ruleCode));
     }
 }
