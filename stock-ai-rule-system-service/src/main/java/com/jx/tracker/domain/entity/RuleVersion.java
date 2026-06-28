@@ -11,45 +11,35 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("stock_daily_quote")
-@Schema(name = "行情数据表")
-public class StockDailyQuote {
+@TableName("rule_version")
+@Schema(name = "规则版本表")
+public class RuleVersion {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String symbol;
+    private Long ruleId;
 
-    private LocalDate tradeDate;
+    private String versionNo;
 
-    private BigDecimal openPrice;
+    private String ruleContent;
 
-    private BigDecimal highPrice;
+    private String changeReason;
 
-    private BigDecimal lowPrice;
+    private String source;
 
-    private BigDecimal closePrice;
+    private String approvalStatus;
 
-    private BigDecimal preClose;
+    private LocalDateTime publishedTime;
 
-    private BigDecimal volume;
+    private String createdBy;
 
-    private BigDecimal amount;
-
-    private BigDecimal changePct;
-
-    private String dataSource;
-
-    private LocalDateTime syncTime;
-
-    @TableField(value = "created_at", fill = FieldFill.INSERT)
+    @TableField(value = "created_time", fill = FieldFill.INSERT)
     private LocalDateTime createdTime;
 }

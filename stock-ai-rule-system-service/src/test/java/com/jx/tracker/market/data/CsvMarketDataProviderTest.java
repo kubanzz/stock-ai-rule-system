@@ -29,7 +29,7 @@ class CsvMarketDataProviderTest {
         assertThat(result.getAcceptedRows()).hasSize(1);
         assertThat(result.getRejectedRows()).hasSize(1);
         assertThat(result.getRejectedRows().getFirst().getReason()).contains("high_price");
-        assertThat(result.getAcceptedRows().getFirst().getSymbol()).isEqualTo("SZ000001");
+        assertThat(result.getAcceptedRows().getFirst().getSymbol()).isEqualTo("000001.SZ");
         assertThat(result.getAcceptedRows().getFirst().getTradeDate()).isEqualTo(LocalDate.of(2026, 6, 20));
         assertThat(result.getAcceptedRows().getFirst().getClosePrice()).isEqualByComparingTo(new BigDecimal("10.50"));
     }

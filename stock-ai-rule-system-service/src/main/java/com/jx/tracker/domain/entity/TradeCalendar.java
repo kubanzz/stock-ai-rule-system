@@ -1,6 +1,5 @@
 package com.jx.tracker.domain.entity;
 
-import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -11,7 +10,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -19,37 +17,25 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("stock_daily_quote")
-@Schema(name = "行情数据表")
-public class StockDailyQuote {
+@TableName("trade_calendar")
+@Schema(name = "交易日历表")
+public class TradeCalendar {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String symbol;
+    private String market;
 
     private LocalDate tradeDate;
 
-    private BigDecimal openPrice;
+    @TableField("is_open")
+    private Boolean open;
 
-    private BigDecimal highPrice;
+    private LocalDate preTradeDate;
 
-    private BigDecimal lowPrice;
-
-    private BigDecimal closePrice;
-
-    private BigDecimal preClose;
-
-    private BigDecimal volume;
-
-    private BigDecimal amount;
-
-    private BigDecimal changePct;
+    private LocalDate nextTradeDate;
 
     private String dataSource;
 
     private LocalDateTime syncTime;
-
-    @TableField(value = "created_at", fill = FieldFill.INSERT)
-    private LocalDateTime createdTime;
 }

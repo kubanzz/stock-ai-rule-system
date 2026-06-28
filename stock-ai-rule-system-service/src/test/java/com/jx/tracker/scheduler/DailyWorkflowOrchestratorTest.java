@@ -27,13 +27,12 @@ class DailyWorkflowOrchestratorTest {
         assertThat(result.getSteps())
                 .extracting("stepCode")
                 .containsExactly(
-                        "market_data_collection",
+                        "market_data_sync",
                         "factor_calculation",
-                        "rule_inference",
-                        "signal_generation",
-                        "historical_verification",
-                        "ai_review",
-                        "candidate_rule_backtest"
+                        "rule_signal_generation",
+                        "prediction_validation",
+                        "candidate_rule_backtest",
+                        "ai_review"
                 );
         assertThat(result.getSteps())
                 .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("skipped"));

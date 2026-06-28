@@ -49,7 +49,7 @@ public class CsvMarketDataProvider implements MarketDataProvider {
     }
 
     @Override
-    public List<StockBaseUpsertDto> fetchStockBases() {
+    public List<StockBaseUpsertDto> fetchStockList() {
         return stockBases;
     }
 

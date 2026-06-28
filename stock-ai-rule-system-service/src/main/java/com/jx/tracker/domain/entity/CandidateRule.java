@@ -26,6 +26,8 @@ public class CandidateRule {
 
     private String candidateCode;
 
+    private Long sourceReviewId;
+
     private String source;
 
     private String targetRuleCode;
@@ -39,6 +41,14 @@ public class CandidateRule {
     private String reason;
 
     private String status;
+
+    private String backtestStatus;
+
+    private Long latestBacktestReportId;
+
+    private String approvalStatus;
+
+    private String rejectReason;
 
     private String backtestResult;
 
