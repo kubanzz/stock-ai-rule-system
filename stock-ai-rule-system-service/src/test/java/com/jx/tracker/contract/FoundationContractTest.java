@@ -2,6 +2,9 @@ package com.jx.tracker.contract;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.jx.tracker.constant.StockRiskConstants;
+import com.jx.tracker.ai.review.DefaultLlmClientConfig;
+import com.jx.tracker.ai.review.LlmClient;
+import com.jx.tracker.ai.review.MockLlmClient;
 import com.jx.tracker.domain.entity.AiReviewReport;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
@@ -14,6 +17,7 @@ import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.SignalType;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +26,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class FoundationContractTest {
+
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner();
 
     @Test
     void signalTypeCodesMatchPublicContract() {
@@ -79,5 +85,15 @@ class FoundationContractTest {
         assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS stock_signal_daily");
         assertThat(ddl).contains("triggered_rules JSON");
         assertThat(ddl).contains("UNIQUE KEY uk_stock_daily_quote_symbol_trade_date");
+    }
+
+    @Test
+    void defaultLlmClientFallsBackToMockWhenNoRealClientIsConfigured() {
+        contextRunner
+                .withUserConfiguration(DefaultLlmClientConfig.class)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(LlmClient.class);
+                    assertThat(context.getBean(LlmClient.class)).isInstanceOf(MockLlmClient.class);
+                });
     }
 }

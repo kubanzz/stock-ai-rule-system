@@ -1,10 +1,5 @@
 package com.jx.tracker.ai.review;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.stereotype.Component;
-
-@Component
-@ConditionalOnMissingBean(LlmClient.class)
 public class MockLlmClient implements LlmClient {
 
     @Override
