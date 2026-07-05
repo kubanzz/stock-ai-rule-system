@@ -57,6 +57,16 @@ jx:
   tracker:
 
 stock-ai-rule:
+  market-data:
+    provider:
+      # 可选：mock / csv / tushare。外部 token 缺失时自动降级到 fallback-type。
+      type: ${MARKET_DATA_PROVIDER:mock}
+      fallback-type: ${MARKET_DATA_FALLBACK_PROVIDER:mock}
+      token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:}}
+      api-url: ${MARKET_DATA_PROVIDER_API_URL:http://api.tushare.pro}
+      stock-list-csv-path: ${MARKET_DATA_STOCK_LIST_CSV_PATH:}
+      daily-quote-csv-path: ${MARKET_DATA_DAILY_QUOTE_CSV_PATH:}
+      trade-calendar-csv-path: ${MARKET_DATA_TRADE_CALENDAR_CSV_PATH:}
   scheduler:
     # 默认禁用自动调度，避免在未显式配置前触发外部行情、AI 或回测任务。
     daily-enabled: false

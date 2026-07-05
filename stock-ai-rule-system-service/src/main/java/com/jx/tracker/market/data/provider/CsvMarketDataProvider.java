@@ -3,6 +3,7 @@ package com.jx.tracker.market.data.provider;
 import com.jx.tracker.market.data.dto.MarketDataImportResultDto;
 import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
+import com.jx.tracker.market.data.dto.TradeCalendarDto;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
 
 import java.io.BufferedReader;
@@ -10,6 +11,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -23,29 +26,56 @@ public class CsvMarketDataProvider implements MarketDataProvider {
 
     private final List<StockDailyQuoteUpsertDto> dailyQuotes;
 
+    private final List<TradeCalendarDto> tradeCalendars;
+
     private final MarketDataImportResultDto<StockBaseUpsertDto> stockBaseResult;
 
     private final MarketDataImportResultDto<StockDailyQuoteUpsertDto> dailyQuoteResult;
 
+    private final MarketDataImportResultDto<TradeCalendarDto> tradeCalendarResult;
+
     private CsvMarketDataProvider(
             List<StockBaseUpsertDto> stockBases,
             List<StockDailyQuoteUpsertDto> dailyQuotes,
+            List<TradeCalendarDto> tradeCalendars,
             MarketDataImportResultDto<StockBaseUpsertDto> stockBaseResult,
-            MarketDataImportResultDto<StockDailyQuoteUpsertDto> dailyQuoteResult) {
+            MarketDataImportResultDto<StockDailyQuoteUpsertDto> dailyQuoteResult,
+            MarketDataImportResultDto<TradeCalendarDto> tradeCalendarResult) {
         this.stockBases = stockBases;
         this.dailyQuotes = dailyQuotes;
+        this.tradeCalendars = tradeCalendars;
         this.stockBaseResult = stockBaseResult;
         this.dailyQuoteResult = dailyQuoteResult;
+        this.tradeCalendarResult = tradeCalendarResult;
     }
 
     public static CsvMarketDataProvider fromStockBaseCsv(InputStream inputStream) {
         MarketDataImportResultDto<StockBaseUpsertDto> result = readStockBases(inputStream);
-        return new CsvMarketDataProvider(result.getAcceptedRows(), List.of(), result, new MarketDataImportResultDto<>());
+        return new CsvMarketDataProvider(result.getAcceptedRows(), List.of(), List.of(), result, new MarketDataImportResultDto<>(), new MarketDataImportResultDto<>());
     }
 
     public static CsvMarketDataProvider fromDailyQuoteCsv(InputStream inputStream) {
         MarketDataImportResultDto<StockDailyQuoteUpsertDto> result = readDailyQuotes(inputStream);
-        return new CsvMarketDataProvider(List.of(), result.getAcceptedRows(), new MarketDataImportResultDto<>(), result);
+        return new CsvMarketDataProvider(List.of(), result.getAcceptedRows(), List.of(), new MarketDataImportResultDto<>(), result, new MarketDataImportResultDto<>());
+    }
+
+    public static CsvMarketDataProvider fromTradeCalendarCsv(InputStream inputStream) {
+        MarketDataImportResultDto<TradeCalendarDto> result = readTradeCalendars(inputStream);
+        return new CsvMarketDataProvider(List.of(), List.of(), result.getAcceptedRows(), new MarketDataImportResultDto<>(), new MarketDataImportResultDto<>(), result);
+    }
+
+    public static CsvMarketDataProvider fromFiles(String stockListPath, String dailyQuotePath, String tradeCalendarPath) {
+        MarketDataImportResultDto<StockBaseUpsertDto> stockBases = readStockBasesIfPresent(stockListPath);
+        MarketDataImportResultDto<StockDailyQuoteUpsertDto> dailyQuotes = readDailyQuotesIfPresent(dailyQuotePath);
+        MarketDataImportResultDto<TradeCalendarDto> tradeCalendars = readTradeCalendarsIfPresent(tradeCalendarPath);
+        return new CsvMarketDataProvider(
+                stockBases.getAcceptedRows(),
+                dailyQuotes.getAcceptedRows(),
+                tradeCalendars.getAcceptedRows(),
+                stockBases,
+                dailyQuotes,
+                tradeCalendars
+        );
     }
 
     @Override
@@ -63,12 +93,24 @@ public class CsvMarketDataProvider implements MarketDataProvider {
                 .toList();
     }
 
+    @Override
+    public List<TradeCalendarDto> fetchTradeCalendar(LocalDate startDate, LocalDate endDate) {
+        return tradeCalendars.stream()
+                .filter(day -> startDate == null || !day.getTradeDate().isBefore(startDate))
+                .filter(day -> endDate == null || !day.getTradeDate().isAfter(endDate))
+                .toList();
+    }
+
     public MarketDataImportResultDto<StockBaseUpsertDto> importStockBases() {
         return stockBaseResult;
     }
 
     public MarketDataImportResultDto<StockDailyQuoteUpsertDto> importDailyQuotes() {
         return dailyQuoteResult;
+    }
+
+    public MarketDataImportResultDto<TradeCalendarDto> importTradeCalendars() {
+        return tradeCalendarResult;
     }
 
     private static MarketDataImportResultDto<StockBaseUpsertDto> readStockBases(InputStream inputStream) {
@@ -78,8 +120,10 @@ public class CsvMarketDataProvider implements MarketDataProvider {
             dto.setSymbol(value(columns, header, "symbol"));
             dto.setName(value(columns, header, "name"));
             dto.setMarket(value(columns, header, "market"));
+            dto.setExchange(value(columns, header, "exchange"));
             dto.setIndustry(value(columns, header, "industry"));
             dto.setStatus(value(columns, header, "status"));
+            dto.setDataSource(value(columns, header, "data_source"));
             String error = MarketDataNormalizer.validate(dto);
             if (error == null) {
                 result.accept(dto);
@@ -103,6 +147,7 @@ public class CsvMarketDataProvider implements MarketDataProvider {
             dto.setVolume(parseDecimal(value(columns, header, "volume")));
             dto.setAmount(parseDecimal(value(columns, header, "amount")));
             dto.setChangePct(parseDecimal(value(columns, header, "change_pct")));
+            dto.setDataSource(value(columns, header, "data_source"));
             String error = MarketDataNormalizer.validate(dto);
             if (error == null) {
                 result.accept(dto);
@@ -111,6 +156,59 @@ public class CsvMarketDataProvider implements MarketDataProvider {
             }
         }, result);
         return result;
+    }
+
+    private static MarketDataImportResultDto<TradeCalendarDto> readTradeCalendars(InputStream inputStream) {
+        MarketDataImportResultDto<TradeCalendarDto> result = new MarketDataImportResultDto<>();
+        readRows(inputStream, (rowNumber, columns, header) -> {
+            TradeCalendarDto dto = new TradeCalendarDto();
+            dto.setMarket(value(columns, header, "market"));
+            dto.setTradeDate(parseDate(value(columns, header, "trade_date")));
+            dto.setOpen(parseBoolean(value(columns, header, "is_open")));
+            dto.setPreTradeDate(parseDate(value(columns, header, "pre_trade_date")));
+            dto.setNextTradeDate(parseDate(value(columns, header, "next_trade_date")));
+            dto.setDataSource(value(columns, header, "data_source"));
+            String error = MarketDataNormalizer.validate(dto);
+            if (error == null) {
+                result.accept(dto);
+            } else {
+                result.reject(rowNumber, null, error);
+            }
+        }, result);
+        return result;
+    }
+
+    private static MarketDataImportResultDto<StockBaseUpsertDto> readStockBasesIfPresent(String path) {
+        if (path == null || path.isBlank()) {
+            return new MarketDataImportResultDto<>();
+        }
+        try (InputStream inputStream = Files.newInputStream(Path.of(path))) {
+            return readStockBases(inputStream);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("failed to read stock base csv file", e);
+        }
+    }
+
+    private static MarketDataImportResultDto<StockDailyQuoteUpsertDto> readDailyQuotesIfPresent(String path) {
+        if (path == null || path.isBlank()) {
+            return new MarketDataImportResultDto<>();
+        }
+        try (InputStream inputStream = Files.newInputStream(Path.of(path))) {
+            return readDailyQuotes(inputStream);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("failed to read daily quote csv file", e);
+        }
+    }
+
+    private static MarketDataImportResultDto<TradeCalendarDto> readTradeCalendarsIfPresent(String path) {
+        if (path == null || path.isBlank()) {
+            return new MarketDataImportResultDto<>();
+        }
+        try (InputStream inputStream = Files.newInputStream(Path.of(path))) {
+            return readTradeCalendars(inputStream);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("failed to read trade calendar csv file", e);
+        }
     }
 
     private static void readRows(InputStream inputStream, CsvRowConsumer consumer, MarketDataImportResultDto<?> result) {
@@ -181,6 +279,10 @@ public class CsvMarketDataProvider implements MarketDataProvider {
 
     private static BigDecimal parseDecimal(String value) {
         return value == null ? null : new BigDecimal(value);
+    }
+
+    private static boolean parseBoolean(String value) {
+        return value != null && ("1".equals(value) || "true".equalsIgnoreCase(value) || "open".equalsIgnoreCase(value));
     }
 
     @FunctionalInterface

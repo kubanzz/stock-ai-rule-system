@@ -2,18 +2,26 @@ package com.jx.tracker.market.data.controller;
 
 import com.jx.tracker.common.AjaxResult;
 import com.jx.tracker.common.PageResult;
+import com.jx.tracker.domain.entity.MarketDataSyncRun;
 import com.jx.tracker.domain.entity.StockBase;
 import com.jx.tracker.domain.entity.StockDailyQuote;
+import com.jx.tracker.domain.entity.TradeCalendar;
 import com.jx.tracker.exception.ServiceException;
+import com.jx.tracker.market.data.dto.DailyQuoteSyncRequestDto;
 import com.jx.tracker.market.data.dto.MarketDataImportResultDto;
+import com.jx.tracker.market.data.dto.MarketDataSyncRequestDto;
+import com.jx.tracker.market.data.dto.MarketDataSyncRunQueryDto;
 import com.jx.tracker.market.data.dto.StockBaseQueryDto;
 import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteQueryDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
+import com.jx.tracker.market.data.dto.TradeCalendarQueryDto;
 import com.jx.tracker.market.data.provider.CsvMarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProvider;
+import com.jx.tracker.market.data.service.MarketDataSyncService;
 import com.jx.tracker.market.data.service.StockBaseService;
 import com.jx.tracker.market.data.service.StockDailyQuoteService;
+import com.jx.tracker.market.data.service.TradeCalendarService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,13 +50,21 @@ public class MarketDataController {
 
     private final MarketDataProvider mockMarketDataProvider;
 
+    private final MarketDataSyncService marketDataSyncService;
+
+    private final TradeCalendarService tradeCalendarService;
+
     public MarketDataController(
             StockBaseService stockBaseService,
             StockDailyQuoteService stockDailyQuoteService,
-            MarketDataProvider mockMarketDataProvider) {
+            MarketDataProvider mockMarketDataProvider,
+            MarketDataSyncService marketDataSyncService,
+            TradeCalendarService tradeCalendarService) {
         this.stockBaseService = stockBaseService;
         this.stockDailyQuoteService = stockDailyQuoteService;
         this.mockMarketDataProvider = mockMarketDataProvider;
+        this.marketDataSyncService = marketDataSyncService;
+        this.tradeCalendarService = tradeCalendarService;
     }
 
     @GetMapping("/stocks")
@@ -131,6 +147,36 @@ public class MarketDataController {
         MarketDataImportResultDto<StockDailyQuoteUpsertDto> quotes =
                 stockDailyQuoteService.upsertDailyQuotes(mockMarketDataProvider.fetchDailyQuotes(symbol, startDate, endDate));
         return AjaxResult.success("导入完成", new MockImportResult(stocks, quotes));
+    }
+
+    @PostMapping("/sync/stocks")
+    @Operation(summary = "触发股票列表同步")
+    public AjaxResult syncStockList(@RequestBody(required = false) MarketDataSyncRequestDto request) {
+        return AjaxResult.success(marketDataSyncService.syncStockList(request));
+    }
+
+    @PostMapping("/sync/daily-quotes")
+    @Operation(summary = "触发日 K 行情同步")
+    public AjaxResult syncDailyQuotes(@RequestBody(required = false) DailyQuoteSyncRequestDto request) {
+        return AjaxResult.success(marketDataSyncService.syncDailyQuotes(request));
+    }
+
+    @PostMapping("/sync/trade-calendar")
+    @Operation(summary = "触发交易日历同步")
+    public AjaxResult syncTradeCalendar(@RequestBody(required = false) MarketDataSyncRequestDto request) {
+        return AjaxResult.success(marketDataSyncService.syncTradeCalendar(request));
+    }
+
+    @GetMapping("/sync-runs")
+    @Operation(summary = "分页查询行情同步运行记录")
+    public PageResult<MarketDataSyncRun> pageSyncRuns(@ModelAttribute MarketDataSyncRunQueryDto query) {
+        return marketDataSyncService.pageSyncRuns(query);
+    }
+
+    @GetMapping("/trade-calendar")
+    @Operation(summary = "分页查询交易日历")
+    public PageResult<TradeCalendar> pageTradeCalendar(@ModelAttribute TradeCalendarQueryDto query) {
+        return tradeCalendarService.pageTradeCalendars(query);
     }
 
     private CsvMarketDataProvider stockCsvProvider(MultipartFile file) {
