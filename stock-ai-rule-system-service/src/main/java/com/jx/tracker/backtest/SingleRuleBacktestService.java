@@ -1,21 +1,36 @@
 package com.jx.tracker.backtest;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.BacktestRequestDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
+import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.StockActualResult;
+import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.enums.BacktestStatus;
+import com.jx.tracker.domain.enums.RuleFormat;
+import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.RuleObjectType;
 import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
+import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
+import com.jx.tracker.rule.engine.RuleEngineExecutor;
+import com.jx.tracker.rule.engine.RuleExecutionRequest;
+import com.jx.tracker.rule.engine.RuleExecutionResult;
+import com.jx.tracker.signal.service.SignalScore;
+import com.jx.tracker.signal.service.SignalScoringService;
 import com.jx.tracker.verification.PredictionHitPolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -23,29 +38,41 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class SingleRuleBacktestService implements BacktestService {
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final BigDecimal DEFAULT_FEE_RATE = new BigDecimal("0.0010");
     private static final BigDecimal DEFAULT_SLIPPAGE_RATE = new BigDecimal("0.0005");
     private static final BigDecimal TRADING_DAYS_PER_YEAR = new BigDecimal("252");
 
     private final StockSignalDailyMapper signalMapper;
+    private final StockFactorDailyMapper factorMapper;
     private final StockActualResultMapper actualResultMapper;
     private final BacktestResultMapper backtestResultMapper;
     private final CandidateRuleMapper candidateRuleMapper;
+    private final RuleEngineExecutor ruleEngineExecutor;
+    private final SignalScoringService signalScoringService;
     private final PredictionHitPolicy hitPolicy;
 
     public SingleRuleBacktestService(StockSignalDailyMapper signalMapper,
+                                     StockFactorDailyMapper factorMapper,
                                      StockActualResultMapper actualResultMapper,
                                      BacktestResultMapper backtestResultMapper,
                                      CandidateRuleMapper candidateRuleMapper,
+                                     RuleEngineExecutor ruleEngineExecutor,
+                                     SignalScoringService signalScoringService,
                                      PredictionHitPolicy hitPolicy) {
         this.signalMapper = signalMapper;
+        this.factorMapper = factorMapper;
         this.actualResultMapper = actualResultMapper;
         this.backtestResultMapper = backtestResultMapper;
         this.candidateRuleMapper = candidateRuleMapper;
+        this.ruleEngineExecutor = ruleEngineExecutor;
+        this.signalScoringService = signalScoringService;
         this.hitPolicy = hitPolicy;
     }
 
@@ -55,8 +82,9 @@ public class SingleRuleBacktestService implements BacktestService {
         CandidateRule candidateRule = resolveCandidateRule(request);
         BigDecimal feeRate = defaultIfNull(request.getFeeRate(), DEFAULT_FEE_RATE);
         BigDecimal slippageRate = defaultIfNull(request.getSlippageRate(), DEFAULT_SLIPPAGE_RATE);
-        String triggeredRuleCode = candidateRule == null ? request.getObjectCode() : candidateRule.getTargetRuleCode();
-        List<StockSignalDaily> signals = selectTriggeredSignals(request, triggeredRuleCode);
+        List<StockSignalDaily> signals = candidateRule == null
+                ? selectTriggeredSignals(request, request.getObjectCode())
+                : replayCandidateSignals(request, candidateRule);
         List<BigDecimal> netReturns = new ArrayList<>();
         int wins = 0;
 
@@ -72,11 +100,10 @@ public class SingleRuleBacktestService implements BacktestService {
             netReturns.add(signalAdjustedReturn(signal.getSignal(), rawReturn).subtract(feeRate).subtract(slippageRate));
         }
 
-        BacktestResult result = buildResult(request, feeRate, slippageRate, netReturns, wins);
+        BacktestResult result = buildResult(request, candidateRule, feeRate, slippageRate, netReturns, wins);
         backtestResultMapper.insert(result);
         if (candidateRule != null) {
-            candidateRule.setBacktestResult(candidateBacktestSummary(result));
-            candidateRuleMapper.updateById(candidateRule);
+            writeBackCandidateBacktest(candidateRule, result);
         }
         return result;
     }
@@ -133,6 +160,86 @@ public class SingleRuleBacktestService implements BacktestService {
             throw new IllegalArgumentException("候选规则缺少目标规则编码：" + request.getObjectCode());
         }
         return candidateRule;
+    }
+
+    private List<StockSignalDaily> replayCandidateSignals(BacktestRequestDto request, CandidateRule candidateRule) {
+        RuleDefinition backtestRule = candidateBacktestRule(candidateRule);
+        return factorMapper.selectList(Wrappers.<StockFactorDaily>lambdaQuery()
+                        .ge(StockFactorDaily::getTradeDate, request.getStartDate())
+                        .le(StockFactorDaily::getTradeDate, request.getEndDate())
+                        .orderByAsc(StockFactorDaily::getTradeDate)
+                        .orderByAsc(StockFactorDaily::getSymbol))
+                .stream()
+                .map(factor -> executeCandidateRule(factor, backtestRule))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private RuleDefinition candidateBacktestRule(CandidateRule candidateRule) {
+        if (!StringUtils.hasText(candidateRule.getProposedContent())) {
+            throw new IllegalArgumentException("候选规则缺少拟议规则内容：" + candidateRule.getCandidateCode());
+        }
+        return RuleDefinition.builder()
+                .ruleCode(candidateRule.getTargetRuleCode())
+                .ruleName(candidateRule.getCandidateCode())
+                .ruleType("candidate")
+                .ruleContent(candidateRule.getProposedContent())
+                .ruleFormat(RuleFormat.JSON.getCode())
+                .status(RuleLifecycleStatus.ACTIVE.getCode())
+                .priority(0)
+                .build();
+    }
+
+    private StockSignalDaily executeCandidateRule(StockFactorDaily factor, RuleDefinition backtestRule) {
+        RuleExecutionResult executionResult = ruleEngineExecutor.execute(new RuleExecutionRequest(
+                factor.getSymbol(),
+                factor.getTradeDate(),
+                readFactors(factor),
+                List.of(backtestRule)
+        ));
+        if (executionResult.triggeredRules().isEmpty()) {
+            return null;
+        }
+
+        SignalScore signalScore = signalScoringService.score(
+                executionResult.bullishScore(),
+                executionResult.bearishScore(),
+                executionResult.riskScore()
+        );
+        return StockSignalDaily.builder()
+                .symbol(factor.getSymbol())
+                .signalDate(factor.getTradeDate())
+                .signal(signalScore.signal())
+                .signalLevel(signalScore.signalLevel())
+                .bullishScore(executionResult.bullishScore())
+                .bearishScore(executionResult.bearishScore())
+                .riskScore(executionResult.riskScore())
+                .confidence(signalScore.confidence())
+                .triggeredRules(toJsonArray(executionResult.triggeredRules()))
+                .explanation(String.join("；", executionResult.explanations()))
+                .riskDisclaimer(StockRiskConstants.SIGNAL_RISK_DISCLAIMER)
+                .build();
+    }
+
+    private Map<String, Object> readFactors(StockFactorDaily factor) {
+        if (factor.getFactorJson() == null || factor.getFactorJson().isBlank()) {
+            return Map.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(factor.getFactorJson(), new TypeReference<>() {
+            });
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid factor_json for candidate backtest: "
+                    + factor.getSymbol() + " " + factor.getTradeDate(), e);
+        }
+    }
+
+    private String toJsonArray(List<String> values) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(values == null ? List.of() : values);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize triggered rules", e);
+        }
     }
 
     private List<StockSignalDaily> selectTriggeredSignals(BacktestRequestDto request, String triggeredRuleCode) {
@@ -199,6 +306,7 @@ public class SingleRuleBacktestService implements BacktestService {
     }
 
     private BacktestResult buildResult(BacktestRequestDto request,
+                                       CandidateRule candidateRule,
                                        BigDecimal feeRate,
                                        BigDecimal slippageRate,
                                        List<BigDecimal> returns,
@@ -208,10 +316,12 @@ public class SingleRuleBacktestService implements BacktestService {
         BigDecimal avgReturn = average(returns);
         BigDecimal maxDrawdown = maxDrawdown(returns);
         BigDecimal sharpeRatio = sharpeRatio(returns, request.getHoldingPeriod());
+        BigDecimal totalReturn = compoundedReturn(returns);
 
         return BacktestResult.builder()
                 .objectType(request.getObjectType())
                 .objectCode(request.getObjectCode())
+                .candidateRuleId(candidateRule == null ? null : candidateRule.getId())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .holdingPeriod(request.getHoldingPeriod())
@@ -223,9 +333,9 @@ public class SingleRuleBacktestService implements BacktestService {
                 .sharpeRatio(scale(sharpeRatio))
                 .feeRate(scale(feeRate))
                 .slippageRate(scale(slippageRate))
-                .totalReturn(scale(compoundedReturn(returns)))
-                .status("success")
-                .resultJson(resultJson(request, feeRate, slippageRate, triggerCount))
+                .totalReturn(scale(totalReturn))
+                .status(BacktestStatus.SUCCESS.getCode())
+                .resultJson(resultJson(request, feeRate, slippageRate, triggerCount, totalReturn))
                 .build();
     }
 
@@ -283,24 +393,41 @@ public class SingleRuleBacktestService implements BacktestService {
         return value == null ? defaultValue : value;
     }
 
-    private String resultJson(BacktestRequestDto request, BigDecimal feeRate, BigDecimal slippageRate, int triggerCount) {
+    private String resultJson(BacktestRequestDto request,
+                              BigDecimal feeRate,
+                              BigDecimal slippageRate,
+                              int triggerCount,
+                              BigDecimal totalReturn) {
         return String.format(Locale.ROOT,
-                "{\"holdingPeriod\":%d,\"feeRate\":%s,\"slippageRate\":%s,\"triggerCount\":%d,\"riskDisclaimer\":\"%s\"}",
+                "{\"holdingPeriod\":%d,\"feeRate\":%s,\"slippageRate\":%s,\"triggerCount\":%d,\"totalReturnAfterCost\":%s,\"riskDisclaimer\":\"%s\"}",
                 request.getHoldingPeriod(),
                 feeRate.setScale(4, RoundingMode.HALF_UP).toPlainString(),
                 slippageRate.setScale(4, RoundingMode.HALF_UP).toPlainString(),
                 triggerCount,
+                scale(totalReturn).toPlainString(),
                 StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+    }
+
+    private void writeBackCandidateBacktest(CandidateRule candidateRule, BacktestResult result) {
+        candidateRule.setBacktestStatus(result.getStatus());
+        candidateRule.setLatestBacktestReportId(result.getId());
+        candidateRule.setBacktestResult(candidateBacktestSummary(result));
+        candidateRuleMapper.updateById(candidateRule);
     }
 
     private String candidateBacktestSummary(BacktestResult result) {
         return String.format(Locale.ROOT,
-                "{\"triggerCount\":%d,\"winRate\":%s,\"avgReturn\":%s,\"maxDrawdown\":%s,\"sharpeRatio\":%s,\"riskDisclaimer\":\"%s\"}",
+                "{\"backtestStatus\":\"%s\",\"latestBacktestReportId\":%s,\"triggerCount\":%d,\"winRate\":%s,\"avgReturn\":%s,\"maxDrawdown\":%s,\"sharpeRatio\":%s,\"totalReturn\":%s,\"feeRate\":%s,\"slippageRate\":%s,\"riskDisclaimer\":\"%s\"}",
+                result.getStatus(),
+                result.getId() == null ? "null" : result.getId().toString(),
                 result.getTriggerCount(),
                 result.getWinRate().toPlainString(),
                 result.getAvgReturn().toPlainString(),
                 result.getMaxDrawdown().toPlainString(),
                 result.getSharpeRatio().toPlainString(),
+                result.getTotalReturn().toPlainString(),
+                result.getFeeRate().toPlainString(),
+                result.getSlippageRate().toPlainString(),
                 StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
     }
 }

@@ -4,13 +4,18 @@ import com.jx.tracker.domain.dto.BacktestRequestDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.StockActualResult;
+import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.enums.BacktestStatus;
 import com.jx.tracker.domain.enums.RuleObjectType;
 import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
+import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
+import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
+import com.jx.tracker.signal.service.SignalScoringService;
 import com.jx.tracker.verification.PredictionHitPolicy;
 import org.junit.jupiter.api.Test;
 
@@ -27,14 +32,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SingleRuleBacktestServiceTest {
 
     private final FakeMapper<StockSignalDailyMapper, StockSignalDaily> signalMapper = fakeMapper(StockSignalDailyMapper.class);
+    private final FakeMapper<StockFactorDailyMapper, StockFactorDaily> factorMapper = fakeMapper(StockFactorDailyMapper.class);
     private final FakeMapper<StockActualResultMapper, StockActualResult> actualResultMapper = fakeMapper(StockActualResultMapper.class);
     private final FakeMapper<BacktestResultMapper, BacktestResult> backtestResultMapper = fakeMapper(BacktestResultMapper.class);
     private final FakeMapper<CandidateRuleMapper, CandidateRule> candidateRuleMapper = fakeMapper(CandidateRuleMapper.class);
     private final SingleRuleBacktestService service = new SingleRuleBacktestService(
             signalMapper.mapper,
+            factorMapper.mapper,
             actualResultMapper.mapper,
             backtestResultMapper.mapper,
             candidateRuleMapper.mapper,
+            new JsonRuleEngineExecutor(),
+            new SignalScoringService(),
             new PredictionHitPolicy()
     );
 
@@ -80,26 +89,49 @@ class SingleRuleBacktestServiceTest {
     }
 
     @Test
-    void candidateRuleBacktestResolvesTargetRuleAndStoresSummaryOnCandidate() {
+    void candidateRuleBacktestRerunsProposedContentAgainstHistoricalFactorsInsteadOfPersistedSignals() {
         BacktestRequestDto request = request();
         request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
         request.setObjectCode("CR_20260620_0001");
         candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .id(21L)
                 .candidateCode("CR_20260620_0001")
                 .targetRuleCode("R_TREND_BREAKOUT_001")
+                .proposedContent("""
+                        {
+                          "conditions": [
+                            {"field": "candidate_momentum", "operator": "eq", "value": "breakout"}
+                          ],
+                          "actions": {
+                            "bullish_score": 75,
+                            "explanation": "候选规则基于历史因子触发"
+                          }
+                        }
+                        """)
                 .build()));
-        StockSignalDaily bullish = signal(1L, "AAPL", LocalDate.of(2026, 1, 2), SignalType.BULLISH.getCode());
-        signalMapper.selectResponses.add(List.of(bullish));
+        factorMapper.selectResponses.add(List.of(
+                factor("AAPL", LocalDate.of(2026, 1, 2), """
+                        {"candidate_momentum":"breakout"}
+                        """),
+                factor("MSFT", LocalDate.of(2026, 1, 3), """
+                        {"candidate_momentum":"flat"}
+                        """)
+        ));
         actualResultMapper.selectResponses.add(List.of(actual("AAPL", LocalDate.of(2026, 1, 2), "0.0200", true)));
 
         BacktestResult result = service.runSingleRuleBacktest(request);
 
         assertThat(result.getObjectType()).isEqualTo(RuleObjectType.CANDIDATE_RULE.getCode());
         assertThat(result.getObjectCode()).isEqualTo("CR_20260620_0001");
+        assertThat(result.getCandidateRuleId()).isEqualTo(21L);
         assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(signalMapper.selectCalls).isZero();
         assertThat(candidateRuleMapper.updated).hasSize(1);
-        assertThat(candidateRuleMapper.updated.getFirst().getBacktestResult())
-                .contains("\"triggerCount\":1", "\"winRate\":1.0000", "\"avgReturn\":0.0185");
+        CandidateRule updatedCandidate = candidateRuleMapper.updated.getFirst();
+        assertThat(updatedCandidate.getBacktestStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
+        assertThat(updatedCandidate.getLatestBacktestReportId()).isEqualTo(result.getId());
+        assertThat(updatedCandidate.getBacktestResult())
+                .contains("\"triggerCount\":1", "\"winRate\":1.0000", "\"avgReturn\":0.0185", "\"totalReturn\":0.0185");
     }
 
     private BacktestRequestDto request() {
@@ -119,6 +151,14 @@ class SingleRuleBacktestServiceTest {
                 .signalDate(signalDate)
                 .signal(signal)
                 .triggeredRules("[{\"rule_code\":\"R_TREND_BREAKOUT_001\"}]")
+                .build();
+    }
+
+    private StockFactorDaily factor(String symbol, LocalDate tradeDate, String factorJson) {
+        return StockFactorDaily.builder()
+                .symbol(symbol)
+                .tradeDate(tradeDate)
+                .factorJson(factorJson)
                 .build();
     }
 
@@ -143,6 +183,9 @@ class SingleRuleBacktestServiceTest {
                         return fake.selectResponses.isEmpty() ? List.of() : fake.selectResponses.remove();
                     }
                     if ("insert".equals(method.getName())) {
+                        if (args[0] instanceof BacktestResult result && result.getId() == null) {
+                            result.setId(1001L + fake.inserted.size());
+                        }
                         fake.inserted.add((E) args[0]);
                         return 1;
                     }
