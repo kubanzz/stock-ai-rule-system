@@ -2,6 +2,7 @@ package com.jx.tracker.ai.review;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.AiReviewResponseDto;
 import com.jx.tracker.exception.ServiceException;
 import org.springframework.stereotype.Component;
@@ -47,6 +48,7 @@ public class AiReviewOutputParser {
             if (response.getCandidateRules() == null) {
                 response.setCandidateRules(new ArrayList<>());
             }
+            response.setRisk(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
             return response;
         } catch (ServiceException e) {
             throw e;
@@ -59,12 +61,11 @@ public class AiReviewOutputParser {
         if (!StringUtils.hasText(content)) {
             throw new ServiceException("AI 复盘输出必须是结构化 JSON");
         }
-        int start = content.indexOf('{');
-        int end = content.lastIndexOf('}');
-        if (start < 0 || end <= start) {
+        String json = content.trim();
+        if (!json.startsWith("{") || !json.endsWith("}")) {
             throw new ServiceException("AI 复盘输出必须是结构化 JSON");
         }
-        return content.substring(start, end + 1);
+        return json;
     }
 
     private void requireField(JsonNode root, String fieldName) {
