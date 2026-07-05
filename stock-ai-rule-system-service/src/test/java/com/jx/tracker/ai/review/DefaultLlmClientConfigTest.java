@@ -32,6 +32,19 @@ class DefaultLlmClientConfigTest {
     }
 
     @Test
+    void fallsBackToMockWhenBaseUrlIsMissing() {
+        contextRunner
+                .withPropertyValues(
+                        "ai.llm.api-key=test-api-key",
+                        "ai.llm.model=review-model"
+                )
+                .run(context -> {
+                    assertThat(context).hasSingleBean(LlmClient.class);
+                    assertThat(context.getBean(LlmClient.class)).isInstanceOf(MockLlmClient.class);
+                });
+    }
+
+    @Test
     void createsHttpLlmClientWhenBaseUrlAndApiKeyAreConfigured() {
         contextRunner
                 .withPropertyValues(

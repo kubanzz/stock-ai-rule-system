@@ -55,6 +55,31 @@ class AiReviewOutputParserTest {
     }
 
     @Test
+    void rejectsCandidateSuggestionWithoutBacktestRequirement() {
+        String json = """
+                {
+                  "diagnosis": "建议调整突破条件，但必须先回测。",
+                  "related_rules": ["RULE_BREAKOUT"],
+                  "suggestions": [
+                    {
+                      "type": "UPDATE",
+                      "rule_id": "RULE_BREAKOUT",
+                      "condition": "close > ma20 and volume_ratio > 1.8",
+                      "reason": "减少弱势市场误判。",
+                      "need_backtest": false
+                    }
+                  ],
+                  "need_backtest": true,
+                  "risk": "样本数量不足，结论仅作辅助决策参考。"
+                }
+                """;
+
+        assertThatThrownBy(() -> parser.parse(json))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("need_backtest");
+    }
+
+    @Test
     void parsesEmptySuggestionsWithoutRequiringCandidateRules() {
         String json = """
                 {
