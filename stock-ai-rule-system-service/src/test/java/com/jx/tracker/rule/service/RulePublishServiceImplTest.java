@@ -6,6 +6,7 @@ import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.RuleOperationLog;
 import com.jx.tracker.domain.entity.RuleVersion;
 import com.jx.tracker.domain.enums.BacktestStatus;
+import com.jx.tracker.domain.enums.CandidateRuleStatus;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.RuleVersionApprovalStatus;
 import com.jx.tracker.exception.ServiceException;
@@ -16,7 +17,9 @@ import com.jx.tracker.mapper.RuleVersionMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -81,7 +84,13 @@ class RulePublishServiceImplTest {
         assertThat(result.getOperationLog().getId()).isEqualTo(300L);
         assertThat(result.getOperationLog().getOperation()).isEqualTo("publish");
         assertThat(result.getOperationLog().getBeforeStatus()).isEqualTo(RuleLifecycleStatus.APPROVED.getCode());
-        assertThat(result.getOperationLog().getAfterStatus()).isEqualTo(RuleLifecycleStatus.ACTIVE.getCode());
+        assertThat(result.getOperationLog().getAfterStatus()).isEqualTo(CandidateRuleStatus.PUBLISHED.getCode());
+        assertThat(result.getOperationLog().getReason())
+                .contains("\"ruleCode\":\"R_TREND_BREAKOUT_001\"")
+                .contains("\"versionId\":200")
+                .contains("\"versionNo\":\"v2\"")
+                .contains("\"candidateCode\":\"CR_20260706_0001\"")
+                .contains("\"originalReason\":\"人工审核通过\"");
 
         ArgumentCaptor<RuleDefinition> ruleCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
         verify(ruleDefinitionMapper).updateById(ruleCaptor.capture());
@@ -95,7 +104,7 @@ class RulePublishServiceImplTest {
 
         ArgumentCaptor<CandidateRule> candidateCaptor = ArgumentCaptor.forClass(CandidateRule.class);
         verify(candidateRuleMapper).updateById(candidateCaptor.capture());
-        assertThat(candidateCaptor.getValue().getStatus()).isEqualTo(RuleLifecycleStatus.ACTIVE.getCode());
+        assertThat(candidateCaptor.getValue().getStatus()).isEqualTo(CandidateRuleStatus.PUBLISHED.getCode());
     }
 
     @ParameterizedTest
@@ -122,13 +131,128 @@ class RulePublishServiceImplTest {
         verify(operationLogMapper, never()).insert(any(RuleOperationLog.class));
     }
 
-    @Test
-    void rejectsAiOperatorPublishingCandidateDirectly() {
-        assertThatThrownBy(() -> service.publishCandidateRule("CR_20260706_0001", "AI", "自动上线"))
+    @ParameterizedTest
+    @ValueSource(strings = {"AI", "ai", "ai-bot", "system_ai", "system", "scheduler", "task"})
+    void rejectsSystemOrAiOperatorPublishingCandidateDirectly(String operator) {
+        assertThatThrownBy(() -> service.publishCandidateRule("CR_20260706_0001", operator, "自动上线"))
                 .isInstanceOf(ServiceException.class)
                 .hasMessageContaining("AI 不能直接上线生产规则");
 
         verifyNoInteractions(candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"published", "active"})
+    void rejectsDuplicatePublishingForAlreadyPublishedOrActiveCandidate(String status) {
+        CandidateRule candidate = approvedCandidate();
+        candidate.setStatus(status);
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "重复上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("候选规则已发布");
+
+        verify(ruleVersionMapper, never()).insert(any(RuleVersion.class));
+        verify(operationLogMapper, never()).insert(any(RuleOperationLog.class));
+    }
+
+    @Test
+    void convertsConcurrentVersionUniqueConflictToServiceException() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenThrow(new DuplicateKeyException("duplicate version"));
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("规则版本发布冲突");
+
+        verify(ruleDefinitionMapper, never()).updateById(any(RuleDefinition.class));
+        verify(candidateRuleMapper, never()).updateById(any(CandidateRule.class));
+        verify(operationLogMapper, never()).insert(any(RuleOperationLog.class));
+    }
+
+    @Test
+    void rejectsWhenRuleVersionInsertAffectsNoRows() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("保存规则版本失败");
+
+        verify(ruleDefinitionMapper, never()).updateById(any(RuleDefinition.class));
+    }
+
+    @Test
+    void rejectsWhenRuleDefinitionUpdateAffectsNoRows() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenAnswer(invocation -> {
+            RuleVersion version = invocation.getArgument(0);
+            version.setId(200L);
+            return 1;
+        });
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("更新规则定义失败");
+
+        verify(candidateRuleMapper, never()).updateById(any(CandidateRule.class));
+        verify(operationLogMapper, never()).insert(any(RuleOperationLog.class));
+    }
+
+    @Test
+    void rejectsWhenCandidateRuleUpdateAffectsNoRows() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenAnswer(invocation -> {
+            RuleVersion version = invocation.getArgument(0);
+            version.setId(200L);
+            return 1;
+        });
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(candidateRuleMapper.updateById(any(CandidateRule.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("更新候选规则状态失败");
+
+        verify(operationLogMapper, never()).insert(any(RuleOperationLog.class));
+    }
+
+    @Test
+    void rejectsWhenOperationLogInsertAffectsNoRows() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenAnswer(invocation -> {
+            RuleVersion version = invocation.getArgument(0);
+            version.setId(200L);
+            return 1;
+        });
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(candidateRuleMapper.updateById(any(CandidateRule.class))).thenReturn(1);
+        when(operationLogMapper.insert(any(RuleOperationLog.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("保存规则操作日志失败");
     }
 
     @Test
@@ -163,6 +287,11 @@ class RulePublishServiceImplTest {
         assertThat(result.getOperationLog().getOperation()).isEqualTo("rollback");
         assertThat(result.getOperationLog().getBeforeStatus()).isEqualTo("v2");
         assertThat(result.getOperationLog().getAfterStatus()).isEqualTo("v1");
+        assertThat(result.getOperationLog().getReason())
+                .contains("\"ruleCode\":\"R_TREND_BREAKOUT_001\"")
+                .contains("\"versionId\":90")
+                .contains("\"versionNo\":\"v1\"")
+                .contains("\"originalReason\":\"回滚到稳定版本\"");
 
         ArgumentCaptor<RuleDefinition> ruleCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
         verify(ruleDefinitionMapper).updateById(ruleCaptor.capture());
@@ -173,6 +302,50 @@ class RulePublishServiceImplTest {
         assertThat(ruleCaptor.getValue().getStatus()).isEqualTo(RuleLifecycleStatus.ACTIVE.getCode());
         assertThat(ruleCaptor.getValue().getEnabled()).isTrue();
         assertThat(ruleCaptor.getValue().getUpdatedBy()).isEqualTo("reviewer");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending", "rejected", "rolled_back"})
+    void rejectsRollbackToUnpublishedOrUnapprovedVersion(String approvalStatus) {
+        RuleDefinition rule = existingRule();
+        RuleVersion targetVersion = RuleVersion.builder()
+                .id(90L)
+                .ruleId(100L)
+                .versionNo("v1")
+                .ruleContent("old-json")
+                .approvalStatus(approvalStatus)
+                .build();
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectById(90L)).thenReturn(targetVersion);
+
+        assertThatThrownBy(() -> service.rollbackRuleVersion("R_TREND_BREAKOUT_001", "90", "reviewer", "回滚"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("只能回滚到已发布或已审核版本");
+
+        verify(ruleDefinitionMapper, never()).updateById(any(RuleDefinition.class));
+        verify(operationLogMapper, never()).insert(any(RuleOperationLog.class));
+    }
+
+    @Test
+    void allowsRollbackToApprovedVersion() {
+        RuleDefinition rule = existingRule();
+        RuleVersion targetVersion = RuleVersion.builder()
+                .id(91L)
+                .ruleId(100L)
+                .versionNo("v2")
+                .ruleContent("approved-json")
+                .approvalStatus(RuleVersionApprovalStatus.APPROVED.getCode())
+                .build();
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectById(91L)).thenReturn(targetVersion);
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(operationLogMapper.insert(any(RuleOperationLog.class))).thenReturn(1);
+
+        RulePublishResultDto result = service.rollbackRuleVersion("R_TREND_BREAKOUT_001", "91", "reviewer", "回滚到审核版本");
+
+        assertThat(result.getVersion().getApprovalStatus()).isEqualTo(RuleVersionApprovalStatus.APPROVED.getCode());
+        verify(ruleDefinitionMapper).updateById(any(RuleDefinition.class));
+        verify(operationLogMapper).insert(any(RuleOperationLog.class));
     }
 
     private CandidateRule approvedCandidate() {

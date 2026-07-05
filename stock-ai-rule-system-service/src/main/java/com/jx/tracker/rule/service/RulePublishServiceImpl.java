@@ -1,6 +1,8 @@
 package com.jx.tracker.rule.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.domain.dto.RuleOperationLogDto;
 import com.jx.tracker.domain.dto.RulePublishResultDto;
 import com.jx.tracker.domain.dto.RuleVersionDto;
@@ -9,6 +11,7 @@ import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.RuleOperationLog;
 import com.jx.tracker.domain.entity.RuleVersion;
 import com.jx.tracker.domain.enums.BacktestStatus;
+import com.jx.tracker.domain.enums.CandidateRuleStatus;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.RuleObjectType;
 import com.jx.tracker.domain.enums.RuleVersionApprovalStatus;
@@ -17,13 +20,18 @@ import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
 import com.jx.tracker.mapper.RuleOperationLogMapper;
 import com.jx.tracker.mapper.RuleVersionMapper;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,6 +42,15 @@ public class RulePublishServiceImpl implements RulePublishService {
     private static final String MANUAL_PUBLISH_SOURCE = "manual_publish";
     private static final String PUBLISH_OPERATION = "publish";
     private static final String ROLLBACK_OPERATION = "rollback";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final Set<String> FORBIDDEN_OPERATOR_NAMES = Set.of(
+            "ai",
+            "ai_bot",
+            "system_ai",
+            "system",
+            "scheduler",
+            "task"
+    );
 
     private final CandidateRuleMapper candidateRuleMapper;
     private final RuleDefinitionMapper ruleDefinitionMapper;
@@ -72,23 +89,30 @@ public class RulePublishServiceImpl implements RulePublishService {
                 .publishedTime(LocalDateTime.now())
                 .createdBy(actualOperator)
                 .build();
-        ruleVersionMapper.insert(version);
+        insertRuleVersion(version);
 
         String beforeStatus = candidateRule.getStatus();
         activateRule(ruleDefinition, version, actualOperator);
-        candidateRule.setStatus(RuleLifecycleStatus.ACTIVE.getCode());
-        candidateRuleMapper.updateById(candidateRule);
+        candidateRule.setStatus(CandidateRuleStatus.PUBLISHED.getCode());
+        updateCandidateRule(candidateRule);
+        String auditReason = buildAuditReason(
+                ruleDefinition.getRuleCode(),
+                version.getId(),
+                version.getVersionNo(),
+                candidateRule.getCandidateCode(),
+                resolveText(reason, candidateRule.getReason())
+        );
 
         RuleOperationLog operationLog = insertOperationLog(
                 RuleObjectType.CANDIDATE_RULE.getCode(),
                 candidateRule.getCandidateCode(),
                 PUBLISH_OPERATION,
                 actualOperator,
-                resolveText(reason, candidateRule.getReason()),
+                auditReason,
                 beforeStatus,
-                RuleLifecycleStatus.ACTIVE.getCode()
+                CandidateRuleStatus.PUBLISHED.getCode()
         );
-        return toResult(ruleDefinition, candidateRule.getCandidateCode(), RuleLifecycleStatus.ACTIVE.getCode(), version, operationLog);
+        return toResult(ruleDefinition, candidateRule.getCandidateCode(), CandidateRuleStatus.PUBLISHED.getCode(), version, operationLog);
     }
 
     @Override
@@ -104,15 +128,23 @@ public class RulePublishServiceImpl implements RulePublishService {
 
         RuleDefinition ruleDefinition = findRuleDefinition(ruleId);
         RuleVersion targetVersion = findRuleVersion(ruleDefinition.getId(), versionId);
+        validateRollbackTargetVersion(targetVersion);
         String beforeVersionNo = resolveText(ruleDefinition.getCurrentVersionNo(), ruleDefinition.getVersion());
 
         activateRule(ruleDefinition, targetVersion, actualOperator);
+        String auditReason = buildAuditReason(
+                ruleDefinition.getRuleCode(),
+                targetVersion.getId(),
+                targetVersion.getVersionNo(),
+                null,
+                reason
+        );
         RuleOperationLog operationLog = insertOperationLog(
                 RuleObjectType.RULE.getCode(),
                 ruleDefinition.getRuleCode(),
                 ROLLBACK_OPERATION,
                 actualOperator,
-                reason,
+                auditReason,
                 beforeVersionNo,
                 targetVersion.getVersionNo()
         );
@@ -160,6 +192,10 @@ public class RulePublishServiceImpl implements RulePublishService {
     }
 
     private void validateCandidateReadyToPublish(CandidateRule candidateRule) {
+        if (CandidateRuleStatus.PUBLISHED.getCode().equals(candidateRule.getStatus())
+                || RuleLifecycleStatus.ACTIVE.getCode().equals(candidateRule.getStatus())) {
+            throw new ServiceException("候选规则已发布，不能重复发布");
+        }
         if (!RuleLifecycleStatus.APPROVED.getCode().equals(candidateRule.getStatus())) {
             throw new ServiceException("候选规则必须先流转到 approved");
         }
@@ -174,13 +210,24 @@ public class RulePublishServiceImpl implements RulePublishService {
         }
     }
 
+    private void validateRollbackTargetVersion(RuleVersion version) {
+        String approvalStatus = version.getApprovalStatus();
+        if (!RuleVersionApprovalStatus.PUBLISHED.getCode().equals(approvalStatus)
+                && !RuleVersionApprovalStatus.APPROVED.getCode().equals(approvalStatus)) {
+            throw new ServiceException("只能回滚到已发布或已审核版本");
+        }
+    }
+
     private String validateHumanOperator(String operator) {
         if (!StringUtils.hasText(operator)) {
             throw new ServiceException("操作人不能为空");
         }
         String actualOperator = operator.trim();
-        if ("AI".equalsIgnoreCase(actualOperator)) {
-            throw new ServiceException("AI 不能直接上线生产规则");
+        String normalizedOperator = actualOperator.toLowerCase(Locale.ROOT)
+                .replace('-', '_')
+                .replaceAll("\\s+", "_");
+        if (FORBIDDEN_OPERATOR_NAMES.contains(normalizedOperator)) {
+            throw new ServiceException("系统/AI 不能直接上线生产规则");
         }
         return actualOperator;
     }
@@ -193,7 +240,7 @@ public class RulePublishServiceImpl implements RulePublishService {
         ruleDefinition.setStatus(RuleLifecycleStatus.ACTIVE.getCode());
         ruleDefinition.setEnabled(true);
         ruleDefinition.setUpdatedBy(operator);
-        ruleDefinitionMapper.updateById(ruleDefinition);
+        ensureAffected(ruleDefinitionMapper.updateById(ruleDefinition), "更新规则定义失败");
     }
 
     private String nextVersionNo(RuleDefinition ruleDefinition) {
@@ -220,6 +267,18 @@ public class RulePublishServiceImpl implements RulePublishService {
         return Integer.parseInt(matcher.group(1));
     }
 
+    private void insertRuleVersion(RuleVersion version) {
+        try {
+            ensureAffected(ruleVersionMapper.insert(version), "保存规则版本失败");
+        } catch (DataIntegrityViolationException e) {
+            throw new ServiceException("规则版本发布冲突，请刷新后重试", e);
+        }
+    }
+
+    private void updateCandidateRule(CandidateRule candidateRule) {
+        ensureAffected(candidateRuleMapper.updateById(candidateRule), "更新候选规则状态失败");
+    }
+
     private RuleOperationLog insertOperationLog(String targetType,
                                                 String targetId,
                                                 String operation,
@@ -237,8 +296,34 @@ public class RulePublishServiceImpl implements RulePublishService {
                 .afterStatus(afterStatus)
                 .createdTime(LocalDateTime.now())
                 .build();
-        operationLogMapper.insert(operationLog);
+        ensureAffected(operationLogMapper.insert(operationLog), "保存规则操作日志失败");
         return operationLog;
+    }
+
+    private String buildAuditReason(String ruleCode,
+                                    Long versionId,
+                                    String versionNo,
+                                    String candidateCode,
+                                    String originalReason) {
+        Map<String, Object> reason = new LinkedHashMap<>();
+        reason.put("ruleCode", ruleCode);
+        reason.put("versionId", versionId);
+        reason.put("versionNo", versionNo);
+        if (StringUtils.hasText(candidateCode)) {
+            reason.put("candidateCode", candidateCode);
+        }
+        reason.put("originalReason", originalReason);
+        try {
+            return OBJECT_MAPPER.writeValueAsString(reason);
+        } catch (JsonProcessingException e) {
+            throw new ServiceException("构建规则操作审计信息失败", e);
+        }
+    }
+
+    private void ensureAffected(int affectedRows, String message) {
+        if (affectedRows < 1) {
+            throw new ServiceException(message);
+        }
     }
 
     private RulePublishResultDto toResult(RuleDefinition ruleDefinition,
