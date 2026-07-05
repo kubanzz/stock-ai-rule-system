@@ -3,6 +3,7 @@ package com.jx.tracker.backtest;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.BacktestRequestDto;
@@ -10,6 +11,7 @@ import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.StockActualResult;
+import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.BacktestStatus;
@@ -20,6 +22,7 @@ import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
+import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.rule.engine.RuleEngineExecutor;
@@ -36,10 +39,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 @Service
 public class SingleRuleBacktestService implements BacktestService {
@@ -48,10 +53,12 @@ public class SingleRuleBacktestService implements BacktestService {
     private static final BigDecimal DEFAULT_FEE_RATE = new BigDecimal("0.0010");
     private static final BigDecimal DEFAULT_SLIPPAGE_RATE = new BigDecimal("0.0005");
     private static final BigDecimal TRADING_DAYS_PER_YEAR = new BigDecimal("252");
+    private static final Set<String> SUPPORTED_CONDITION_OPERATORS = Set.of("eq", "ne", "gt", "gte", "lt", "lte", "in");
 
     private final StockSignalDailyMapper signalMapper;
     private final StockFactorDailyMapper factorMapper;
     private final StockActualResultMapper actualResultMapper;
+    private final StockDailyQuoteMapper quoteMapper;
     private final BacktestResultMapper backtestResultMapper;
     private final CandidateRuleMapper candidateRuleMapper;
     private final RuleEngineExecutor ruleEngineExecutor;
@@ -61,6 +68,7 @@ public class SingleRuleBacktestService implements BacktestService {
     public SingleRuleBacktestService(StockSignalDailyMapper signalMapper,
                                      StockFactorDailyMapper factorMapper,
                                      StockActualResultMapper actualResultMapper,
+                                     StockDailyQuoteMapper quoteMapper,
                                      BacktestResultMapper backtestResultMapper,
                                      CandidateRuleMapper candidateRuleMapper,
                                      RuleEngineExecutor ruleEngineExecutor,
@@ -69,6 +77,7 @@ public class SingleRuleBacktestService implements BacktestService {
         this.signalMapper = signalMapper;
         this.factorMapper = factorMapper;
         this.actualResultMapper = actualResultMapper;
+        this.quoteMapper = quoteMapper;
         this.backtestResultMapper = backtestResultMapper;
         this.candidateRuleMapper = candidateRuleMapper;
         this.ruleEngineExecutor = ruleEngineExecutor;
@@ -82,25 +91,27 @@ public class SingleRuleBacktestService implements BacktestService {
         CandidateRule candidateRule = resolveCandidateRule(request);
         BigDecimal feeRate = defaultIfNull(request.getFeeRate(), DEFAULT_FEE_RATE);
         BigDecimal slippageRate = defaultIfNull(request.getSlippageRate(), DEFAULT_SLIPPAGE_RATE);
-        List<StockSignalDaily> signals = candidateRule == null
-                ? selectTriggeredSignals(request, request.getObjectCode())
-                : replayCandidateSignals(request, candidateRule);
-        List<BigDecimal> netReturns = new ArrayList<>();
-        int wins = 0;
-
-        for (StockSignalDaily signal : signals) {
-            StockActualResult actualResult = selectActualResult(signal);
-            BigDecimal rawReturn = holdingReturn(actualResult, request.getHoldingPeriod());
-            if (rawReturn == null) {
-                continue;
+        if (candidateRule != null) {
+            CandidateRuleValidation validation = validateCandidateRuleContent(candidateRule);
+            if (!validation.executable()) {
+                return persistFailedCandidateBacktest(request, candidateRule, feeRate, slippageRate, validation.failureSummary());
             }
-            if (isWin(signal, actualResult, rawReturn, request.getHoldingPeriod())) {
-                wins++;
-            }
-            netReturns.add(signalAdjustedReturn(signal.getSignal(), rawReturn).subtract(feeRate).subtract(slippageRate));
         }
 
-        BacktestResult result = buildResult(request, candidateRule, feeRate, slippageRate, netReturns, wins);
+        List<StockSignalDaily> signals;
+        try {
+            signals = candidateRule == null
+                    ? selectTriggeredSignals(request, request.getObjectCode())
+                    : replayCandidateSignals(request, candidateRule);
+        } catch (IllegalArgumentException e) {
+            if (candidateRule != null) {
+                return persistFailedCandidateBacktest(request, candidateRule, feeRate, slippageRate, e.getMessage());
+            }
+            throw e;
+        }
+
+        EvaluationStats stats = evaluateSignals(signals, request, candidateRule != null, feeRate, slippageRate);
+        BacktestResult result = buildResult(request, candidateRule, feeRate, slippageRate, stats);
         backtestResultMapper.insert(result);
         if (candidateRule != null) {
             writeBackCandidateBacktest(candidateRule, result);
@@ -155,11 +166,7 @@ public class SingleRuleBacktestService implements BacktestService {
         if (candidates.isEmpty()) {
             throw new IllegalArgumentException("候选规则不存在：" + request.getObjectCode());
         }
-        CandidateRule candidateRule = candidates.getFirst();
-        if (candidateRule.getTargetRuleCode() == null || candidateRule.getTargetRuleCode().isBlank()) {
-            throw new IllegalArgumentException("候选规则缺少目标规则编码：" + request.getObjectCode());
-        }
-        return candidateRule;
+        return candidates.getFirst();
     }
 
     private List<StockSignalDaily> replayCandidateSignals(BacktestRequestDto request, CandidateRule candidateRule) {
@@ -180,7 +187,7 @@ public class SingleRuleBacktestService implements BacktestService {
             throw new IllegalArgumentException("候选规则缺少拟议规则内容：" + candidateRule.getCandidateCode());
         }
         return RuleDefinition.builder()
-                .ruleCode(candidateRule.getTargetRuleCode())
+                .ruleCode(candidateRule.getCandidateCode())
                 .ruleName(candidateRule.getCandidateCode())
                 .ruleType("candidate")
                 .ruleContent(candidateRule.getProposedContent())
@@ -257,12 +264,36 @@ public class SingleRuleBacktestService implements BacktestService {
         if (triggeredRules == null || triggeredRules.isBlank()) {
             return false;
         }
-        String quotedRuleCode = "\"rule_code\":\"" + objectCode + "\"";
-        String quotedRuleCodeWithSpace = "\"rule_code\": \"" + objectCode + "\"";
-        String quotedValue = "\"" + objectCode + "\"";
-        return triggeredRules.contains(quotedRuleCode)
-                || triggeredRules.contains(quotedRuleCodeWithSpace)
-                || triggeredRules.contains(quotedValue);
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(triggeredRules);
+            if (root.isArray()) {
+                for (JsonNode item : root) {
+                    if (ruleCodeNodeMatches(item, objectCode)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            return ruleCodeNodeMatches(root, objectCode);
+        } catch (JsonProcessingException e) {
+            return legacyRuleCodeTextMatches(triggeredRules, objectCode);
+        }
+    }
+
+    private boolean ruleCodeNodeMatches(JsonNode node, String objectCode) {
+        if (node.isTextual()) {
+            return objectCode.equals(node.asText());
+        }
+        if (node.isObject()) {
+            return objectCode.equals(node.path("rule_code").asText(null));
+        }
+        return false;
+    }
+
+    private boolean legacyRuleCodeTextMatches(String triggeredRules, String objectCode) {
+        return Pattern.compile("(^|[^A-Za-z0-9_])" + Pattern.quote(objectCode) + "([^A-Za-z0-9_]|$)")
+                .matcher(triggeredRules)
+                .find();
     }
 
     private StockActualResult selectActualResult(StockSignalDaily signal) {
@@ -286,6 +317,39 @@ public class SingleRuleBacktestService implements BacktestService {
         };
     }
 
+    private ReturnObservation selectReturnObservation(StockSignalDaily signal, Integer holdingPeriod, boolean allowQuoteFallback) {
+        StockActualResult actualResult = selectActualResult(signal);
+        BigDecimal rawReturn = holdingReturn(actualResult, holdingPeriod);
+        if (rawReturn != null) {
+            return new ReturnObservation(rawReturn, isWin(signal, actualResult, rawReturn, holdingPeriod), ReturnSource.ACTUAL);
+        }
+        if (!allowQuoteFallback) {
+            return null;
+        }
+        BigDecimal quoteReturn = quoteForwardReturn(signal, holdingPeriod);
+        if (quoteReturn == null) {
+            return null;
+        }
+        return new ReturnObservation(quoteReturn, hitPolicy.isHit(signal.getSignal(), quoteReturn), ReturnSource.QUOTE);
+    }
+
+    private BigDecimal quoteForwardReturn(StockSignalDaily signal, Integer holdingPeriod) {
+        int holdingDays = Math.max(holdingPeriod == null ? 5 : holdingPeriod, 1);
+        List<StockDailyQuote> quotes = quoteMapper.selectList(Wrappers.<StockDailyQuote>lambdaQuery()
+                .eq(StockDailyQuote::getSymbol, signal.getSymbol())
+                .ge(StockDailyQuote::getTradeDate, signal.getSignalDate())
+                .orderByAsc(StockDailyQuote::getTradeDate));
+        if (quotes.size() <= holdingDays) {
+            return null;
+        }
+        BigDecimal baseClose = quotes.getFirst().getClosePrice();
+        BigDecimal futureClose = quotes.get(holdingDays).getClosePrice();
+        if (baseClose == null || futureClose == null || baseClose.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return futureClose.subtract(baseClose).divide(baseClose, 4, RoundingMode.HALF_UP);
+    }
+
     private boolean isWin(StockSignalDaily signal, StockActualResult actualResult, BigDecimal rawReturn, Integer holdingPeriod) {
         if (holdingPeriod == 1 && actualResult.getHit1d() != null) {
             return actualResult.getHit1d();
@@ -305,14 +369,38 @@ public class SingleRuleBacktestService implements BacktestService {
         };
     }
 
+    private BigDecimal netReturn(String signal, BigDecimal rawReturn, BigDecimal feeRate, BigDecimal slippageRate) {
+        if (SignalType.WATCH == SignalType.fromCode(signal)) {
+            return BigDecimal.ZERO;
+        }
+        return signalAdjustedReturn(signal, rawReturn).subtract(feeRate).subtract(slippageRate);
+    }
+
+    private EvaluationStats evaluateSignals(List<StockSignalDaily> signals,
+                                            BacktestRequestDto request,
+                                            boolean allowQuoteFallback,
+                                            BigDecimal feeRate,
+                                            BigDecimal slippageRate) {
+        EvaluationStats stats = new EvaluationStats(signals.size());
+        for (StockSignalDaily signal : signals) {
+            ReturnObservation observation = selectReturnObservation(signal, request.getHoldingPeriod(), allowQuoteFallback);
+            if (observation == null) {
+                stats.markSkipped();
+                continue;
+            }
+            stats.add(observation, netReturn(signal.getSignal(), observation.rawReturn(), feeRate, slippageRate));
+        }
+        return stats;
+    }
+
     private BacktestResult buildResult(BacktestRequestDto request,
                                        CandidateRule candidateRule,
                                        BigDecimal feeRate,
                                        BigDecimal slippageRate,
-                                       List<BigDecimal> returns,
-                                       int wins) {
+                                       EvaluationStats stats) {
+        List<BigDecimal> returns = stats.returns();
         int triggerCount = returns.size();
-        BigDecimal winRate = triggerCount == 0 ? BigDecimal.ZERO : new BigDecimal(wins).divide(new BigDecimal(triggerCount), 4, RoundingMode.HALF_UP);
+        BigDecimal winRate = triggerCount == 0 ? BigDecimal.ZERO : new BigDecimal(stats.wins()).divide(new BigDecimal(triggerCount), 4, RoundingMode.HALF_UP);
         BigDecimal avgReturn = average(returns);
         BigDecimal maxDrawdown = maxDrawdown(returns);
         BigDecimal sharpeRatio = sharpeRatio(returns, request.getHoldingPeriod());
@@ -335,7 +423,7 @@ public class SingleRuleBacktestService implements BacktestService {
                 .slippageRate(scale(slippageRate))
                 .totalReturn(scale(totalReturn))
                 .status(BacktestStatus.SUCCESS.getCode())
-                .resultJson(resultJson(request, feeRate, slippageRate, triggerCount, totalReturn))
+                .resultJson(resultJson(request, feeRate, slippageRate, stats, totalReturn))
                 .build();
     }
 
@@ -396,16 +484,161 @@ public class SingleRuleBacktestService implements BacktestService {
     private String resultJson(BacktestRequestDto request,
                               BigDecimal feeRate,
                               BigDecimal slippageRate,
-                              int triggerCount,
+                              EvaluationStats stats,
                               BigDecimal totalReturn) {
-        return String.format(Locale.ROOT,
-                "{\"holdingPeriod\":%d,\"feeRate\":%s,\"slippageRate\":%s,\"triggerCount\":%d,\"totalReturnAfterCost\":%s,\"riskDisclaimer\":\"%s\"}",
-                request.getHoldingPeriod(),
-                feeRate.setScale(4, RoundingMode.HALF_UP).toPlainString(),
-                slippageRate.setScale(4, RoundingMode.HALF_UP).toPlainString(),
-                triggerCount,
-                scale(totalReturn).toPlainString(),
-                StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+        Map<String, Object> payload = baseResultPayload(request, feeRate, slippageRate);
+        payload.put("signalCount", stats.signalCount());
+        payload.put("triggerCount", stats.returns().size());
+        payload.put("skippedCount", stats.skippedCount());
+        payload.put("unevaluableCount", stats.skippedCount());
+        payload.put("returnSourceActualCount", stats.actualReturnCount());
+        payload.put("returnSourceQuoteCount", stats.quoteReturnCount());
+        payload.put("totalReturnAfterCost", scale(totalReturn));
+        payload.put("riskDisclaimer", StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+        return toJson(payload);
+    }
+
+    private Map<String, Object> baseResultPayload(BacktestRequestDto request,
+                                                  BigDecimal feeRate,
+                                                  BigDecimal slippageRate) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("holdingPeriod", request.getHoldingPeriod());
+        payload.put("feeRate", scale(feeRate));
+        payload.put("slippageRate", scale(slippageRate));
+        return payload;
+    }
+
+    private BacktestResult persistFailedCandidateBacktest(BacktestRequestDto request,
+                                                          CandidateRule candidateRule,
+                                                          BigDecimal feeRate,
+                                                          BigDecimal slippageRate,
+                                                          String failureSummary) {
+        BacktestResult result = failedResult(request, candidateRule, feeRate, slippageRate, failureSummary);
+        backtestResultMapper.insert(result);
+        writeBackCandidateBacktest(candidateRule, result);
+        return result;
+    }
+
+    private BacktestResult failedResult(BacktestRequestDto request,
+                                        CandidateRule candidateRule,
+                                        BigDecimal feeRate,
+                                        BigDecimal slippageRate,
+                                        String failureSummary) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        return BacktestResult.builder()
+                .objectType(request.getObjectType())
+                .objectCode(request.getObjectCode())
+                .candidateRuleId(candidateRule == null ? null : candidateRule.getId())
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .holdingPeriod(request.getHoldingPeriod())
+                .triggerCount(0)
+                .winRate(zero)
+                .avgReturn(zero)
+                .avgHoldingReturn(zero)
+                .maxDrawdown(zero)
+                .sharpeRatio(zero)
+                .feeRate(scale(feeRate))
+                .slippageRate(scale(slippageRate))
+                .totalReturn(zero)
+                .status(BacktestStatus.FAILED.getCode())
+                .resultJson(failedResultJson(request, feeRate, slippageRate, failureSummary))
+                .build();
+    }
+
+    private String failedResultJson(BacktestRequestDto request,
+                                    BigDecimal feeRate,
+                                    BigDecimal slippageRate,
+                                    String failureSummary) {
+        Map<String, Object> payload = baseResultPayload(request, feeRate, slippageRate);
+        payload.put("signalCount", 0);
+        payload.put("triggerCount", 0);
+        payload.put("skippedCount", 0);
+        payload.put("unevaluableCount", 0);
+        payload.put("returnSourceActualCount", 0);
+        payload.put("returnSourceQuoteCount", 0);
+        payload.put("errorSummary", failureSummary);
+        payload.put("riskDisclaimer", StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+        return toJson(payload);
+    }
+
+    private String toJson(Map<String, Object> payload) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize backtest result json", e);
+        }
+    }
+
+    private CandidateRuleValidation validateCandidateRuleContent(CandidateRule candidateRule) {
+        if (!StringUtils.hasText(candidateRule.getProposedContent())) {
+            return CandidateRuleValidation.failed("候选规则缺少可执行 JSON 内容：" + candidateRule.getCandidateCode());
+        }
+        JsonNode root;
+        try {
+            root = OBJECT_MAPPER.readTree(candidateRule.getProposedContent());
+        } catch (JsonProcessingException e) {
+            return CandidateRuleValidation.failed("候选规则拟议内容不是可执行 JSON：" + candidateRule.getCandidateCode());
+        }
+        if (!root.isObject()) {
+            return CandidateRuleValidation.failed("候选规则拟议内容不是 JSON 对象：" + candidateRule.getCandidateCode());
+        }
+        CandidateRuleValidation conditionValidation = validateCandidateConditions(candidateRule, root.path("conditions"));
+        if (!conditionValidation.executable()) {
+            return conditionValidation;
+        }
+        return validateCandidateActions(candidateRule, root.path("actions"));
+    }
+
+    private CandidateRuleValidation validateCandidateConditions(CandidateRule candidateRule, JsonNode conditions) {
+        if (conditions.isMissingNode() || conditions.isNull()) {
+            return CandidateRuleValidation.failed("候选规则缺少 conditions 数组：" + candidateRule.getCandidateCode());
+        }
+        if (!conditions.isArray()) {
+            return CandidateRuleValidation.failed("候选规则 conditions 必须是数组：" + candidateRule.getCandidateCode());
+        }
+        for (JsonNode condition : conditions) {
+            if (!condition.isObject()) {
+                return CandidateRuleValidation.failed("候选规则 condition 必须是对象：" + candidateRule.getCandidateCode());
+            }
+            if (!StringUtils.hasText(condition.path("field").asText())) {
+                return CandidateRuleValidation.failed("候选规则 condition 缺少 field：" + candidateRule.getCandidateCode());
+            }
+            String operator = condition.path("operator").asText("eq");
+            if (!SUPPORTED_CONDITION_OPERATORS.contains(operator)) {
+                return CandidateRuleValidation.failed("候选规则 condition 使用了不支持的 operator：" + operator);
+            }
+            if (condition.path("value").isMissingNode()) {
+                return CandidateRuleValidation.failed("候选规则 condition 缺少 value：" + candidateRule.getCandidateCode());
+            }
+            if ("in".equals(operator) && !condition.path("value").isArray()) {
+                return CandidateRuleValidation.failed("候选规则 in 条件的 value 必须是数组：" + candidateRule.getCandidateCode());
+            }
+        }
+        return CandidateRuleValidation.ok();
+    }
+
+    private CandidateRuleValidation validateCandidateActions(CandidateRule candidateRule, JsonNode actions) {
+        if (!actions.isObject()) {
+            return CandidateRuleValidation.failed("候选规则 actions 必须是对象：" + candidateRule.getCandidateCode());
+        }
+        boolean hasScoreAction = false;
+        for (String field : List.of("bullish_score", "bearish_score", "risk_score")) {
+            JsonNode value = actions.path(field);
+            if (value.isMissingNode() || value.isNull()) {
+                continue;
+            }
+            hasScoreAction = true;
+            try {
+                new BigDecimal(value.asText());
+            } catch (NumberFormatException e) {
+                return CandidateRuleValidation.failed("候选规则 actions." + field + " 必须是数值：" + candidateRule.getCandidateCode());
+            }
+        }
+        if (!hasScoreAction) {
+            return CandidateRuleValidation.failed("候选规则 actions 缺少可执行分值字段：" + candidateRule.getCandidateCode());
+        }
+        return CandidateRuleValidation.ok();
     }
 
     private void writeBackCandidateBacktest(CandidateRule candidateRule, BacktestResult result) {
@@ -416,18 +649,117 @@ public class SingleRuleBacktestService implements BacktestService {
     }
 
     private String candidateBacktestSummary(BacktestResult result) {
-        return String.format(Locale.ROOT,
-                "{\"backtestStatus\":\"%s\",\"latestBacktestReportId\":%s,\"triggerCount\":%d,\"winRate\":%s,\"avgReturn\":%s,\"maxDrawdown\":%s,\"sharpeRatio\":%s,\"totalReturn\":%s,\"feeRate\":%s,\"slippageRate\":%s,\"riskDisclaimer\":\"%s\"}",
-                result.getStatus(),
-                result.getId() == null ? "null" : result.getId().toString(),
-                result.getTriggerCount(),
-                result.getWinRate().toPlainString(),
-                result.getAvgReturn().toPlainString(),
-                result.getMaxDrawdown().toPlainString(),
-                result.getSharpeRatio().toPlainString(),
-                result.getTotalReturn().toPlainString(),
-                result.getFeeRate().toPlainString(),
-                result.getSlippageRate().toPlainString(),
-                StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("backtestStatus", result.getStatus());
+        payload.put("latestBacktestReportId", result.getId());
+        payload.put("triggerCount", result.getTriggerCount());
+        payload.put("winRate", result.getWinRate());
+        payload.put("avgReturn", result.getAvgReturn());
+        payload.put("maxDrawdown", result.getMaxDrawdown());
+        payload.put("sharpeRatio", result.getSharpeRatio());
+        payload.put("totalReturn", result.getTotalReturn());
+        payload.put("feeRate", result.getFeeRate());
+        payload.put("slippageRate", result.getSlippageRate());
+        appendResultJsonSummary(payload, result.getResultJson());
+        payload.put("riskDisclaimer", StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+        return toJson(payload);
+    }
+
+    private void appendResultJsonSummary(Map<String, Object> payload, String resultJson) {
+        if (!StringUtils.hasText(resultJson)) {
+            return;
+        }
+        try {
+            JsonNode details = OBJECT_MAPPER.readTree(resultJson);
+            putIntIfPresent(payload, details, "signalCount");
+            putIntIfPresent(payload, details, "skippedCount");
+            putIntIfPresent(payload, details, "unevaluableCount");
+            putIntIfPresent(payload, details, "returnSourceActualCount");
+            putIntIfPresent(payload, details, "returnSourceQuoteCount");
+            if (StringUtils.hasText(details.path("errorSummary").asText())) {
+                payload.put("errorSummary", details.path("errorSummary").asText());
+            }
+        } catch (JsonProcessingException ignored) {
+            payload.put("resultJson", resultJson);
+        }
+    }
+
+    private void putIntIfPresent(Map<String, Object> payload, JsonNode details, String field) {
+        if (details.has(field)) {
+            payload.put(field, details.path(field).asInt());
+        }
+    }
+
+    private enum ReturnSource {
+        ACTUAL,
+        QUOTE
+    }
+
+    private record ReturnObservation(BigDecimal rawReturn, boolean win, ReturnSource source) {
+    }
+
+    private record CandidateRuleValidation(boolean executable, String failureSummary) {
+
+        private static CandidateRuleValidation ok() {
+            return new CandidateRuleValidation(true, null);
+        }
+
+        private static CandidateRuleValidation failed(String failureSummary) {
+            return new CandidateRuleValidation(false, failureSummary);
+        }
+    }
+
+    private static class EvaluationStats {
+
+        private final int signalCount;
+        private final List<BigDecimal> returns = new ArrayList<>();
+        private int wins;
+        private int skippedCount;
+        private int actualReturnCount;
+        private int quoteReturnCount;
+
+        private EvaluationStats(int signalCount) {
+            this.signalCount = signalCount;
+        }
+
+        private void add(ReturnObservation observation, BigDecimal netReturn) {
+            returns.add(netReturn);
+            if (observation.win()) {
+                wins++;
+            }
+            if (ReturnSource.ACTUAL == observation.source()) {
+                actualReturnCount++;
+            } else if (ReturnSource.QUOTE == observation.source()) {
+                quoteReturnCount++;
+            }
+        }
+
+        private void markSkipped() {
+            skippedCount++;
+        }
+
+        private int signalCount() {
+            return signalCount;
+        }
+
+        private List<BigDecimal> returns() {
+            return returns;
+        }
+
+        private int wins() {
+            return wins;
+        }
+
+        private int skippedCount() {
+            return skippedCount;
+        }
+
+        private int actualReturnCount() {
+            return actualReturnCount;
+        }
+
+        private int quoteReturnCount() {
+            return quoteReturnCount;
+        }
     }
 }

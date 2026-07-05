@@ -4,6 +4,7 @@ import com.jx.tracker.domain.dto.BacktestRequestDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.StockActualResult;
+import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.BacktestStatus;
@@ -12,6 +13,7 @@ import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
+import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
@@ -34,12 +36,14 @@ class SingleRuleBacktestServiceTest {
     private final FakeMapper<StockSignalDailyMapper, StockSignalDaily> signalMapper = fakeMapper(StockSignalDailyMapper.class);
     private final FakeMapper<StockFactorDailyMapper, StockFactorDaily> factorMapper = fakeMapper(StockFactorDailyMapper.class);
     private final FakeMapper<StockActualResultMapper, StockActualResult> actualResultMapper = fakeMapper(StockActualResultMapper.class);
+    private final FakeMapper<StockDailyQuoteMapper, StockDailyQuote> quoteMapper = fakeMapper(StockDailyQuoteMapper.class);
     private final FakeMapper<BacktestResultMapper, BacktestResult> backtestResultMapper = fakeMapper(BacktestResultMapper.class);
     private final FakeMapper<CandidateRuleMapper, CandidateRule> candidateRuleMapper = fakeMapper(CandidateRuleMapper.class);
     private final SingleRuleBacktestService service = new SingleRuleBacktestService(
             signalMapper.mapper,
             factorMapper.mapper,
             actualResultMapper.mapper,
+            quoteMapper.mapper,
             backtestResultMapper.mapper,
             candidateRuleMapper.mapper,
             new JsonRuleEngineExecutor(),
@@ -89,6 +93,53 @@ class SingleRuleBacktestServiceTest {
     }
 
     @Test
+    void singleRuleBacktestParsesTriggeredRulesJsonPrecisely() {
+        BacktestRequestDto request = request();
+        StockSignalDaily descriptionOnly = signal(1L, "AAPL", LocalDate.of(2026, 1, 2), SignalType.BULLISH.getCode(),
+                "[{\"rule_code\":\"R_OTHER\",\"explanation\":\"R_TREND_BREAKOUT_001\"}]");
+        StockSignalDaily stringRule = signal(2L, "MSFT", LocalDate.of(2026, 1, 3), SignalType.BULLISH.getCode(),
+                "[\"R_TREND_BREAKOUT_001\"]");
+        StockSignalDaily objectRule = signal(3L, "NVDA", LocalDate.of(2026, 1, 4), SignalType.BULLISH.getCode(),
+                "[{\"rule_code\":\"R_TREND_BREAKOUT_001\"}]");
+        signalMapper.selectResponses.add(List.of(descriptionOnly, stringRule, objectRule));
+        actualResultMapper.selectResponses.add(List.of(actual("MSFT", LocalDate.of(2026, 1, 3), "0.0200", true)));
+        actualResultMapper.selectResponses.add(List.of(actual("NVDA", LocalDate.of(2026, 1, 4), "0.0100", true)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(actualResultMapper.selectCalls).isEqualTo(2);
+        assertThat(result.getTriggerCount()).isEqualTo(2);
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0135");
+    }
+
+    @Test
+    void watchSignalsDoNotPayFeeOrSlippage() {
+        BacktestRequestDto request = request();
+        StockSignalDaily watch = signal(1L, "AAPL", LocalDate.of(2026, 1, 2), SignalType.WATCH.getCode());
+        signalMapper.selectResponses.add(List.of(watch));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", LocalDate.of(2026, 1, 2), "0.0200", false)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0000");
+        assertThat(result.getTotalReturn()).isEqualByComparingTo("0.0000");
+    }
+
+    @Test
+    void unevaluableSamplesAreReportedInResultJson() {
+        BacktestRequestDto request = request();
+        StockSignalDaily tailSample = signal(1L, "AAPL", LocalDate.of(2026, 1, 30), SignalType.BULLISH.getCode());
+        signalMapper.selectResponses.add(List.of(tailSample));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", LocalDate.of(2026, 1, 30), null, false)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isZero();
+        assertThat(result.getResultJson()).contains("\"signalCount\":1", "\"skippedCount\":1", "\"unevaluableCount\":1");
+    }
+
+    @Test
     void candidateRuleBacktestRerunsProposedContentAgainstHistoricalFactorsInsteadOfPersistedSignals() {
         BacktestRequestDto request = request();
         request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
@@ -134,6 +185,104 @@ class SingleRuleBacktestServiceTest {
                 .contains("\"triggerCount\":1", "\"winRate\":1.0000", "\"avgReturn\":0.0185", "\"totalReturn\":0.0185");
     }
 
+    @Test
+    void candidateRuleBacktestFallsBackToDailyQuotesWhenActualResultIsMissing() {
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        request.setObjectCode("CR_20260620_0002");
+        candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .id(22L)
+                .candidateCode("CR_20260620_0002")
+                .targetRuleCode("R_TREND_BREAKOUT_001")
+                .proposedContent("""
+                        {
+                          "conditions": [
+                            {"field": "candidate_momentum", "operator": "eq", "value": "breakout"}
+                          ],
+                          "actions": {
+                            "bullish_score": 75,
+                            "explanation": "候选规则基于历史因子触发"
+                          }
+                        }
+                        """)
+                .build()));
+        factorMapper.selectResponses.add(List.of(factor("AAPL", LocalDate.of(2026, 1, 2), """
+                {"candidate_momentum":"breakout"}
+                """)));
+        actualResultMapper.selectResponses.add(List.of());
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", LocalDate.of(2026, 1, 2), "10.00"),
+                quote("AAPL", LocalDate.of(2026, 1, 5), "10.10"),
+                quote("AAPL", LocalDate.of(2026, 1, 6), "10.20"),
+                quote("AAPL", LocalDate.of(2026, 1, 7), "10.30"),
+                quote("AAPL", LocalDate.of(2026, 1, 8), "10.40"),
+                quote("AAPL", LocalDate.of(2026, 1, 9), "11.00")
+        ));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0985");
+        assertThat(result.getResultJson()).contains(
+                "\"returnSourceActualCount\":0",
+                "\"returnSourceQuoteCount\":1",
+                "\"skippedCount\":0");
+        assertThat(candidateRuleMapper.updated.getFirst().getBacktestResult())
+                .contains("\"avgReturn\":0.0985", "\"returnSourceQuoteCount\":1");
+    }
+
+    @Test
+    void invalidCandidateProposedContentPersistsFailedReportAndCandidateStatus() {
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        request.setObjectCode("CR_20260620_0003");
+        candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .id(23L)
+                .candidateCode("CR_20260620_0003")
+                .targetRuleCode("R_TREND_BREAKOUT_001")
+                .proposedContent("当候选动量突破时提高看涨分")
+                .build()));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.FAILED.getCode());
+        assertThat(result.getTriggerCount()).isZero();
+        assertThat(result.getResultJson()).contains("不是可执行 JSON", "\"riskDisclaimer\"");
+        assertThat(backtestResultMapper.inserted).containsExactly(result);
+        assertThat(factorMapper.selectCalls).isZero();
+        CandidateRule updatedCandidate = candidateRuleMapper.updated.getFirst();
+        assertThat(updatedCandidate.getBacktestStatus()).isEqualTo(BacktestStatus.FAILED.getCode());
+        assertThat(updatedCandidate.getLatestBacktestReportId()).isEqualTo(result.getId());
+        assertThat(updatedCandidate.getBacktestResult()).contains("\"backtestStatus\":\"failed\"", "不是可执行 JSON");
+    }
+
+    @Test
+    void candidateRuleWithNaturalLanguageConditionObjectFailsInsteadOfRunningUnconditionally() {
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        request.setObjectCode("CR_20260620_0004");
+        candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .id(24L)
+                .candidateCode("CR_20260620_0004")
+                .targetRuleCode("R_TREND_BREAKOUT_001")
+                .proposedContent("""
+                        {
+                          "condition": "当候选动量突破时提高看涨分",
+                          "actions": {
+                            "bullish_score": 75
+                          }
+                        }
+                        """)
+                .build()));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.FAILED.getCode());
+        assertThat(result.getResultJson()).contains("缺少 conditions 数组");
+        assertThat(factorMapper.selectCalls).isZero();
+        assertThat(candidateRuleMapper.updated.getFirst().getBacktestStatus()).isEqualTo(BacktestStatus.FAILED.getCode());
+    }
+
     private BacktestRequestDto request() {
         BacktestRequestDto request = new BacktestRequestDto();
         request.setObjectType(RuleObjectType.RULE.getCode());
@@ -145,12 +294,16 @@ class SingleRuleBacktestServiceTest {
     }
 
     private StockSignalDaily signal(Long id, String symbol, LocalDate signalDate, String signal) {
+        return signal(id, symbol, signalDate, signal, "[{\"rule_code\":\"R_TREND_BREAKOUT_001\"}]");
+    }
+
+    private StockSignalDaily signal(Long id, String symbol, LocalDate signalDate, String signal, String triggeredRules) {
         return StockSignalDaily.builder()
                 .id(id)
                 .symbol(symbol)
                 .signalDate(signalDate)
                 .signal(signal)
-                .triggeredRules("[{\"rule_code\":\"R_TREND_BREAKOUT_001\"}]")
+                .triggeredRules(triggeredRules)
                 .build();
     }
 
@@ -166,8 +319,16 @@ class SingleRuleBacktestServiceTest {
         return StockActualResult.builder()
                 .symbol(symbol)
                 .signalDate(signalDate)
-                .return5d(new BigDecimal(return5d))
+                .return5d(return5d == null ? null : new BigDecimal(return5d))
                 .hit5d(hit5d)
+                .build();
+    }
+
+    private StockDailyQuote quote(String symbol, LocalDate tradeDate, String closePrice) {
+        return StockDailyQuote.builder()
+                .symbol(symbol)
+                .tradeDate(tradeDate)
+                .closePrice(new BigDecimal(closePrice))
                 .build();
     }
 
