@@ -18,6 +18,10 @@ final class DailyWorkflowStepResults {
         return result(step, startedAt, "skipped", message, details);
     }
 
+    static DailyWorkflowStepResultVo failed(WorkflowStepCode step, LocalDateTime startedAt, String message, Map<String, Object> details) {
+        return result(step, startedAt, "failed", message, details);
+    }
+
     private static DailyWorkflowStepResultVo result(
             WorkflowStepCode step,
             LocalDateTime startedAt,

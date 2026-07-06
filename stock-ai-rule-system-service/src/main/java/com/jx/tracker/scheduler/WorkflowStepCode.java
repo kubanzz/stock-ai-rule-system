@@ -42,8 +42,8 @@ public enum WorkflowStepCode {
                 FACTOR_CALCULATION,
                 SIGNAL_GENERATION,
                 HISTORICAL_VERIFICATION,
-                CANDIDATE_RULE_BACKTEST,
-                AI_REVIEW
+                AI_REVIEW,
+                CANDIDATE_RULE_BACKTEST
         );
     }
 }

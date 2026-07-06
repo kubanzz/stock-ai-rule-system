@@ -31,8 +31,8 @@ class DailyWorkflowOrchestratorTest {
                         "factor_calculation",
                         "rule_signal_generation",
                         "prediction_validation",
-                        "candidate_rule_backtest",
-                        "ai_review"
+                        "ai_review",
+                        "candidate_rule_backtest"
                 );
         assertThat(result.getSteps())
                 .allSatisfy(step -> assertThat(step.getStatus()).isEqualTo("skipped"));
