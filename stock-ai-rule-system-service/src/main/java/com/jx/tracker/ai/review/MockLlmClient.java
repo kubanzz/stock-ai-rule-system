@@ -1,5 +1,7 @@
 package com.jx.tracker.ai.review;
 
+import com.jx.tracker.constant.StockRiskConstants;
+
 public class MockLlmClient implements LlmClient {
 
     @Override
@@ -10,8 +12,8 @@ public class MockLlmClient implements LlmClient {
                   "related_rules": [],
                   "suggestions": [],
                   "need_backtest": false,
-                  "risk": "本系统输出仅用于股票研究和辅助决策，不构成投资建议，不代表确定性预测，也不保证收益。"
+                  "risk": "%s"
                 }
-                """);
+                """.formatted(StockRiskConstants.SIGNAL_RISK_DISCLAIMER));
     }
 }

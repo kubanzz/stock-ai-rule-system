@@ -73,6 +73,13 @@ stock-ai-rule:
     daily-cron: "-"
     zone: Asia/Shanghai
 
+ai:
+  llm:
+    # 未配置 base-url 或 api-key 时使用 MockLlmClient；不要在配置文件中写入真实 token。
+    base-url: ${AI_LLM_BASE_URL:}
+    api-key: ${AI_LLM_API_KEY:}
+    model: ${AI_LLM_MODEL:gpt-4o-mini}
+
 
 remote:
   authServiceAddress: "http://auth.ijianxin.com:8080"

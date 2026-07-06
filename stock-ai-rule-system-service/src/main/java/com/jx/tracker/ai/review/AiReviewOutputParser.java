@@ -2,7 +2,9 @@ package com.jx.tracker.ai.review;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.AiReviewResponseDto;
+import com.jx.tracker.domain.dto.AiReviewSuggestionDto;
 import com.jx.tracker.exception.ServiceException;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -47,6 +49,8 @@ public class AiReviewOutputParser {
             if (response.getCandidateRules() == null) {
                 response.setCandidateRules(new ArrayList<>());
             }
+            validateCandidateSuggestions(response);
+            response.setRisk(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
             return response;
         } catch (ServiceException e) {
             throw e;
@@ -59,12 +63,24 @@ public class AiReviewOutputParser {
         if (!StringUtils.hasText(content)) {
             throw new ServiceException("AI 复盘输出必须是结构化 JSON");
         }
-        int start = content.indexOf('{');
-        int end = content.lastIndexOf('}');
-        if (start < 0 || end <= start) {
+        String json = content.trim();
+        if (!json.startsWith("{") || !json.endsWith("}")) {
             throw new ServiceException("AI 复盘输出必须是结构化 JSON");
         }
-        return content.substring(start, end + 1);
+        return json;
+    }
+
+    private void validateCandidateSuggestions(AiReviewResponseDto response) {
+        for (AiReviewSuggestionDto suggestion : response.getSuggestions()) {
+            if (hasCandidateContent(suggestion) && !Boolean.TRUE.equals(suggestion.getNeedBacktest())) {
+                throw new ServiceException("AI 复盘候选建议必须设置 need_backtest=true");
+            }
+        }
+    }
+
+    private boolean hasCandidateContent(AiReviewSuggestionDto suggestion) {
+        return suggestion != null
+                && (StringUtils.hasText(suggestion.getCondition()) || StringUtils.hasText(suggestion.getProposedContent()));
     }
 
     private void requireField(JsonNode root, String fieldName) {
