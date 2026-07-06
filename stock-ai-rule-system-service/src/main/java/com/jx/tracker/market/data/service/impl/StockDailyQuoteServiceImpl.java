@@ -12,6 +12,7 @@ import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
 import com.jx.tracker.market.data.service.StockDailyQuoteService;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -44,8 +45,7 @@ public class StockDailyQuoteServiceImpl extends ServiceImpl<StockDailyQuoteMappe
             StockDailyQuote existing = getBySymbolAndTradeDate(row.getSymbol(), row.getTradeDate());
             result.accept(row);
             if (existing == null) {
-                stockDailyQuoteMapper.insert(entity);
-                result.markInserted();
+                insertOrUpdateAfterDuplicate(row, entity, result);
             } else {
                 entity.setId(existing.getId());
                 stockDailyQuoteMapper.updateById(entity);
@@ -79,6 +79,24 @@ public class StockDailyQuoteServiceImpl extends ServiceImpl<StockDailyQuoteMappe
                 .eq(StockDailyQuote::getSymbol, normalizedSymbol)
                 .eq(StockDailyQuote::getTradeDate, tradeDate)
                 .last("limit 1"));
+    }
+
+    private void insertOrUpdateAfterDuplicate(
+            StockDailyQuoteUpsertDto row,
+            StockDailyQuote entity,
+            MarketDataImportResultDto<StockDailyQuoteUpsertDto> result) {
+        try {
+            stockDailyQuoteMapper.insert(entity);
+            result.markInserted();
+        } catch (DuplicateKeyException ex) {
+            StockDailyQuote existing = getBySymbolAndTradeDate(row.getSymbol(), row.getTradeDate());
+            if (existing == null) {
+                throw ex;
+            }
+            entity.setId(existing.getId());
+            stockDailyQuoteMapper.updateById(entity);
+            result.markUpdated();
+        }
     }
 
     private StockDailyQuote toEntity(StockDailyQuoteUpsertDto dto) {

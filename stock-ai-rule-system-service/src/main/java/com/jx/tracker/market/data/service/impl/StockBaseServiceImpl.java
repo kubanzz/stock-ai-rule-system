@@ -12,6 +12,7 @@ import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.service.StockBaseService;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
@@ -43,8 +44,7 @@ public class StockBaseServiceImpl extends ServiceImpl<StockBaseMapper, StockBase
             StockBase existing = getBySymbolAndMarket(row.getSymbol(), row.getMarket());
             result.accept(row);
             if (existing == null) {
-                stockBaseMapper.insert(entity);
-                result.markInserted();
+                insertOrUpdateAfterDuplicate(row, entity, result);
             } else {
                 entity.setId(existing.getId());
                 stockBaseMapper.updateById(entity);
@@ -79,6 +79,24 @@ public class StockBaseServiceImpl extends ServiceImpl<StockBaseMapper, StockBase
                 .eq(StockBase::getSymbol, normalizedSymbol)
                 .eq(StockBase::getMarket, normalizedMarket)
                 .last("limit 1"));
+    }
+
+    private void insertOrUpdateAfterDuplicate(
+            StockBaseUpsertDto row,
+            StockBase entity,
+            MarketDataImportResultDto<StockBaseUpsertDto> result) {
+        try {
+            stockBaseMapper.insert(entity);
+            result.markInserted();
+        } catch (DuplicateKeyException ex) {
+            StockBase existing = getBySymbolAndMarket(row.getSymbol(), row.getMarket());
+            if (existing == null) {
+                throw ex;
+            }
+            entity.setId(existing.getId());
+            stockBaseMapper.updateById(entity);
+            result.markUpdated();
+        }
     }
 
     private StockBase toEntity(StockBaseUpsertDto dto) {

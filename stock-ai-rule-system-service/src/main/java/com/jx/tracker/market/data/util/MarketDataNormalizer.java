@@ -2,6 +2,7 @@ package com.jx.tracker.market.data.util;
 
 import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
+import com.jx.tracker.market.data.dto.TradeCalendarDto;
 
 import java.math.BigDecimal;
 
@@ -83,6 +84,20 @@ public final class MarketDataNormalizer {
         if (dto.getClosePrice() != null && dto.getLowPrice() != null
                 && dto.getClosePrice().compareTo(dto.getLowPrice()) < 0) {
             return "close_price cannot be less than low_price";
+        }
+        return null;
+    }
+
+    public static String validate(TradeCalendarDto dto) {
+        if (dto == null) {
+            return "row is empty";
+        }
+        dto.setMarket(normalizeMarket(dto.getMarket()));
+        if (dto.getMarket() == null) {
+            return "market is required";
+        }
+        if (dto.getTradeDate() == null) {
+            return "trade_date is required";
         }
         return null;
     }

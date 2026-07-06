@@ -5,6 +5,7 @@ import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
 import com.jx.tracker.market.data.service.impl.StockDailyQuoteServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -55,6 +56,25 @@ class StockDailyQuoteServiceTest {
         assertThat(result.getRejectedRows().getFirst().getReason()).contains("high_price");
         verify(mapper, never()).insert(any(StockDailyQuote.class));
         verify(mapper, never()).updateById(any(StockDailyQuote.class));
+    }
+
+    @Test
+    void upsertDailyQuoteRetriesAsUpdateWhenConcurrentInsertWins() {
+        StockDailyQuoteMapper mapper = mock(StockDailyQuoteMapper.class);
+        StockDailyQuote existing = StockDailyQuote.builder()
+                .id(100L)
+                .symbol("000001.SZ")
+                .tradeDate(LocalDate.of(2026, 6, 20))
+                .build();
+        when(mapper.selectOne(any())).thenReturn(null, existing);
+        when(mapper.insert(any(StockDailyQuote.class))).thenThrow(new DuplicateKeyException("duplicate quote"));
+        StockDailyQuoteServiceImpl service = new StockDailyQuoteServiceImpl(mapper);
+
+        var result = service.upsertDailyQuotes(List.of(validQuote("sz000001", "10.50")));
+
+        assertThat(result.getInsertedRows()).isZero();
+        assertThat(result.getUpdatedRows()).isEqualTo(1);
+        verify(mapper).updateById(any(StockDailyQuote.class));
     }
 
     private StockDailyQuoteUpsertDto validQuote(String symbol, String closePrice) {
