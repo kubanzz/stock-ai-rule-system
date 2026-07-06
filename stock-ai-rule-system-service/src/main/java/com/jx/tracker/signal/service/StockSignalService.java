@@ -8,7 +8,6 @@ import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
-import com.jx.tracker.domain.enums.RuleFormat;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
@@ -47,16 +46,15 @@ public class StockSignalService {
     }
 
     public StockSignalDaily generateDailySignal(String symbol, LocalDate signalDate, Map<String, Object> factors) {
-        List<RuleDefinition> activeJsonRules = ruleDefinitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>()
+        List<RuleDefinition> activeRules = ruleDefinitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>()
                 .eq(RuleDefinition::getStatus, RuleLifecycleStatus.ACTIVE.getCode())
-                .eq(RuleDefinition::getRuleFormat, RuleFormat.JSON.getCode())
                 .orderByDesc(RuleDefinition::getPriority));
 
         RuleExecutionResult executionResult = ruleEngineExecutor.execute(new RuleExecutionRequest(
                 symbol,
                 signalDate,
                 factors,
-                activeJsonRules
+                activeRules
         ));
         SignalScore signalScore = signalScoringService.score(
                 executionResult.bullishScore(),

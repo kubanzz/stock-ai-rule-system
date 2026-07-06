@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.enums.RuleFormat;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -15,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 
 @Component
+@Qualifier(CompositeRuleEngineExecutor.FORMAT_EXECUTOR_QUALIFIER)
+@Order(100)
 public class JsonRuleEngineExecutor implements RuleEngineExecutor {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
