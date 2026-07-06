@@ -61,16 +61,20 @@ public class MarketDataProviderResolver {
         if (!hasCsvPath()) {
             return fallback ? mock(true, reason) : new MarketDataProviderSelection(mockMarketDataProvider, "mock", true, "csv path is missing");
         }
-        return new MarketDataProviderSelection(
-                CsvMarketDataProvider.fromFiles(
-                        properties.getStockListCsvPath(),
-                        properties.getDailyQuoteCsvPath(),
-                        properties.getTradeCalendarCsvPath()
-                ),
-                "csv",
-                fallback,
-                reason
-        );
+        try {
+            return new MarketDataProviderSelection(
+                    CsvMarketDataProvider.fromFiles(
+                            properties.getStockListCsvPath(),
+                            properties.getDailyQuoteCsvPath(),
+                            properties.getTradeCalendarCsvPath()
+                    ),
+                    "csv",
+                    fallback,
+                    reason
+            );
+        } catch (RuntimeException ex) {
+            return mock(true, appendReason(reason, "csv provider failed: " + ex.getMessage()));
+        }
     }
 
     private MarketDataProviderSelection mock(boolean fallback, String reason) {
@@ -85,5 +89,12 @@ public class MarketDataProviderResolver {
 
     private String providerType(String value) {
         return StringUtils.hasText(value) ? value.trim().toLowerCase() : "mock";
+    }
+
+    private String appendReason(String reason, String csvReason) {
+        if (!StringUtils.hasText(reason)) {
+            return csvReason;
+        }
+        return reason + "; " + csvReason;
     }
 }

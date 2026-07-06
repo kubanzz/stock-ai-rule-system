@@ -17,6 +17,7 @@ import com.jx.tracker.market.data.dto.MarketDataSyncRunQueryDto;
 import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
 import com.jx.tracker.market.data.dto.TradeCalendarDto;
+import com.jx.tracker.market.data.provider.CsvMarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProviderResolver;
 import com.jx.tracker.market.data.provider.MarketDataProviderSelection;
@@ -27,7 +28,7 @@ import com.jx.tracker.market.data.service.TradeCalendarService;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
@@ -52,23 +53,26 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
 
     private final ObjectMapper objectMapper;
 
+    private final TransactionTemplate transactionTemplate;
+
     public MarketDataSyncServiceImpl(
             MarketDataProviderResolver providerResolver,
             StockBaseService stockBaseService,
             StockDailyQuoteService stockDailyQuoteService,
             TradeCalendarService tradeCalendarService,
             MarketDataSyncRunMapper marketDataSyncRunMapper,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            TransactionTemplate transactionTemplate) {
         this.providerResolver = providerResolver;
         this.stockBaseService = stockBaseService;
         this.stockDailyQuoteService = stockDailyQuoteService;
         this.tradeCalendarService = tradeCalendarService;
         this.marketDataSyncRunMapper = marketDataSyncRunMapper;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public MarketDataSyncResultDto syncStockList(MarketDataSyncRequestDto request) {
         MarketDataSyncRequestDto safeRequest = request == null ? new MarketDataSyncRequestDto() : request;
         MarketDataProviderSelection selection = providerResolver.resolve();
@@ -84,8 +88,16 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
         );
         try {
             MarketDataProvider provider = selection.provider();
-            List<StockBaseUpsertDto> rows = provider.fetchStockList();
-            MarketDataImportResultDto<StockBaseUpsertDto> importResult = stockBaseService.upsertStockBases(rows);
+            MarketDataImportResultDto<StockBaseUpsertDto> importResult;
+            if (provider instanceof CsvMarketDataProvider csvProvider) {
+                importResult = withProviderRejectedRows(
+                        writeInTransaction(() -> stockBaseService.upsertStockBases(provider.fetchStockList())),
+                        csvProvider.importStockBases()
+                );
+            } else {
+                List<StockBaseUpsertDto> rows = provider.fetchStockList();
+                importResult = writeInTransaction(() -> stockBaseService.upsertStockBases(rows));
+            }
             return finishSuccess(run, selection, importResult, null, safeRequest.getStartDate(), safeRequest.getEndDate());
         } catch (RuntimeException ex) {
             return finishFailed(run, selection, ex);
@@ -93,7 +105,6 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public MarketDataSyncResultDto syncDailyQuotes(DailyQuoteSyncRequestDto request) {
         DailyQuoteSyncRequestDto safeRequest = request == null ? new DailyQuoteSyncRequestDto() : request;
         String targetSymbol = SymbolNormalizer.normalize(safeRequest.getTargetSymbol());
@@ -109,9 +120,18 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
                 safeRequest.getTriggerBy()
         );
         try {
-            List<StockDailyQuoteUpsertDto> rows = selection.provider()
-                    .fetchDailyQuotes(targetSymbol, safeRequest.getStartDate(), safeRequest.getEndDate());
-            MarketDataImportResultDto<StockDailyQuoteUpsertDto> importResult = stockDailyQuoteService.upsertDailyQuotes(rows);
+            MarketDataProvider provider = selection.provider();
+            MarketDataImportResultDto<StockDailyQuoteUpsertDto> importResult;
+            if (provider instanceof CsvMarketDataProvider csvProvider) {
+                importResult = withProviderRejectedRows(
+                        writeInTransaction(() -> stockDailyQuoteService.upsertDailyQuotes(
+                                provider.fetchDailyQuotes(targetSymbol, safeRequest.getStartDate(), safeRequest.getEndDate()))),
+                        csvProvider.importDailyQuotes()
+                );
+            } else {
+                List<StockDailyQuoteUpsertDto> rows = provider.fetchDailyQuotes(targetSymbol, safeRequest.getStartDate(), safeRequest.getEndDate());
+                importResult = writeInTransaction(() -> stockDailyQuoteService.upsertDailyQuotes(rows));
+            }
             return finishSuccess(run, selection, importResult, targetSymbol, safeRequest.getStartDate(), safeRequest.getEndDate());
         } catch (RuntimeException ex) {
             return finishFailed(run, selection, ex);
@@ -119,7 +139,6 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public MarketDataSyncResultDto syncTradeCalendar(MarketDataSyncRequestDto request) {
         MarketDataSyncRequestDto safeRequest = request == null ? new MarketDataSyncRequestDto() : request;
         MarketDataProviderSelection selection = providerResolver.resolve();
@@ -134,9 +153,18 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
                 safeRequest.getTriggerBy()
         );
         try {
-            List<TradeCalendarDto> rows = selection.provider()
-                    .fetchTradeCalendar(safeRequest.getStartDate(), safeRequest.getEndDate());
-            MarketDataImportResultDto<TradeCalendarDto> importResult = tradeCalendarService.upsertTradeCalendars(rows);
+            MarketDataProvider provider = selection.provider();
+            MarketDataImportResultDto<TradeCalendarDto> importResult;
+            if (provider instanceof CsvMarketDataProvider csvProvider) {
+                importResult = withProviderRejectedRows(
+                        writeInTransaction(() -> tradeCalendarService.upsertTradeCalendars(
+                                provider.fetchTradeCalendar(safeRequest.getStartDate(), safeRequest.getEndDate()))),
+                        csvProvider.importTradeCalendars()
+                );
+            } else {
+                List<TradeCalendarDto> rows = provider.fetchTradeCalendar(safeRequest.getStartDate(), safeRequest.getEndDate());
+                importResult = writeInTransaction(() -> tradeCalendarService.upsertTradeCalendars(rows));
+            }
             return finishSuccess(run, selection, importResult, null, safeRequest.getStartDate(), safeRequest.getEndDate());
         } catch (RuntimeException ex) {
             return finishFailed(run, selection, ex);
@@ -153,10 +181,26 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
                 .eq(StringUtils.hasText(safeQuery.getStatus()), MarketDataSyncRun::getStatus, safeQuery.getStatus())
                 .eq(targetSymbol != null, MarketDataSyncRun::getTargetSymbol, targetSymbol)
                 .ge(safeQuery.getStartDate() != null, MarketDataSyncRun::getStartedAt, safeQuery.getStartDate().atStartOfDay())
-                .le(safeQuery.getEndDate() != null, MarketDataSyncRun::getStartedAt, safeQuery.getEndDate().plusDays(1).atStartOfDay())
+                .lt(safeQuery.getEndDate() != null, MarketDataSyncRun::getStartedAt, safeQuery.getEndDate().plusDays(1).atStartOfDay())
                 .orderByDesc(MarketDataSyncRun::getStartedAt);
         Page<MarketDataSyncRun> page = marketDataSyncRunMapper.selectPage(new Page<>(pageNum(safeQuery.getPageNum()), pageSize(safeQuery.getPageSize())), wrapper);
         return PageResult.getDataTable(page.getRecords(), page.getTotal());
+    }
+
+    private <T> MarketDataImportResultDto<T> writeInTransaction(SyncWriteCallback<T> callback) {
+        return transactionTemplate.execute(status -> callback.write());
+    }
+
+    private <T> MarketDataImportResultDto<T> withProviderRejectedRows(
+            MarketDataImportResultDto<T> saved,
+            MarketDataImportResultDto<T> parsed) {
+        MarketDataImportResultDto<T> result = saved == null ? new MarketDataImportResultDto<>() : saved;
+        if (parsed == null || parsed.getRejectedRows().isEmpty()) {
+            return result;
+        }
+        result.getRejectedRows().addAll(parsed.getRejectedRows());
+        result.setTotalRows(result.getTotalRows() + parsed.getRejectedCount());
+        return result;
     }
 
     private MarketDataSyncRun startRun(
@@ -291,5 +335,11 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
 
     private long pageSize(Integer pageSize) {
         return pageSize == null || pageSize < 1 ? 20L : pageSize;
+    }
+
+    @FunctionalInterface
+    private interface SyncWriteCallback<T> {
+
+        MarketDataImportResultDto<T> write();
     }
 }

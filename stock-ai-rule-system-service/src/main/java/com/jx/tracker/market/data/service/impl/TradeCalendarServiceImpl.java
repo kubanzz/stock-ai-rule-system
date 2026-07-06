@@ -11,6 +11,7 @@ import com.jx.tracker.market.data.dto.TradeCalendarDto;
 import com.jx.tracker.market.data.dto.TradeCalendarQueryDto;
 import com.jx.tracker.market.data.service.TradeCalendarService;
 import com.jx.tracker.market.data.util.MarketDataNormalizer;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -43,8 +44,7 @@ public class TradeCalendarServiceImpl extends ServiceImpl<TradeCalendarMapper, T
             TradeCalendar existing = getByMarketAndTradeDate(row.getMarket(), row.getTradeDate());
             result.accept(row);
             if (existing == null) {
-                tradeCalendarMapper.insert(entity);
-                result.markInserted();
+                insertOrUpdateAfterDuplicate(row, entity, result);
             } else {
                 entity.setId(existing.getId());
                 tradeCalendarMapper.updateById(entity);
@@ -79,6 +79,24 @@ public class TradeCalendarServiceImpl extends ServiceImpl<TradeCalendarMapper, T
                 .eq(TradeCalendar::getMarket, normalizedMarket)
                 .eq(TradeCalendar::getTradeDate, tradeDate)
                 .last("limit 1"));
+    }
+
+    private void insertOrUpdateAfterDuplicate(
+            TradeCalendarDto row,
+            TradeCalendar entity,
+            MarketDataImportResultDto<TradeCalendarDto> result) {
+        try {
+            tradeCalendarMapper.insert(entity);
+            result.markInserted();
+        } catch (DuplicateKeyException ex) {
+            TradeCalendar existing = getByMarketAndTradeDate(row.getMarket(), row.getTradeDate());
+            if (existing == null) {
+                throw ex;
+            }
+            entity.setId(existing.getId());
+            tradeCalendarMapper.updateById(entity);
+            result.markUpdated();
+        }
     }
 
     private TradeCalendar toEntity(TradeCalendarDto dto) {

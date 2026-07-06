@@ -13,7 +13,7 @@ public class MarketDataProviderProperties {
 
     private String token;
 
-    private String apiUrl = "http://api.tushare.pro";
+    private String apiUrl = "https://api.tushare.pro";
 
     private String stockListCsvPath;
 

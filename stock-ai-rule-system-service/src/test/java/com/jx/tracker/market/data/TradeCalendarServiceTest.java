@@ -5,6 +5,7 @@ import com.jx.tracker.mapper.TradeCalendarMapper;
 import com.jx.tracker.market.data.dto.TradeCalendarDto;
 import com.jx.tracker.market.data.service.impl.TradeCalendarServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -48,6 +49,25 @@ class TradeCalendarServiceTest {
         assertThat(result.getInsertedRows()).isZero();
         assertThat(result.getUpdatedRows()).isEqualTo(1);
         verify(mapper, never()).insert(any(TradeCalendar.class));
+        verify(mapper).updateById(any(TradeCalendar.class));
+    }
+
+    @Test
+    void upsertTradeCalendarRetriesAsUpdateWhenConcurrentInsertWins() {
+        TradeCalendarMapper mapper = mock(TradeCalendarMapper.class);
+        TradeCalendar existing = TradeCalendar.builder()
+                .id(10L)
+                .market("CN")
+                .tradeDate(LocalDate.of(2026, 7, 6))
+                .build();
+        when(mapper.selectOne(any())).thenReturn(null, existing);
+        when(mapper.insert(any(TradeCalendar.class))).thenThrow(new DuplicateKeyException("duplicate calendar"));
+        TradeCalendarServiceImpl service = new TradeCalendarServiceImpl(mapper);
+
+        var result = service.upsertTradeCalendars(List.of(calendar("CN", LocalDate.of(2026, 7, 6))));
+
+        assertThat(result.getInsertedRows()).isZero();
+        assertThat(result.getUpdatedRows()).isEqualTo(1);
         verify(mapper).updateById(any(TradeCalendar.class));
     }
 

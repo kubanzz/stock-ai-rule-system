@@ -51,4 +51,25 @@ class MarketDataProviderResolverTest {
         assertThat(selection.dataSource()).isEqualTo("mock");
         assertThat(selection.fallback()).isFalse();
     }
+
+    @Test
+    void fallsBackToMockProviderWhenConfiguredCsvFileCannotBeRead() {
+        MarketDataProviderProperties properties = new MarketDataProviderProperties();
+        properties.setType("csv");
+        properties.setStockListCsvPath("/path/not/exist/stock-list.csv");
+
+        MarketDataProviderResolver resolver = new MarketDataProviderResolver(
+                properties,
+                new MockMarketDataProvider(),
+                RestClient.builder(),
+                new ObjectMapper()
+        );
+
+        var selection = resolver.resolve();
+
+        assertThat(selection.provider()).isInstanceOf(MockMarketDataProvider.class);
+        assertThat(selection.dataSource()).isEqualTo("mock");
+        assertThat(selection.fallback()).isTrue();
+        assertThat(selection.fallbackReason()).contains("csv provider failed");
+    }
 }

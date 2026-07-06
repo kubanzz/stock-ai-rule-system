@@ -11,6 +11,7 @@ import com.jx.tracker.market.data.dto.MarketDataSyncRequestDto;
 import com.jx.tracker.market.data.dto.StockBaseUpsertDto;
 import com.jx.tracker.market.data.dto.StockDailyQuoteUpsertDto;
 import com.jx.tracker.market.data.dto.TradeCalendarDto;
+import com.jx.tracker.market.data.provider.CsvMarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProviderResolver;
 import com.jx.tracker.market.data.provider.MarketDataProviderSelection;
@@ -20,8 +21,14 @@ import com.jx.tracker.market.data.service.TradeCalendarService;
 import com.jx.tracker.market.data.service.impl.MarketDataSyncServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -94,6 +101,66 @@ class MarketDataSyncServiceTest {
     }
 
     @Test
+    void syncDailyQuotesIncludesCsvRejectedRowsInRunCounts() {
+        String csv = """
+                symbol,trade_date,open_price,high_price,low_price,close_price,volume,amount,change_pct
+                sz000001,2026-07-01,10.00,10.80,9.90,10.50,100000,1050000,1.20
+                sz000001,2026-07-02,10.00,9.80,10.20,10.10,100000,1010000,0.30
+                """;
+        CsvMarketDataProvider provider = CsvMarketDataProvider.fromDailyQuoteCsv(
+                new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)));
+        MarketDataImportResultDto<StockDailyQuoteUpsertDto> saved = new MarketDataImportResultDto<>();
+        saved.accept(quote("000001.SZ", LocalDate.of(2026, 7, 1)));
+        saved.markInserted();
+        StockDailyQuoteService quoteService = mock(StockDailyQuoteService.class);
+        when(quoteService.upsertDailyQuotes(any())).thenReturn(saved);
+        MarketDataSyncServiceImpl service = service(provider, null, quoteService, null, syncRunMapper());
+
+        DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
+        request.setTargetSymbol("000001.SZ");
+        request.setStartDate(LocalDate.of(2026, 7, 1));
+        request.setEndDate(LocalDate.of(2026, 7, 2));
+
+        var result = service.syncDailyQuotes(request);
+
+        assertThat(result.getStatus()).isEqualTo(MarketDataSyncStatus.SUCCESS.getCode());
+        assertThat(result.getScanned()).isEqualTo(2);
+        assertThat(result.getInserted()).isEqualTo(1);
+        assertThat(result.getFailed()).isEqualTo(1);
+        assertThat(result.getErrors()).anySatisfy(error -> assertThat(error).contains("high_price"));
+    }
+
+    @Test
+    void syncStockListRollsBackBusinessTransactionWhenPersistenceFailsAndRecordsFailure() {
+        MarketDataProvider provider = mock(MarketDataProvider.class);
+        when(provider.fetchStockList()).thenReturn(List.of(stock("000001.SZ")));
+        StockBaseService stockBaseService = mock(StockBaseService.class);
+        when(stockBaseService.upsertStockBases(any())).thenThrow(new IllegalStateException("db write failed"));
+        CountingTransactionManager transactionManager = new CountingTransactionManager();
+        MarketDataSyncRunMapper syncRunMapper = syncRunMapper();
+        MarketDataSyncServiceImpl service = service(
+                provider,
+                stockBaseService,
+                null,
+                null,
+                syncRunMapper,
+                new TransactionTemplate(transactionManager)
+        );
+
+        var result = service.syncStockList(new MarketDataSyncRequestDto());
+
+        assertThat(result.getStatus()).isEqualTo(MarketDataSyncStatus.FAILED.getCode());
+        assertThat(result.getFailed()).isEqualTo(1);
+        assertThat(result.getErrors()).contains("db write failed");
+        assertThat(transactionManager.commits).isZero();
+        assertThat(transactionManager.rollbacks).isEqualTo(1);
+
+        ArgumentCaptor<MarketDataSyncRun> captor = ArgumentCaptor.forClass(MarketDataSyncRun.class);
+        verify(syncRunMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(MarketDataSyncStatus.FAILED.getCode());
+    }
+
+    @Test
     void syncTradeCalendarUsesCalendarServiceAndRecordsCounts() {
         MarketDataProvider provider = mock(MarketDataProvider.class);
         when(provider.fetchTradeCalendar(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 2)))
@@ -126,6 +193,16 @@ class MarketDataSyncServiceTest {
             StockDailyQuoteService quoteService,
             TradeCalendarService tradeCalendarService,
             MarketDataSyncRunMapper syncRunMapper) {
+        return service(provider, stockBaseService, quoteService, tradeCalendarService, syncRunMapper, transactionTemplate());
+    }
+
+    private MarketDataSyncServiceImpl service(
+            MarketDataProvider provider,
+            StockBaseService stockBaseService,
+            StockDailyQuoteService quoteService,
+            TradeCalendarService tradeCalendarService,
+            MarketDataSyncRunMapper syncRunMapper,
+            TransactionTemplate transactionTemplate) {
         MarketDataProviderResolver resolver = mock(MarketDataProviderResolver.class);
         when(resolver.resolve()).thenReturn(new MarketDataProviderSelection(provider, "mock", false, null));
         return new MarketDataSyncServiceImpl(
@@ -134,8 +211,56 @@ class MarketDataSyncServiceTest {
                 quoteService == null ? mock(StockDailyQuoteService.class) : quoteService,
                 tradeCalendarService == null ? mock(TradeCalendarService.class) : tradeCalendarService,
                 syncRunMapper,
-                new ObjectMapper()
+                new ObjectMapper(),
+                transactionTemplate
         );
+    }
+
+    private TransactionTemplate transactionTemplate() {
+        return new TransactionTemplate(new AbstractPlatformTransactionManager() {
+            @Override
+            protected Object doGetTransaction() {
+                return new Object();
+            }
+
+            @Override
+            protected void doBegin(Object transaction, TransactionDefinition definition) {
+            }
+
+            @Override
+            protected void doCommit(DefaultTransactionStatus status) {
+            }
+
+            @Override
+            protected void doRollback(DefaultTransactionStatus status) {
+            }
+        });
+    }
+
+    private static class CountingTransactionManager extends AbstractPlatformTransactionManager {
+
+        private int commits;
+
+        private int rollbacks;
+
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
+        }
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {
+            commits++;
+        }
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {
+            rollbacks++;
+        }
     }
 
     private MarketDataSyncRunMapper syncRunMapper() {

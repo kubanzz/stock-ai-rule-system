@@ -63,7 +63,7 @@ stock-ai-rule:
       type: ${MARKET_DATA_PROVIDER:mock}
       fallback-type: ${MARKET_DATA_FALLBACK_PROVIDER:mock}
       token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:}}
-      api-url: ${MARKET_DATA_PROVIDER_API_URL:http://api.tushare.pro}
+      api-url: ${MARKET_DATA_PROVIDER_API_URL:https://api.tushare.pro}
       stock-list-csv-path: ${MARKET_DATA_STOCK_LIST_CSV_PATH:}
       daily-quote-csv-path: ${MARKET_DATA_DAILY_QUOTE_CSV_PATH:}
       trade-calendar-csv-path: ${MARKET_DATA_TRADE_CALENDAR_CSV_PATH:}

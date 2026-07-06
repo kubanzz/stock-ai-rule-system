@@ -11,10 +11,12 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +32,8 @@ public class TushareMarketDataProvider implements MarketDataProvider {
     private final ObjectMapper objectMapper;
 
     public TushareMarketDataProvider(String token, String apiUrl, RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
-        this.token = token;
-        this.restClient = restClientBuilder.baseUrl(apiUrl).build();
+        this.token = token == null ? null : token.trim();
+        this.restClient = restClientBuilder.baseUrl(validateApiUrl(apiUrl)).build();
         this.objectMapper = objectMapper;
     }
 
@@ -60,7 +62,7 @@ public class TushareMarketDataProvider implements MarketDataProvider {
     @Override
     public List<StockDailyQuoteUpsertDto> fetchDailyQuotes(String symbol, LocalDate startDate, LocalDate endDate) {
         if (!StringUtils.hasText(symbol)) {
-            return List.of();
+            throw new ServiceException("Tushare 日 K 同步必须指定 targetSymbol");
         }
         Map<String, String> params = new HashMap<>();
         params.put("ts_code", SymbolNormalizer.normalize(symbol));
@@ -93,6 +95,23 @@ public class TushareMarketDataProvider implements MarketDataProvider {
         return rows;
     }
 
+    private String validateApiUrl(String apiUrl) {
+        if (!StringUtils.hasText(apiUrl)) {
+            throw new ServiceException("Tushare provider API URL is required");
+        }
+        URI uri = URI.create(apiUrl.trim());
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if ("https".equalsIgnoreCase(scheme) || ("http".equalsIgnoreCase(scheme) && isLocalHost(host))) {
+            return apiUrl.trim();
+        }
+        throw new ServiceException("Tushare provider API URL must use HTTPS for remote hosts");
+    }
+
+    private boolean isLocalHost(String host) {
+        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host);
+    }
+
     @Override
     public List<TradeCalendarDto> fetchTradeCalendar(LocalDate startDate, LocalDate endDate) {
         Map<String, String> params = new HashMap<>();
@@ -113,11 +132,11 @@ public class TushareMarketDataProvider implements MarketDataProvider {
             dto.setTradeDate(tradeDate);
             dto.setOpen("1".equals(row.get("is_open")));
             dto.setPreTradeDate(parseDate(row.get("pretrade_date")));
-            dto.setNextTradeDate(tradeDate == null ? null : tradeDate.plusDays(1));
             dto.setDataSource("tushare");
             dto.setSyncTime(LocalDateTime.now());
             rows.add(dto);
         }
+        populateNextTradeDates(rows);
         return rows;
     }
 
@@ -160,6 +179,22 @@ public class TushareMarketDataProvider implements MarketDataProvider {
             rows.add(row);
         });
         return rows;
+    }
+
+    private void populateNextTradeDates(List<TradeCalendarDto> rows) {
+        rows.sort(Comparator.comparing(TradeCalendarDto::getTradeDate, Comparator.nullsLast(Comparator.naturalOrder())));
+        List<LocalDate> openDates = rows.stream()
+                .filter(TradeCalendarDto::isOpen)
+                .map(TradeCalendarDto::getTradeDate)
+                .filter(date -> date != null)
+                .toList();
+        for (TradeCalendarDto row : rows) {
+            LocalDate tradeDate = row.getTradeDate();
+            row.setNextTradeDate(tradeDate == null ? null : openDates.stream()
+                    .filter(openDate -> openDate.isAfter(tradeDate))
+                    .findFirst()
+                    .orElse(null));
+        }
     }
 
     private LocalDate parseDate(String value) {
