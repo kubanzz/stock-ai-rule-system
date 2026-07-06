@@ -41,12 +41,16 @@ public class MarketDataProviderResolver {
         if (!StringUtils.hasText(properties.getToken())) {
             return fallback("tushare token is missing");
         }
-        return new MarketDataProviderSelection(
-                new TushareMarketDataProvider(properties.getToken(), properties.getApiUrl(), restClientBuilder, objectMapper),
-                "tushare",
-                false,
-                null
-        );
+        try {
+            return new MarketDataProviderSelection(
+                    new TushareMarketDataProvider(properties.getToken(), properties.getApiUrl(), restClientBuilder, objectMapper),
+                    "tushare",
+                    false,
+                    null
+            );
+        } catch (RuntimeException ex) {
+            return fallback("tushare provider failed: " + ex.getMessage());
+        }
     }
 
     private MarketDataProviderSelection fallback(String reason) {

@@ -247,7 +247,7 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
         run.setUpdated(importResult == null ? 0 : importResult.getUpdatedRows());
         run.setSkipped(0);
         run.setFailed(failed);
-        run.setErrorMessage(null);
+        run.setErrorMessage(rejectedErrorMessage(importResult));
         finishRun(run);
         marketDataSyncRunMapper.updateById(run);
         MarketDataSyncResultDto result = toResult(run, selection, targetSymbol, startDate, endDate);
@@ -310,6 +310,19 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
             return;
         }
         importResult.getRejectedRows().forEach(row -> result.getErrors().add(row.getReason()));
+    }
+
+    private String rejectedErrorMessage(MarketDataImportResultDto<?> importResult) {
+        if (importResult == null || importResult.getRejectedRows().isEmpty()) {
+            return null;
+        }
+        return importResult.getRejectedRows()
+                .stream()
+                .map(row -> "row " + row.getRowNumber() + ": " + row.getReason())
+                .distinct()
+                .limit(20)
+                .reduce((left, right) -> left + "; " + right)
+                .orElse(null);
     }
 
     private String requestParams(Object request, MarketDataProviderSelection selection) {

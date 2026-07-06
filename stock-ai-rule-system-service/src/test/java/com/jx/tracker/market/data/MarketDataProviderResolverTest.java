@@ -72,4 +72,27 @@ class MarketDataProviderResolverTest {
         assertThat(selection.fallback()).isTrue();
         assertThat(selection.fallbackReason()).contains("csv provider failed");
     }
+
+    @Test
+    void fallsBackToMockProviderWhenTushareRemoteApiUrlIsPlainHttp() {
+        MarketDataProviderProperties properties = new MarketDataProviderProperties();
+        properties.setType("tushare");
+        properties.setFallbackType("mock");
+        properties.setToken("test-token");
+        properties.setApiUrl("http://api.tushare.pro");
+
+        MarketDataProviderResolver resolver = new MarketDataProviderResolver(
+                properties,
+                new MockMarketDataProvider(),
+                RestClient.builder(),
+                new ObjectMapper()
+        );
+
+        var selection = resolver.resolve();
+
+        assertThat(selection.provider()).isInstanceOf(MockMarketDataProvider.class);
+        assertThat(selection.dataSource()).isEqualTo("mock");
+        assertThat(selection.fallback()).isTrue();
+        assertThat(selection.fallbackReason()).contains("HTTPS");
+    }
 }

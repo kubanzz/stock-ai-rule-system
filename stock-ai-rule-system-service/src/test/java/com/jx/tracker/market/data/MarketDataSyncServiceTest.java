@@ -114,7 +114,8 @@ class MarketDataSyncServiceTest {
         saved.markInserted();
         StockDailyQuoteService quoteService = mock(StockDailyQuoteService.class);
         when(quoteService.upsertDailyQuotes(any())).thenReturn(saved);
-        MarketDataSyncServiceImpl service = service(provider, null, quoteService, null, syncRunMapper());
+        MarketDataSyncRunMapper syncRunMapper = syncRunMapper();
+        MarketDataSyncServiceImpl service = service(provider, null, quoteService, null, syncRunMapper);
 
         DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
         request.setTargetSymbol("000001.SZ");
@@ -128,6 +129,10 @@ class MarketDataSyncServiceTest {
         assertThat(result.getInserted()).isEqualTo(1);
         assertThat(result.getFailed()).isEqualTo(1);
         assertThat(result.getErrors()).anySatisfy(error -> assertThat(error).contains("high_price"));
+
+        ArgumentCaptor<MarketDataSyncRun> captor = ArgumentCaptor.forClass(MarketDataSyncRun.class);
+        verify(syncRunMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getErrorMessage()).contains("high_price");
     }
 
     @Test
