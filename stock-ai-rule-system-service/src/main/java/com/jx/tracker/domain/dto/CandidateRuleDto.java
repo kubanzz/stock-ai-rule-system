@@ -28,6 +28,8 @@ public class CandidateRuleDto {
 
     private Long latestBacktestReportId;
 
+    private String backtestResult;
+
     private String approvalStatus;
 
     private String rejectReason;
@@ -44,6 +46,7 @@ public class CandidateRuleDto {
                 .status(candidateRule.getStatus())
                 .backtestStatus(candidateRule.getBacktestStatus())
                 .latestBacktestReportId(candidateRule.getLatestBacktestReportId())
+                .backtestResult(candidateRule.getBacktestResult())
                 .approvalStatus(candidateRule.getApprovalStatus())
                 .rejectReason(candidateRule.getRejectReason())
                 .build();

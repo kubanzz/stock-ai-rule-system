@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.AiReviewRequestDto;
 import com.jx.tracker.domain.dto.AiReviewResponseDto;
+import com.jx.tracker.domain.dto.CandidateRuleDto;
 import com.jx.tracker.domain.entity.AiReviewReport;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
@@ -134,6 +135,22 @@ class AiReviewServiceImplTest {
 
         assertThat(service.listCandidateRules(RuleLifecycleStatus.CANDIDATE.getCode())).containsExactly(candidateRule);
         assertThat(service.getCandidateRule("CR_20260620_0001")).isSameAs(candidateRule);
+    }
+
+    @Test
+    void candidateRuleDtoExposesBacktestSummaryForGovernanceViews() {
+        CandidateRule candidateRule = CandidateRule.builder()
+                .candidateCode("CR_20260620_0001")
+                .backtestStatus("success")
+                .latestBacktestReportId(1001L)
+                .backtestResult("{\"triggerCount\":1,\"winRate\":1.0000}")
+                .build();
+
+        CandidateRuleDto dto = CandidateRuleDto.fromEntity(candidateRule);
+
+        assertThat(dto.getBacktestStatus()).isEqualTo("success");
+        assertThat(dto.getLatestBacktestReportId()).isEqualTo(1001L);
+        assertThat(dto.getBacktestResult()).contains("\"triggerCount\":1");
     }
 
     private AiReviewRequestDto reviewRequest() {
