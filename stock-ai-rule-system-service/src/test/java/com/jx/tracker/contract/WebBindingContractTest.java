@@ -26,7 +26,8 @@ class WebBindingContractTest {
             "com.jx.tracker.controller.AiReviewController",
             "com.jx.tracker.controller.UserController",
             "com.jx.tracker.controller.CandidateRuleController",
-            "com.jx.tracker.rule.controller.RuleDefinitionController"
+            "com.jx.tracker.rule.controller.RuleDefinitionController",
+            "com.jx.tracker.rule.controller.RulePublishController"
     );
 
     @Test
