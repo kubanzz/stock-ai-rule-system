@@ -124,3 +124,36 @@
 14:19:06.326 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-8080"]
 14:19:06.364 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 4.978 seconds (process running for 7.103)
 14:19:13.545 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+00:20:26.559 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+00:20:26.644 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 34922 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+00:20:26.645 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+00:20:28.836 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+00:20:28.839 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+00:20:28.839 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+00:20:28.908 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+00:20:29.515 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+00:20:29.523 [Druid-ConnectionPool-Create-1451700171] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+00:20:29.523 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+00:21:25.500 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+00:21:25.576 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 35491 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+00:21:25.577 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+00:21:27.646 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+00:21:27.649 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+00:21:27.650 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+00:21:27.716 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+00:21:28.660 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+00:21:28.665 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+00:21:28.688 [Druid-ConnectionPool-Create-91286940] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+00:23:56.048 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+00:23:56.112 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 37687 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+00:23:56.113 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+00:23:58.003 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+00:23:58.005 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+00:23:58.006 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+00:23:58.076 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+00:23:58.892 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+00:23:59.438 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+00:24:00.107 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@7fedfe27
+00:24:00.395 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-8080"]
+00:24:00.444 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 4.895 seconds (process running for 7.202)
+00:24:21.287 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
