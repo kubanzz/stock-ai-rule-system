@@ -151,6 +151,21 @@ public class RulePublishServiceImpl implements RulePublishService {
         return toResult(ruleDefinition, null, RuleLifecycleStatus.ACTIVE.getCode(), targetVersion, operationLog);
     }
 
+    @Override
+    public List<RuleVersionDto> listRuleVersions(String ruleCode) {
+        if (!StringUtils.hasText(ruleCode)) {
+            throw new ServiceException("规则编码不能为空");
+        }
+        RuleDefinition ruleDefinition = findRuleDefinition(ruleCode);
+        return ruleVersionMapper.selectList(new LambdaQueryWrapper<RuleVersion>()
+                        .eq(RuleVersion::getRuleId, ruleDefinition.getId())
+                        .orderByDesc(RuleVersion::getCreatedTime)
+                        .orderByDesc(RuleVersion::getId))
+                .stream()
+                .map(this::toVersionDto)
+                .toList();
+    }
+
     private CandidateRule findCandidateRule(String candidateRuleId) {
         CandidateRule candidateRule = candidateRuleMapper.selectOne(new LambdaQueryWrapper<CandidateRule>()
                 .eq(CandidateRule::getCandidateCode, candidateRuleId));
