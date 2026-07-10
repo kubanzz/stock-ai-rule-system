@@ -165,6 +165,43 @@ class StockSignalServiceTest {
         assertThat(saved.getRiskDisclaimer()).isEqualTo(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
     }
 
+    @Test
+    void getsLatestSignalForSymbolWhenSignalDateIsNotProvided() {
+        AtomicReference<String> capturedSqlSegment = new AtomicReference<>();
+        StockSignalDaily latestSignal = StockSignalDaily.builder()
+                .symbol("AAPL")
+                .signalDate(LocalDate.of(2026, 6, 20))
+                .signal(SignalType.WATCH.getCode())
+                .build();
+        StockSignalDailyMapper stockSignalDailyMapper = (StockSignalDailyMapper) Proxy.newProxyInstance(
+                StockSignalDailyMapper.class.getClassLoader(),
+                new Class<?>[]{StockSignalDailyMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectOne".equals(method.getName())) {
+                        initializeStockSignalDailyTableInfo();
+                        String sqlSegment = String.valueOf(args[0].getClass().getMethod("getSqlSegment").invoke(args[0]));
+                        capturedSqlSegment.set(sqlSegment);
+                        return latestSignal;
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                }
+        );
+        StockSignalService service = new StockSignalService(
+                fakeRuleDefinitionMapper(List.of()),
+                fakeStockFactorDailyMapper(List.of()),
+                stockSignalDailyMapper,
+                new JsonRuleEngineExecutor(),
+                new SignalScoringService()
+        );
+
+        StockSignalDaily signal = service.getSignal("AAPL", null);
+
+        assertThat(signal).isSameAs(latestSignal);
+        assertThat(capturedSqlSegment.get()).contains("symbol");
+        assertThat(capturedSqlSegment.get()).doesNotContain("signal_date =");
+        assertThat(capturedSqlSegment.get()).contains("ORDER BY signal_date DESC");
+    }
+
     @SuppressWarnings("unchecked")
     private RuleDefinitionMapper fakeRuleDefinitionMapper(List<RuleDefinition> rules) {
         return (RuleDefinitionMapper) Proxy.newProxyInstance(
@@ -230,6 +267,15 @@ class StockSignalServiceTest {
             TableInfoHelper.initTableInfo(
                     new MybatisMapperBuilderAssistant(new MybatisConfiguration(), ""),
                     RuleDefinition.class
+            );
+        }
+    }
+
+    private void initializeStockSignalDailyTableInfo() {
+        if (TableInfoHelper.getTableInfo(StockSignalDaily.class) == null) {
+            TableInfoHelper.initTableInfo(
+                    new MybatisMapperBuilderAssistant(new MybatisConfiguration(), ""),
+                    StockSignalDaily.class
             );
         }
     }

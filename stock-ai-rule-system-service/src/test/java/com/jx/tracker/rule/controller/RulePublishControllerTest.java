@@ -21,6 +21,7 @@ import com.jx.tracker.mapper.RuleVersionMapper;
 import com.jx.tracker.rule.service.RulePublishService;
 import com.jx.tracker.rule.service.RulePublishServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 
@@ -140,6 +141,18 @@ class RulePublishControllerTest {
     }
 
     @Test
+    void listRuleVersionsEndpointReturnsVersionRows() {
+        CapturingRulePublishService service = new CapturingRulePublishService();
+        RulePublishController controller = new RulePublishController(service);
+
+        AjaxResult response = controller.listRuleVersions("R_TREND_BREAKOUT_001");
+
+        assertThat(response.get(AjaxResult.CODE_TAG)).isEqualTo(HttpStatus.SUCCESS);
+        assertThat(service.ruleCode).isEqualTo("R_TREND_BREAKOUT_001");
+        assertThat(response.get(AjaxResult.DATA_TAG)).asList().hasSize(2);
+    }
+
+    @Test
     void controllerMappingsStayRestfulAndExplicit() throws NoSuchMethodException {
         RequestMapping classMapping = RulePublishController.class.getAnnotation(RequestMapping.class);
         assertThat(classMapping.value()).containsExactly("/api/rules");
@@ -148,6 +161,11 @@ class RulePublishControllerTest {
                 .getDeclaredMethod("publishCandidateRule", String.class, RulePublishRequestDto.class)
                 .getAnnotation(PostMapping.class);
         assertThat(publishMapping.value()).containsExactly("/candidates/{candidateCode}/publish");
+
+        GetMapping listVersionsMapping = RulePublishController.class
+                .getDeclaredMethod("listRuleVersions", String.class)
+                .getAnnotation(GetMapping.class);
+        assertThat(listVersionsMapping.value()).containsExactly("/{ruleCode}/versions");
 
         PostMapping rollbackMapping = RulePublishController.class
                 .getDeclaredMethod("rollbackRuleVersion", String.class, String.class, RulePublishRequestDto.class)
@@ -178,6 +196,18 @@ class RulePublishControllerTest {
             this.operator = operator;
             this.reason = reason;
             return result(ruleCode, null, "v1", "rollback");
+        }
+
+        @Override
+        public List<RuleVersionDto> listRuleVersions(String ruleCode) {
+            this.ruleCode = ruleCode;
+            RuleVersionDto published = new RuleVersionDto();
+            published.setVersionNo("v2");
+            published.setRuleContent("new-json");
+            RuleVersionDto previous = new RuleVersionDto();
+            previous.setVersionNo("v1");
+            previous.setRuleContent("old-json");
+            return List.of(published, previous);
         }
 
         private RulePublishResultDto result(String ruleCode, String candidateCode, String versionNo, String operation) {

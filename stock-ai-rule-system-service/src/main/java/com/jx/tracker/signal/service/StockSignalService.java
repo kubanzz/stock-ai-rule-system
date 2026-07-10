@@ -102,7 +102,9 @@ public class StockSignalService {
     public StockSignalDaily getSignal(String symbol, LocalDate signalDate) {
         return stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                 .eq(StockSignalDaily::getSymbol, symbol)
-                .eq(StockSignalDaily::getSignalDate, signalDate));
+                .eq(signalDate != null, StockSignalDaily::getSignalDate, signalDate)
+                .orderByDesc(signalDate == null, StockSignalDaily::getSignalDate)
+                .last(signalDate == null, "LIMIT 1"));
     }
 
     public List<StockSignalDaily> generateDailySignalsFromFactors(LocalDate signalDate, List<String> symbols) {

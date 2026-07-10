@@ -6,6 +6,7 @@ import com.jx.tracker.domain.dto.BacktestRequestDto;
 import com.jx.tracker.market.data.dto.DailyQuoteSyncRequestDto;
 import com.jx.tracker.market.data.dto.MarketDataSyncResultDto;
 import com.jx.tracker.market.data.dto.TradeCalendarDto;
+import com.jx.tracker.signal.controller.StockSignalController;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -131,6 +132,17 @@ class WebBindingContractTest {
         assertThat(dto.isOpen()).isTrue();
         assertThat(dto.getPreTradeDate()).isEqualTo(LocalDate.of(2023, 12, 29));
         assertThat(dto.getNextTradeDate()).isEqualTo(LocalDate.of(2024, 1, 3));
+    }
+
+    @Test
+    void stockAnalysisDateRequestParamIsOptionalForDirectDetailLinks() throws Exception {
+        Method analysisMethod = StockSignalController.class
+                .getDeclaredMethod("analysis", String.class, LocalDate.class);
+        RequestParam dateParam = analysisMethod.getParameters()[1].getAnnotation(RequestParam.class);
+
+        assertThat(dateParam).isNotNull();
+        assertThat(namedValue(dateParam.value(), dateParam.name())).isEqualTo("date");
+        assertThat(dateParam.required()).isFalse();
     }
 
     private String namedValue(String value, String name) {

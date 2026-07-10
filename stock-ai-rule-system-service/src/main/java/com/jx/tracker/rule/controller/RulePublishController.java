@@ -5,6 +5,7 @@ import com.jx.tracker.domain.dto.RulePublishRequestDto;
 import com.jx.tracker.rule.service.RulePublishService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,6 +32,12 @@ public class RulePublishController {
                 request.getOperator(),
                 request.getReason()
         ));
+    }
+
+    @GetMapping("/{ruleCode}/versions")
+    @Operation(summary = "查询规则版本列表")
+    public AjaxResult listRuleVersions(@PathVariable("ruleCode") String ruleCode) {
+        return AjaxResult.success(rulePublishService.listRuleVersions(ruleCode));
     }
 
     @PostMapping("/{ruleCode}/versions/{versionId}/rollback")

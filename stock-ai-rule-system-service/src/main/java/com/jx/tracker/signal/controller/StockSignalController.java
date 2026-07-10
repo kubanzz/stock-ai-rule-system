@@ -65,7 +65,8 @@ public class StockSignalController {
     }
 
     @GetMapping("/api/stocks/{symbol}/analysis")
-    public AjaxResult analysis(@PathVariable("symbol") String symbol, @RequestParam("date") LocalDate date) {
+    public AjaxResult analysis(@PathVariable("symbol") String symbol,
+                               @RequestParam(value = "date", required = false) LocalDate date) {
         StockSignalDaily signal = stockSignalService.getSignal(symbol, date);
         if (signal == null) {
             return AjaxResult.success(StockAnalysisVo.builder()
