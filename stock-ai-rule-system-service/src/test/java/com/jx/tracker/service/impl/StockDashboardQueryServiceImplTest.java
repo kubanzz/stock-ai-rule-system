@@ -294,6 +294,58 @@ class StockDashboardQueryServiceImplTest {
         assertThat(result.signals()).isEmpty();
     }
 
+    @Test
+    void reportsMissingHitRateWhenNoHit5dSampleIsCompleted() {
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000001.SZ", "甲", "A股", "银行")));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(
+                signal("000001.SZ", DATE, "bullish", "0.80", 1, null)
+        ));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockActualResultMapper.selectList(any())).thenReturn(List.of(
+                StockActualResult.builder().symbol("000001.SZ").signalDate(DATE).hit5d(null).build()
+        ));
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(
+                DATE, null, 1, 20, "confidence", "desc"
+        ));
+
+        StockConsoleVo.MetricCard hitRate = result.metrics().stream()
+                .filter(metric -> "命中率（5日）".equals(metric.label()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(hitRate.value()).isNull();
+    }
+
+    @Test
+    void marketContextContractCarriesStructuredSentimentAndRiskOverview() {
+        StockConsoleVo.Sentiment sentiment = new StockConsoleVo.Sentiment(
+                "中性", new BigDecimal("50.00"), "available"
+        );
+        StockConsoleVo.RiskOverview riskOverview = new StockConsoleVo.RiskOverview(
+                3, new BigDecimal("12.50"), "synced", "medium", "风险分布正常"
+        );
+        StockConsoleVo.MarketContext compatible = new StockConsoleVo.MarketContext(
+                "测试指数", BigDecimal.ONE, BigDecimal.ZERO, "平稳", List.of()
+        );
+
+        assertThat(sentiment.label()).isEqualTo("中性");
+        assertThat(riskOverview.highRiskCount()).isEqualTo(3);
+        assertThat(riskOverview.highRiskRatio()).isEqualByComparingTo("12.50");
+        assertThat(riskOverview.syncStatus()).isEqualTo("synced");
+        assertThat(compatible.available()).isTrue();
+
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of());
+        StockConsoleVo.MarketContext emptyContext = service.dashboard(query(
+                DATE, null, 1, 20, "confidence", "desc"
+        )).marketContext();
+
+        assertThat(emptyContext.available()).isFalse();
+        assertThat(emptyContext.sentiment()).isEqualTo(new StockConsoleVo.Sentiment("暂无数据", null, "unavailable"));
+        assertThat(emptyContext.riskOverview()).isEqualTo(new StockConsoleVo.RiskOverview(
+                0, null, "unavailable", null, "暂无市场风险环境数据"
+        ));
+    }
+
     private StockConsoleVo.SignalDashboardQuery query(
             LocalDate date,
             String symbol,

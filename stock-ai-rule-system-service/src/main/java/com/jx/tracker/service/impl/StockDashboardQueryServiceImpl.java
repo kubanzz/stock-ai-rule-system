@@ -210,7 +210,9 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
 
     private StockConsoleVo.MarketContext emptyMarketContext() {
         return new StockConsoleVo.MarketContext(false, null, null, null, "unavailable",
-                List.of(), List.of(), null, null);
+                List.of(), List.of(),
+                new StockConsoleVo.Sentiment("暂无数据", null, "unavailable"),
+                new StockConsoleVo.RiskOverview(0, null, "unavailable", null, "暂无市场风险环境数据"));
     }
 
     private StockConsoleVo.SignalRow toRow(StockSignalDaily signal, StockBase stock, StockDailyQuote quote) {
@@ -245,7 +247,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .toList();
         long hits = hit5dSamples.stream().filter(Boolean.TRUE::equals).count();
         BigDecimal hitRate = hit5dSamples.isEmpty()
-                ? BigDecimal.ZERO
+                ? null
                 : BigDecimal.valueOf(hits).multiply(BigDecimal.valueOf(100))
                 .divide(BigDecimal.valueOf(hit5dSamples.size()), 2, RoundingMode.HALF_UP);
         return List.of(

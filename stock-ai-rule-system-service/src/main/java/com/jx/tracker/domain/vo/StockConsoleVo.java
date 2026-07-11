@@ -77,10 +77,16 @@ public final class StockConsoleVo {
     public record IndustryStrength(String industry, BigDecimal strength, String status) {
     }
 
-    public record Sentiment(BigDecimal score, String status) {
+    public record Sentiment(String label, BigDecimal score, String status) {
     }
 
-    public record RiskOverview(String level, String summary) {
+    public record RiskOverview(
+            long highRiskCount,
+            BigDecimal highRiskRatio,
+            String syncStatus,
+            String level,
+            String summary
+    ) {
     }
 
     public record MarketContext(
