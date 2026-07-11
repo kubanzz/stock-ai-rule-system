@@ -11,11 +11,13 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "stock.dashboard")
 public class StockDashboardProperties {
 
-    private final Map<String, String> benchmarkSymbols = new LinkedHashMap<>(Map.of(
+    private static final Map<String, String> DEFAULT_BENCHMARK_SYMBOLS = Map.of(
             "A股", "000300.SH",
             "港股", "HSI.HK",
             "美股", "SPX.US"
-    ));
+    );
+
+    private final Map<String, String> benchmarkSymbols = new LinkedHashMap<>();
 
     public Map<String, String> getBenchmarkSymbols() {
         return benchmarkSymbols;
@@ -23,14 +25,15 @@ public class StockDashboardProperties {
 
     public String benchmarkSymbol(String market) {
         String displayName = MarketCodeNormalizer.toDisplayName(market);
-        String configured = benchmarkSymbols.get(displayName);
+        String configured = benchmarkSymbols.get(market);
         if (configured != null) {
             return configured;
         }
-        return benchmarkSymbols.entrySet().stream()
+        configured = benchmarkSymbols.entrySet().stream()
                 .filter(entry -> MarketCodeNormalizer.equivalent(displayName, entry.getKey()))
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElse(null);
+        return configured != null ? configured : DEFAULT_BENCHMARK_SYMBOLS.get(displayName);
     }
 }

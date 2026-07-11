@@ -6,11 +6,15 @@ import com.jx.tracker.domain.entity.MarketDataSyncRun;
 import com.jx.tracker.domain.entity.StockBase;
 import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.entity.TradeCalendar;
 import com.jx.tracker.domain.enums.SignalType;
+import com.jx.tracker.domain.enums.MarketDataSyncType;
 import com.jx.tracker.domain.vo.StockConsoleVo;
 import com.jx.tracker.mapper.MarketDataSyncRunMapper;
 import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
+import com.jx.tracker.mapper.TradeCalendarMapper;
+import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.service.StockMarketContextService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,7 +26,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,30 +39,32 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
 
     private static final int TREND_DAYS = 20;
     private static final int SENTIMENT_DAYS = 7;
+    private static final Set<String> VALID_SIGNAL_TYPES = Set.of(
+            SignalType.BULLISH.getCode(),
+            SignalType.BEARISH.getCode(),
+            SignalType.WATCH.getCode(),
+            SignalType.HIGH_RISK.getCode()
+    );
 
     private final StockDailyQuoteMapper stockDailyQuoteMapper;
     private final StockSignalDailyMapper stockSignalDailyMapper;
     private final MarketDataSyncRunMapper marketDataSyncRunMapper;
+    private final TradeCalendarMapper tradeCalendarMapper;
     private final StockDashboardProperties properties;
 
     @Override
     public StockConsoleVo.MarketContext marketContext(
-            String market,
+            StockConsoleVo.SignalDashboardQuery query,
             LocalDate tradeDate,
             List<StockBase> candidates
     ) {
-        String benchmarkSymbol = properties.benchmarkSymbol(market);
-        if (tradeDate == null || candidates == null || candidates.isEmpty()) {
-            return emptyContext(benchmarkSymbol);
-        }
-        List<String> candidateSymbols = candidates.stream()
+        String benchmarkSymbol = properties.benchmarkSymbol(query.market());
+        List<StockBase> scopedCandidates = candidates == null ? List.of() : candidates;
+        List<String> candidateSymbols = scopedCandidates.stream()
                 .map(StockBase::getSymbol)
                 .filter(StringUtils::hasText)
                 .distinct()
                 .toList();
-        if (candidateSymbols.isEmpty()) {
-            return emptyContext(benchmarkSymbol);
-        }
 
         List<StockDailyQuote> benchmarkQuotes = benchmarkQuotes(benchmarkSymbol, tradeDate);
         List<StockConsoleVo.SparkPoint> trend = benchmarkQuotes.stream()
@@ -68,7 +73,9 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
                 ))
                 .toList();
         StockDailyQuote latestBenchmark = benchmarkQuotes.isEmpty() ? null : benchmarkQuotes.getLast();
-        List<StockSignalDaily> recentSignals = recentSignals(candidateSymbols, tradeDate);
+        List<StockSignalDaily> recentSignals = tradeDate == null || candidateSymbols.isEmpty()
+                ? List.of()
+                : recentSignals(candidateSymbols, tradeDate, query);
 
         return new StockConsoleVo.MarketContext(
                 latestBenchmark != null,
@@ -77,9 +84,9 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
                 latestBenchmark == null ? null : latestBenchmark.getChangePct(),
                 latestBenchmark == null ? "unavailable" : marketStatus(latestBenchmark.getChangePct()),
                 trend,
-                industryStrength(candidates, candidateSymbols, tradeDate),
+                industryStrength(scopedCandidates, candidateSymbols, tradeDate),
                 sentiment(recentSignals),
-                riskOverview(recentSignals, tradeDate)
+                riskOverview(recentSignals, tradeDate, benchmarkSymbol, candidateSymbols)
         );
     }
 
@@ -89,13 +96,14 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
         }
         List<StockDailyQuote> quotes = stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
                 .eq(StockDailyQuote::getSymbol, benchmarkSymbol)
-                .le(StockDailyQuote::getTradeDate, tradeDate)
+                .le(tradeDate != null, StockDailyQuote::getTradeDate, tradeDate)
                 .isNotNull(StockDailyQuote::getClosePrice)
                 .orderByDesc(StockDailyQuote::getTradeDate)
                 .last("LIMIT " + TREND_DAYS));
         return quotes.stream()
                 .filter(quote -> benchmarkSymbol.equals(quote.getSymbol()))
-                .filter(quote -> quote.getTradeDate() != null && !quote.getTradeDate().isAfter(tradeDate))
+                .filter(quote -> quote.getTradeDate() != null)
+                .filter(quote -> tradeDate == null || !quote.getTradeDate().isAfter(tradeDate))
                 .filter(quote -> quote.getClosePrice() != null)
                 .sorted(Comparator.comparing(StockDailyQuote::getTradeDate).reversed())
                 .limit(TREND_DAYS)
@@ -108,6 +116,9 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
             List<String> candidateSymbols,
             LocalDate tradeDate
     ) {
+        if (tradeDate == null || candidateSymbols.isEmpty()) {
+            return List.of();
+        }
         Map<String, StockBase> stocksBySymbol = candidates.stream()
                 .filter(stock -> StringUtils.hasText(stock.getSymbol()))
                 .collect(Collectors.toMap(
@@ -159,24 +170,60 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
         return new StockConsoleVo.IndustryStrength(industry, average, status);
     }
 
-    private List<StockSignalDaily> recentSignals(List<String> candidateSymbols, LocalDate tradeDate) {
+    private List<StockSignalDaily> recentSignals(
+            List<String> candidateSymbols,
+            LocalDate tradeDate,
+            StockConsoleVo.SignalDashboardQuery query
+    ) {
+        List<LocalDate> tradingDates = recentTradingDates(query.market(), tradeDate);
+        if (tradingDates.isEmpty()) {
+            return List.of();
+        }
+        LocalDate earliestDate = tradingDates.getLast();
+        LocalDate latestDate = tradingDates.getFirst();
         List<StockSignalDaily> signals = stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
                 .in(StockSignalDaily::getSymbol, candidateSymbols)
-                .le(StockSignalDaily::getSignalDate, tradeDate)
+                .between(StockSignalDaily::getSignalDate, earliestDate, latestDate)
+                .in(StockSignalDaily::getSignalDate, tradingDates)
+                .eq(StringUtils.hasText(query.signal()), StockSignalDaily::getSignal, query.signal())
+                .ge(query.confidenceMin() != null, StockSignalDaily::getConfidence, query.confidenceMin())
+                .le(query.confidenceMax() != null, StockSignalDaily::getConfidence, query.confidenceMax())
                 .orderByDesc(StockSignalDaily::getSignalDate));
         Set<String> candidateSymbolSet = Set.copyOf(candidateSymbols);
+        Set<LocalDate> tradingDateSet = Set.copyOf(tradingDates);
         List<StockSignalDaily> scopedSignals = signals.stream()
                 .filter(signal -> candidateSymbolSet.contains(signal.getSymbol()))
-                .filter(signal -> signal.getSignalDate() != null && !signal.getSignalDate().isAfter(tradeDate))
+                .filter(signal -> tradingDateSet.contains(signal.getSignalDate()))
+                .filter(signal -> signal.getSignal() != null && VALID_SIGNAL_TYPES.contains(signal.getSignal()))
+                .filter(signal -> !StringUtils.hasText(query.signal()) || query.signal().equals(signal.getSignal()))
+                .filter(signal -> query.confidenceMin() == null && query.confidenceMax() == null
+                        || signal.getConfidence() != null)
+                .filter(signal -> query.confidenceMin() == null
+                        || signal.getConfidence().compareTo(query.confidenceMin()) >= 0)
+                .filter(signal -> query.confidenceMax() == null
+                        || signal.getConfidence().compareTo(query.confidenceMax()) <= 0)
                 .sorted(Comparator.comparing(StockSignalDaily::getSignalDate).reversed())
                 .toList();
-        Set<LocalDate> recentDates = scopedSignals.stream()
-                .map(StockSignalDaily::getSignalDate)
+        return scopedSignals;
+    }
+
+    private List<LocalDate> recentTradingDates(String market, LocalDate tradeDate) {
+        List<String> marketAliases = MarketCodeNormalizer.aliases(market);
+        List<TradeCalendar> calendars = tradeCalendarMapper.selectList(new LambdaQueryWrapper<TradeCalendar>()
+                .in(TradeCalendar::getMarket, marketAliases)
+                .eq(TradeCalendar::getOpen, true)
+                .le(TradeCalendar::getTradeDate, tradeDate)
+                .orderByDesc(TradeCalendar::getTradeDate)
+                .last("LIMIT " + SENTIMENT_DAYS));
+        return calendars.stream()
+                .filter(calendar -> MarketCodeNormalizer.equivalent(market, calendar.getMarket()))
+                .filter(calendar -> Boolean.TRUE.equals(calendar.getOpen()))
+                .map(TradeCalendar::getTradeDate)
+                .filter(Objects::nonNull)
+                .filter(date -> !date.isAfter(tradeDate))
                 .distinct()
+                .sorted(Comparator.reverseOrder())
                 .limit(SENTIMENT_DAYS)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        return scopedSignals.stream()
-                .filter(signal -> recentDates.contains(signal.getSignalDate()))
                 .toList();
     }
 
@@ -200,7 +247,12 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
         return new StockConsoleVo.Sentiment(label, score, status);
     }
 
-    private StockConsoleVo.RiskOverview riskOverview(List<StockSignalDaily> recentSignals, LocalDate tradeDate) {
+    private StockConsoleVo.RiskOverview riskOverview(
+            List<StockSignalDaily> recentSignals,
+            LocalDate tradeDate,
+            String benchmarkSymbol,
+            List<String> candidateSymbols
+    ) {
         List<StockSignalDaily> currentSignals = recentSignals.stream()
                 .filter(signal -> Objects.equals(tradeDate, signal.getSignalDate()))
                 .toList();
@@ -209,12 +261,23 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
                 ? null
                 : BigDecimal.valueOf(highRiskCount).multiply(BigDecimal.valueOf(100))
                 .divide(BigDecimal.valueOf(currentSignals.size()), 2, RoundingMode.HALF_UP);
-        MarketDataSyncRun latestSyncRun = marketDataSyncRunMapper.selectOne(
-                new LambdaQueryWrapper<MarketDataSyncRun>()
-                        .orderByDesc(MarketDataSyncRun::getStartedAt)
-                        .orderByDesc(MarketDataSyncRun::getId)
-                        .last("LIMIT 1")
-        );
+        List<String> targetSymbols = new ArrayList<>(candidateSymbols);
+        if (StringUtils.hasText(benchmarkSymbol)) {
+            targetSymbols.add(benchmarkSymbol);
+        }
+        LambdaQueryWrapper<MarketDataSyncRun> syncQuery = new LambdaQueryWrapper<MarketDataSyncRun>()
+                .eq(MarketDataSyncRun::getSyncType, MarketDataSyncType.DAILY_QUOTE.getCode())
+                .le(tradeDate != null, MarketDataSyncRun::getEndDate, tradeDate)
+                .and(wrapper -> {
+                    wrapper.isNull(MarketDataSyncRun::getTargetSymbol);
+                    if (!targetSymbols.isEmpty()) {
+                        wrapper.or().in(MarketDataSyncRun::getTargetSymbol, targetSymbols);
+                    }
+                })
+                .orderByDesc(MarketDataSyncRun::getStartedAt)
+                .orderByDesc(MarketDataSyncRun::getId)
+                .last("LIMIT 1");
+        MarketDataSyncRun latestSyncRun = marketDataSyncRunMapper.selectOne(syncQuery);
         String syncStatus = latestSyncRun == null || !StringUtils.hasText(latestSyncRun.getStatus())
                 ? "unavailable"
                 : latestSyncRun.getStatus();
@@ -242,17 +305,4 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
         return changePct.signum() > 0 ? "偏强" : changePct.signum() < 0 ? "偏弱" : "平稳";
     }
 
-    private StockConsoleVo.MarketContext emptyContext(String benchmarkSymbol) {
-        return new StockConsoleVo.MarketContext(
-                false,
-                benchmarkSymbol,
-                null,
-                null,
-                "unavailable",
-                List.of(),
-                List.of(),
-                new StockConsoleVo.Sentiment("信号情绪（7 日）·暂无数据", null, "unavailable"),
-                new StockConsoleVo.RiskOverview(0, null, "unavailable", "unavailable", "暂无市场风险环境数据")
-        );
-    }
 }

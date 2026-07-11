@@ -316,7 +316,7 @@ class StockDashboardQueryServiceImplTest {
         verify(stockSignalDailyMapper, never()).selectList(any());
         verify(stockDailyQuoteMapper, never()).selectList(any());
         verify(stockActualResultMapper, never()).selectList(any());
-        verify(stockMarketContextService, never()).marketContext(any(), any(), any());
+        verify(stockMarketContextService).marketContext(any(), any(), any());
     }
 
     @Test

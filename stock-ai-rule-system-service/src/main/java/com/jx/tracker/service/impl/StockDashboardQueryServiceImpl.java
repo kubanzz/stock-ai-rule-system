@@ -76,7 +76,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         }
         if (candidates.isEmpty()) {
             return overview(query, query.date(), List.of(), metrics(0, List.of(), List.of()),
-                    0, availableIndustries, null, emptyMarketContext());
+                    0, availableIndustries, null,
+                    stockMarketContextService.marketContext(query, query.date(), candidates));
         }
 
         List<String> candidateSymbols = candidates.stream().map(StockBase::getSymbol).distinct().toList();
@@ -107,7 +108,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         if (filteredSignals.isEmpty()) {
             return overview(query, tradeDate, List.of(), metrics(candidates.size(), List.of(), List.of()),
                     0, availableIndustries, null,
-                    stockMarketContextService.marketContext(query.market(), tradeDate, candidates));
+                    stockMarketContextService.marketContext(query, tradeDate, candidates));
         }
 
         List<String> signalSymbols = filteredSignals.stream().map(StockSignalDaily::getSymbol).distinct().toList();
@@ -144,7 +145,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         return overview(query, tradeDate, rows.subList(fromIndex, toIndex),
                 metrics(candidates.size(), filteredSignals, filteredActualResults), rows.size(),
                 availableIndustries, dataUpdatedAt,
-                stockMarketContextService.marketContext(query.market(), tradeDate, candidates));
+                stockMarketContextService.marketContext(query, tradeDate, candidates));
     }
 
     private LocalDate resolveTradeDate(LocalDate requestedDate, List<String> candidateSymbols) {
@@ -215,15 +216,6 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 availableIndustries,
                 dataUpdatedAt
         );
-    }
-
-    private StockConsoleVo.MarketContext emptyMarketContext() {
-        return new StockConsoleVo.MarketContext(false, null, null, null, "unavailable",
-                List.of(), List.of(),
-                new StockConsoleVo.Sentiment("信号情绪（7 日）·暂无数据", null, "unavailable"),
-                new StockConsoleVo.RiskOverview(
-                        0, null, "unavailable", "unavailable", "暂无市场风险环境数据"
-                ));
     }
 
     private StockConsoleVo.SignalRow toRow(StockSignalDaily signal, StockBase stock, StockDailyQuote quote) {

@@ -41,6 +41,7 @@ class StockDashboardQueryPersistenceTest {
     void resetSchema() {
         jdbcTemplate.execute("DROP TABLE IF EXISTS stock_actual_result");
         jdbcTemplate.execute("DROP TABLE IF EXISTS market_data_sync_run");
+        jdbcTemplate.execute("DROP TABLE IF EXISTS trade_calendar");
         jdbcTemplate.execute("DROP TABLE IF EXISTS stock_daily_quote");
         jdbcTemplate.execute("DROP TABLE IF EXISTS stock_signal_daily");
         jdbcTemplate.execute("DROP TABLE IF EXISTS stock_watchlist_item");
@@ -66,7 +67,7 @@ class StockDashboardQueryPersistenceTest {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     symbol VARCHAR(32) NOT NULL,
                     signal_date DATE NOT NULL,
-                    `signal` VARCHAR(32) NOT NULL,
+                    `signal` VARCHAR(32),
                     signal_level VARCHAR(32),
                     bullish_score DECIMAL(18,6),
                     bearish_score DECIMAL(18,6),
@@ -76,6 +77,18 @@ class StockDashboardQueryPersistenceTest {
                     explanation VARCHAR(512),
                     risk_disclaimer VARCHAR(512),
                     created_at DATETIME
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE trade_calendar (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    market VARCHAR(32) NOT NULL,
+                    trade_date DATE NOT NULL,
+                    is_open BOOLEAN NOT NULL,
+                    pre_trade_date DATE,
+                    next_trade_date DATE,
+                    data_source VARCHAR(32),
+                    sync_time DATETIME
                 )
                 """);
         jdbcTemplate.execute("""
@@ -179,17 +192,32 @@ class StockDashboardQueryPersistenceTest {
                 ('000001.SZ', '2026-07-10', 'bullish', NULL, NULL, NULL, 0.80, 'R1,R2', '2026-07-10 15:00:00'),
                 ('000001.SZ', '2026-07-09', 'bullish', 0.70, 0.10, 0.10, 0.82, 'R1', '2026-07-09 15:00:00'),
                 ('000002.SZ', '2026-07-10', 'bearish', 0.10, 0.80, 0.20, 0.60, 'R3', '2026-07-10 15:00:00'),
+                ('000006.SZ', '2026-07-10', NULL, 0.20, 0.20, 0.20, 0.70, 'R-NULL', '2026-07-10 15:00:00'),
+                ('000007.SZ', '2026-07-10', 'unknown', 0.20, 0.20, 0.20, 0.70, 'R-UNKNOWN', '2026-07-10 15:00:00'),
                 ('000003.SZ', '2026-07-12', 'bullish', 0.80, 0.10, 0.10, 0.84, 'R4', '2026-07-12 15:00:00'),
                 ('000004.SZ', '2026-07-10', 'watch', NULL, NULL, NULL, NULL, NULL, '2026-07-10 14:00:00'),
                 ('000005.SZ', '2026-07-10', 'high_risk', 0.20, 0.20, 0.90, 0.65, 'R6', '2026-07-10 15:00:00'),
                 ('000001.SZ', '2026-07-08', 'bearish', 0.10, 0.80, 0.20, 0.70, 'R7', '2026-07-08 15:00:00'),
-                ('000001.SZ', '2026-07-07', 'watch', 0.40, 0.30, 0.20, 0.60, 'R8', '2026-07-07 15:00:00'),
+                ('000001.SZ', '2026-07-05', 'watch', 0.40, 0.30, 0.20, 0.60, 'R8', '2026-07-05 15:00:00'),
                 ('000001.SZ', '2026-07-06', 'high_risk', 0.20, 0.20, 0.90, 0.65, 'R9', '2026-07-06 15:00:00'),
                 ('000001.SZ', '2026-07-03', 'bullish', 0.80, 0.10, 0.10, 0.80, 'R10', '2026-07-03 15:00:00'),
                 ('000001.SZ', '2026-07-02', 'bearish', 0.10, 0.80, 0.20, 0.70, 'R11', '2026-07-02 15:00:00'),
                 ('000001.SZ', '2026-07-01', 'bullish', 0.80, 0.10, 0.10, 0.80, 'R12', '2026-07-01 15:00:00'),
                 ('00700.HK', '2026-07-11', 'bullish', 0.90, 0.05, 0.05, 0.95, 'R5', '2026-07-11 15:00:00'),
                 ('AAPL.US', '2026-07-11', 'watch', 0.50, 0.20, 0.10, 0.70, 'R13', '2026-07-11 15:00:00')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO trade_calendar(market, trade_date, is_open, data_source) VALUES
+                ('CN', '2026-07-10', TRUE, 'test'),
+                ('CN', '2026-07-09', TRUE, 'test'),
+                ('CN', '2026-07-08', TRUE, 'test'),
+                ('CN', '2026-07-07', TRUE, 'test'),
+                ('CN', '2026-07-06', TRUE, 'test'),
+                ('CN', '2026-07-05', FALSE, 'test'),
+                ('CN', '2026-07-04', FALSE, 'test'),
+                ('CN', '2026-07-03', TRUE, 'test'),
+                ('CN', '2026-07-02', TRUE, 'test'),
+                ('CN', '2026-07-01', TRUE, 'test')
                 """);
         jdbcTemplate.update("""
                 INSERT INTO stock_daily_quote(symbol, trade_date, close_price, change_pct, sync_time)
@@ -215,6 +243,10 @@ class StockDashboardQueryPersistenceTest {
                     tradeDate.atTime(15, 10));
         }
         jdbcTemplate.update("""
+                INSERT INTO stock_daily_quote(symbol, trade_date, close_price, change_pct, sync_time)
+                VALUES ('000300.SH', '2026-07-12', 4000.00, 2.00, '2026-07-12 15:10:00')
+                """);
+        jdbcTemplate.update("""
                 INSERT INTO stock_actual_result(symbol, signal_date, hit5d, created_at)
                 VALUES ('000001.SZ', '2026-07-10', TRUE, '2026-07-10 15:20:00')
                 """);
@@ -228,10 +260,17 @@ class StockDashboardQueryPersistenceTest {
                 (7, '000002.SZ', 1)
                 """);
         jdbcTemplate.update("""
-                INSERT INTO market_data_sync_run(data_source, sync_type, status, started_at, finished_at)
+                INSERT INTO market_data_sync_run(
+                    data_source, sync_type, status, target_symbol, end_date, started_at, finished_at
+                )
                 VALUES
-                ('mock', 'daily_quote', 'success', '2026-07-10 14:00:00', '2026-07-10 14:05:00'),
-                ('mock', 'daily_quote', 'failed', '2026-07-10 16:00:00', '2026-07-10 16:01:00')
+                ('mock', 'daily_quote', 'success', NULL, '2026-07-09', '2026-07-10 14:00:00', '2026-07-10 14:05:00'),
+                ('mock', 'daily_quote', 'success', '000005.SZ', '2026-07-10', '2026-07-10 15:00:00', '2026-07-10 15:05:00'),
+                ('mock', 'daily_quote', 'failed', '000300.SH', '2026-07-10', '2026-07-10 16:00:00', '2026-07-10 16:01:00'),
+                ('mock', 'daily_quote', 'running', NULL, '2026-07-11', '2026-07-10 17:00:00', NULL),
+                ('mock', 'daily_quote', 'success', '00700.HK', '2026-07-10', '2026-07-10 18:00:00', '2026-07-10 18:01:00'),
+                ('mock', 'stock_list', 'skipped', NULL, '2026-07-10', '2026-07-10 19:00:00', '2026-07-10 19:01:00'),
+                ('mock', 'trade_calendar', 'success', NULL, '2026-07-10', '2026-07-10 20:00:00', '2026-07-10 20:01:00')
                 """);
     }
 
@@ -307,10 +346,11 @@ class StockDashboardQueryPersistenceTest {
                         new BigDecimal("-4.00"), new BigDecimal("-3.00")
                 );
 
-        // 最近 7 个有效日期共 10 条：bullish=3, bearish=3, watch=2, high_risk=2。
-        // 指数 = (bullish*100 + watch*50 + high_risk*25 + bearish*0) / total = 45。
+        // 最近 7 个开市日为 7/10、7/9、7/8、7/7、7/6、7/3、7/2，其中 7/7 无信号。
+        // 7/5 闭市日信号及 null/unknown 均排除：bullish=3, bearish=3, watch=1, high_risk=2。
+        // 指数 = (bullish*100 + watch*50 + high_risk*25 + bearish*0) / total = 44.44。
         assertThat(context.sentiment().label()).isEqualTo("信号情绪（7 日）·均衡");
-        assertThat(context.sentiment().score()).isEqualByComparingTo("45.00");
+        assertThat(context.sentiment().score()).isEqualByComparingTo("44.44");
         assertThat(context.sentiment().status()).isEqualTo("balanced");
 
         assertThat(context.riskOverview().highRiskCount()).isEqualTo(1);
@@ -318,6 +358,95 @@ class StockDashboardQueryPersistenceTest {
         assertThat(context.riskOverview().syncStatus()).isEqualTo("failed");
         assertThat(context.riskOverview().level()).isEqualTo("high");
         assertThat(context.riskOverview().summary()).contains("1", "25.00%", "failed");
+    }
+
+    @Test
+    void appliesSignalAndConfidenceFiltersToSentimentAndSelectedDayRisk() {
+        StockConsoleVo.SignalDashboardOverview highRisk = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "CN", "all", null, "high_risk", null,
+                new BigDecimal("0.60"), new BigDecimal("0.70"), 1, 20, "symbol", "asc"
+        ));
+        StockConsoleVo.SignalDashboardOverview bullish = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "CN", "all", null, "bullish", null,
+                new BigDecimal("0.81"), new BigDecimal("0.83"), 1, 20, "symbol", "asc"
+        ));
+
+        assertThat(highRisk.marketContext().sentiment().score()).isEqualByComparingTo("25.00");
+        assertThat(highRisk.marketContext().riskOverview().highRiskCount()).isEqualTo(1);
+        assertThat(highRisk.marketContext().riskOverview().highRiskRatio()).isEqualByComparingTo("100.00");
+        assertThat(bullish.marketContext().sentiment().score()).isEqualByComparingTo("100.00");
+        assertThat(bullish.marketContext().riskOverview().highRiskCount()).isZero();
+        assertThat(bullish.marketContext().riskOverview().highRiskRatio()).isNull();
+    }
+
+    @Test
+    void ignoresClosedDayAndInvalidSignalsWhileKeepingNoSignalTradingDayInWindow() {
+        StockConsoleVo.MarketContext context = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "CN", "all", null, null, null,
+                null, null, 1, 20, "symbol", "asc"
+        )).marketContext();
+
+        assertThat(context.sentiment().score()).isEqualByComparingTo("44.44");
+        assertThat(context.riskOverview().highRiskCount()).isEqualTo(1);
+        assertThat(context.riskOverview().highRiskRatio()).isEqualByComparingTo("25.00");
+    }
+
+    @Test
+    void returnsUnavailableSentimentAndNoRiskSampleWhenTradingCalendarIsMissing() {
+        jdbcTemplate.update("DELETE FROM trade_calendar");
+
+        StockConsoleVo.MarketContext context = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "CN", "all", null, null, null,
+                null, null, 1, 20, "symbol", "asc"
+        )).marketContext();
+
+        assertThat(context.sentiment().status()).isEqualTo("unavailable");
+        assertThat(context.sentiment().score()).isNull();
+        assertThat(context.riskOverview().highRiskCount()).isZero();
+        assertThat(context.riskOverview().highRiskRatio()).isNull();
+    }
+
+    @Test
+    void selectsLatestRelevantDailyQuoteSyncRunForDateAndTargets() {
+        StockConsoleVo.RiskOverview risk = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "CN", "all", null, null, null,
+                null, null, 1, 20, "symbol", "asc"
+        )).marketContext().riskOverview();
+
+        assertThat(risk.syncStatus()).isEqualTo("failed");
+        assertThat(risk.summary()).contains("failed");
+    }
+
+    @Test
+    void aggregatesBenchmarkAndRelevantSyncWhenCandidatesAreEmpty() {
+        StockConsoleVo.MarketContext context = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "CN", "all", "不存在", null, null,
+                null, null, 1, 20, "symbol", "asc"
+        )).marketContext();
+
+        assertThat(context.available()).isTrue();
+        assertThat(context.indexName()).isEqualTo("000300.SH");
+        assertThat(context.indexValue()).isEqualByComparingTo("3020.00");
+        assertThat(context.trend()).hasSize(20);
+        assertThat(context.industryStrength()).isEmpty();
+        assertThat(context.sentiment().status()).isEqualTo("unavailable");
+        assertThat(context.riskOverview().highRiskRatio()).isNull();
+        assertThat(context.riskOverview().syncStatus()).isEqualTo("failed");
+    }
+
+    @Test
+    void usesLatestBenchmarkAndUnboundedRelevantSyncWhenDateAndCandidatesAreEmpty() {
+        StockConsoleVo.MarketContext context = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                null, "CN", "all", "不存在", null, null,
+                null, null, 1, 20, "symbol", "asc"
+        )).marketContext();
+
+        assertThat(context.available()).isTrue();
+        assertThat(context.indexName()).isEqualTo("000300.SH");
+        assertThat(context.indexValue()).isEqualByComparingTo("4000.00");
+        assertThat(context.trend()).hasSize(20);
+        assertThat(context.trend().getLast().label()).isEqualTo("2026-07-12");
+        assertThat(context.riskOverview().syncStatus()).isEqualTo("running");
     }
 
     @Test

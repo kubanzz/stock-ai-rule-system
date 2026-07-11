@@ -8,5 +8,9 @@ import java.util.List;
 
 public interface StockMarketContextService {
 
-    StockConsoleVo.MarketContext marketContext(String market, LocalDate tradeDate, List<StockBase> candidates);
+    StockConsoleVo.MarketContext marketContext(
+            StockConsoleVo.SignalDashboardQuery query,
+            LocalDate tradeDate,
+            List<StockBase> candidates
+    );
 }
