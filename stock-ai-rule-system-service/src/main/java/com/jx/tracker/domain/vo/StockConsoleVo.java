@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 public final class StockConsoleVo {
 
@@ -32,13 +33,70 @@ public final class StockConsoleVo {
     ) {
     }
 
+    public record SignalDashboardQuery(
+            LocalDate date,
+            String market,
+            String poolCode,
+            String symbol,
+            String signal,
+            String industry,
+            BigDecimal confidenceMin,
+            BigDecimal confidenceMax,
+            int pageNum,
+            int pageSize,
+            String sortField,
+            String sortOrder
+    ) {
+        private static final Set<String> SORT_FIELDS = Set.of(
+                "symbol", "price", "changePct", "signal", "bullishScore", "bearishScore",
+                "riskScore", "confidence", "triggeredRuleCount", "updatedAt"
+        );
+
+        public SignalDashboardQuery {
+            market = defaultIfBlank(market, "A股");
+            poolCode = defaultIfBlank(poolCode, "all");
+            symbol = trimToNull(symbol);
+            signal = trimToNull(signal);
+            industry = trimToNull(industry);
+            pageNum = pageNum < 1 ? 1 : pageNum;
+            pageSize = pageSize < 1 ? 20 : Math.min(pageSize, 100);
+            sortField = sortField != null && SORT_FIELDS.contains(sortField) ? sortField : "confidence";
+            sortOrder = "asc".equalsIgnoreCase(sortOrder) ? "asc" : "desc";
+        }
+
+        private static String defaultIfBlank(String value, String defaultValue) {
+            String trimmed = trimToNull(value);
+            return trimmed == null ? defaultValue : trimmed;
+        }
+
+        private static String trimToNull(String value) {
+            return value == null || value.trim().isEmpty() ? null : value.trim();
+        }
+    }
+
+    public record IndustryStrength(String industry, BigDecimal strength, String status) {
+    }
+
+    public record Sentiment(BigDecimal score, String status) {
+    }
+
+    public record RiskOverview(String level, String summary) {
+    }
+
     public record MarketContext(
+            boolean available,
             String indexName,
             BigDecimal indexValue,
             BigDecimal changePct,
             String status,
-            List<SparkPoint> trend
+            List<SparkPoint> trend,
+            List<IndustryStrength> industryStrength,
+            Sentiment sentiment,
+            RiskOverview riskOverview
     ) {
+        public MarketContext(String indexName, BigDecimal indexValue, BigDecimal changePct, String status, List<SparkPoint> trend) {
+            this(true, indexName, indexValue, changePct, status, trend, List.of(), null, null);
+        }
     }
 
     public record SignalDashboardOverview(
@@ -47,8 +105,22 @@ public final class StockConsoleVo {
             List<MetricCard> metrics,
             List<SignalRow> signals,
             MarketContext marketContext,
-            long total
+            long total,
+            int pageNum,
+            int pageSize,
+            List<String> availableIndustries,
+            LocalDateTime dataUpdatedAt
     ) {
+        public SignalDashboardOverview(
+                LocalDate tradeDate,
+                String riskDisclaimer,
+                List<MetricCard> metrics,
+                List<SignalRow> signals,
+                MarketContext marketContext,
+                long total
+        ) {
+            this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total, 1, 20, List.of(), null);
+        }
     }
 
     public record WatchlistStock(

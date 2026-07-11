@@ -25,6 +25,7 @@ import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.mapper.WorkflowRunMapper;
 import com.jx.tracker.mapper.WorkflowStepRunMapper;
 import com.jx.tracker.service.StockConsoleQueryService;
+import com.jx.tracker.service.StockDashboardQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -59,28 +60,14 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     private final MarketDataSyncRunMapper marketDataSyncRunMapper;
     private final WorkflowRunMapper workflowRunMapper;
     private final WorkflowStepRunMapper workflowStepRunMapper;
+    private final StockDashboardQueryService stockDashboardQueryService;
 
     @Override
     public StockConsoleVo.SignalDashboardOverview dashboard(LocalDate date, String market, String poolCode) {
-        LocalDate tradeDate = resolveSignalDate(date);
-        List<StockSignalDaily> signals = stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
-                .eq(tradeDate != null, StockSignalDaily::getSignalDate, tradeDate)
-                .orderByDesc(StockSignalDaily::getSignalDate)
-                .orderByDesc(StockSignalDaily::getConfidence)
-                .last("LIMIT " + DEFAULT_LIMIT));
-        Map<String, StockBase> stockBaseMap = stockBaseMap(signals.stream().map(StockSignalDaily::getSymbol).toList());
-        List<StockConsoleVo.SignalRow> rows = signals.stream()
-                .map(signal -> toSignalRow(signal, stockBaseMap.get(signal.getSymbol())))
-                .toList();
-
-        return new StockConsoleVo.SignalDashboardOverview(
-                tradeDate,
-                RISK_DISCLAIMER,
-                signalMetrics(signals),
-                rows,
-                marketContext(),
-                signals.size()
-        );
+        return stockDashboardQueryService.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                date, market, poolCode, null, null, null, null, null,
+                1, 20, "confidence", "desc"
+        ));
     }
 
     @Override
@@ -376,26 +363,6 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         );
     }
 
-    private LocalDate resolveSignalDate(LocalDate date) {
-        if (date != null) {
-            return date;
-        }
-        StockSignalDaily latest = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
-                .orderByDesc(StockSignalDaily::getSignalDate)
-                .last("LIMIT 1"));
-        return latest == null ? LocalDate.now() : latest.getSignalDate();
-    }
-
-    private Map<String, StockBase> stockBaseMap(List<String> symbols) {
-        if (symbols == null || symbols.isEmpty()) {
-            return Map.of();
-        }
-        return stockBaseMapper.selectList(new LambdaQueryWrapper<StockBase>()
-                        .in(StockBase::getSymbol, symbols))
-                .stream()
-                .collect(LinkedHashMap::new, (map, stock) -> map.put(stock.getSymbol(), stock), Map::putAll);
-    }
-
     private Optional<StockBase> findStockBase(String symbol) {
         if (!StringUtils.hasText(symbol)) {
             return Optional.empty();
@@ -425,52 +392,6 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .eq(date != null, StockFactorDaily::getTradeDate, date)
                 .orderByDesc(StockFactorDaily::getTradeDate)
                 .last("LIMIT 1")));
-    }
-
-    private StockConsoleVo.SignalRow toSignalRow(StockSignalDaily signal, StockBase stock) {
-        return new StockConsoleVo.SignalRow(
-                signal.getSymbol(),
-                stock == null ? signal.getSymbol() : stock.getName(),
-                null,
-                null,
-                signal.getSignal(),
-                nullToZero(signal.getBullishScore()),
-                nullToZero(signal.getBearishScore()),
-                nullToZero(signal.getRiskScore()),
-                nullToZero(signal.getConfidence()),
-                splitRules(signal.getTriggeredRules()).size(),
-                "3-5日",
-                signal.getCreatedTime()
-        );
-    }
-
-    private List<StockConsoleVo.MetricCard> signalMetrics(List<StockSignalDaily> signals) {
-        long bullish = signals.stream().filter(signal -> SignalType.BULLISH.getCode().equals(signal.getSignal())).count();
-        long watch = signals.stream().filter(signal -> SignalType.WATCH.getCode().equals(signal.getSignal())).count();
-        long highRisk = signals.stream().filter(signal -> SignalType.HIGH_RISK.getCode().equals(signal.getSignal())).count();
-        return List.of(
-                metric("信号总数", BigDecimal.valueOf(signals.size()), "条", BigDecimal.ZERO, "blue"),
-                metric("看涨", BigDecimal.valueOf(bullish), "条", ratio(bullish, signals.size()), "green"),
-                metric("观望", BigDecimal.valueOf(watch), "条", ratio(watch, signals.size()), "gold"),
-                metric("高风险", BigDecimal.valueOf(highRisk), "条", ratio(highRisk, signals.size()), "red"),
-                metric("命中率（5日）", average(signals.stream().map(StockSignalDaily::getConfidence).filter(Objects::nonNull).toList()), "%", BigDecimal.ZERO, "purple")
-        );
-    }
-
-    private StockConsoleVo.MarketContext marketContext() {
-        return new StockConsoleVo.MarketContext(
-                "沪深300",
-                BigDecimal.valueOf(3692.61),
-                BigDecimal.valueOf(0.68),
-                "偏强",
-                List.of(
-                        new StockConsoleVo.SparkPoint("T-4", BigDecimal.valueOf(3650)),
-                        new StockConsoleVo.SparkPoint("T-3", BigDecimal.valueOf(3668)),
-                        new StockConsoleVo.SparkPoint("T-2", BigDecimal.valueOf(3642)),
-                        new StockConsoleVo.SparkPoint("T-1", BigDecimal.valueOf(3680)),
-                        new StockConsoleVo.SparkPoint("T", BigDecimal.valueOf(3692.61))
-                )
-        );
     }
 
     private List<StockConsoleVo.PricePoint> priceSeries(String symbol, LocalDate tradeDate) {
