@@ -71,7 +71,7 @@ class StockWatchlistPersistenceTest {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     watchlist_id BIGINT NOT NULL,
                     symbol VARCHAR(32) NOT NULL,
-                    group_name VARCHAR(128),
+                    group_name VARCHAR(64),
                     sort_order INT NOT NULL DEFAULT 0,
                     created_at DATETIME,
                     updated_at DATETIME,
@@ -149,5 +149,23 @@ class StockWatchlistPersistenceTest {
         assertThatThrownBy(() -> service.delete("MY-FOLLOW"))
                 .isInstanceOf(ServiceException.class)
                 .hasMessageContaining("不可删除");
+    }
+
+    @Test
+    void persists64CharacterGroupNameAndRejects65Characters() {
+        StockConsoleVo.WatchlistPool pool = service.create(
+                new StockConsoleVo.WatchlistMutationRequest("边界池", "A股"));
+        String boundaryGroupName = "组".repeat(64);
+
+        service.addStock(pool.poolId(),
+                new StockConsoleVo.WatchlistStockMutationRequest("600519", boundaryGroupName));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT group_name FROM stock_watchlist_item", String.class))
+                .isEqualTo(boundaryGroupName);
+        assertThatThrownBy(() -> service.addStock(pool.poolId(),
+                new StockConsoleVo.WatchlistStockMutationRequest("600519", "组".repeat(65))))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("股票分组名称不能超过64个字符");
     }
 }

@@ -264,6 +264,24 @@ class StockWatchlistServiceImplTest {
     }
 
     @Test
+    void rejectsPoolNameLongerThan128Characters() {
+        assertThatThrownBy(() -> service.create(new StockConsoleVo.WatchlistMutationRequest(
+                "池".repeat(129), "A股")))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("股票池名称不能超过128个字符");
+        verifyNoInteractions(watchlistMapper, itemMapper, stockBaseMapper);
+    }
+
+    @Test
+    void rejectsMarketLongerThan32Characters() {
+        assertThatThrownBy(() -> service.create(new StockConsoleVo.WatchlistMutationRequest(
+                "成长池", "市场".repeat(17))))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("股票池市场不能超过32个字符");
+        verifyNoInteractions(watchlistMapper, itemMapper, stockBaseMapper);
+    }
+
+    @Test
     void updatesCustomPoolByPoolCode() {
         StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
         when(watchlistMapper.selectOne(any())).thenReturn(pool);
@@ -484,6 +502,32 @@ class StockWatchlistServiceImplTest {
     }
 
     @Test
+    void rejectsGroupNameLongerThan64CharactersBeforeInsert() {
+        when(watchlistMapper.selectOne(any())).thenReturn(
+                pool(7L, "my-growth", "成长池", "A股", false));
+
+        assertThatThrownBy(() -> service.addStock(
+                "my-growth",
+                new StockConsoleVo.WatchlistStockMutationRequest("600519", "组".repeat(65))))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("股票分组名称不能超过64个字符");
+        verifyNoInteractions(stockBaseMapper, itemMapper);
+    }
+
+    @Test
+    void rejectsNormalizedSymbolLongerThan32Characters() {
+        when(watchlistMapper.selectOne(any())).thenReturn(
+                pool(7L, "my-growth", "成长池", "A股", false));
+
+        assertThatThrownBy(() -> service.addStock(
+                "my-growth",
+                new StockConsoleVo.WatchlistStockMutationRequest("A".repeat(30), null)))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("股票代码不能超过32个字符");
+        verifyNoInteractions(stockBaseMapper, itemMapper);
+    }
+
+    @Test
     void normalizesEquivalentSymbolsForAddAndRemoveQueries() {
         initializeTableInfo(StockBase.class);
         initializeTableInfo(StockWatchlistItem.class);
@@ -537,19 +581,68 @@ class StockWatchlistServiceImplTest {
     }
 
     @Test
-    void convertsOtherIntegrityConflictsToStaleStateServiceException() {
+    void preservesOtherMemberInsertIntegrityViolations() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        StockBase stock = stock("688981.SH", "中芯国际", "A股", "半导体");
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("invalid data");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(stockBaseMapper.selectOne(any())).thenReturn(stock);
+        when(itemMapper.selectOne(any())).thenReturn(null);
+        when(itemMapper.insert((StockWatchlistItem) any()))
+                .thenThrow(failure);
+
+        assertThatThrownBy(() -> service.addStock(
+                "my-growth", new StockConsoleVo.WatchlistStockMutationRequest("688981.SH", null)))
+                .isSameAs(failure);
+    }
+
+    @Test
+    void failsWhenMemberInsertAffectsNoRows() {
         StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
         StockBase stock = stock("688981.SH", "中芯国际", "A股", "半导体");
         when(watchlistMapper.selectOne(any())).thenReturn(pool);
         when(stockBaseMapper.selectOne(any())).thenReturn(stock);
         when(itemMapper.selectOne(any())).thenReturn(null);
-        when(itemMapper.insert((StockWatchlistItem) any()))
-                .thenThrow(new DataIntegrityViolationException("parent changed"));
+        when(itemMapper.insert((StockWatchlistItem) any())).thenReturn(0);
 
         assertThatThrownBy(() -> service.addStock(
                 "my-growth", new StockConsoleVo.WatchlistStockMutationRequest("688981.SH", null)))
                 .isInstanceOf(ServiceException.class)
                 .hasMessage("股票池状态已变化，请刷新后重试");
+    }
+
+    @Test
+    void preservesUpdateIntegrityViolations() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("invalid pool data");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(watchlistMapper.updateById(pool)).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.update(
+                "my-growth", new StockConsoleVo.WatchlistMutationRequest("成长价值", "A股")))
+                .isSameAs(failure);
+    }
+
+    @Test
+    void preservesDeleteIntegrityViolations() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("delete blocked");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(watchlistMapper.deleteById((Serializable) 7L)).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.delete("my-growth"))
+                .isSameAs(failure);
+    }
+
+    @Test
+    void preservesRemoveIntegrityViolations() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("remove blocked");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(itemMapper.delete(any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.removeStock("my-growth", "688981.SH"))
+                .isSameAs(failure);
     }
 
     @Test
@@ -564,6 +657,17 @@ class StockWatchlistServiceImplTest {
         verify(itemMapper).delete(any());
         assertThat(result.total()).isZero();
         assertThat(result.stocks()).isEmpty();
+    }
+
+    @Test
+    void failsWhenMemberRemovalAffectsNoRows() {
+        when(watchlistMapper.selectOne(any())).thenReturn(
+                pool(7L, "my-growth", "成长池", "A股", false));
+        when(itemMapper.delete(any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.removeStock("my-growth", "688981.SH"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("股票池状态已变化，请刷新后重试");
     }
 
     @Test

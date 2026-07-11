@@ -11,7 +11,6 @@ import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import com.jx.tracker.service.StockWatchlistService;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -32,6 +31,10 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     private static final String ALL_POOL_CODE = "all";
     private static final String DEFAULT_POOL_CODE = "my-follow";
     private static final String DEFAULT_MARKET = "A股";
+    private static final int MAX_POOL_NAME_LENGTH = 128;
+    private static final int MAX_MARKET_LENGTH = 32;
+    private static final int MAX_SYMBOL_LENGTH = 32;
+    private static final int MAX_GROUP_NAME_LENGTH = 64;
 
     private final StockWatchlistMapper watchlistMapper;
     private final StockWatchlistItemMapper itemMapper;
@@ -109,11 +112,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         }
         watchlist.setPoolName(mutation.poolName());
         watchlist.setMarket(mutation.market());
-        try {
-            requireAffectedRow(watchlistMapper.updateById(watchlist));
-        } catch (DataIntegrityViolationException exception) {
-            throw staleState(exception);
-        }
+        requireAffectedRow(watchlistMapper.updateById(watchlist));
         return toPool(watchlist);
     }
 
@@ -128,11 +127,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         if (Boolean.TRUE.equals(watchlist.getIsSystem())) {
             throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode);
         }
-        try {
-            requireAffectedRow(watchlistMapper.deleteById(watchlist.getId()));
-        } catch (DataIntegrityViolationException exception) {
-            throw staleState(exception);
-        }
+        requireAffectedRow(watchlistMapper.deleteById(watchlist.getId()));
     }
 
     @Override
@@ -144,6 +139,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         String normalizedPoolCode = rejectVirtualPool(poolCode, "添加股票");
         StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
         String symbol = requireSymbol(request == null ? null : request.symbol());
+        String groupName = requireGroupName(request.groupName());
         StockBase stock = stockBaseMapper.selectOne(Wrappers.<StockBase>lambdaQuery()
                 .eq(StockBase::getSymbol, symbol));
         if (stock == null) {
@@ -163,15 +159,13 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         StockWatchlistItem item = StockWatchlistItem.builder()
                 .watchlistId(watchlist.getId())
                 .symbol(symbol)
-                .groupName(normalizeNullable(request.groupName()))
+                .groupName(groupName)
                 .sortOrder(0)
                 .build();
         try {
-            itemMapper.insert(item);
+            requireAffectedRow(itemMapper.insert(item));
         } catch (DuplicateKeyException exception) {
             throw new ServiceException("股票已在股票池中：" + symbol, exception);
-        } catch (DataIntegrityViolationException exception) {
-            throw staleState(exception);
         }
         return toPool(watchlist);
     }
@@ -182,13 +176,9 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         String normalizedPoolCode = rejectVirtualPool(poolCode, "移除股票");
         StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
         String normalizedSymbol = requireSymbol(symbol);
-        try {
-            itemMapper.delete(Wrappers.<StockWatchlistItem>lambdaQuery()
-                    .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
-                    .eq(StockWatchlistItem::getSymbol, normalizedSymbol));
-        } catch (DataIntegrityViolationException exception) {
-            throw staleState(exception);
-        }
+        requireAffectedRow(itemMapper.delete(Wrappers.<StockWatchlistItem>lambdaQuery()
+                .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
+                .eq(StockWatchlistItem::getSymbol, normalizedSymbol)));
         return toPool(watchlist);
     }
 
@@ -311,13 +301,32 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         if (!StringUtils.hasText(request.market())) {
             throw new ServiceException("股票池市场不能为空");
         }
-        return new ValidatedPoolMutation(request.poolName().trim(), request.market().trim());
+        String poolName = request.poolName().trim();
+        String market = request.market().trim();
+        if (poolName.length() > MAX_POOL_NAME_LENGTH) {
+            throw new ServiceException("股票池名称不能超过128个字符");
+        }
+        if (market.length() > MAX_MARKET_LENGTH) {
+            throw new ServiceException("股票池市场不能超过32个字符");
+        }
+        return new ValidatedPoolMutation(poolName, market);
     }
 
     private String requireSymbol(String symbol) {
         String normalized = SymbolNormalizer.normalize(symbol);
         if (!StringUtils.hasText(normalized)) {
             throw new ServiceException("股票代码不能为空");
+        }
+        if (normalized.length() > MAX_SYMBOL_LENGTH) {
+            throw new ServiceException("股票代码不能超过32个字符");
+        }
+        return normalized;
+    }
+
+    private String requireGroupName(String groupName) {
+        String normalized = normalizeNullable(groupName);
+        if (normalized != null && normalized.length() > MAX_GROUP_NAME_LENGTH) {
+            throw new ServiceException("股票分组名称不能超过64个字符");
         }
         return normalized;
     }
