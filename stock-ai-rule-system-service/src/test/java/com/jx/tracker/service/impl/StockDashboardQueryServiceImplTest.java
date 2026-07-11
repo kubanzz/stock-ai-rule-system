@@ -18,6 +18,7 @@ import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.service.StockMarketContextService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +59,8 @@ class StockDashboardQueryServiceImplTest {
     private StockWatchlistMapper stockWatchlistMapper;
     @Mock
     private StockWatchlistItemMapper stockWatchlistItemMapper;
+    @Mock
+    private StockMarketContextService stockMarketContextService;
 
     private StockDashboardQueryServiceImpl service;
 
@@ -72,8 +76,10 @@ class StockDashboardQueryServiceImplTest {
                 stockDailyQuoteMapper,
                 stockActualResultMapper,
                 stockWatchlistMapper,
-                stockWatchlistItemMapper
+                stockWatchlistItemMapper,
+                stockMarketContextService
         );
+        lenient().when(stockMarketContextService.marketContext(any(), any(), any())).thenReturn(emptyMarketContext());
     }
 
     @Test
@@ -310,6 +316,7 @@ class StockDashboardQueryServiceImplTest {
         verify(stockSignalDailyMapper, never()).selectList(any());
         verify(stockDailyQuoteMapper, never()).selectList(any());
         verify(stockActualResultMapper, never()).selectList(any());
+        verify(stockMarketContextService, never()).marketContext(any(), any(), any());
     }
 
     @Test
@@ -409,9 +416,11 @@ class StockDashboardQueryServiceImplTest {
         )).marketContext();
 
         assertThat(emptyContext.available()).isFalse();
-        assertThat(emptyContext.sentiment()).isEqualTo(new StockConsoleVo.Sentiment("暂无数据", null, "unavailable"));
+        assertThat(emptyContext.sentiment()).isEqualTo(new StockConsoleVo.Sentiment(
+                "信号情绪（7 日）·暂无数据", null, "unavailable"
+        ));
         assertThat(emptyContext.riskOverview()).isEqualTo(new StockConsoleVo.RiskOverview(
-                0, null, "unavailable", null, "暂无市场风险环境数据"
+                0, null, "unavailable", "unavailable", "暂无市场风险环境数据"
         ));
     }
 
@@ -467,5 +476,14 @@ class StockDashboardQueryServiceImplTest {
 
     private StockActualResult actual(String symbol, boolean hit5d) {
         return StockActualResult.builder().symbol(symbol).signalDate(DATE).hit5d(hit5d).build();
+    }
+
+    private StockConsoleVo.MarketContext emptyMarketContext() {
+        return new StockConsoleVo.MarketContext(false, null, null, null, "unavailable",
+                List.of(), List.of(),
+                new StockConsoleVo.Sentiment("信号情绪（7 日）·暂无数据", null, "unavailable"),
+                new StockConsoleVo.RiskOverview(
+                        0, null, "unavailable", "unavailable", "暂无市场风险环境数据"
+                ));
     }
 }

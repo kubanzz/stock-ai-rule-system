@@ -73,6 +73,13 @@ stock-ai-rule:
     daily-cron: "-"
     zone: Asia/Shanghai
 
+stock:
+  dashboard:
+    benchmark-symbols:
+      A股: 000300.SH
+      港股: HSI.HK
+      美股: SPX.US
+
 ai:
   llm:
     # 未配置 base-url 或 api-key 时使用 MockLlmClient；不要在配置文件中写入真实 token。

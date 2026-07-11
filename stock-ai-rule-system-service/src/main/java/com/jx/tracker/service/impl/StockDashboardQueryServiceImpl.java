@@ -20,6 +20,7 @@ import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import com.jx.tracker.service.StockDashboardQueryService;
+import com.jx.tracker.service.StockMarketContextService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -49,6 +50,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     private final StockActualResultMapper stockActualResultMapper;
     private final StockWatchlistMapper stockWatchlistMapper;
     private final StockWatchlistItemMapper stockWatchlistItemMapper;
+    private final StockMarketContextService stockMarketContextService;
 
     @Override
     public StockConsoleVo.SignalDashboardOverview dashboard(StockConsoleVo.SignalDashboardQuery input) {
@@ -74,7 +76,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         }
         if (candidates.isEmpty()) {
             return overview(query, query.date(), List.of(), metrics(0, List.of(), List.of()),
-                    0, availableIndustries, null);
+                    0, availableIndustries, null, emptyMarketContext());
         }
 
         List<String> candidateSymbols = candidates.stream().map(StockBase::getSymbol).distinct().toList();
@@ -104,7 +106,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
 
         if (filteredSignals.isEmpty()) {
             return overview(query, tradeDate, List.of(), metrics(candidates.size(), List.of(), List.of()),
-                    0, availableIndustries, null);
+                    0, availableIndustries, null,
+                    stockMarketContextService.marketContext(query.market(), tradeDate, candidates));
         }
 
         List<String> signalSymbols = filteredSignals.stream().map(StockSignalDaily::getSymbol).distinct().toList();
@@ -140,7 +143,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
 
         return overview(query, tradeDate, rows.subList(fromIndex, toIndex),
                 metrics(candidates.size(), filteredSignals, filteredActualResults), rows.size(),
-                availableIndustries, dataUpdatedAt);
+                availableIndustries, dataUpdatedAt,
+                stockMarketContextService.marketContext(query.market(), tradeDate, candidates));
     }
 
     private LocalDate resolveTradeDate(LocalDate requestedDate, List<String> candidateSymbols) {
@@ -196,14 +200,15 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             List<StockConsoleVo.MetricCard> metrics,
             long total,
             List<String> availableIndustries,
-            LocalDateTime dataUpdatedAt
+            LocalDateTime dataUpdatedAt,
+            StockConsoleVo.MarketContext marketContext
     ) {
         return new StockConsoleVo.SignalDashboardOverview(
                 tradeDate,
                 StockRiskConstants.SIGNAL_RISK_DISCLAIMER,
                 metrics,
                 rows,
-                emptyMarketContext(),
+                marketContext,
                 total,
                 query.pageNum(),
                 query.pageSize(),
@@ -215,8 +220,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     private StockConsoleVo.MarketContext emptyMarketContext() {
         return new StockConsoleVo.MarketContext(false, null, null, null, "unavailable",
                 List.of(), List.of(),
-                new StockConsoleVo.Sentiment("暂无数据", null, "unavailable"),
-                new StockConsoleVo.RiskOverview(0, null, "unavailable", null, "暂无市场风险环境数据"));
+                new StockConsoleVo.Sentiment("信号情绪（7 日）·暂无数据", null, "unavailable"),
+                new StockConsoleVo.RiskOverview(
+                        0, null, "unavailable", "unavailable", "暂无市场风险环境数据"
+                ));
     }
 
     private StockConsoleVo.SignalRow toRow(StockSignalDaily signal, StockBase stock, StockDailyQuote quote) {
