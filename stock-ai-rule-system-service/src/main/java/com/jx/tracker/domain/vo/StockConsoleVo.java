@@ -64,6 +64,9 @@ public final class StockConsoleVo {
     public record WatchlistPool(String poolId, String poolName, String market, long total, List<WatchlistStock> stocks) {
     }
 
+    public record WatchlistMutationRequest(String poolName, String market) {
+    }
+
     public record WatchlistStockMutationRequest(String symbol, String groupName) {
     }
 
