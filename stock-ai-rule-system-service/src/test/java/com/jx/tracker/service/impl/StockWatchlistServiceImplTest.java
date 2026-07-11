@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -35,7 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -122,6 +125,23 @@ class StockWatchlistServiceImplTest {
             assertThat(row.symbol()).isEqualTo("600519.SH");
             assertThat(row.selected()).isFalse();
         });
+    }
+
+    @Test
+    void continuesListingWhenAnotherTransactionCreatesDefaultPoolFirst() {
+        StockWatchlist defaultPool = pool(1L, "my-follow", "我的关注", "A股", true);
+        when(watchlistMapper.selectOne(any())).thenReturn(null, defaultPool);
+        when(watchlistMapper.insert((StockWatchlist) any()))
+                .thenThrow(new DuplicateKeyException("duplicate pool_code"));
+        when(watchlistMapper.selectList(any())).thenReturn(List.of(defaultPool));
+        when(itemMapper.selectList(any())).thenReturn(List.of());
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of());
+
+        List<StockConsoleVo.WatchlistPool> pools = service.list("A股");
+
+        assertThat(pools).extracting(StockConsoleVo.WatchlistPool::poolId)
+                .containsExactly("my-follow", "all");
+        verify(watchlistMapper, times(2)).selectOne(any());
     }
 
     @Test
@@ -216,6 +236,31 @@ class StockWatchlistServiceImplTest {
     }
 
     @Test
+    void trimsPoolCodeBeforeProtectingSystemAndVirtualPools() {
+        StockConsoleVo.WatchlistMutationRequest poolRequest =
+                new StockConsoleVo.WatchlistMutationRequest("股票池", "A股");
+        StockConsoleVo.WatchlistStockMutationRequest stockRequest =
+                new StockConsoleVo.WatchlistStockMutationRequest("600519.SH", null);
+
+        assertThatThrownBy(() -> service.delete(" my-follow "))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("系统股票池不可删除：my-follow");
+        assertThatThrownBy(() -> service.delete(" all "))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("系统股票池不可删除：all");
+        assertThatThrownBy(() -> service.update(" all ", poolRequest))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("全量股票池不可更新");
+        assertThatThrownBy(() -> service.addStock(" all ", stockRequest))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("全量股票池不可添加股票");
+        assertThatThrownBy(() -> service.removeStock(" all ", "600519.SH"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessage("全量股票池不可移除股票");
+        verifyNoInteractions(watchlistMapper, itemMapper, stockBaseMapper);
+    }
+
+    @Test
     void deletesCustomPoolById() {
         StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
         when(watchlistMapper.selectOne(any())).thenReturn(pool);
@@ -301,6 +346,23 @@ class StockWatchlistServiceImplTest {
             assertThat(row.symbol()).isEqualTo("688981.SH");
             assertThat(row.selected()).isTrue();
         });
+    }
+
+    @Test
+    void convertsConcurrentMemberInsertConflictToServiceException() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        StockBase stock = stock("688981.SH", "中芯国际", "A股", "半导体");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(stockBaseMapper.selectOne(any())).thenReturn(stock);
+        when(itemMapper.selectOne(any())).thenReturn(null);
+        when(itemMapper.insert((StockWatchlistItem) any()))
+                .thenThrow(new DuplicateKeyException("duplicate watchlist_id and symbol"));
+
+        assertThatThrownBy(() -> service.addStock(
+                "my-growth",
+                new StockConsoleVo.WatchlistStockMutationRequest("688981.SH", null)
+        )).isInstanceOf(ServiceException.class)
+                .hasMessage("股票已在股票池中：688981.SH");
     }
 
     @Test

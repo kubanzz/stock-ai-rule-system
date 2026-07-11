@@ -10,6 +10,7 @@ import com.jx.tracker.mapper.StockBaseMapper;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.service.StockWatchlistService;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -78,11 +79,12 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     @Transactional
     public StockConsoleVo.WatchlistPool update(String poolCode,
                                                StockConsoleVo.WatchlistMutationRequest request) {
-        if (ALL_POOL_CODE.equals(poolCode)) {
+        String normalizedPoolCode = normalizePoolCode(poolCode);
+        if (ALL_POOL_CODE.equals(normalizedPoolCode)) {
             throw new ServiceException("全量股票池不可更新");
         }
         ValidatedPoolMutation mutation = validatePoolMutation(request);
-        StockWatchlist watchlist = requirePool(poolCode);
+        StockWatchlist watchlist = requirePool(normalizedPoolCode);
         watchlist.setPoolName(mutation.poolName());
         watchlist.setMarket(mutation.market());
         watchlistMapper.updateById(watchlist);
@@ -92,10 +94,11 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     @Override
     @Transactional
     public void delete(String poolCode) {
-        if (DEFAULT_POOL_CODE.equals(poolCode) || ALL_POOL_CODE.equals(poolCode)) {
-            throw new ServiceException("系统股票池不可删除：" + poolCode);
+        String normalizedPoolCode = normalizePoolCode(poolCode);
+        if (DEFAULT_POOL_CODE.equals(normalizedPoolCode) || ALL_POOL_CODE.equals(normalizedPoolCode)) {
+            throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode);
         }
-        StockWatchlist watchlist = requirePool(poolCode);
+        StockWatchlist watchlist = requirePool(normalizedPoolCode);
         watchlistMapper.deleteById(watchlist.getId());
     }
 
@@ -105,8 +108,8 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             String poolCode,
             StockConsoleVo.WatchlistStockMutationRequest request
     ) {
-        rejectVirtualPool(poolCode, "添加股票");
-        StockWatchlist watchlist = requirePool(poolCode);
+        String normalizedPoolCode = rejectVirtualPool(poolCode, "添加股票");
+        StockWatchlist watchlist = requirePool(normalizedPoolCode);
         String symbol = requireSymbol(request == null ? null : request.symbol());
         StockBase stock = stockBaseMapper.selectOne(Wrappers.<StockBase>lambdaQuery()
                 .eq(StockBase::getSymbol, symbol));
@@ -130,15 +133,19 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
                 .groupName(normalizeNullable(request.groupName()))
                 .sortOrder(0)
                 .build();
-        itemMapper.insert(item);
+        try {
+            itemMapper.insert(item);
+        } catch (DuplicateKeyException exception) {
+            throw new ServiceException("股票已在股票池中：" + symbol, exception);
+        }
         return toPool(watchlist);
     }
 
     @Override
     @Transactional
     public StockConsoleVo.WatchlistPool removeStock(String poolCode, String symbol) {
-        rejectVirtualPool(poolCode, "移除股票");
-        StockWatchlist watchlist = requirePool(poolCode);
+        String normalizedPoolCode = rejectVirtualPool(poolCode, "移除股票");
+        StockWatchlist watchlist = requirePool(normalizedPoolCode);
         String normalizedSymbol = requireSymbol(symbol);
         itemMapper.delete(Wrappers.<StockWatchlistItem>lambdaQuery()
                 .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
@@ -152,25 +159,33 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         if (existing != null) {
             return;
         }
-        watchlistMapper.insert(StockWatchlist.builder()
-                .poolCode(DEFAULT_POOL_CODE)
-                .poolName("我的关注")
-                .market(market)
-                .sortOrder(0)
-                .isSystem(true)
-                .build());
+        try {
+            watchlistMapper.insert(StockWatchlist.builder()
+                    .poolCode(DEFAULT_POOL_CODE)
+                    .poolName("我的关注")
+                    .market(market)
+                    .sortOrder(0)
+                    .isSystem(true)
+                    .build());
+        } catch (DuplicateKeyException exception) {
+            if (findPool(DEFAULT_POOL_CODE) == null) {
+                throw exception;
+            }
+        }
     }
 
     private StockWatchlist requirePool(String poolCode) {
-        if (!StringUtils.hasText(poolCode)) {
-            throw new ServiceException("股票池编码不能为空");
-        }
-        StockWatchlist watchlist = watchlistMapper.selectOne(Wrappers.<StockWatchlist>lambdaQuery()
-                .eq(StockWatchlist::getPoolCode, poolCode.trim()));
+        String normalizedPoolCode = normalizePoolCode(poolCode);
+        StockWatchlist watchlist = findPool(normalizedPoolCode);
         if (watchlist == null) {
-            throw new ServiceException("股票池不存在：" + poolCode);
+            throw new ServiceException("股票池不存在：" + normalizedPoolCode);
         }
         return watchlist;
+    }
+
+    private StockWatchlist findPool(String poolCode) {
+        return watchlistMapper.selectOne(Wrappers.<StockWatchlist>lambdaQuery()
+                .eq(StockWatchlist::getPoolCode, poolCode));
     }
 
     private StockConsoleVo.WatchlistPool toPool(StockWatchlist watchlist) {
@@ -254,10 +269,19 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         return symbol.trim();
     }
 
-    private void rejectVirtualPool(String poolCode, String operation) {
-        if (ALL_POOL_CODE.equals(poolCode)) {
+    private String rejectVirtualPool(String poolCode, String operation) {
+        String normalizedPoolCode = normalizePoolCode(poolCode);
+        if (ALL_POOL_CODE.equals(normalizedPoolCode)) {
             throw new ServiceException("全量股票池不可" + operation);
         }
+        return normalizedPoolCode;
+    }
+
+    private String normalizePoolCode(String poolCode) {
+        if (!StringUtils.hasText(poolCode)) {
+            throw new ServiceException("股票池编码不能为空");
+        }
+        return poolCode.trim();
     }
 
     private String normalizeNullable(String value) {
