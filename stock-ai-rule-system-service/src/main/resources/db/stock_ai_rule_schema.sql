@@ -13,6 +13,31 @@ CREATE TABLE IF NOT EXISTS stock_base (
     UNIQUE KEY uk_stock_base_symbol (symbol)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票基础表';
 
+CREATE TABLE IF NOT EXISTS stock_watchlist (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    pool_code VARCHAR(64) NOT NULL,
+    pool_name VARCHAR(128) NOT NULL,
+    market VARCHAR(32) NOT NULL,
+    sort_order INT DEFAULT 0,
+    is_system TINYINT(1) DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_stock_watchlist_pool_code (pool_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票池表';
+
+CREATE TABLE IF NOT EXISTS stock_watchlist_item (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    watchlist_id BIGINT NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    group_name VARCHAR(64),
+    sort_order INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_stock_watchlist_item_watchlist_symbol (watchlist_id, symbol),
+    CONSTRAINT fk_stock_watchlist_item_watchlist
+        FOREIGN KEY (watchlist_id) REFERENCES stock_watchlist(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票池成员表';
+
 CREATE TABLE IF NOT EXISTS stock_daily_quote (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     symbol VARCHAR(32) NOT NULL,
