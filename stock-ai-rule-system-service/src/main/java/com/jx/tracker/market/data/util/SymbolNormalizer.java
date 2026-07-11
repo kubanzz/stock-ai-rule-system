@@ -31,6 +31,9 @@ public final class SymbolNormalizer {
                 || US_WITH_SUFFIX.matcher(value).matches()) {
             return value;
         }
+        if (value.matches("^\\d{5}$")) {
+            return value + ".HK";
+        }
         if (value.matches("^\\d{6}$")) {
             return value.startsWith("6") ? value + ".SH" : value + ".SZ";
         }

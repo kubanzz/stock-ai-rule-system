@@ -17,6 +17,7 @@ import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import com.jx.tracker.service.StockDashboardQueryService;
 import lombok.RequiredArgsConstructor;
@@ -55,12 +56,12 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 ? new StockConsoleVo.SignalDashboardQuery(null, null, null, null, null, null,
                 null, null, 1, 20, null, null)
                 : input;
-        LocalDate tradeDate = resolveTradeDate(query.date());
+        List<String> marketAliases = MarketCodeNormalizer.aliases(query.market());
         List<StockBase> marketStocks = stockBaseMapper.selectList(new LambdaQueryWrapper<StockBase>()
-                .eq(StockBase::getMarket, query.market())
+                .in(StockBase::getMarket, marketAliases)
                 .orderByAsc(StockBase::getSymbol));
         List<String> availableIndustries = marketStocks.stream()
-                .filter(stock -> query.market().equals(stock.getMarket()))
+                .filter(stock -> MarketCodeNormalizer.equivalent(query.market(), stock.getMarket()))
                 .map(StockBase::getIndustry)
                 .filter(StringUtils::hasText)
                 .distinct()
@@ -72,11 +73,12 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             candidates = restrictToPool(candidates, query);
         }
         if (candidates.isEmpty()) {
-            return overview(query, tradeDate, List.of(), metrics(0, List.of(), List.of()),
+            return overview(query, query.date(), List.of(), metrics(0, List.of(), List.of()),
                     0, availableIndustries, null);
         }
 
         List<String> candidateSymbols = candidates.stream().map(StockBase::getSymbol).distinct().toList();
+        LocalDate tradeDate = resolveTradeDate(query.date(), candidateSymbols);
         Map<String, StockBase> stocksBySymbol = candidates.stream().collect(Collectors.toMap(
                 StockBase::getSymbol,
                 Function.identity(),
@@ -106,6 +108,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         }
 
         List<String> signalSymbols = filteredSignals.stream().map(StockSignalDaily::getSymbol).distinct().toList();
+        Set<String> signalSymbolSet = Set.copyOf(signalSymbols);
         List<StockDailyQuote> quotes = stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
                 .eq(tradeDate != null, StockDailyQuote::getTradeDate, tradeDate)
                 .in(StockDailyQuote::getSymbol, signalSymbols));
@@ -123,7 +126,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .in(StockActualResult::getSymbol, signalSymbols));
         List<StockActualResult> filteredActualResults = actualResults.stream()
                 .filter(result -> Objects.equals(tradeDate, result.getSignalDate()))
-                .filter(result -> signalSymbols.contains(result.getSymbol()))
+                .filter(result -> signalSymbolSet.contains(result.getSymbol()))
                 .toList();
 
         List<StockConsoleVo.SignalRow> rows = filteredSignals.stream()
@@ -133,18 +136,19 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         long requestedOffset = (long) (query.pageNum() - 1) * query.pageSize();
         int fromIndex = (int) Math.min(requestedOffset, rows.size());
         int toIndex = Math.min(fromIndex + query.pageSize(), rows.size());
-        LocalDateTime dataUpdatedAt = latestUpdate(filteredSignals, quotesBySymbol.values());
+        LocalDateTime dataUpdatedAt = latestUpdate(filteredSignals, quotesBySymbol.values(), filteredActualResults);
 
         return overview(query, tradeDate, rows.subList(fromIndex, toIndex),
                 metrics(candidates.size(), filteredSignals, filteredActualResults), rows.size(),
                 availableIndustries, dataUpdatedAt);
     }
 
-    private LocalDate resolveTradeDate(LocalDate requestedDate) {
+    private LocalDate resolveTradeDate(LocalDate requestedDate, List<String> candidateSymbols) {
         if (requestedDate != null) {
             return requestedDate;
         }
         StockSignalDaily latest = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
+                .in(StockSignalDaily::getSymbol, candidateSymbols)
                 .orderByDesc(StockSignalDaily::getSignalDate)
                 .last("LIMIT 1"));
         return latest == null ? null : latest.getSignalDate();
@@ -154,7 +158,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         String search = query.symbol();
         String normalized = StringUtils.hasText(search) ? SymbolNormalizer.normalize(search) : null;
         return stocks.stream()
-                .filter(stock -> query.market().equals(stock.getMarket()))
+                .filter(stock -> MarketCodeNormalizer.equivalent(query.market(), stock.getMarket()))
                 .filter(stock -> !StringUtils.hasText(query.industry()) || query.industry().equals(stock.getIndustry()))
                 .filter(stock -> !StringUtils.hasText(search)
                         || Objects.equals(normalized, SymbolNormalizer.normalize(stock.getSymbol()))
@@ -168,9 +172,9 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     ) {
         StockWatchlist watchlist = stockWatchlistMapper.selectOne(new LambdaQueryWrapper<StockWatchlist>()
                 .eq(StockWatchlist::getPoolCode, query.poolCode())
-                .eq(StockWatchlist::getMarket, query.market())
+                .in(StockWatchlist::getMarket, MarketCodeNormalizer.aliases(query.market()))
                 .last("LIMIT 1"));
-        if (watchlist == null) {
+        if (watchlist == null || !MarketCodeNormalizer.equivalent(query.market(), watchlist.getMarket())) {
             throw new ServiceException("股票池不存在: " + query.poolCode());
         }
         List<StockWatchlistItem> items = stockWatchlistItemMapper.selectList(new LambdaQueryWrapper<StockWatchlistItem>()
@@ -222,10 +226,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 quote == null ? null : quote.getClosePrice(),
                 quote == null ? null : quote.getChangePct(),
                 signal.getSignal(),
-                zeroIfNull(signal.getBullishScore()),
-                zeroIfNull(signal.getBearishScore()),
-                zeroIfNull(signal.getRiskScore()),
-                zeroIfNull(signal.getConfidence()),
+                signal.getBullishScore(),
+                signal.getBearishScore(),
+                signal.getRiskScore(),
+                signal.getConfidence(),
                 triggeredRuleCount(signal.getTriggeredRules()),
                 "3-5日",
                 max(signal.getCreatedTime(), quote == null ? null : quote.getSyncTime())
@@ -297,11 +301,13 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
 
     private LocalDateTime latestUpdate(
             List<StockSignalDaily> signals,
-            java.util.Collection<StockDailyQuote> quotes
+            java.util.Collection<StockDailyQuote> quotes,
+            List<StockActualResult> actualResults
     ) {
         List<LocalDateTime> updates = new ArrayList<>();
         signals.stream().map(StockSignalDaily::getCreatedTime).filter(Objects::nonNull).forEach(updates::add);
         quotes.stream().map(StockDailyQuote::getSyncTime).filter(Objects::nonNull).forEach(updates::add);
+        actualResults.stream().map(StockActualResult::getCreatedTime).filter(Objects::nonNull).forEach(updates::add);
         return updates.stream().max(Comparator.naturalOrder()).orElse(null);
     }
 
@@ -327,10 +333,6 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .filter(StringUtils::hasText)
                 .count()
                 : 0;
-    }
-
-    private BigDecimal zeroIfNull(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
     }
 
     private LocalDateTime max(LocalDateTime first, LocalDateTime second) {

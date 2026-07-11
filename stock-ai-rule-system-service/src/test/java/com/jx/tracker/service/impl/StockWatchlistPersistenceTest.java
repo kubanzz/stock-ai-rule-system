@@ -82,7 +82,7 @@ class StockWatchlistPersistenceTest {
                 """);
         jdbcTemplate.update("""
                 INSERT INTO stock_base(symbol, name, market, exchange, industry)
-                VALUES ('600519.SH', '贵州茅台', 'A股', 'SH', '白酒')
+                VALUES ('600519.SH', '贵州茅台', 'CN', 'SH', '白酒')
                 """);
     }
 
@@ -90,7 +90,7 @@ class StockWatchlistPersistenceTest {
     void createsAddsAndListsNormalizedStockThroughSpringProxy() {
         assertThat(AopUtils.isAopProxy(service)).isTrue();
         StockConsoleVo.WatchlistPool pool = service.create(
-                new StockConsoleVo.WatchlistMutationRequest("价值池", "A股"));
+                new StockConsoleVo.WatchlistMutationRequest("价值池", "CN"));
 
         service.addStock(pool.poolId(),
                 new StockConsoleVo.WatchlistStockMutationRequest("sh600519", "核心"));
@@ -100,14 +100,31 @@ class StockWatchlistPersistenceTest {
                 .singleElement()
                 .satisfies(candidate -> assertThat(candidate.stocks()).singleElement().satisfies(stock -> {
                     assertThat(stock.symbol()).isEqualTo("600519.SH");
+                    assertThat(stock.market()).isEqualTo("A股");
                     assertThat(stock.groupName()).isEqualTo("核心");
                 }));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT market FROM stock_watchlist WHERE pool_code = ?", String.class, pool.poolId()))
+                .isEqualTo("A股");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT symbol FROM stock_watchlist_item WHERE watchlist_id = ?",
                 String.class,
                 jdbcTemplate.queryForObject("SELECT id FROM stock_watchlist WHERE pool_code = ?",
                         Long.class, pool.poolId())))
                 .isEqualTo("600519.SH");
+    }
+
+    @Test
+    void listsLegacyCodeMarketPoolThroughDisplayAlias() {
+        jdbcTemplate.update("""
+                INSERT INTO stock_watchlist(pool_code, pool_name, market, sort_order, is_system)
+                VALUES ('legacy-cn', '旧编码池', 'CN', 10, FALSE)
+                """);
+
+        assertThat(service.list("A股"))
+                .filteredOn(pool -> pool.poolId().equals("legacy-cn"))
+                .singleElement()
+                .satisfies(pool -> assertThat(pool.market()).isEqualTo("A股"));
     }
 
     @Test

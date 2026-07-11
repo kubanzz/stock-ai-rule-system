@@ -1,9 +1,12 @@
 package com.jx.tracker.domain.vo;
 
+import com.jx.tracker.market.data.util.MarketCodeNormalizer;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public final class StockConsoleVo {
@@ -53,8 +56,8 @@ public final class StockConsoleVo {
         );
 
         public SignalDashboardQuery {
-            market = defaultIfBlank(market, "A股");
-            poolCode = defaultIfBlank(poolCode, "all");
+            market = MarketCodeNormalizer.toDisplayName(defaultIfBlank(market, "A股"));
+            poolCode = defaultIfBlank(poolCode, "all").toLowerCase(Locale.ROOT);
             symbol = trimToNull(symbol);
             signal = trimToNull(signal);
             industry = trimToNull(industry);

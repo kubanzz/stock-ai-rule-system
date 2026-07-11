@@ -9,6 +9,7 @@ import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.StockBaseMapper;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import com.jx.tracker.service.StockWatchlistService;
 import org.springframework.dao.DuplicateKeyException;
@@ -51,18 +52,20 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public List<StockConsoleVo.WatchlistPool> list(String market) {
-        String targetMarket = StringUtils.hasText(market) ? market.trim() : DEFAULT_MARKET;
+        String targetMarket = MarketCodeNormalizer.toDisplayName(
+                StringUtils.hasText(market) ? market : DEFAULT_MARKET
+        );
         ensureDefaultPool();
 
         List<StockWatchlist> watchlists = safeList(watchlistMapper.selectList(
                 Wrappers.<StockWatchlist>lambdaQuery()
-                        .eq(StockWatchlist::getMarket, targetMarket)
+                        .in(StockWatchlist::getMarket, MarketCodeNormalizer.aliases(targetMarket))
                         .orderByAsc(StockWatchlist::getSortOrder)
                         .orderByAsc(StockWatchlist::getId)
         ));
         List<StockBase> stocks = safeList(stockBaseMapper.selectList(
                 Wrappers.<StockBase>lambdaQuery()
-                        .eq(StockBase::getMarket, targetMarket)
+                        .in(StockBase::getMarket, MarketCodeNormalizer.aliases(targetMarket))
                         .orderByAsc(StockBase::getSymbol)
         ));
         Map<String, StockBase> stocksBySymbol = indexStocks(stocks);
@@ -105,7 +108,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         }
         ValidatedPoolMutation mutation = validatePoolMutation(request);
         StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
-        if (!Objects.equals(watchlist.getMarket(), mutation.market())
+        if (!MarketCodeNormalizer.equivalent(watchlist.getMarket(), mutation.market())
                 && itemMapper.selectCount(Wrappers.<StockWatchlistItem>lambdaQuery()
                 .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())) > 0) {
             throw new ServiceException("非空股票池不可修改市场");
@@ -145,7 +148,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         if (stock == null) {
             throw new ServiceException("股票不存在：" + symbol);
         }
-        if (!watchlist.getMarket().equals(stock.getMarket())) {
+        if (!MarketCodeNormalizer.equivalent(watchlist.getMarket(), stock.getMarket())) {
             throw new ServiceException("股票市场与股票池市场不一致：" + symbol);
         }
 
@@ -260,7 +263,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         return new StockConsoleVo.WatchlistPool(
                 watchlist.getPoolCode(),
                 watchlist.getPoolName(),
-                watchlist.getMarket(),
+                MarketCodeNormalizer.toDisplayName(watchlist.getMarket()),
                 rows.size(),
                 rows
         );
@@ -277,7 +280,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         return new StockConsoleVo.WatchlistStock(
                 SymbolNormalizer.normalize(stock.getSymbol()),
                 stock.getName(),
-                stock.getMarket(),
+                MarketCodeNormalizer.toDisplayName(stock.getMarket()),
                 stock.getIndustry(),
                 groupName,
                 selected
@@ -288,7 +291,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         return new StockConsoleVo.WatchlistPool(
                 watchlist.getPoolCode(),
                 watchlist.getPoolName(),
-                watchlist.getMarket(),
+                MarketCodeNormalizer.toDisplayName(watchlist.getMarket()),
                 0,
                 List.of()
         );
@@ -302,7 +305,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             throw new ServiceException("股票池市场不能为空");
         }
         String poolName = request.poolName().trim();
-        String market = request.market().trim();
+        String market = MarketCodeNormalizer.toDisplayName(request.market());
         if (poolName.length() > MAX_POOL_NAME_LENGTH) {
             throw new ServiceException("股票池名称不能超过128个字符");
         }

@@ -1,5 +1,8 @@
 package com.jx.tracker.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockBase;
@@ -18,6 +21,7 @@ import com.jx.tracker.mapper.StockWatchlistMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -58,6 +62,10 @@ class StockDashboardQueryServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), "dashboard-test"),
+                StockSignalDaily.class
+        );
         service = new StockDashboardQueryServiceImpl(
                 stockBaseMapper,
                 stockSignalDailyMapper,
@@ -74,7 +82,7 @@ class StockDashboardQueryServiceImplTest {
                 null, " ", null, null, null, null, null, null, 0, 0, null, "sideways"
         );
         StockConsoleVo.SignalDashboardQuery bounded = new StockConsoleVo.SignalDashboardQuery(
-                DATE, "港股", "growth", null, null, null, null, null, 2, 500, "price", "ASC"
+                DATE, " HK ", " Growth ", null, null, null, null, null, 2, 500, "price", "ASC"
         );
 
         assertThat(defaults.market()).isEqualTo("A股");
@@ -85,16 +93,18 @@ class StockDashboardQueryServiceImplTest {
         assertThat(defaults.sortOrder()).isEqualTo("desc");
         assertThat(bounded.pageSize()).isEqualTo(100);
         assertThat(bounded.sortOrder()).isEqualTo("asc");
+        assertThat(bounded.market()).isEqualTo("港股");
+        assertThat(bounded.poolCode()).isEqualTo("growth");
     }
 
     @Test
     void appliesPoolMarketDateSignalIndustryConfidenceAndCodeSearch() {
-        StockBase pingAn = stock("000001.SZ", "平安银行", "A股", "银行");
+        StockBase pingAn = stock("000001.SZ", "平安银行", "CN", "银行");
         StockBase otherBank = stock("600000.SH", "浦发银行", "A股", "银行");
         StockBase tech = stock("000002.SZ", "科技股份", "A股", "科技");
         StockBase hk = stock("00700.HK", "腾讯控股", "港股", "科技");
-        when(stockBaseMapper.selectList(any())).thenReturn(List.of(pingAn, otherBank, tech));
-        when(stockWatchlistMapper.selectOne(any())).thenReturn(StockWatchlist.builder().id(7L).poolCode("focus").market("A股").build());
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(pingAn, otherBank, tech, hk));
+        when(stockWatchlistMapper.selectOne(any())).thenReturn(StockWatchlist.builder().id(7L).poolCode("focus").market("CN").build());
         when(stockWatchlistItemMapper.selectList(any())).thenReturn(List.of(
                 StockWatchlistItem.builder().watchlistId(7L).symbol("000001.SZ").build(),
                 StockWatchlistItem.builder().watchlistId(7L).symbol("000002.SZ").build()
@@ -130,11 +140,18 @@ class StockDashboardQueryServiceImplTest {
 
     @Test
     void searchesByPartialNameAndResolvesLatestSignalDate() {
-        when(stockSignalDailyMapper.selectOne(any())).thenReturn(signal("000001.SZ", DATE, "bullish", "0.80", 1, null));
         when(stockBaseMapper.selectList(any())).thenReturn(List.of(
                 stock("000001.SZ", "平安银行", "A股", "银行"),
                 stock("600000.SH", "浦发银行", "A股", "银行")
         ));
+        when(stockSignalDailyMapper.selectOne(any())).thenAnswer(invocation -> {
+            AbstractWrapper<?, ?, ?> wrapper = invocation.getArgument(0);
+            wrapper.getSqlSegment();
+            boolean candidateScoped = wrapper.getParamNameValuePairs().containsValue("000001.SZ");
+            return candidateScoped
+                    ? signal("000001.SZ", DATE, "bullish", "0.80", 1, null)
+                    : signal("00700.HK", DATE.plusDays(1), "bullish", "0.90", 1, null);
+        });
         when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(
                 signal("000001.SZ", DATE, "bullish", "0.80", 1, null),
                 signal("600000.SH", DATE, "watch", "0.70", 1, null)
@@ -147,6 +164,25 @@ class StockDashboardQueryServiceImplTest {
         assertThat(result.tradeDate()).isEqualTo(DATE);
         assertThat(result.signals()).extracting(StockConsoleVo.SignalRow::name).containsExactly("平安银行");
         verify(stockSignalDailyMapper).selectOne(any());
+    }
+
+    @Test
+    void searchesHongKongStockByFiveDigitCode() {
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(
+                stock("00700.HK", "腾讯控股", "HK", "互联网")
+        ));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(
+                signal("00700.HK", DATE, "bullish", "0.80", 1, null)
+        ));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "港股", "all", "00700", null, null, null, null,
+                1, 20, "symbol", "asc"
+        ));
+
+        assertThat(result.signals()).extracting(StockConsoleVo.SignalRow::symbol).containsExactly("00700.HK");
     }
 
     @Test
@@ -222,6 +258,39 @@ class StockDashboardQueryServiceImplTest {
         assertThat(missing.symbol()).isEqualTo("000002.SZ");
         assertThat(missing.price()).isNull();
         assertThat(missing.changePct()).isNull();
+    }
+
+    @Test
+    void preservesNullScoresAndIncludesActualResultInDataUpdatedAt() {
+        LocalDateTime actualCreatedTime = LocalDateTime.of(2026, 7, 10, 16, 0);
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(
+                stock("000001.SZ", "甲", "CN", "银行")
+        ));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(StockSignalDaily.builder()
+                .symbol("000001.SZ")
+                .signalDate(DATE)
+                .signal("watch")
+                .createdTime(LocalDateTime.of(2026, 7, 10, 15, 0))
+                .build()));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockActualResultMapper.selectList(any())).thenReturn(List.of(StockActualResult.builder()
+                .symbol("000001.SZ")
+                .signalDate(DATE)
+                .hit5d(true)
+                .createdTime(actualCreatedTime)
+                .build()));
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(
+                DATE, null, 1, 20, "confidence", "desc"
+        ));
+
+        assertThat(result.signals()).singleElement().satisfies(row -> {
+            assertThat(row.bullishScore()).isNull();
+            assertThat(row.bearishScore()).isNull();
+            assertThat(row.riskScore()).isNull();
+            assertThat(row.confidence()).isNull();
+        });
+        assertThat(result.dataUpdatedAt()).isEqualTo(actualCreatedTime);
     }
 
     @Test

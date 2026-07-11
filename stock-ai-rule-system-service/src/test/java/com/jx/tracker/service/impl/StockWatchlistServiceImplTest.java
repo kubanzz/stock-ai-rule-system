@@ -174,13 +174,13 @@ class StockWatchlistServiceImplTest {
 
     @Test
     void listsPersistedPoolMembersWithStockDetailsAndGroup() {
-        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "CN", false);
         StockWatchlistItem item = StockWatchlistItem.builder()
                 .watchlistId(7L)
                 .symbol("688981.SH")
                 .groupName("半导体")
                 .build();
-        StockBase stock = stock("688981.SH", "中芯国际", "A股", "半导体");
+        StockBase stock = stock("688981.SH", "中芯国际", "CN", "半导体");
         when(watchlistMapper.selectOne(any())).thenReturn(pool);
         when(watchlistMapper.selectList(any())).thenReturn(List.of(pool));
         when(itemMapper.selectList(any())).thenReturn(List.of(item));
@@ -188,6 +188,7 @@ class StockWatchlistServiceImplTest {
 
         List<StockConsoleVo.WatchlistPool> pools = service.list("A股");
 
+        assertThat(pools.get(0).market()).isEqualTo("A股");
         assertThat(pools.get(0).stocks()).singleElement().satisfies(row -> {
             assertThat(row.symbol()).isEqualTo("688981.SH");
             assertThat(row.name()).isEqualTo("中芯国际");
@@ -233,7 +234,7 @@ class StockWatchlistServiceImplTest {
             return 1;
         });
         StockConsoleVo.WatchlistMutationRequest request =
-                new StockConsoleVo.WatchlistMutationRequest("成长池", "A股");
+                new StockConsoleVo.WatchlistMutationRequest("成长池", " CN ");
 
         StockConsoleVo.WatchlistPool first = service.create(request);
         StockConsoleVo.WatchlistPool second = service.create(request);
@@ -291,7 +292,7 @@ class StockWatchlistServiceImplTest {
 
         StockConsoleVo.WatchlistPool result = service.update(
                 "my-growth",
-                new StockConsoleVo.WatchlistMutationRequest("港股成长", "港股")
+                new StockConsoleVo.WatchlistMutationRequest("港股成长", "HK")
         );
 
         verify(watchlistMapper).updateById(pool);
@@ -470,7 +471,7 @@ class StockWatchlistServiceImplTest {
     @Test
     void addsStockAndNormalizesBlankGroupNameToNull() {
         StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
-        StockBase stock = stock("688981.SH", "中芯国际", "A股", "半导体");
+        StockBase stock = stock("688981.SH", "中芯国际", "CN", "半导体");
         AtomicReference<StockWatchlistItem> savedItem = new AtomicReference<>();
         when(watchlistMapper.selectOne(any())).thenReturn(pool);
         when(stockBaseMapper.selectOne(any())).thenReturn(stock);
@@ -495,8 +496,10 @@ class StockWatchlistServiceImplTest {
         assertThat(captor.getValue().getSymbol()).isEqualTo("688981.SH");
         assertThat(captor.getValue().getGroupName()).isNull();
         assertThat(result.total()).isEqualTo(1);
+        assertThat(result.market()).isEqualTo("A股");
         assertThat(result.stocks()).singleElement().satisfies(row -> {
             assertThat(row.symbol()).isEqualTo("688981.SH");
+            assertThat(row.market()).isEqualTo("A股");
             assertThat(row.selected()).isTrue();
         });
     }

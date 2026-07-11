@@ -12,6 +12,9 @@ class SymbolNormalizerTest {
         assertThat(SymbolNormalizer.normalize("sz000001")).isEqualTo("000001.SZ");
         assertThat(SymbolNormalizer.normalize("SH600000")).isEqualTo("600000.SH");
         assertThat(SymbolNormalizer.normalize("00700.hk")).isEqualTo("00700.HK");
+        assertThat(SymbolNormalizer.normalize("00700")).isEqualTo("00700.HK");
+        assertThat(SymbolNormalizer.normalize("000001")).isEqualTo("000001.SZ");
+        assertThat(SymbolNormalizer.normalize("600000")).isEqualTo("600000.SH");
         assertThat(SymbolNormalizer.normalize("aapl")).isEqualTo("AAPL.US");
         assertThat(SymbolNormalizer.normalize("AAPL.US")).isEqualTo("AAPL.US");
     }
