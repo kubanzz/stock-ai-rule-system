@@ -1,0 +1,12 @@
+15:09:41.021 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+15:09:41.190 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+15:09:41.435 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+15:09:41.449 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+15:20:01.622 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+15:20:01.795 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+15:20:02.172 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+15:20:02.181 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+18:30:56.193 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+18:30:56.463 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+18:30:56.855 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+18:30:56.866 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase

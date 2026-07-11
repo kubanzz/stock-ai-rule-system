@@ -1,0 +1,114 @@
+<h2>A 股量化规则交易系统：信息架构方向</h2>
+<p class="subtitle">目标是把“关注股票、自动采集、因子信号、规则配置、回测验证、风控交易”收成一个清晰闭环，而不是散落成一堆手动同步按钮。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>研究看板</h3>
+      <p>只展示股票池、因子、信号、规则和回测；不做持仓、委托、交易风控。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>数据运营台</h3>
+      <p>重点修复采集和同步体验，提供数据源面板、同步日志、异常重试；交易仍然靠人工。</p>
+    </div>
+  </div>
+  <div class="option selected" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>交易闭环 Cockpit（推荐）</h3>
+      <p>研究、数据、规则、模拟盘和实盘闸门放在一个工作流里；真实下单必须经过风控和开关。</p>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">推荐首页：量化工作台</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:170px 1fr 300px;gap:14px;min-height:520px;">
+      <div class="mock-sidebar">
+        <div style="font-weight:700;margin-bottom:14px;">量化规则交易</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">工作台</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">A 股股票池</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">关注组合</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">数据源健康</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">因子与信号</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">规则实验室</div>
+        <div style="padding:8px 0;border-bottom:1px solid #e5e7eb;">回测与模拟盘</div>
+        <div style="padding:8px 0;">交易风控</div>
+      </div>
+
+      <div class="mock-content">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+          <div class="placeholder" style="height:72px;">关注股票<br><b>38</b></div>
+          <div class="placeholder" style="height:72px;">今日信号<br><b>看涨 6 / 风险 3</b></div>
+          <div class="placeholder" style="height:72px;">数据新鲜度<br><b>K 线 T+0 / 财报 T+1</b></div>
+          <div class="placeholder" style="height:72px;">模拟盘表现<br><b>胜率 / 回撤</b></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-bottom:14px;">
+          <div class="placeholder" style="height:210px;text-align:left;padding:14px;">
+            <b>关注股票信号池</b>
+            <div style="margin-top:12px;border-top:1px solid #d1d5db;padding-top:8px;">600519.SH 贵州茅台｜偏看涨｜触发 4 条规则｜数据完整</div>
+            <div style="margin-top:8px;border-top:1px solid #d1d5db;padding-top:8px;">000001.SZ 平安银行｜观望｜估值合理｜财报稳定</div>
+            <div style="margin-top:8px;border-top:1px solid #d1d5db;padding-top:8px;">300750.SZ 宁德时代｜高波动｜等待回测确认</div>
+          </div>
+          <div class="placeholder" style="height:210px;text-align:left;padding:14px;">
+            <b>数据源状态</b>
+            <div style="margin-top:12px;">股票池：完整 A 股列表，定时刷新</div>
+            <div style="margin-top:8px;">K 线：关注股票每日收盘后更新</div>
+            <div style="margin-top:8px;">财报/估值：按公告和交易日更新</div>
+            <div style="margin-top:8px;">异常：失败任务进入重试队列</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="placeholder" style="height:150px;text-align:left;padding:14px;">
+            <b>规则实验室</b>
+            <div style="margin-top:10px;">选择因子：短期趋势、成交量、PE、ROE、财报增长、市场环境</div>
+            <div style="margin-top:8px;">输出目标：未来 N 日偏看涨 / 观望 / 高风险</div>
+            <div style="margin-top:8px;">上线前：强制回测、模拟盘、人工审核</div>
+          </div>
+          <div class="placeholder" style="height:150px;text-align:left;padding:14px;">
+            <b>股票详情</b>
+            <div style="margin-top:10px;">K 线 + 因子曲线 + 财报摘要 + 估值分位</div>
+            <div style="margin-top:8px;">展示触发规则、解释、风险提示和历史命中率</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-content">
+        <div class="label">交易闸门</div>
+        <div class="placeholder" style="height:88px;margin-bottom:12px;">实盘开关<br><b>默认关闭</b></div>
+        <div class="placeholder" style="height:88px;margin-bottom:12px;">单票仓位上限<br><b>例如 5%</b></div>
+        <div class="placeholder" style="height:88px;margin-bottom:12px;">每日亏损熔断<br><b>触发后停止下单</b></div>
+        <div class="placeholder" style="height:88px;margin-bottom:12px;">订单审批<br><b>规则信号 → 风控 → 人工确认</b></div>
+        <button class="mock-button" style="width:100%;">查看待审批交易建议</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>推荐理由</h4>
+    <ul>
+      <li>默认空查询，先显示全量股票池或全部关注股票。</li>
+      <li>同步从手动按钮改为调度和健康面板，只保留少量补采入口。</li>
+      <li>规则基于已采集因子选择，输出辅助决策信号，不写确定性预测。</li>
+      <li>实盘交易通过风控闸门隔离，避免规则直接下单。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>需要补齐</h4>
+    <ul>
+      <li>真实 A 股股票池数据源和增量刷新。</li>
+      <li>统一数据资产查询 API：K 线、财报、估值、因子、信号。</li>
+      <li>规则配置器、回测报告和模拟盘审核流。</li>
+      <li>交易网关先抽象，真实券商后接入。</li>
+    </ul>
+  </div>
+</div>
