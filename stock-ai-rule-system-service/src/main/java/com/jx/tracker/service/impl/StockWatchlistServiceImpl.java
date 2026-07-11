@@ -9,7 +9,9 @@ import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.StockBaseMapper;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.market.data.util.SymbolNormalizer;
 import com.jx.tracker.service.StockWatchlistService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -19,7 +21,9 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -45,7 +49,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public List<StockConsoleVo.WatchlistPool> list(String market) {
         String targetMarket = StringUtils.hasText(market) ? market.trim() : DEFAULT_MARKET;
-        ensureDefaultPool(targetMarket);
+        ensureDefaultPool();
 
         List<StockWatchlist> watchlists = safeList(watchlistMapper.selectList(
                 Wrappers.<StockWatchlist>lambdaQuery()
@@ -53,11 +57,23 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
                         .orderByAsc(StockWatchlist::getSortOrder)
                         .orderByAsc(StockWatchlist::getId)
         ));
+        List<StockBase> stocks = safeList(stockBaseMapper.selectList(
+                Wrappers.<StockBase>lambdaQuery()
+                        .eq(StockBase::getMarket, targetMarket)
+                        .orderByAsc(StockBase::getSymbol)
+        ));
+        Map<String, StockBase> stocksBySymbol = indexStocks(stocks);
+        Map<Long, List<StockWatchlistItem>> itemsByWatchlistId = loadItemsByWatchlistId(watchlists);
+
         List<StockConsoleVo.WatchlistPool> pools = new ArrayList<>(watchlists.size() + 1);
         for (StockWatchlist watchlist : watchlists) {
-            pools.add(toPool(watchlist));
+            pools.add(toPool(
+                    watchlist,
+                    itemsByWatchlistId.getOrDefault(watchlist.getId(), List.of()),
+                    stocksBySymbol
+            ));
         }
-        pools.add(allPool(targetMarket));
+        pools.add(allPool(targetMarket, stocks));
         return List.copyOf(pools);
     }
 
@@ -85,10 +101,19 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             throw new ServiceException("全量股票池不可更新");
         }
         ValidatedPoolMutation mutation = validatePoolMutation(request);
-        StockWatchlist watchlist = requirePool(normalizedPoolCode);
+        StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
+        if (!Objects.equals(watchlist.getMarket(), mutation.market())
+                && itemMapper.selectCount(Wrappers.<StockWatchlistItem>lambdaQuery()
+                .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())) > 0) {
+            throw new ServiceException("非空股票池不可修改市场");
+        }
         watchlist.setPoolName(mutation.poolName());
         watchlist.setMarket(mutation.market());
-        watchlistMapper.updateById(watchlist);
+        try {
+            requireAffectedRow(watchlistMapper.updateById(watchlist));
+        } catch (DataIntegrityViolationException exception) {
+            throw staleState(exception);
+        }
         return toPool(watchlist);
     }
 
@@ -96,11 +121,18 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     @Transactional
     public void delete(String poolCode) {
         String normalizedPoolCode = normalizePoolCode(poolCode);
-        if (DEFAULT_POOL_CODE.equals(normalizedPoolCode) || ALL_POOL_CODE.equals(normalizedPoolCode)) {
+        if (ALL_POOL_CODE.equals(normalizedPoolCode)) {
             throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode);
         }
-        StockWatchlist watchlist = requirePool(normalizedPoolCode);
-        watchlistMapper.deleteById(watchlist.getId());
+        StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
+        if (Boolean.TRUE.equals(watchlist.getIsSystem())) {
+            throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode);
+        }
+        try {
+            requireAffectedRow(watchlistMapper.deleteById(watchlist.getId()));
+        } catch (DataIntegrityViolationException exception) {
+            throw staleState(exception);
+        }
     }
 
     @Override
@@ -110,7 +142,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             StockConsoleVo.WatchlistStockMutationRequest request
     ) {
         String normalizedPoolCode = rejectVirtualPool(poolCode, "添加股票");
-        StockWatchlist watchlist = requirePool(normalizedPoolCode);
+        StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
         String symbol = requireSymbol(request == null ? null : request.symbol());
         StockBase stock = stockBaseMapper.selectOne(Wrappers.<StockBase>lambdaQuery()
                 .eq(StockBase::getSymbol, symbol));
@@ -138,6 +170,8 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             itemMapper.insert(item);
         } catch (DuplicateKeyException exception) {
             throw new ServiceException("股票已在股票池中：" + symbol, exception);
+        } catch (DataIntegrityViolationException exception) {
+            throw staleState(exception);
         }
         return toPool(watchlist);
     }
@@ -146,15 +180,19 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     @Transactional
     public StockConsoleVo.WatchlistPool removeStock(String poolCode, String symbol) {
         String normalizedPoolCode = rejectVirtualPool(poolCode, "移除股票");
-        StockWatchlist watchlist = requirePool(normalizedPoolCode);
+        StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
         String normalizedSymbol = requireSymbol(symbol);
-        itemMapper.delete(Wrappers.<StockWatchlistItem>lambdaQuery()
-                .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
-                .eq(StockWatchlistItem::getSymbol, normalizedSymbol));
+        try {
+            itemMapper.delete(Wrappers.<StockWatchlistItem>lambdaQuery()
+                    .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
+                    .eq(StockWatchlistItem::getSymbol, normalizedSymbol));
+        } catch (DataIntegrityViolationException exception) {
+            throw staleState(exception);
+        }
         return toPool(watchlist);
     }
 
-    private void ensureDefaultPool(String market) {
+    private void ensureDefaultPool() {
         StockWatchlist existing = watchlistMapper.selectOne(Wrappers.<StockWatchlist>lambdaQuery()
                 .eq(StockWatchlist::getPoolCode, DEFAULT_POOL_CODE));
         if (existing != null) {
@@ -164,7 +202,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             watchlistMapper.insert(StockWatchlist.builder()
                     .poolCode(DEFAULT_POOL_CODE)
                     .poolName("我的关注")
-                    .market(market)
+                    .market(DEFAULT_MARKET)
                     .sortOrder(0)
                     .isSystem(true)
                     .build());
@@ -175,9 +213,11 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         }
     }
 
-    private StockWatchlist requirePool(String poolCode) {
+    private StockWatchlist requirePoolForUpdate(String poolCode) {
         String normalizedPoolCode = normalizePoolCode(poolCode);
-        StockWatchlist watchlist = findPool(normalizedPoolCode);
+        StockWatchlist watchlist = watchlistMapper.selectOne(Wrappers.<StockWatchlist>lambdaQuery()
+                .eq(StockWatchlist::getPoolCode, normalizedPoolCode)
+                .last("FOR UPDATE"));
         if (watchlist == null) {
             throw new ServiceException("股票池不存在：" + normalizedPoolCode);
         }
@@ -185,8 +225,9 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     }
 
     private StockWatchlist findPool(String poolCode) {
+        String normalizedPoolCode = normalizePoolCode(poolCode);
         return watchlistMapper.selectOne(Wrappers.<StockWatchlist>lambdaQuery()
-                .eq(StockWatchlist::getPoolCode, poolCode));
+                .eq(StockWatchlist::getPoolCode, normalizedPoolCode));
     }
 
     private StockConsoleVo.WatchlistPool toPool(StockWatchlist watchlist) {
@@ -200,17 +241,31 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             return emptyPool(watchlist);
         }
 
-        List<String> symbols = items.stream().map(StockWatchlistItem::getSymbol).toList();
+        List<String> symbols = items.stream()
+                .map(StockWatchlistItem::getSymbol)
+                .map(SymbolNormalizer::normalize)
+                .toList();
         List<StockBase> stocks = safeList(stockBaseMapper.selectList(Wrappers.<StockBase>lambdaQuery()
                 .in(StockBase::getSymbol, symbols)));
-        Map<String, StockBase> stocksBySymbol = new HashMap<>();
-        for (StockBase stock : stocks) {
-            stocksBySymbol.put(stock.getSymbol(), stock);
+        Map<String, StockBase> stocksBySymbol = indexStocks(stocks);
+
+        return toPool(watchlist, items, stocksBySymbol);
+    }
+
+    private StockConsoleVo.WatchlistPool toPool(StockWatchlist watchlist,
+                                                 List<StockWatchlistItem> items,
+                                                 Map<String, StockBase> stocksBySymbol) {
+        if (items.isEmpty()) {
+            return emptyPool(watchlist);
         }
 
         List<StockConsoleVo.WatchlistStock> rows = items.stream()
-                .filter(item -> stocksBySymbol.containsKey(item.getSymbol()))
-                .map(item -> toStock(stocksBySymbol.get(item.getSymbol()), item.getGroupName(), true))
+                .filter(item -> stocksBySymbol.containsKey(SymbolNormalizer.normalize(item.getSymbol())))
+                .map(item -> toStock(
+                        stocksBySymbol.get(SymbolNormalizer.normalize(item.getSymbol())),
+                        item.getGroupName(),
+                        true
+                ))
                 .toList();
         return new StockConsoleVo.WatchlistPool(
                 watchlist.getPoolCode(),
@@ -221,12 +276,8 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         );
     }
 
-    private StockConsoleVo.WatchlistPool allPool(String market) {
-        List<StockConsoleVo.WatchlistStock> rows = safeList(stockBaseMapper.selectList(
-                        Wrappers.<StockBase>lambdaQuery()
-                                .eq(StockBase::getMarket, market)
-                                .orderByAsc(StockBase::getSymbol)
-                )).stream()
+    private StockConsoleVo.WatchlistPool allPool(String market, List<StockBase> stocks) {
+        List<StockConsoleVo.WatchlistStock> rows = stocks.stream()
                 .map(stock -> toStock(stock, null, false))
                 .toList();
         return new StockConsoleVo.WatchlistPool(ALL_POOL_CODE, "股票池", market, rows.size(), rows);
@@ -234,7 +285,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
 
     private StockConsoleVo.WatchlistStock toStock(StockBase stock, String groupName, boolean selected) {
         return new StockConsoleVo.WatchlistStock(
-                stock.getSymbol(),
+                SymbolNormalizer.normalize(stock.getSymbol()),
                 stock.getName(),
                 stock.getMarket(),
                 stock.getIndustry(),
@@ -264,10 +315,11 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     }
 
     private String requireSymbol(String symbol) {
-        if (!StringUtils.hasText(symbol)) {
+        String normalized = SymbolNormalizer.normalize(symbol);
+        if (!StringUtils.hasText(normalized)) {
             throw new ServiceException("股票代码不能为空");
         }
-        return symbol.trim();
+        return normalized;
     }
 
     private String rejectVirtualPool(String poolCode, String operation) {
@@ -282,7 +334,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
         if (!StringUtils.hasText(poolCode)) {
             throw new ServiceException("股票池编码不能为空");
         }
-        return poolCode.trim();
+        return poolCode.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeNullable(String value) {
@@ -291,6 +343,42 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
 
     private String generatePoolCode() {
         return "custom-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private Map<Long, List<StockWatchlistItem>> loadItemsByWatchlistId(List<StockWatchlist> watchlists) {
+        if (watchlists.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> watchlistIds = watchlists.stream().map(StockWatchlist::getId).toList();
+        List<StockWatchlistItem> items = safeList(itemMapper.selectList(
+                Wrappers.<StockWatchlistItem>lambdaQuery()
+                        .in(StockWatchlistItem::getWatchlistId, watchlistIds)
+                        .orderByAsc(StockWatchlistItem::getSortOrder)
+                        .orderByAsc(StockWatchlistItem::getId)
+        ));
+        Map<Long, List<StockWatchlistItem>> result = new HashMap<>();
+        for (StockWatchlistItem item : items) {
+            result.computeIfAbsent(item.getWatchlistId(), ignored -> new ArrayList<>()).add(item);
+        }
+        return result;
+    }
+
+    private Map<String, StockBase> indexStocks(List<StockBase> stocks) {
+        Map<String, StockBase> result = new HashMap<>();
+        for (StockBase stock : stocks) {
+            result.put(SymbolNormalizer.normalize(stock.getSymbol()), stock);
+        }
+        return result;
+    }
+
+    private void requireAffectedRow(int affectedRows) {
+        if (affectedRows == 0) {
+            throw staleState(null);
+        }
+    }
+
+    private ServiceException staleState(Throwable cause) {
+        return new ServiceException("股票池状态已变化，请刷新后重试", cause);
     }
 
     private static <T> List<T> safeList(List<T> values) {
