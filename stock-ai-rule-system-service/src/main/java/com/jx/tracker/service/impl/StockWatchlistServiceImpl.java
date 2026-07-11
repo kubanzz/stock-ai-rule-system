@@ -12,6 +12,7 @@ import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.service.StockWatchlistService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -41,7 +42,7 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public List<StockConsoleVo.WatchlistPool> list(String market) {
         String targetMarket = StringUtils.hasText(market) ? market.trim() : DEFAULT_MARKET;
         ensureDefaultPool(targetMarket);

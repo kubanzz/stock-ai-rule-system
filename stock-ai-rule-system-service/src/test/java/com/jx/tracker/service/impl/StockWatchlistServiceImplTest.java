@@ -20,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -387,6 +388,17 @@ class StockWatchlistServiceImplTest {
         assertTransactional("delete", String.class);
         assertTransactional("addStock", String.class, StockConsoleVo.WatchlistStockMutationRequest.class);
         assertTransactional("removeStock", String.class, String.class);
+    }
+
+    @Test
+    void listsWithReadCommittedIsolationForConcurrentDefaultPoolInitialization()
+            throws NoSuchMethodException {
+        Transactional transactional = StockWatchlistServiceImpl.class
+                .getMethod("list", String.class)
+                .getAnnotation(Transactional.class);
+
+        assertNotNull(transactional);
+        assertEquals(Isolation.READ_COMMITTED, transactional.isolation());
     }
 
     private static StockWatchlist pool(Long id, String code, String name, String market, boolean system) {
