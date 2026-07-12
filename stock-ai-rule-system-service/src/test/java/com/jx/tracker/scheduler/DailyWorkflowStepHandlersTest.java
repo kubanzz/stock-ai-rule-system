@@ -6,11 +6,14 @@ import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.dto.CandidateRuleDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.entity.TradeCalendar;
+import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.domain.dto.AiReviewResponseDto;
 import com.jx.tracker.domain.vo.DailyWorkflowStepResultVo;
 import com.jx.tracker.domain.vo.StockFactorDailyVo;
 import com.jx.tracker.market.data.dto.MarketDataSyncResultDto;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
+import com.jx.tracker.market.data.service.TradeCalendarService;
 import com.jx.tracker.service.IStockFactorDailyService;
 import com.jx.tracker.signal.service.StockSignalService;
 import org.junit.jupiter.api.Test;
@@ -20,9 +23,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,7 +43,7 @@ class DailyWorkflowStepHandlersTest {
         when(syncService.syncTradeCalendar(any())).thenReturn(syncResult);
         when(syncService.syncDailyQuotes(any())).thenReturn(syncResult);
 
-        DailyWorkflowStepResultVo result = new MarketDataCollectionStepHandler(syncService)
+        DailyWorkflowStepResultVo result = marketDataHandler(syncService, LocalDate.of(2026, 6, 26))
                 .execute(context(LocalDate.of(2026, 6, 26), List.of()));
 
         assertThat(result.getDetails()).containsEntry("dailyQuoteSyncCount", 2);
@@ -60,7 +65,7 @@ class DailyWorkflowStepHandlersTest {
         when(syncService.syncTradeCalendar(any())).thenReturn(syncResult);
         when(syncService.syncDailyQuotes(any())).thenReturn(syncResult);
 
-        DailyWorkflowStepResultVo result = new MarketDataCollectionStepHandler(syncService)
+        DailyWorkflowStepResultVo result = marketDataHandler(syncService, LocalDate.of(2026, 6, 26))
                 .execute(context(LocalDate.of(2026, 6, 26), List.of("000001.SZ", "000002.SZ")));
 
         assertThat(result.getStepCode()).isEqualTo(WorkflowStepCode.MARKET_DATA_COLLECTION.getCode());
@@ -75,6 +80,41 @@ class DailyWorkflowStepHandlersTest {
                 LocalDate.of(2026, 6, 26).equals(request.getStartDate())
                         && LocalDate.of(2026, 6, 26).equals(request.getEndDate())));
         verify(syncService, times(2)).syncDailyQuotes(any());
+    }
+
+    @Test
+    void marketDataCollectionUsesLatestOpenDateOnWeekdayHoliday() {
+        MarketDataSyncService syncService = mock(MarketDataSyncService.class);
+        MarketDataSyncResultDto syncResult = new MarketDataSyncResultDto();
+        syncResult.setStatus("success");
+        when(syncService.syncStockList(any())).thenReturn(syncResult);
+        when(syncService.syncTradeCalendar(any())).thenReturn(syncResult);
+        when(syncService.syncDailyQuotes(any())).thenReturn(syncResult);
+        DailyWorkflowContext context = context(LocalDate.of(2026, 10, 1), List.of());
+
+        marketDataHandler(syncService, LocalDate.of(2026, 9, 30)).execute(context);
+
+        assertThat(context.getRequest().getTradeDate()).isEqualTo(LocalDate.of(2026, 9, 30));
+        verify(syncService).syncDailyQuotes(argThat(request ->
+                request.getTargetSymbol() == null
+                        && LocalDate.of(2026, 9, 30).equals(request.getEndDate())));
+    }
+
+    @Test
+    void marketDataCollectionStopsWorkflowWhenRequiredSyncFails() {
+        MarketDataSyncService syncService = mock(MarketDataSyncService.class);
+        MarketDataSyncResultDto success = new MarketDataSyncResultDto();
+        success.setStatus("success");
+        MarketDataSyncResultDto failed = new MarketDataSyncResultDto();
+        failed.setStatus("failed");
+        when(syncService.syncStockList(any())).thenReturn(success);
+        when(syncService.syncTradeCalendar(any())).thenReturn(failed);
+
+        assertThatThrownBy(() -> marketDataHandler(syncService, LocalDate.of(2026, 6, 26))
+                .execute(context(LocalDate.of(2026, 6, 26), List.of())))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("交易日历");
+        verify(syncService, never()).syncDailyQuotes(any());
     }
 
     @Test
@@ -174,5 +214,19 @@ class DailyWorkflowStepHandlersTest {
         request.setSymbols(symbols);
         request.setDryRun(false);
         return new DailyWorkflowContext("test-run", request, WorkflowTriggerType.MANUAL);
+    }
+
+    private MarketDataCollectionStepHandler marketDataHandler(
+            MarketDataSyncService syncService,
+            LocalDate latestTradeDate) {
+        TradeCalendarService calendarService = mock(TradeCalendarService.class);
+        when(calendarService.pageTradeCalendars(any())).thenReturn(new com.jx.tracker.common.PageResult<>(
+                List.of(TradeCalendar.builder()
+                        .market("CN")
+                        .open(true)
+                        .tradeDate(latestTradeDate)
+                        .build()),
+                1));
+        return new MarketDataCollectionStepHandler(syncService, calendarService);
     }
 }

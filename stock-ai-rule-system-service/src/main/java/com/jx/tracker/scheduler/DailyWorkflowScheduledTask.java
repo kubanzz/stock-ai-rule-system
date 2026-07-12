@@ -23,7 +23,7 @@ public class DailyWorkflowScheduledTask {
             return;
         }
         DailyWorkflowTriggerDto request = new DailyWorkflowTriggerDto();
-        request.setDryRun(true);
+        request.setDryRun(false);
         orchestrator.runDailyWorkflow(request, WorkflowTriggerType.SCHEDULED);
     }
 }

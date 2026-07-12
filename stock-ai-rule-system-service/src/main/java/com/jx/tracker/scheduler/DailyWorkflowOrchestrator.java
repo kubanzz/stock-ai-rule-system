@@ -10,6 +10,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -36,14 +37,20 @@ public class DailyWorkflowOrchestrator {
         safeRequest.setSymbols(symbols);
         DailyWorkflowContext context = new DailyWorkflowContext(runId, safeRequest, triggerType);
 
-        List<DailyWorkflowStepResultVo> steps = WorkflowStepCode.orderedSteps().stream()
-                .map(step -> runStep(step, context, dryRun))
-                .toList();
+        List<DailyWorkflowStepResultVo> steps = new ArrayList<>();
+        boolean blockedByFailure = false;
+        for (WorkflowStepCode step : WorkflowStepCode.orderedSteps()) {
+            DailyWorkflowStepResultVo stepResult = blockedByFailure
+                    ? skipped(step, LocalDateTime.now(), "前置步骤失败，已跳过后续任务。")
+                    : runStep(step, context, dryRun);
+            steps.add(stepResult);
+            blockedByFailure = blockedByFailure || "failed".equals(stepResult.getStatus());
+        }
 
         DailyWorkflowRunResultVo result = new DailyWorkflowRunResultVo();
         result.setRunId(runId);
         result.setTriggerType(triggerType.getCode());
-        result.setTradeDate(tradeDate);
+        result.setTradeDate(safeRequest.getTradeDate());
         result.setSymbols(symbols);
         result.setDryRun(dryRun);
         result.setStatus(resolveStatus(steps));

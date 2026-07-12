@@ -1,0 +1,5 @@
+services:
+  aktools:
+    # 仅用于 Docker 19 等旧运行时；现代 Docker 不应关闭默认 seccomp 隔离。
+    security_opt:
+      - seccomp:unconfined

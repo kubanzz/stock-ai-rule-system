@@ -9,6 +9,11 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class DailyWorkflowOrchestratorTest {
 
@@ -50,5 +55,28 @@ class DailyWorkflowOrchestratorTest {
         assertThat(result.getDryRun()).isTrue();
         assertThat(result.getSteps())
                 .allSatisfy(step -> assertThat(step.getMessage()).contains("dryRun"));
+    }
+
+    @Test
+    void runDailyWorkflowSkipsAllDownstreamStepsAfterRequiredStepFails() {
+        DailyWorkflowStepHandler marketData = mock(DailyWorkflowStepHandler.class);
+        DailyWorkflowStepHandler factor = mock(DailyWorkflowStepHandler.class);
+        when(marketData.stepCode()).thenReturn(WorkflowStepCode.MARKET_DATA_COLLECTION);
+        when(factor.stepCode()).thenReturn(WorkflowStepCode.FACTOR_CALCULATION);
+        when(marketData.execute(any())).thenThrow(new IllegalStateException("行情同步失败"));
+        DailyWorkflowOrchestrator orchestrator = new DailyWorkflowOrchestrator(List.of(marketData, factor));
+        DailyWorkflowTriggerDto request = new DailyWorkflowTriggerDto();
+        request.setDryRun(false);
+
+        DailyWorkflowRunResultVo result = orchestrator.runDailyWorkflow(request, WorkflowTriggerType.SCHEDULED);
+
+        assertThat(result.getStatus()).isEqualTo("failed");
+        assertThat(result.getSteps().getFirst().getStatus()).isEqualTo("failed");
+        assertThat(result.getSteps().stream().skip(1))
+                .allSatisfy(step -> {
+                    assertThat(step.getStatus()).isEqualTo("skipped");
+                    assertThat(step.getMessage()).contains("前置步骤失败");
+                });
+        verify(factor, never()).execute(any());
     }
 }
