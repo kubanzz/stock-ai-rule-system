@@ -527,18 +527,18 @@ git commit -m "feat: 接入真实股票搜索与待生成状态"
 - 修改：`股票因子规则预测与 AI 规则优化系统设计方案.md`
 - 修改：`docs/superpowers/plans/2026-07-12-signal-dashboard-real-market-data-plan.md`
 
-- [ ] **步骤 1：启动并验证 AKTools 健康状态**
+- [x] **步骤 1：启动并验证 AKTools 健康状态**
 
 运行：
 
 ```bash
-docker compose -f docker-compose.market-data.yml up -d --build
-curl --fail http://127.0.0.1:8090/
+docker-compose -f docker-compose.market-data.yml up -d --build
+curl --fail http://127.0.0.1:8090/version
 ```
 
 预期：AKTools 返回成功响应。
 
-- [ ] **步骤 2：运行后端全量测试**
+- [x] **步骤 2：运行后端全量测试**
 
 ```bash
 cd stock-ai-rule-system-service
@@ -547,7 +547,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn test
 
 预期：`BUILD SUCCESS`，0 failures，0 errors。
 
-- [ ] **步骤 3：运行前端验证**
+- [x] **步骤 3：运行前端验证**
 
 ```bash
 cd stock-ai-rule-system-ui
@@ -557,15 +557,15 @@ pnpm --filter @vben/web-antd run typecheck
 
 预期：相关测试和类型检查全部通过。
 
-- [ ] **步骤 4：执行真实数据验收**
+- [x] **步骤 4：执行真实数据验收**
 
 启动后端后调用初始化接口，轮询同步运行记录；验收数据库基础股票超过配置下限、`600519.SH` 与 `300750.SZ` 可搜索、沪深 300存在至少 20 个交易日、添加后返回 pending 行。
 
-- [ ] **步骤 5：更新设计方案的运行说明**
+- [x] **步骤 5：更新设计方案的运行说明**
 
 记录 AKTools 启动方式、所需环境变量、初始化接口、18:00 收盘任务、失败时不回退 mock，以及所有信号均为辅助决策信息。
 
-- [ ] **步骤 6：自检工作区并提交文档**
+- [x] **步骤 6：自检工作区并提交文档**
 
 ```bash
 git diff --check
@@ -575,3 +575,15 @@ git commit -m "docs: 补充真实行情运行与验收说明"
 ```
 
 预期：只提交本功能文档，不包含日志、密钥或用户已有改动。
+
+### 实际验收记录（2026-07-12）
+
+- AKTools `/version` 返回 AKTools `0.0.91`、AKShare `1.18.64`；
+- 新浪公开全 A 股快照返回 `5529` 行，包含 `600519`、`300750`；
+- `stock_base` 共 `5530` 行，2026-07-10 有效收盘快照 `5526` 行；
+- 沪深 300落库 `82` 个交易日，看板返回最近 `20` 个走势点；
+- 通过批量接口加入 `600519.SH` 后，`my-follow` 看板返回 `signalStatus=pending`、`quoteStatus=ready`；
+- 4 条公开快照因收盘价大于最高价被质量校验拒绝，同步运行仍记录具体错误，不生成修正行情；
+- 东方财富接口在当前网络主动断开，Provider 已切换为同属 AKShare 的新浪公开列表、快照和指数接口，不回退模拟数据。
+- Docker 19 使用 `docker-compose.market-data.legacy.yml` 兼容旧 seccomp；默认 Compose 保留系统调用隔离；
+- 新浪稳定接口不含行业分类，现阶段保留已有行业并跳过空行业，后续由可替换行业分类 Provider 补齐。
