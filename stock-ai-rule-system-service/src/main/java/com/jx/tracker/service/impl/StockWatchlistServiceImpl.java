@@ -124,11 +124,11 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
     public void delete(String poolCode) {
         String normalizedPoolCode = normalizePoolCode(poolCode);
         if (ALL_POOL_CODE.equals(normalizedPoolCode)) {
-            throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode);
+            throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode, 400);
         }
         StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
         if (Boolean.TRUE.equals(watchlist.getIsSystem())) {
-            throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode);
+            throw new ServiceException("系统股票池不可删除：" + normalizedPoolCode, 400);
         }
         requireAffectedRow(watchlistMapper.deleteById(watchlist.getId()));
     }

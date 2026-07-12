@@ -32,7 +32,8 @@ public class GlobalExceptionHandler
         log.error(e.getMessage(), e);
         Integer code = e.getCode();
         AjaxResult result = (code != null) ? AjaxResult.error(code, e.getMessage()) : AjaxResult.error(e.getMessage());
-        return new ResponseEntity<>(result, HttpStatus.INTERNAL_SERVER_ERROR);
+        HttpStatus status = code == null ? HttpStatus.INTERNAL_SERVER_ERROR : HttpStatus.resolve(code);
+        return new ResponseEntity<>(result, status == null ? HttpStatus.INTERNAL_SERVER_ERROR : status);
     }
 
     /**

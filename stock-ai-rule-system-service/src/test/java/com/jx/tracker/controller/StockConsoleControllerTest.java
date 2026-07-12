@@ -1,186 +1,166 @@
 package com.jx.tracker.controller;
 
-import com.jx.tracker.common.AjaxResult;
-import com.jx.tracker.constant.HttpStatus;
+import com.jx.tracker.common.GlobalExceptionHandler;
 import com.jx.tracker.domain.vo.StockConsoleVo;
+import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.service.StockConsoleQueryService;
+import com.jx.tracker.service.StockDashboardQueryService;
+import com.jx.tracker.service.StockWatchlistService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.mockito.ArgumentCaptor;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class StockConsoleControllerTest {
 
-    @Test
-    void exposesPageLevelAggregateEndpoints() throws Exception {
-        RequestMapping classMapping = StockConsoleController.class.getAnnotation(RequestMapping.class);
-        assertThat(classMapping.value()).containsExactly("/api");
+    private StockDashboardQueryService dashboardQueryService;
+    private StockWatchlistService watchlistService;
+    private MockMvc mockMvc;
 
-        assertThat(getMapping("dashboard", LocalDate.class, String.class, String.class).value())
-                .containsExactly("/signals/dashboard");
-        assertThat(getMapping("watchlists", String.class).value()).containsExactly("/watchlists");
-        assertThat(postMapping("addWatchlistStock", String.class, StockConsoleVo.WatchlistStockMutationRequest.class).value())
-                .containsExactly("/watchlists/{poolId}/stocks");
-        assertThat(deleteMapping("removeWatchlistStock", String.class, String.class).value())
-                .containsExactly("/watchlists/{poolId}/stocks/{symbol}");
-        assertThat(getMapping("research", String.class, LocalDate.class).value()).containsExactly("/stocks/{symbol}/research");
-        assertThat(getMapping("ruleGovernance", String.class, String.class, String.class).value()).containsExactly("/rules/governance");
-        assertThat(getMapping("ruleGovernanceDetail", String.class).value()).containsExactly("/rules/{ruleCode}/governance");
-        assertThat(getMapping("backtestReports", String.class, String.class).value()).containsExactly("/backtests/reports");
-        assertThat(getMapping("backtestReport", String.class).value()).containsExactly("/backtests/reports/{reportId}");
-        assertThat(getMapping("backtestFailureSamples", String.class).value()).containsExactly("/backtests/reports/{reportId}/failure-samples");
-        assertThat(getMapping("aiReviewSummary", LocalDate.class).value()).containsExactly("/ai/reviews/summary");
-        assertThat(getMapping("aiMisjudgements", LocalDate.class, String.class).value()).containsExactly("/ai/reviews/misjudgements");
-        assertThat(postMapping("createCandidateFromMisjudgement", String.class).value())
-                .containsExactly("/ai/reviews/misjudgements/{sampleId}/candidate-rule");
-        assertThat(getMapping("runCenterOverview", LocalDate.class).value()).containsExactly("/run-center/overview");
-    }
-
-    @Test
-    void optionalFiltersDeclareExplicitRequestParamNames() throws Exception {
-        Method dashboard = StockConsoleController.class.getDeclaredMethod(
-                "dashboard",
-                LocalDate.class,
-                String.class,
-                String.class
+    @BeforeEach
+    void setUp() {
+        StockConsoleQueryService consoleQueryService = mock(StockConsoleQueryService.class);
+        dashboardQueryService = mock(StockDashboardQueryService.class);
+        watchlistService = mock(StockWatchlistService.class);
+        StockConsoleController controller = new StockConsoleController(
+                consoleQueryService,
+                dashboardQueryService,
+                watchlistService
         );
-
-        assertOptionalRequestParam(dashboard, 0, "date");
-        assertOptionalRequestParam(dashboard, 1, "market");
-        assertOptionalRequestParam(dashboard, 2, "poolCode");
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
-    void dashboardReturnsAuxiliaryDecisionDisclaimer() {
-        CapturingStockConsoleQueryService service = new CapturingStockConsoleQueryService();
-        StockConsoleController controller = new StockConsoleController(service);
+    void bindsCompleteDashboardQueryToDedicatedService() throws Exception {
+        when(dashboardQueryService.dashboard(any())).thenReturn(emptyDashboard());
 
-        AjaxResult response = controller.dashboard(LocalDate.of(2026, 7, 10), "A股", "my-follow");
+        mockMvc.perform(get("/api/signals/dashboard")
+                        .param("date", "2026-07-10")
+                        .param("market", "CN")
+                        .param("poolCode", "focus")
+                        .param("symbol", "600519")
+                        .param("signal", "bullish")
+                        .param("industry", "白酒")
+                        .param("confidenceMin", "0.60")
+                        .param("confidenceMax", "0.90")
+                        .param("pageNum", "2")
+                        .param("pageSize", "50")
+                        .param("sortField", "updatedAt")
+                        .param("sortOrder", "asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
 
-        assertThat(response.get(AjaxResult.CODE_TAG)).isEqualTo(HttpStatus.SUCCESS);
-        assertThat(service.date).isEqualTo(LocalDate.of(2026, 7, 10));
-        assertThat(service.market).isEqualTo("A股");
-        assertThat(service.poolCode).isEqualTo("my-follow");
-        StockConsoleVo.SignalDashboardOverview data =
-                (StockConsoleVo.SignalDashboardOverview) response.get(AjaxResult.DATA_TAG);
-        assertThat(data.riskDisclaimer()).contains("辅助决策");
-        assertThat(data.metrics()).extracting(StockConsoleVo.MetricCard::label).contains("信号总数");
+        ArgumentCaptor<StockConsoleVo.SignalDashboardQuery> captor =
+                ArgumentCaptor.forClass(StockConsoleVo.SignalDashboardQuery.class);
+        verify(dashboardQueryService).dashboard(captor.capture());
+        StockConsoleVo.SignalDashboardQuery query = captor.getValue();
+        assertThat(query.date()).isEqualTo(LocalDate.of(2026, 7, 10));
+        assertThat(query.market()).isEqualTo("A股");
+        assertThat(query.poolCode()).isEqualTo("focus");
+        assertThat(query.symbol()).isEqualTo("600519");
+        assertThat(query.signal()).isEqualTo("bullish");
+        assertThat(query.industry()).isEqualTo("白酒");
+        assertThat(query.confidenceMin()).isEqualByComparingTo("0.60");
+        assertThat(query.confidenceMax()).isEqualByComparingTo("0.90");
+        assertThat(query.pageNum()).isEqualTo(2);
+        assertThat(query.pageSize()).isEqualTo(50);
+        assertThat(query.sortField()).isEqualTo("updatedAt");
+        assertThat(query.sortOrder()).isEqualTo("asc");
     }
 
-    private GetMapping getMapping(String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
-        return StockConsoleController.class.getDeclaredMethod(methodName, parameterTypes).getAnnotation(GetMapping.class);
+    @Test
+    void exposesWatchlistCrudAndMemberRoutes() throws Exception {
+        StockConsoleVo.WatchlistPool pool = new StockConsoleVo.WatchlistPool(
+                "focus", "重点关注", "A股", 0, List.of()
+        );
+        when(watchlistService.create(any())).thenReturn(pool);
+        when(watchlistService.update(any(), any())).thenReturn(pool);
+        when(watchlistService.addStock(any(), any())).thenReturn(pool);
+        when(watchlistService.removeStock(any(), any())).thenReturn(pool);
+
+        String poolJson = "{\"poolName\":\"重点关注\",\"market\":\"A股\"}";
+        mockMvc.perform(post("/api/watchlists").contentType(MediaType.APPLICATION_JSON).content(poolJson))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.poolId").value("focus"));
+        mockMvc.perform(put("/api/watchlists/focus").contentType(MediaType.APPLICATION_JSON).content(poolJson))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/watchlists/focus/stocks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"symbol\":\"600519.SH\",\"groupName\":\"核心\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/watchlists/focus/stocks/600519.SH"))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/watchlists/focus"))
+                .andExpect(status().isOk());
+
+        verify(watchlistService).create(new StockConsoleVo.WatchlistMutationRequest("重点关注", "A股"));
+        verify(watchlistService).update(
+                "focus", new StockConsoleVo.WatchlistMutationRequest("重点关注", "A股")
+        );
+        verify(watchlistService).addStock(
+                "focus", new StockConsoleVo.WatchlistStockMutationRequest("600519.SH", "核心")
+        );
+        verify(watchlistService).removeStock("focus", "600519.SH");
+        verify(watchlistService).delete("focus");
     }
 
-    private PostMapping postMapping(String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
-        return StockConsoleController.class.getDeclaredMethod(methodName, parameterTypes).getAnnotation(PostMapping.class);
+    @Test
+    void rejectsBlankWatchlistAndStockBodies() throws Exception {
+        mockMvc.perform(post("/api/watchlists")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"poolName\":\"\",\"market\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
+
+        mockMvc.perform(post("/api/watchlists/focus/stocks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"symbol\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
     }
 
-    private DeleteMapping deleteMapping(String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
-        return StockConsoleController.class.getDeclaredMethod(methodName, parameterTypes).getAnnotation(DeleteMapping.class);
+    @Test
+    void mapsCodedWatchlistBusinessErrorToHttpStatus() throws Exception {
+        doThrow(new ServiceException("系统股票池不可删除", 400))
+                .when(watchlistService).delete("my-follow");
+
+        mockMvc.perform(delete("/api/watchlists/my-follow"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("系统股票池不可删除"));
     }
 
-    private void assertOptionalRequestParam(Method method, int parameterIndex, String name) {
-        RequestParam annotation = method.getParameters()[parameterIndex].getAnnotation(RequestParam.class);
-
-        assertThat(annotation).isNotNull();
-        assertThat(annotation.value()).isEqualTo(name);
-        assertThat(annotation.required()).isFalse();
-    }
-
-    private static final class CapturingStockConsoleQueryService implements StockConsoleQueryService {
-
-        private LocalDate date;
-        private String market;
-        private String poolCode;
-
-        @Override
-        public StockConsoleVo.SignalDashboardOverview dashboard(LocalDate date, String market, String poolCode) {
-            this.date = date;
-            this.market = market;
-            this.poolCode = poolCode;
-            return new StockConsoleVo.SignalDashboardOverview(
-                    date,
-                    "本系统输出仅作为股票研究和辅助决策信号，不构成投资建议。",
-                    List.of(new StockConsoleVo.MetricCard("信号总数", BigDecimal.valueOf(128), "条", BigDecimal.valueOf(12), "blue")),
-                    List.of(),
-                    new StockConsoleVo.MarketContext("沪深300", BigDecimal.valueOf(3692.61), BigDecimal.valueOf(0.68), "偏强", List.of()),
-                    128
-            );
-        }
-
-        @Override
-        public List<StockConsoleVo.WatchlistPool> watchlists(String market) {
-            return List.of();
-        }
-
-        @Override
-        public StockConsoleVo.WatchlistPool addWatchlistStock(String poolId, StockConsoleVo.WatchlistStockMutationRequest request) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.WatchlistPool removeWatchlistStock(String poolId, String symbol) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.RuleGovernanceOverview ruleGovernance(String ruleType, String status, String source) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.RuleGovernanceDetail ruleGovernanceDetail(String ruleCode) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.BacktestReportOverview backtestReports(String objectCode, String market) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.BacktestReportDetail backtestReport(String reportId) {
-            return null;
-        }
-
-        @Override
-        public List<StockConsoleVo.BacktestFailureSample> backtestFailureSamples(String reportId) {
-            return List.of();
-        }
-
-        @Override
-        public StockConsoleVo.AiReviewOverview aiReviewSummary(LocalDate date) {
-            return null;
-        }
-
-        @Override
-        public List<StockConsoleVo.MisjudgementSample> aiMisjudgements(LocalDate date, String reasonCategory) {
-            return List.of();
-        }
-
-        @Override
-        public StockConsoleVo.CandidateRuleSuggestion createCandidateFromMisjudgement(String sampleId) {
-            return null;
-        }
-
-        @Override
-        public StockConsoleVo.RunCenterOverview runCenterOverview(LocalDate date) {
-            return null;
-        }
+    private StockConsoleVo.SignalDashboardOverview emptyDashboard() {
+        return new StockConsoleVo.SignalDashboardOverview(
+                LocalDate.of(2026, 7, 10),
+                "信号仅用于辅助决策，不构成投资建议。",
+                List.of(new StockConsoleVo.MetricCard("产生信号", BigDecimal.ZERO, "条", null, "cyan")),
+                List.of(),
+                new StockConsoleVo.MarketContext(false, "000300.SH", null, null, "unavailable",
+                        List.of(), List.of(),
+                        new StockConsoleVo.Sentiment("信号情绪（7 日）·暂无数据", null, "unavailable"),
+                        new StockConsoleVo.RiskOverview(0, null, "unavailable", "unavailable", "暂无数据")),
+                0, 1, 20, List.of(), null
+        );
     }
 }

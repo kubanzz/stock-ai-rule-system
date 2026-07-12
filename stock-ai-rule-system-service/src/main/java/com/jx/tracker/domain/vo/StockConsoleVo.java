@@ -1,6 +1,8 @@
 package com.jx.tracker.domain.vo;
 
 import com.jx.tracker.market.data.util.MarketCodeNormalizer;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -145,10 +147,23 @@ public final class StockConsoleVo {
     public record WatchlistPool(String poolId, String poolName, String market, long total, List<WatchlistStock> stocks) {
     }
 
-    public record WatchlistMutationRequest(String poolName, String market) {
+    public record WatchlistMutationRequest(
+            @NotBlank(message = "股票池名称不能为空")
+            @Size(max = 128, message = "股票池名称不能超过128个字符")
+            String poolName,
+            @NotBlank(message = "股票池市场不能为空")
+            @Size(max = 32, message = "股票池市场不能超过32个字符")
+            String market
+    ) {
     }
 
-    public record WatchlistStockMutationRequest(String symbol, String groupName) {
+    public record WatchlistStockMutationRequest(
+            @NotBlank(message = "股票代码不能为空")
+            @Size(max = 32, message = "股票代码不能超过32个字符")
+            String symbol,
+            @Size(max = 64, message = "股票分组名称不能超过64个字符")
+            String groupName
+    ) {
     }
 
     public record PricePoint(LocalDate date, BigDecimal close, BigDecimal volume) {
