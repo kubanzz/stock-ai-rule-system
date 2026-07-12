@@ -166,6 +166,32 @@ public final class StockConsoleVo {
     ) {
     }
 
+    public record WatchlistCandidate(
+            String symbol,
+            String name,
+            String market,
+            String exchange,
+            String industry,
+            boolean inPool
+    ) {
+    }
+
+    public record WatchlistBatchMutationRequest(
+            @Size(min = 1, max = 100, message = "每次请选择1至100只股票")
+            List<@NotBlank(message = "股票代码不能为空") String> symbols,
+            @Size(max = 64, message = "股票分组名称不能超过64个字符")
+            String groupName
+    ) {
+    }
+
+    public record WatchlistBatchMutationResult(
+            String poolCode,
+            List<String> addedSymbols,
+            List<String> skippedSymbols,
+            List<String> failedSymbols
+    ) {
+    }
+
     public record PricePoint(LocalDate date, BigDecimal close, BigDecimal volume) {
     }
 

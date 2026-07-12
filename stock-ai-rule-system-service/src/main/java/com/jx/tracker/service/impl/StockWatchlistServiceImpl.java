@@ -1,6 +1,8 @@
 package com.jx.tracker.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.entity.StockBase;
 import com.jx.tracker.domain.entity.StockWatchlist;
 import com.jx.tracker.domain.entity.StockWatchlistItem;
@@ -21,10 +23,13 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Set;
 
 @Service
 public class StockWatchlistServiceImpl implements StockWatchlistService {
@@ -171,6 +176,134 @@ public class StockWatchlistServiceImpl implements StockWatchlistService {
             throw new ServiceException("股票已在股票池中：" + symbol, exception);
         }
         return toPool(watchlist);
+    }
+
+    @Override
+    public PageResult<StockConsoleVo.WatchlistCandidate> searchCandidates(
+            String poolCode,
+            String market,
+            String keyword,
+            int pageNum,
+            int pageSize) {
+        String normalizedPoolCode = rejectVirtualPool(poolCode, "搜索候选股票");
+        StockWatchlist watchlist = findPool(normalizedPoolCode);
+        if (watchlist == null) {
+            throw new ServiceException("股票池不存在：" + normalizedPoolCode);
+        }
+        String targetMarket = MarketCodeNormalizer.toDisplayName(
+                StringUtils.hasText(market) ? market : watchlist.getMarket());
+        if (!MarketCodeNormalizer.equivalent(watchlist.getMarket(), targetMarket)) {
+            throw new ServiceException("股票池市场与搜索市场不一致");
+        }
+        String search = normalizeNullable(keyword);
+        String normalizedSearch = StringUtils.hasText(search) && search.matches("\\d{6}")
+                ? SymbolNormalizer.normalize(search)
+                : null;
+        var query = Wrappers.<StockBase>lambdaQuery()
+                .in(StockBase::getMarket, MarketCodeNormalizer.aliases(targetMarket))
+                .and(StringUtils.hasText(search), wrapper -> {
+                    if (normalizedSearch != null) {
+                        wrapper.eq(StockBase::getSymbol, normalizedSearch);
+                    } else {
+                        wrapper.like(StockBase::getSymbol, search)
+                                .or()
+                                .like(StockBase::getName, search);
+                    }
+                })
+                .orderByAsc(StockBase::getSymbol);
+        long safePageNum = pageNum < 1 ? 1L : pageNum;
+        long safePageSize = pageSize < 1 ? 20L : Math.min(pageSize, 100);
+        Page<StockBase> page = stockBaseMapper.selectPage(new Page<>(safePageNum, safePageSize), query);
+        List<String> pageSymbols = page.getRecords().stream()
+                .map(StockBase::getSymbol)
+                .map(SymbolNormalizer::normalize)
+                .toList();
+        Set<String> existingSymbols = pageSymbols.isEmpty()
+                ? Set.of()
+                : safeList(itemMapper.selectList(Wrappers.<StockWatchlistItem>lambdaQuery()
+                .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
+                .in(StockWatchlistItem::getSymbol, pageSymbols))).stream()
+                .map(StockWatchlistItem::getSymbol)
+                .map(SymbolNormalizer::normalize)
+                .collect(java.util.stream.Collectors.toSet());
+        List<StockConsoleVo.WatchlistCandidate> rows = page.getRecords().stream()
+                .map(stock -> new StockConsoleVo.WatchlistCandidate(
+                        SymbolNormalizer.normalize(stock.getSymbol()),
+                        stock.getName(),
+                        MarketCodeNormalizer.toDisplayName(stock.getMarket()),
+                        stock.getExchange(),
+                        stock.getIndustry(),
+                        existingSymbols.contains(SymbolNormalizer.normalize(stock.getSymbol()))
+                ))
+                .toList();
+        return PageResult.getDataTable(rows, page.getTotal());
+    }
+
+    @Override
+    @Transactional
+    public StockConsoleVo.WatchlistBatchMutationResult addStocks(
+            String poolCode,
+            StockConsoleVo.WatchlistBatchMutationRequest request) {
+        String normalizedPoolCode = rejectVirtualPool(poolCode, "添加股票");
+        StockWatchlist watchlist = requirePoolForUpdate(normalizedPoolCode);
+        if (request == null || request.symbols() == null || request.symbols().isEmpty()) {
+            throw new ServiceException("请选择至少一只股票");
+        }
+        if (request.symbols().size() > 100) {
+            throw new ServiceException("每次最多添加100只股票");
+        }
+        String groupName = requireGroupName(request.groupName());
+        List<String> symbols = new ArrayList<>(new LinkedHashSet<>(request.symbols().stream()
+                .map(this::requireSymbol)
+                .toList()));
+        Map<String, StockBase> stocksBySymbol = safeList(stockBaseMapper.selectList(
+                Wrappers.<StockBase>lambdaQuery().in(StockBase::getSymbol, symbols)))
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        stock -> SymbolNormalizer.normalize(stock.getSymbol()),
+                        stock -> stock,
+                        (first, ignored) -> first,
+                        LinkedHashMap::new));
+        Set<String> existingSymbols = safeList(itemMapper.selectList(
+                Wrappers.<StockWatchlistItem>lambdaQuery()
+                        .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
+                        .in(StockWatchlistItem::getSymbol, symbols)))
+                .stream()
+                .map(StockWatchlistItem::getSymbol)
+                .map(SymbolNormalizer::normalize)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<String> added = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        for (String symbol : symbols) {
+            StockBase stock = stocksBySymbol.get(symbol);
+            if (stock == null || !MarketCodeNormalizer.equivalent(watchlist.getMarket(), stock.getMarket())) {
+                failed.add(symbol);
+                continue;
+            }
+            if (existingSymbols.contains(symbol)) {
+                skipped.add(symbol);
+                continue;
+            }
+            StockWatchlistItem item = StockWatchlistItem.builder()
+                    .watchlistId(watchlist.getId())
+                    .symbol(symbol)
+                    .groupName(groupName)
+                    .sortOrder(0)
+                    .build();
+            try {
+                requireAffectedRow(itemMapper.insert(item));
+                added.add(symbol);
+            } catch (DuplicateKeyException exception) {
+                skipped.add(symbol);
+            }
+        }
+        return new StockConsoleVo.WatchlistBatchMutationResult(
+                normalizedPoolCode,
+                List.copyOf(added),
+                List.copyOf(skipped),
+                List.copyOf(failed)
+        );
     }
 
     @Override

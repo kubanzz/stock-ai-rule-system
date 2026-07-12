@@ -9,6 +9,8 @@ import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.entity.StockBase;
 import com.jx.tracker.domain.entity.StockWatchlist;
 import com.jx.tracker.domain.entity.StockWatchlistItem;
@@ -51,6 +53,55 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class StockWatchlistServiceImplTest {
+
+    @Test
+    void searchesPagedStockCandidatesAndMarksExistingMembers() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        StockBase maotai = stock("600519.SH", "贵州茅台", "A股", "白酒");
+        maotai.setExchange("SH");
+        maotai.setStatus("active");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(stockBaseMapper.selectPage(any(), any())).thenReturn(
+                new Page<StockBase>(1, 20, 1).setRecords(List.of(maotai)));
+        when(itemMapper.selectList(any())).thenReturn(List.of(
+                StockWatchlistItem.builder().watchlistId(7L).symbol("600519.SH").build()));
+
+        PageResult<StockConsoleVo.WatchlistCandidate> result = service.searchCandidates(
+                "my-growth", "A股", "茅台", 1, 20);
+
+        assertThat(result.getTotal()).isEqualTo(1);
+        assertThat(result.getRows()).singleElement().satisfies(row -> {
+            assertThat(row.symbol()).isEqualTo("600519.SH");
+            assertThat(row.name()).isEqualTo("贵州茅台");
+            assertThat(row.exchange()).isEqualTo("SH");
+            assertThat(row.inPool()).isTrue();
+        });
+    }
+
+    @Test
+    void batchAddDeduplicatesInputAndSkipsExistingMembers() {
+        StockWatchlist pool = pool(7L, "my-growth", "成长池", "A股", false);
+        StockBase maotai = stock("600519.SH", "贵州茅台", "A股", "白酒");
+        StockBase catl = stock("300750.SZ", "宁德时代", "A股", "电池");
+        when(watchlistMapper.selectOne(any())).thenReturn(pool);
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(maotai, catl));
+        when(itemMapper.selectList(any())).thenReturn(List.of(
+                StockWatchlistItem.builder().watchlistId(7L).symbol("600519.SH").build()));
+        when(itemMapper.insert((StockWatchlistItem) any())).thenReturn(1);
+
+        StockConsoleVo.WatchlistBatchMutationResult result = service.addStocks(
+                "my-growth",
+                new StockConsoleVo.WatchlistBatchMutationRequest(
+                        List.of("600519", "300750.SZ", "600519.SH"), "核心观察"));
+
+        assertThat(result.addedSymbols()).containsExactly("300750.SZ");
+        assertThat(result.skippedSymbols()).containsExactly("600519.SH");
+        assertThat(result.failedSymbols()).isEmpty();
+        ArgumentCaptor<StockWatchlistItem> inserted = ArgumentCaptor.forClass(StockWatchlistItem.class);
+        verify(itemMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getSymbol()).isEqualTo("300750.SZ");
+        assertThat(inserted.getValue().getGroupName()).isEqualTo("核心观察");
+    }
 
     @Mock
     private StockWatchlistMapper watchlistMapper;
@@ -680,6 +731,7 @@ class StockWatchlistServiceImplTest {
         assertTransactional("update", String.class, StockConsoleVo.WatchlistMutationRequest.class);
         assertTransactional("delete", String.class);
         assertTransactional("addStock", String.class, StockConsoleVo.WatchlistStockMutationRequest.class);
+        assertTransactional("addStocks", String.class, StockConsoleVo.WatchlistBatchMutationRequest.class);
         assertTransactional("removeStock", String.class, String.class);
     }
 

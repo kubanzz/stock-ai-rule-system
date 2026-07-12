@@ -1,6 +1,7 @@
 package com.jx.tracker.controller;
 
 import com.jx.tracker.common.GlobalExceptionHandler;
+import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.vo.StockConsoleVo;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.service.StockConsoleQueryService;
@@ -31,6 +32,32 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class StockConsoleControllerTest {
+
+    @Test
+    void exposesPagedCandidatesAndBatchAddRoutes() throws Exception {
+        when(watchlistService.searchCandidates("focus", "A股", "茅台", 1, 20))
+                .thenReturn(PageResult.getDataTable(List.of(new StockConsoleVo.WatchlistCandidate(
+                        "600519.SH", "贵州茅台", "A股", "SH", "白酒", false)), 1L));
+        when(watchlistService.addStocks(any(), any())).thenReturn(
+                new StockConsoleVo.WatchlistBatchMutationResult(
+                        "focus", List.of("600519.SH"), List.of(), List.of()));
+
+        mockMvc.perform(get("/api/watchlists/focus/stock-candidates")
+                        .param("market", "A股")
+                        .param("keyword", "茅台"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.rows[0].symbol").value("600519.SH"));
+        mockMvc.perform(post("/api/watchlists/focus/stocks/batch")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"symbols\":[\"600519.SH\"],\"groupName\":\"核心\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.addedSymbols[0]").value("600519.SH"));
+
+        verify(watchlistService).addStocks(
+                "focus",
+                new StockConsoleVo.WatchlistBatchMutationRequest(List.of("600519.SH"), "核心"));
+    }
 
     private StockDashboardQueryService dashboardQueryService;
     private StockWatchlistService watchlistService;

@@ -1,6 +1,7 @@
 package com.jx.tracker.controller;
 
 import com.jx.tracker.common.AjaxResult;
+import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.vo.StockConsoleVo;
 import com.jx.tracker.service.StockConsoleQueryService;
 import com.jx.tracker.service.StockDashboardQueryService;
@@ -84,6 +85,25 @@ public class StockConsoleController {
     public AjaxResult addWatchlistStock(@PathVariable("poolId") String poolId,
                                         @Valid @RequestBody StockConsoleVo.WatchlistStockMutationRequest request) {
         return AjaxResult.success(stockWatchlistService.addStock(poolId, request));
+    }
+
+    @GetMapping("/watchlists/{poolId}/stock-candidates")
+    @Operation(summary = "分页搜索股票池候选股票")
+    public PageResult<StockConsoleVo.WatchlistCandidate> stockCandidates(
+            @PathVariable("poolId") String poolId,
+            @RequestParam(value = "market", defaultValue = "A股") String market,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
+        return stockWatchlistService.searchCandidates(poolId, market, keyword, pageNum, pageSize);
+    }
+
+    @PostMapping("/watchlists/{poolId}/stocks/batch")
+    @Operation(summary = "批量添加股票到股票池")
+    public AjaxResult addWatchlistStocks(
+            @PathVariable("poolId") String poolId,
+            @Valid @RequestBody StockConsoleVo.WatchlistBatchMutationRequest request) {
+        return AjaxResult.success(stockWatchlistService.addStocks(poolId, request));
     }
 
     @DeleteMapping("/watchlists/{poolId}/stocks/{symbol}")
