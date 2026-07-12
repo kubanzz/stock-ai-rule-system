@@ -13,24 +13,24 @@ public class AuthCompatibilityController {
 
     private static final String DEV_ACCESS_TOKEN = "stock-dev-access-token";
 
-    @PostMapping("/auth/login")
+    @PostMapping({"/auth/login", "/api/auth/login"})
     public Map<String, Object> login(@RequestBody(required = false) LoginRequest request) {
         return success(Map.of(
                 "accessToken", DEV_ACCESS_TOKEN
         ));
     }
 
-    @PostMapping("/auth/logout")
+    @PostMapping({"/auth/logout", "/api/auth/logout"})
     public Map<String, Object> logout() {
         return success(true);
     }
 
-    @GetMapping("/auth/codes")
+    @GetMapping({"/auth/codes", "/api/auth/codes"})
     public Map<String, Object> accessCodes() {
         return success(List.of("AC_STOCK_SIGNAL", "AC_STOCK_RULE", "AC_STOCK_BACKTEST"));
     }
 
-    @GetMapping("/user/info")
+    @GetMapping({"/user/info", "/api/user/info"})
     public Map<String, Object> userInfo() {
         return success(Map.of(
                 "avatar", "https://unpkg.com/@vbenjs/static-source@0.1.7/source/avatar-v1.webp",
