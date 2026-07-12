@@ -275,6 +275,46 @@ class StockDashboardQueryPersistenceTest {
     }
 
     @Test
+    void keepsWatchlistStocksVisibleAsPendingBeforeSignalsAreGenerated() {
+        jdbcTemplate.update("""
+                INSERT INTO stock_base(symbol, name, market, exchange, industry)
+                VALUES ('600519.SH', '贵州茅台', 'CN', 'SH', '白酒')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO stock_watchlist_item(watchlist_id, symbol, sort_order)
+                VALUES (7, '600519.SH', 2)
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO stock_daily_quote(symbol, trade_date, close_price, change_pct, sync_time)
+                VALUES ('600519.SH', '2026-07-10', 1500.00, 1.20, '2026-07-10 15:10:00')
+                """);
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(
+                new StockConsoleVo.SignalDashboardQuery(
+                        DATE, "A股", "focus", null, null, null,
+                        null, null, 1, 20, "symbol", "asc"));
+
+        assertThat(result.total()).isEqualTo(3);
+        assertThat(result.signals()).filteredOn(row -> "600519.SH".equals(row.symbol()))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.signal()).isNull();
+                    assertThat(row.signalStatus()).isEqualTo("pending");
+                    assertThat(row.quoteStatus()).isEqualTo("ready");
+                    assertThat(row.price()).isEqualByComparingTo("1500.00");
+                    assertThat(row.triggeredRuleCount()).isZero();
+                });
+        assertThat(result.metrics()).filteredOn(metric -> "关注股票".equals(metric.label()))
+                .singleElement()
+                .extracting(StockConsoleVo.MetricCard::value)
+                .isEqualTo(new BigDecimal("3"));
+        assertThat(result.metrics()).filteredOn(metric -> "产生信号".equals(metric.label()))
+                .singleElement()
+                .extracting(StockConsoleVo.MetricCard::value)
+                .isEqualTo(new BigDecimal("2"));
+    }
+
+    @Test
     void appliesRealAliasPoolCandidateDateSignalConfidenceQuoteAndActualQueries() {
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
                 null, "A股", " FOCUS ", null, "bullish", "银行",

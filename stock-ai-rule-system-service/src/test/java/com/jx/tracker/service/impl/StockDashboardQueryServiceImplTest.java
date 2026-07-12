@@ -349,7 +349,7 @@ class StockDashboardQueryServiceImplTest {
 
         assertThat(result.total()).isZero();
         assertThat(result.signals()).isEmpty();
-        verify(stockDailyQuoteMapper, never()).selectList(any());
+        verify(stockDailyQuoteMapper).selectList(any());
         verify(stockActualResultMapper, never()).selectList(any());
     }
 

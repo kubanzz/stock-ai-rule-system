@@ -44,6 +44,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StockDashboardQueryServiceImpl implements StockDashboardQueryService {
 
+    private static final String PENDING_SIGNAL = "pending";
+    private static final Set<String> SUPPORTED_SIGNALS = Set.of(
+            SignalType.BULLISH.getCode(),
+            SignalType.BEARISH.getCode(),
+            SignalType.WATCH.getCode(),
+            SignalType.HIGH_RISK.getCode()
+    );
+
     private final StockBaseMapper stockBaseMapper;
     private final StockSignalDailyMapper stockSignalDailyMapper;
     private final StockDailyQuoteMapper stockDailyQuoteMapper;
@@ -80,7 +88,11 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                     stockMarketContextService.marketContext(query, query.date(), candidates));
         }
 
-        List<String> candidateSymbols = candidates.stream().map(StockBase::getSymbol).distinct().toList();
+        List<String> candidateSymbols = candidates.stream()
+                .map(StockBase::getSymbol)
+                .map(SymbolNormalizer::normalize)
+                .distinct()
+                .toList();
         LocalDate tradeDate = resolveTradeDate(query.date(), candidateSymbols);
         Map<String, StockBase> stocksBySymbol = candidates.stream().collect(Collectors.toMap(
                 StockBase::getSymbol,
@@ -88,62 +100,72 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 (first, ignored) -> first,
                 LinkedHashMap::new
         ));
-        List<StockSignalDaily> signals = stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
-                .eq(tradeDate != null, StockSignalDaily::getSignalDate, tradeDate)
-                .in(StockSignalDaily::getSymbol, candidateSymbols)
-                .eq(StringUtils.hasText(query.signal()), StockSignalDaily::getSignal, query.signal())
-                .ge(query.confidenceMin() != null, StockSignalDaily::getConfidence, query.confidenceMin())
-                .le(query.confidenceMax() != null, StockSignalDaily::getConfidence, query.confidenceMax()));
+        List<StockSignalDaily> signals = tradeDate == null
+                ? List.of()
+                : stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
+                .eq(StockSignalDaily::getSignalDate, tradeDate)
+                .in(StockSignalDaily::getSymbol, candidateSymbols));
         Set<String> candidateSymbolSet = Set.copyOf(candidateSymbols);
-        List<StockSignalDaily> filteredSignals = signals.stream()
+        Map<String, StockSignalDaily> signalsBySymbol = signals.stream()
                 .filter(signal -> Objects.equals(tradeDate, signal.getSignalDate()))
-                .filter(signal -> candidateSymbolSet.contains(signal.getSymbol()))
-                .filter(signal -> !StringUtils.hasText(query.signal()) || query.signal().equals(signal.getSignal()))
-                .filter(signal -> query.confidenceMin() == null && query.confidenceMax() == null
-                        || signal.getConfidence() != null)
-                .filter(signal -> query.confidenceMin() == null || compare(signal.getConfidence(), query.confidenceMin()) >= 0)
-                .filter(signal -> query.confidenceMax() == null || compare(signal.getConfidence(), query.confidenceMax()) <= 0)
-                .toList();
+                .filter(signal -> candidateSymbolSet.contains(SymbolNormalizer.normalize(signal.getSymbol())))
+                .collect(Collectors.toMap(
+                        signal -> SymbolNormalizer.normalize(signal.getSymbol()),
+                        Function.identity(),
+                        StockDashboardQueryServiceImpl::newerSignal,
+                        LinkedHashMap::new
+                ));
 
-        if (filteredSignals.isEmpty()) {
-            return overview(query, tradeDate, List.of(), metrics(candidates.size(), List.of(), List.of()),
-                    0, availableIndustries, null,
-                    stockMarketContextService.marketContext(query, tradeDate, candidates));
-        }
-
-        List<String> signalSymbols = filteredSignals.stream().map(StockSignalDaily::getSymbol).distinct().toList();
-        Set<String> signalSymbolSet = Set.copyOf(signalSymbols);
-        List<StockDailyQuote> quotes = stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
-                .eq(tradeDate != null, StockDailyQuote::getTradeDate, tradeDate)
-                .in(StockDailyQuote::getSymbol, signalSymbols));
+        List<StockDailyQuote> quotes = tradeDate == null
+                ? List.of()
+                : stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
+                .eq(StockDailyQuote::getTradeDate, tradeDate)
+                .in(StockDailyQuote::getSymbol, candidateSymbols));
         Map<String, StockDailyQuote> quotesBySymbol = quotes.stream()
                 .filter(quote -> Objects.equals(tradeDate, quote.getTradeDate()))
-                .filter(quote -> candidateSymbolSet.contains(quote.getSymbol()))
+                .filter(quote -> candidateSymbolSet.contains(SymbolNormalizer.normalize(quote.getSymbol())))
                 .collect(Collectors.toMap(
-                        StockDailyQuote::getSymbol,
+                        quote -> SymbolNormalizer.normalize(quote.getSymbol()),
                         Function.identity(),
                         StockDashboardQueryServiceImpl::newerQuote,
                         LinkedHashMap::new
                 ));
-        List<StockActualResult> actualResults = stockActualResultMapper.selectList(new LambdaQueryWrapper<StockActualResult>()
-                .eq(tradeDate != null, StockActualResult::getSignalDate, tradeDate)
+        List<StockSignalDaily> readySignals = signalsBySymbol.values().stream()
+                .filter(this::isReadySignal)
+                .filter(signal -> matchesSignalAndConfidence(signal, query))
+                .toList();
+        List<String> signalSymbols = readySignals.stream()
+                .map(StockSignalDaily::getSymbol)
+                .map(SymbolNormalizer::normalize)
+                .distinct()
+                .toList();
+        Set<String> signalSymbolSet = Set.copyOf(signalSymbols);
+        List<StockActualResult> actualResults = tradeDate == null || signalSymbols.isEmpty()
+                ? List.of()
+                : stockActualResultMapper.selectList(new LambdaQueryWrapper<StockActualResult>()
+                .eq(StockActualResult::getSignalDate, tradeDate)
                 .in(StockActualResult::getSymbol, signalSymbols));
         List<StockActualResult> filteredActualResults = actualResults.stream()
                 .filter(result -> Objects.equals(tradeDate, result.getSignalDate()))
-                .filter(result -> signalSymbolSet.contains(result.getSymbol()))
+                .filter(result -> signalSymbolSet.contains(SymbolNormalizer.normalize(result.getSymbol())))
                 .toList();
 
-        List<StockConsoleVo.SignalRow> rows = filteredSignals.stream()
-                .map(signal -> toRow(signal, stocksBySymbol.get(signal.getSymbol()), quotesBySymbol.get(signal.getSymbol())))
+        List<StockConsoleVo.SignalRow> rows = candidates.stream()
+                .map(stock -> {
+                    String symbol = SymbolNormalizer.normalize(stock.getSymbol());
+                    StockSignalDaily signal = signalsBySymbol.get(symbol);
+                    return toRow(signal, stock, quotesBySymbol.get(symbol));
+                })
+                .filter(row -> matchesRow(row, query))
                 .sorted(rowComparator(query.sortField(), query.sortOrder()))
                 .toList();
         long requestedOffset = (long) (query.pageNum() - 1) * query.pageSize();
         int fromIndex = (int) Math.min(requestedOffset, rows.size());
         int toIndex = Math.min(fromIndex + query.pageSize(), rows.size());
-        LocalDateTime dataUpdatedAt = latestUpdate(filteredSignals, quotesBySymbol.values(), filteredActualResults);
+        LocalDateTime dataUpdatedAt = latestUpdate(readySignals, quotesBySymbol.values(), filteredActualResults);
 
         return overview(query, tradeDate, rows.subList(fromIndex, toIndex),
-                metrics(candidates.size(), filteredSignals, filteredActualResults), rows.size(),
+                metrics(candidates.size(), readySignals, filteredActualResults), rows.size(),
                 availableIndustries, dataUpdatedAt,
                 stockMarketContextService.marketContext(query, tradeDate, candidates));
     }
@@ -151,6 +173,13 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     private LocalDate resolveTradeDate(LocalDate requestedDate, List<String> candidateSymbols) {
         if (requestedDate != null) {
             return requestedDate;
+        }
+        StockDailyQuote latestQuote = stockDailyQuoteMapper.selectOne(new LambdaQueryWrapper<StockDailyQuote>()
+                .in(StockDailyQuote::getSymbol, candidateSymbols)
+                .orderByDesc(StockDailyQuote::getTradeDate)
+                .last("LIMIT 1"));
+        if (latestQuote != null) {
+            return latestQuote.getTradeDate();
         }
         StockSignalDaily latest = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                 .in(StockSignalDaily::getSymbol, candidateSymbols)
@@ -219,20 +248,65 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     }
 
     private StockConsoleVo.SignalRow toRow(StockSignalDaily signal, StockBase stock, StockDailyQuote quote) {
+        boolean ready = isReadySignal(signal);
         return new StockConsoleVo.SignalRow(
-                signal.getSymbol(),
-                stock == null ? signal.getSymbol() : stock.getName(),
+                SymbolNormalizer.normalize(stock.getSymbol()),
+                stock.getName(),
                 quote == null ? null : quote.getClosePrice(),
                 quote == null ? null : quote.getChangePct(),
-                signal.getSignal(),
-                signal.getBullishScore(),
-                signal.getBearishScore(),
-                signal.getRiskScore(),
-                signal.getConfidence(),
-                triggeredRuleCount(signal.getTriggeredRules()),
-                "3-5日",
-                max(signal.getCreatedTime(), quote == null ? null : quote.getSyncTime())
+                ready ? signal.getSignal() : null,
+                ready ? signal.getBullishScore() : null,
+                ready ? signal.getBearishScore() : null,
+                ready ? signal.getRiskScore() : null,
+                ready ? signal.getConfidence() : null,
+                ready ? triggeredRuleCount(signal.getTriggeredRules()) : 0,
+                ready ? "3-5日" : null,
+                max(ready ? signal.getCreatedTime() : null, quote == null ? null : quote.getSyncTime()),
+                ready ? "ready" : PENDING_SIGNAL,
+                quote == null ? PENDING_SIGNAL : "ready"
         );
+    }
+
+    private boolean matchesRow(StockConsoleVo.SignalRow row, StockConsoleVo.SignalDashboardQuery query) {
+        if (PENDING_SIGNAL.equalsIgnoreCase(query.signal())) {
+            return PENDING_SIGNAL.equals(row.signalStatus());
+        }
+        if (StringUtils.hasText(query.signal()) && !query.signal().equals(row.signal())) {
+            return false;
+        }
+        if (query.confidenceMin() != null || query.confidenceMax() != null) {
+            if (row.confidence() == null) {
+                return false;
+            }
+            return (query.confidenceMin() == null || row.confidence().compareTo(query.confidenceMin()) >= 0)
+                    && (query.confidenceMax() == null || row.confidence().compareTo(query.confidenceMax()) <= 0);
+        }
+        return true;
+    }
+
+    private boolean matchesSignalAndConfidence(
+            StockSignalDaily signal,
+            StockConsoleVo.SignalDashboardQuery query) {
+        if (PENDING_SIGNAL.equalsIgnoreCase(query.signal())) {
+            return false;
+        }
+        if (StringUtils.hasText(query.signal()) && !query.signal().equals(signal.getSignal())) {
+            return false;
+        }
+        if (query.confidenceMin() != null || query.confidenceMax() != null) {
+            if (signal.getConfidence() == null) {
+                return false;
+            }
+            return (query.confidenceMin() == null || signal.getConfidence().compareTo(query.confidenceMin()) >= 0)
+                    && (query.confidenceMax() == null || signal.getConfidence().compareTo(query.confidenceMax()) <= 0);
+        }
+        return true;
+    }
+
+    private boolean isReadySignal(StockSignalDaily signal) {
+        return signal != null
+                && signal.getSignal() != null
+                && SUPPORTED_SIGNALS.contains(signal.getSignal());
     }
 
     private List<StockConsoleVo.MetricCard> metrics(
@@ -312,6 +386,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
 
     private static StockDailyQuote newerQuote(StockDailyQuote first, StockDailyQuote second) {
         return compareNullable(first.getSyncTime(), second.getSyncTime()) >= 0 ? first : second;
+    }
+
+    private static StockSignalDaily newerSignal(StockSignalDaily first, StockSignalDaily second) {
+        return compareNullable(first.getCreatedTime(), second.getCreatedTime()) >= 0 ? first : second;
     }
 
     private static <T extends Comparable<? super T>> int compareNullable(T left, T right) {

@@ -34,7 +34,9 @@ public final class StockConsoleVo {
             BigDecimal confidence,
             int triggeredRuleCount,
             String suggestedPeriod,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            String signalStatus,
+            String quoteStatus
     ) {
     }
 
