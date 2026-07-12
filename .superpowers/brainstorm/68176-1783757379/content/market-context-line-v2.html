@@ -1,0 +1,63 @@
+<style>
+  body { background:#080d14 !important; }
+  .wrap { max-width:980px; margin:0 auto; color:#dce6f2; font-family:Inter,"PingFang SC",sans-serif; }
+  .wrap h2 { color:#f7f9fc; margin-bottom:6px; }
+  .subtitle { color:#8694a7; }
+  .comparison { display:grid; grid-template-columns:1.45fr .9fr; gap:14px; margin-top:22px; }
+  .panel { border:1px solid #28364a; border-radius:7px; background:#0e1722; padding:16px; }
+  .head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+  .head h3 { color:#f4f7fb; font-size:15px; margin:0 0 4px; }
+  .head p { color:#77869a; font-size:11px; margin:0; }
+  .quote { text-align:right; }
+  .quote strong { display:block; color:#f7f9fc; font-size:21px; }
+  .quote span { color:#4fd39a; font-size:12px; }
+  .chart { position:relative; height:220px; border-left:1px solid #28364a; border-bottom:1px solid #28364a; background:linear-gradient(rgba(40,54,74,.28) 1px,transparent 1px); background-size:100% 44px; }
+  .chart svg { width:100%; height:100%; overflow:visible; }
+  .axis { display:flex; justify-content:space-between; padding-top:8px; color:#68778a; font-size:10px; }
+  .legend { display:flex; gap:16px; align-items:center; margin-top:14px; color:#7f8ea2; font-size:11px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:#47d49a; display:inline-block; margin-right:5px; }
+  .side-title { color:#f3f6fa; font-weight:600; margin-bottom:12px; }
+  .rank { display:grid; grid-template-columns:56px 1fr 54px; gap:8px; align-items:center; margin:13px 0; font-size:11px; }
+  .bar { height:7px; border-radius:4px; background:#263346; overflow:hidden; }
+  .bar i { display:block; height:100%; border-radius:4px; background:#45cc92; }
+  .green { color:#4fd39a; } .red { color:#ff6f70; }
+  .note { margin-top:18px; padding:12px 14px; border:1px solid #2e4158; border-radius:6px; background:#101c29; color:#9dabbc; font-size:12px; line-height:1.7; }
+  @media(max-width:760px){ .comparison{grid-template-columns:1fr;} }
+</style>
+
+<div class="wrap">
+  <h2>市场环境概览：修正版</h2>
+  <p class="subtitle">趋势和比较使用不同图形语义：指数走势用折线，行业强弱用条形。</p>
+  <div class="comparison">
+    <section class="panel">
+      <div class="head">
+        <div><h3>沪深 300 · 近 20 个交易日</h3><p>大盘走势与当前市场状态</p></div>
+        <div class="quote"><strong>3,692.61</strong><span>+0.68%　偏强</span></div>
+      </div>
+      <div class="chart">
+        <svg viewBox="0 0 600 220" preserveAspectRatio="none" aria-label="沪深300近20个交易日折线图">
+          <defs>
+            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#3bd391" stop-opacity=".28"/>
+              <stop offset="100%" stop-color="#3bd391" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0,182 L32,174 L63,185 L95,148 L126,155 L158,128 L189,140 L221,119 L252,130 L284,95 L316,108 L347,74 L379,91 L410,65 L442,86 L474,58 L505,72 L537,43 L568,55 L600,29 L600,220 L0,220 Z" fill="url(#area)"/>
+          <polyline points="0,182 32,174 63,185 95,148 126,155 158,128 189,140 221,119 252,130 284,95 316,108 347,74 379,91 410,65 442,86 474,58 505,72 537,43 568,55 600,29" fill="none" stroke="#45d49a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="600" cy="29" r="5" fill="#45d49a" stroke="#0e1722" stroke-width="3"/>
+        </svg>
+      </div>
+      <div class="axis"><span>06-13</span><span>06-27</span><span>07-11</span></div>
+      <div class="legend"><span><i class="dot"></i>沪深 300 收盘点位</span><span>状态由趋势、广度与风险因子综合计算</span></div>
+    </section>
+    <aside class="panel">
+      <div class="side-title">行业强弱（今日）</div>
+      <div class="rank"><span>电子</span><div class="bar"><i style="width:86%"></i></div><span class="green">+2.35%</span></div>
+      <div class="rank"><span>通信</span><div class="bar"><i style="width:72%"></i></div><span class="green">+1.68%</span></div>
+      <div class="rank"><span>银行</span><div class="bar"><i style="width:55%;background:#efb94a"></i></div><span>+0.42%</span></div>
+      <div class="rank"><span>房地产</span><div class="bar"><i style="width:44%;background:#ed6a6a"></i></div><span class="red">-1.42%</span></div>
+      <div class="rank"><span>煤炭</span><div class="bar"><i style="width:31%;background:#ed6a6a"></i></div><span class="red">-2.08%</span></div>
+    </aside>
+  </div>
+  <div class="note">正式页面使用项目已有 ECharts：折线图支持 tooltip、日期刻度和响应式缩放；若历史行情不足，则显示明确空状态，不用伪造固定走势。</div>
+</div>

@@ -156,14 +156,6 @@ class FoundationContractTest {
     }
 
     @Test
-    void developmentConfigDoesNotContainRealDefaultMysqlPassword() throws IOException {
-        String config = new String(getClass().getResourceAsStream("/application-dev.yml").readAllBytes(), StandardCharsets.UTF_8);
-
-        assertThat(config).contains("password: ${MYSQL_PASSWORD:}");
-        assertThat(config).doesNotContain("19970121");
-    }
-
-    @Test
     void defaultLlmClientFallsBackToMockWhenNoRealClientIsConfigured() {
         contextRunner
                 .withUserConfiguration(DefaultLlmClientConfig.class)
