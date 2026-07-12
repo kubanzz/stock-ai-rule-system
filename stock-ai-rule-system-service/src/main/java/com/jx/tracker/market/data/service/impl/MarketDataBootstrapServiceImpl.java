@@ -12,8 +12,8 @@ import com.jx.tracker.market.data.service.MarketDataBootstrapService;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
 import com.jx.tracker.market.data.service.TradeCalendarService;
 import com.jx.tracker.market.data.util.MarketCodeNormalizer;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,7 +25,6 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MarketDataBootstrapServiceImpl implements MarketDataBootstrapService {
 
     private static final String A_SHARE_MARKET = "A股";
@@ -35,6 +34,15 @@ public class MarketDataBootstrapServiceImpl implements MarketDataBootstrapServic
     private final TradeCalendarService tradeCalendarService;
     private final TaskExecutor taskExecutor;
     private final Clock clock = Clock.systemDefaultZone();
+
+    public MarketDataBootstrapServiceImpl(
+            MarketDataSyncService marketDataSyncService,
+            TradeCalendarService tradeCalendarService,
+            @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor) {
+        this.marketDataSyncService = marketDataSyncService;
+        this.tradeCalendarService = tradeCalendarService;
+        this.taskExecutor = taskExecutor;
+    }
 
     @Override
     public BootstrapAccepted start(String market, String triggerBy) {
