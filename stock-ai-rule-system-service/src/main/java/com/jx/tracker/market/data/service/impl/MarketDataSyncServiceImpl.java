@@ -8,6 +8,7 @@ import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.entity.MarketDataSyncRun;
 import com.jx.tracker.domain.enums.MarketDataSyncStatus;
 import com.jx.tracker.domain.enums.MarketDataSyncType;
+import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.MarketDataSyncRunMapper;
 import com.jx.tracker.market.data.dto.DailyQuoteSyncRequestDto;
 import com.jx.tracker.market.data.dto.MarketDataImportResultDto;
@@ -96,6 +97,7 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
                 );
             } else {
                 List<StockBaseUpsertDto> rows = provider.fetchStockList();
+                requireNonEmpty(rows, "股票列表");
                 importResult = writeInTransaction(() -> stockBaseService.upsertStockBases(rows));
             }
             return finishSuccess(run, selection, importResult, null, safeRequest.getStartDate(), safeRequest.getEndDate());
@@ -130,6 +132,7 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
                 );
             } else {
                 List<StockDailyQuoteUpsertDto> rows = provider.fetchDailyQuotes(targetSymbol, safeRequest.getStartDate(), safeRequest.getEndDate());
+                requireNonEmpty(rows, targetSymbol == null ? "全市场日线快照" : "股票日线");
                 importResult = writeInTransaction(() -> stockDailyQuoteService.upsertDailyQuotes(rows));
             }
             return finishSuccess(run, selection, importResult, targetSymbol, safeRequest.getStartDate(), safeRequest.getEndDate());
@@ -189,6 +192,12 @@ public class MarketDataSyncServiceImpl implements MarketDataSyncService {
 
     private <T> MarketDataImportResultDto<T> writeInTransaction(SyncWriteCallback<T> callback) {
         return transactionTemplate.execute(status -> callback.write());
+    }
+
+    private void requireNonEmpty(Collection<?> rows, String operation) {
+        if (rows == null || rows.isEmpty()) {
+            throw new ServiceException("行情数据源返回空数据：" + operation);
+        }
     }
 
     private <T> MarketDataImportResultDto<T> withProviderRejectedRows(

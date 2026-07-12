@@ -34,14 +34,15 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
         MarketDataSyncResultDto stockList = marketDataSyncService.syncStockList(syncRequest);
         MarketDataSyncResultDto tradeCalendar = marketDataSyncService.syncTradeCalendar(syncRequest);
         List<MarketDataSyncResultDto> dailyQuotes = new ArrayList<>();
-        for (String symbol : request.getSymbols()) {
-            DailyQuoteSyncRequestDto quoteRequest = new DailyQuoteSyncRequestDto();
-            quoteRequest.setTargetSymbol(symbol);
-            quoteRequest.setStartDate(request.getTradeDate());
-            quoteRequest.setEndDate(request.getTradeDate());
-            quoteRequest.setTriggerType(context.getTriggerType().getCode());
-            quoteRequest.setTriggerBy("daily-workflow:" + context.getRunId());
-            dailyQuotes.add(marketDataSyncService.syncDailyQuotes(quoteRequest));
+        if (request.getSymbols() == null || request.getSymbols().isEmpty()) {
+            dailyQuotes.add(marketDataSyncService.syncDailyQuotes(quoteRequest(context, null, request.getTradeDate())));
+            dailyQuotes.add(marketDataSyncService.syncDailyQuotes(quoteRequest(
+                    context, "000300.SH", request.getTradeDate().minusDays(120))));
+        } else {
+            for (String symbol : request.getSymbols()) {
+                dailyQuotes.add(marketDataSyncService.syncDailyQuotes(
+                        quoteRequest(context, symbol, request.getTradeDate())));
+            }
         }
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("stockListStatus", stockList.getStatus());
@@ -64,6 +65,19 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
     private MarketDataSyncRequestDto syncRequest(DailyWorkflowContext context) {
         MarketDataSyncRequestDto request = new MarketDataSyncRequestDto();
         request.setStartDate(context.getRequest().getTradeDate());
+        request.setEndDate(context.getRequest().getTradeDate());
+        request.setTriggerType(context.getTriggerType().getCode());
+        request.setTriggerBy("daily-workflow:" + context.getRunId());
+        return request;
+    }
+
+    private DailyQuoteSyncRequestDto quoteRequest(
+            DailyWorkflowContext context,
+            String symbol,
+            java.time.LocalDate startDate) {
+        DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
+        request.setTargetSymbol(symbol);
+        request.setStartDate(startDate);
         request.setEndDate(context.getRequest().getTradeDate());
         request.setTriggerType(context.getTriggerType().getCode());
         request.setTriggerBy("daily-workflow:" + context.getRunId());

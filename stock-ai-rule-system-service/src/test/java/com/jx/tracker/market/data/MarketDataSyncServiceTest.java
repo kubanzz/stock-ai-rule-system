@@ -35,10 +35,57 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MarketDataSyncServiceTest {
+
+    @Test
+    void syncDailyQuotesSupportsWholeMarketSnapshotWithoutTargetSymbol() {
+        MarketDataProvider provider = mock(MarketDataProvider.class);
+        LocalDate tradeDate = LocalDate.of(2026, 7, 10);
+        List<StockDailyQuoteUpsertDto> rows = List.of(
+                quote("600519.SH", tradeDate),
+                quote("300750.SZ", tradeDate)
+        );
+        when(provider.fetchDailyQuotes(null, tradeDate, tradeDate)).thenReturn(rows);
+        MarketDataImportResultDto<StockDailyQuoteUpsertDto> importResult = new MarketDataImportResultDto<>();
+        rows.forEach(importResult::accept);
+        importResult.markInserted();
+        importResult.markInserted();
+        StockDailyQuoteService quoteService = mock(StockDailyQuoteService.class);
+        when(quoteService.upsertDailyQuotes(rows)).thenReturn(importResult);
+        MarketDataSyncServiceImpl service = service(provider, null, quoteService, null, syncRunMapper());
+        DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
+        request.setStartDate(tradeDate);
+        request.setEndDate(tradeDate);
+
+        var result = service.syncDailyQuotes(request);
+
+        assertThat(result.getStatus()).isEqualTo(MarketDataSyncStatus.SUCCESS.getCode());
+        assertThat(result.getTargetSymbol()).isNull();
+        assertThat(result.getScanned()).isEqualTo(2);
+        verify(quoteService).upsertDailyQuotes(rows);
+    }
+
+    @Test
+    void syncDailyQuotesRejectsEmptyExternalSnapshotBeforePersistence() {
+        MarketDataProvider provider = mock(MarketDataProvider.class);
+        LocalDate tradeDate = LocalDate.of(2026, 7, 10);
+        when(provider.fetchDailyQuotes(null, tradeDate, tradeDate)).thenReturn(List.of());
+        StockDailyQuoteService quoteService = mock(StockDailyQuoteService.class);
+        MarketDataSyncServiceImpl service = service(provider, null, quoteService, null, syncRunMapper());
+        DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
+        request.setStartDate(tradeDate);
+        request.setEndDate(tradeDate);
+
+        var result = service.syncDailyQuotes(request);
+
+        assertThat(result.getStatus()).isEqualTo(MarketDataSyncStatus.FAILED.getCode());
+        assertThat(result.getErrors()).anySatisfy(error -> assertThat(error).contains("空数据"));
+        verify(quoteService, never()).upsertDailyQuotes(any());
+    }
 
     @Test
     void syncStockListFetchesProviderDataAndRecordsSuccessfulRun() {

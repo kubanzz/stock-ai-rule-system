@@ -19,6 +19,7 @@ import com.jx.tracker.market.data.dto.TradeCalendarQueryDto;
 import com.jx.tracker.market.data.provider.CsvMarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProvider;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
+import com.jx.tracker.market.data.service.MarketDataBootstrapService;
 import com.jx.tracker.market.data.service.StockBaseService;
 import com.jx.tracker.market.data.service.StockDailyQuoteService;
 import com.jx.tracker.market.data.service.TradeCalendarService;
@@ -54,17 +55,21 @@ public class MarketDataController {
 
     private final TradeCalendarService tradeCalendarService;
 
+    private final MarketDataBootstrapService marketDataBootstrapService;
+
     public MarketDataController(
             StockBaseService stockBaseService,
             StockDailyQuoteService stockDailyQuoteService,
             MarketDataProvider mockMarketDataProvider,
             MarketDataSyncService marketDataSyncService,
-            TradeCalendarService tradeCalendarService) {
+            TradeCalendarService tradeCalendarService,
+            MarketDataBootstrapService marketDataBootstrapService) {
         this.stockBaseService = stockBaseService;
         this.stockDailyQuoteService = stockDailyQuoteService;
         this.mockMarketDataProvider = mockMarketDataProvider;
         this.marketDataSyncService = marketDataSyncService;
         this.tradeCalendarService = tradeCalendarService;
+        this.marketDataBootstrapService = marketDataBootstrapService;
     }
 
     @GetMapping("/stocks")
@@ -153,6 +158,12 @@ public class MarketDataController {
     @Operation(summary = "触发股票列表同步")
     public AjaxResult syncStockList(@RequestBody(required = false) MarketDataSyncRequestDto request) {
         return AjaxResult.success(marketDataSyncService.syncStockList(request));
+    }
+
+    @PostMapping("/sync/bootstrap")
+    @Operation(summary = "异步初始化真实 A 股行情")
+    public AjaxResult bootstrap(@RequestParam(value = "market", defaultValue = "A股") String market) {
+        return AjaxResult.success(marketDataBootstrapService.start(market, "manual"));
     }
 
     @PostMapping("/sync/daily-quotes")

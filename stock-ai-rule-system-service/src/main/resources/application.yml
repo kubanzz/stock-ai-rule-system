@@ -75,8 +75,8 @@ stock-ai-rule:
       trade-calendar-csv-path: ${MARKET_DATA_TRADE_CALENDAR_CSV_PATH:}
   scheduler:
     # 默认禁用自动调度，避免在未显式配置前触发外部行情、AI 或回测任务。
-    daily-enabled: false
-    daily-cron: "-"
+    daily-enabled: ${DAILY_WORKFLOW_ENABLED:false}
+    daily-cron: ${DAILY_WORKFLOW_CRON:0 0 18 * * MON-FRI}
     zone: Asia/Shanghai
 
 stock:

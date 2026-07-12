@@ -30,6 +30,27 @@ import static org.mockito.Mockito.when;
 class DailyWorkflowStepHandlersTest {
 
     @Test
+    void marketDataCollectionHandlerSyncsWholeMarketAndBenchmarkWhenNoSymbolsConfigured() {
+        MarketDataSyncService syncService = mock(MarketDataSyncService.class);
+        MarketDataSyncResultDto syncResult = new MarketDataSyncResultDto();
+        syncResult.setStatus("success");
+        when(syncService.syncStockList(any())).thenReturn(syncResult);
+        when(syncService.syncTradeCalendar(any())).thenReturn(syncResult);
+        when(syncService.syncDailyQuotes(any())).thenReturn(syncResult);
+
+        DailyWorkflowStepResultVo result = new MarketDataCollectionStepHandler(syncService)
+                .execute(context(LocalDate.of(2026, 6, 26), List.of()));
+
+        assertThat(result.getDetails()).containsEntry("dailyQuoteSyncCount", 2);
+        verify(syncService).syncDailyQuotes(argThat(request ->
+                request.getTargetSymbol() == null
+                        && LocalDate.of(2026, 6, 26).equals(request.getEndDate())));
+        verify(syncService).syncDailyQuotes(argThat(request ->
+                "000300.SH".equals(request.getTargetSymbol())
+                        && LocalDate.of(2026, 6, 26).equals(request.getEndDate())));
+    }
+
+    @Test
     void marketDataCollectionHandlerRunsConfiguredSyncServices() {
         MarketDataSyncService syncService = mock(MarketDataSyncService.class);
         MarketDataSyncResultDto syncResult = new MarketDataSyncResultDto();

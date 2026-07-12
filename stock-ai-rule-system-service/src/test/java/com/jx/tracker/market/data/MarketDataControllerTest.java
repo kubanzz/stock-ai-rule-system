@@ -11,6 +11,7 @@ import com.jx.tracker.market.data.dto.MarketDataSyncRunQueryDto;
 import com.jx.tracker.market.data.dto.TradeCalendarQueryDto;
 import com.jx.tracker.market.data.provider.MockMarketDataProvider;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
+import com.jx.tracker.market.data.service.MarketDataBootstrapService;
 import com.jx.tracker.market.data.service.StockBaseService;
 import com.jx.tracker.market.data.service.StockDailyQuoteService;
 import com.jx.tracker.market.data.service.TradeCalendarService;
@@ -25,6 +26,23 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class MarketDataControllerTest {
+
+    @Test
+    void bootstrapAcceptsAsynchronousRealMarketInitialization() {
+        MarketDataBootstrapService bootstrapService = mock(MarketDataBootstrapService.class);
+        var accepted = new MarketDataBootstrapService.BootstrapAccepted("job-100", "A股", "accepted");
+        when(bootstrapService.start("A股", "manual")).thenReturn(accepted);
+        MarketDataController controller = controller(
+                mock(MarketDataSyncService.class),
+                mock(TradeCalendarService.class),
+                bootstrapService
+        );
+
+        AjaxResult response = controller.bootstrap("A股");
+
+        assertThat(response.get(AjaxResult.CODE_TAG)).isEqualTo(200);
+        assertThat(response.get(AjaxResult.DATA_TAG)).isEqualTo(accepted);
+    }
 
     @Test
     void triggerDailyQuoteSyncReturnsAjaxResultContract() {
@@ -80,12 +98,20 @@ class MarketDataControllerTest {
     }
 
     private MarketDataController controller(MarketDataSyncService syncService, TradeCalendarService tradeCalendarService) {
+        return controller(syncService, tradeCalendarService, mock(MarketDataBootstrapService.class));
+    }
+
+    private MarketDataController controller(
+            MarketDataSyncService syncService,
+            TradeCalendarService tradeCalendarService,
+            MarketDataBootstrapService bootstrapService) {
         return new MarketDataController(
                 mock(StockBaseService.class),
                 mock(StockDailyQuoteService.class),
                 new MockMarketDataProvider(),
                 syncService,
-                tradeCalendarService
+                tradeCalendarService,
+                bootstrapService
         );
     }
 }
