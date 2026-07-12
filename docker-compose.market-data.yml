@@ -2,7 +2,16 @@ services:
   aktools:
     build:
       context: ./infra/aktools
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     container_name: stock-ai-rule-aktools
+    environment:
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
     ports:
       - "127.0.0.1:8090:8090"
     restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined

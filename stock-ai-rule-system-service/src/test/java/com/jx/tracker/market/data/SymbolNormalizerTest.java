@@ -15,6 +15,8 @@ class SymbolNormalizerTest {
         assertThat(SymbolNormalizer.normalize("00700")).isEqualTo("00700.HK");
         assertThat(SymbolNormalizer.normalize("000001")).isEqualTo("000001.SZ");
         assertThat(SymbolNormalizer.normalize("600000")).isEqualTo("600000.SH");
+        assertThat(SymbolNormalizer.normalize("bj920992")).isEqualTo("920992.BJ");
+        assertThat(SymbolNormalizer.normalize("920992")).isEqualTo("920992.BJ");
         assertThat(SymbolNormalizer.normalize("aapl")).isEqualTo("AAPL.US");
         assertThat(SymbolNormalizer.normalize("AAPL.US")).isEqualTo("AAPL.US");
     }
@@ -23,6 +25,8 @@ class SymbolNormalizerTest {
     void parsesMarketAndExchangeFromInternalSymbols() {
         assertThat(SymbolNormalizer.parseMarket("000001.SZ")).isEqualTo("CN");
         assertThat(SymbolNormalizer.parseExchange("000001.SZ")).isEqualTo("SZ");
+        assertThat(SymbolNormalizer.parseMarket("920992.BJ")).isEqualTo("CN");
+        assertThat(SymbolNormalizer.parseExchange("920992.BJ")).isEqualTo("BJ");
         assertThat(SymbolNormalizer.parseMarket("00700.HK")).isEqualTo("HK");
         assertThat(SymbolNormalizer.parseExchange("00700.HK")).isEqualTo("HK");
         assertThat(SymbolNormalizer.parseMarket("AAPL.US")).isEqualTo("US");

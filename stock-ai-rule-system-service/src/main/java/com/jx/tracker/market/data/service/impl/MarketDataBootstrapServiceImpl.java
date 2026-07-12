@@ -28,6 +28,7 @@ import java.util.UUID;
 public class MarketDataBootstrapServiceImpl implements MarketDataBootstrapService {
 
     private static final String A_SHARE_MARKET = "A股";
+    private static final String A_SHARE_STORAGE_MARKET = "CN";
     private static final String HS300_SYMBOL = "000300.SH";
 
     private final MarketDataSyncService marketDataSyncService;
@@ -79,7 +80,7 @@ public class MarketDataBootstrapServiceImpl implements MarketDataBootstrapServic
 
     private LocalDate latestOpenTradeDate(LocalDate today) {
         TradeCalendarQueryDto query = new TradeCalendarQueryDto();
-        query.setMarket(A_SHARE_MARKET);
+        query.setMarket(A_SHARE_STORAGE_MARKET);
         query.setOpen(true);
         query.setEndDate(today);
         query.setPageNum(1);

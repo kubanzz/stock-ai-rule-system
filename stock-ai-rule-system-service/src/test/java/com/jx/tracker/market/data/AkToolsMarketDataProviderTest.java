@@ -24,19 +24,11 @@ class AkToolsMarketDataProviderTest {
     void mapsAllMarketSpotRowsToStockBases() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_zh_a_spot_em"))
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_info_a_code_name"))
                 .andRespond(withSuccess("""
                         [{
-                          "代码": "600519",
-                          "名称": "贵州茅台",
-                          "最新价": 1488.88,
-                          "今开": 1470.00,
-                          "最高": 1499.00,
-                          "最低": 1466.00,
-                          "昨收": 1468.88,
-                          "涨跌幅": 1.36,
-                          "成交量": 215000,
-                          "成交额": 3210000000
+                          "code": "600519",
+                          "name": "贵州茅台"
                         }]
                         """, MediaType.APPLICATION_JSON));
         AkToolsMarketDataProvider provider = provider(builder);
@@ -58,10 +50,10 @@ class AkToolsMarketDataProviderTest {
     void mapsSpotRowsToWholeMarketDailySnapshotForRequestedDate() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_zh_a_spot_em"))
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_zh_a_spot"))
                 .andRespond(withSuccess("""
                         [{
-                          "代码": "300750",
+                          "代码": "sz300750",
                           "名称": "宁德时代",
                           "最新价": 251.20,
                           "今开": 248.10,
@@ -95,12 +87,11 @@ class AkToolsMarketDataProviderTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo(org.hamcrest.Matchers.startsWith(
-                        "http://127.0.0.1:8090/api/public/stock_zh_index_daily_em")))
+                        "http://127.0.0.1:8090/api/public/stock_zh_index_daily")))
                 .andExpect(queryParam("symbol", "sh000300"))
-                .andExpect(queryParam("start_date", "20260709"))
-                .andExpect(queryParam("end_date", "20260710"))
                 .andRespond(withSuccess("""
                         [
+                          {"date":"2026-07-08T00:00:00.000","open":3990,"close":4000,"high":4010,"low":3980,"volume":90},
                           {"date":"2026-07-09T00:00:00.000","open":4000,"close":4010,"high":4020,"low":3990,"volume":100,"amount":1000},
                           {"date":"2026-07-10T00:00:00.000","open":4012,"close":4050,"high":4060,"low":4005,"volume":120,"amount":1200}
                         ]
@@ -124,7 +115,7 @@ class AkToolsMarketDataProviderTest {
     void rejectsEmptyExternalResponsesInsteadOfReturningMockData() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_zh_a_spot_em"))
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_info_a_code_name"))
                 .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
         AkToolsMarketDataProvider provider = provider(builder);
 

@@ -22,8 +22,9 @@ import java.util.List;
 public class AkToolsMarketDataProvider implements MarketDataProvider {
 
     public static final String DATA_SOURCE = "aktools/akshare";
-    private static final String A_SHARE_SPOT_PATH = "/api/public/stock_zh_a_spot_em";
-    private static final String INDEX_DAILY_PATH = "/api/public/stock_zh_index_daily_em";
+    private static final String A_SHARE_LIST_PATH = "/api/public/stock_info_a_code_name";
+    private static final String A_SHARE_SPOT_PATH = "/api/public/stock_zh_a_spot";
+    private static final String INDEX_DAILY_PATH = "/api/public/stock_zh_index_daily";
     private static final String TRADE_CALENDAR_PATH = "/api/public/tool_trade_date_hist_sina";
     private static final String HS300_SYMBOL = "000300.SH";
     private static final DateTimeFormatter BASIC_DATE = DateTimeFormatter.BASIC_ISO_DATE;
@@ -44,16 +45,16 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
 
     @Override
     public List<StockBaseUpsertDto> fetchStockList() {
-        JsonNode rows = getArray(A_SHARE_SPOT_PATH);
+        JsonNode rows = getArray(A_SHARE_LIST_PATH);
         List<StockBaseUpsertDto> result = new ArrayList<>(rows.size());
         for (JsonNode row : rows) {
-            String symbol = normalizeAShare(text(row, "代码"));
+            String symbol = normalizeAShare(firstText(row, "code", "代码"));
             if (!StringUtils.hasText(symbol)) {
                 continue;
             }
             StockBaseUpsertDto dto = new StockBaseUpsertDto();
             dto.setSymbol(symbol);
-            dto.setName(text(row, "名称"));
+            dto.setName(firstText(row, "name", "名称"));
             dto.setMarket(SymbolNormalizer.parseMarket(symbol));
             dto.setExchange(SymbolNormalizer.parseExchange(symbol));
             dto.setStatus("active");
@@ -134,7 +135,7 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
     }
 
     private List<StockDailyQuoteUpsertDto> fetchHs300Quotes(LocalDate startDate, LocalDate endDate) {
-        JsonNode rows = getArray(INDEX_DAILY_PATH, "sh000300", startDate, endDate);
+        JsonNode rows = getArray(INDEX_DAILY_PATH, "sh000300");
         List<StockDailyQuoteUpsertDto> result = new ArrayList<>(rows.size());
         for (JsonNode row : rows) {
             LocalDate tradeDate = parseDate(firstText(row, "date", "日期"));
@@ -165,6 +166,8 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
                         .divide(previousClose, 6, RoundingMode.HALF_UP));
             }
         }
+        result.removeIf(item -> startDate != null && item.getTradeDate().isBefore(startDate)
+                || endDate != null && item.getTradeDate().isAfter(endDate));
         return requireRows(result, "沪深 300 日线");
     }
 
@@ -172,15 +175,9 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
         return readArray(restClient.get().uri(path).retrieve().body(String.class), path);
     }
 
-    private JsonNode getArray(String path, String symbol, LocalDate startDate, LocalDate endDate) {
+    private JsonNode getArray(String path, String symbol) {
         String response = restClient.get().uri(builder -> {
             builder.path(path).queryParam("symbol", symbol);
-            if (startDate != null) {
-                builder.queryParam("start_date", startDate.format(BASIC_DATE));
-            }
-            if (endDate != null) {
-                builder.queryParam("end_date", endDate.format(BASIC_DATE));
-            }
             return builder.build();
         }).retrieve().body(String.class);
         return readArray(response, path);
@@ -209,10 +206,14 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
     }
 
     private String normalizeAShare(String code) {
-        if (!StringUtils.hasText(code) || !code.trim().matches("\\d{6}")) {
+        if (!StringUtils.hasText(code)) {
             return null;
         }
-        return SymbolNormalizer.normalize(code);
+        String normalized = code.trim().toUpperCase();
+        if (normalized.matches("^(SZ|SH|BJ)\\d{6}$")) {
+            return SymbolNormalizer.normalize(normalized);
+        }
+        return normalized.matches("\\d{6}") ? SymbolNormalizer.normalize(normalized) : null;
     }
 
     private String firstText(JsonNode row, String... fields) {

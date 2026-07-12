@@ -5,8 +5,8 @@ import java.util.regex.Pattern;
 
 public final class SymbolNormalizer {
 
-    private static final Pattern A_SHARE_WITH_PREFIX = Pattern.compile("^(SZ|SH)(\\d{6})$");
-    private static final Pattern A_SHARE_WITH_SUFFIX = Pattern.compile("^(\\d{6})\\.(SZ|SH)$");
+    private static final Pattern A_SHARE_WITH_PREFIX = Pattern.compile("^(SZ|SH|BJ)(\\d{6})$");
+    private static final Pattern A_SHARE_WITH_SUFFIX = Pattern.compile("^(\\d{6})\\.(SZ|SH|BJ)$");
     private static final Pattern HK_WITH_SUFFIX = Pattern.compile("^(\\d{5})\\.HK$");
     private static final Pattern US_WITH_SUFFIX = Pattern.compile("^([A-Z][A-Z0-9.-]*)\\.US$");
     private static final Pattern US_PLAIN = Pattern.compile("^[A-Z][A-Z0-9.-]*$");
@@ -35,6 +35,9 @@ public final class SymbolNormalizer {
             return value + ".HK";
         }
         if (value.matches("^\\d{6}$")) {
+            if (value.matches("^[489].*")) {
+                return value + ".BJ";
+            }
             return value.startsWith("6") ? value + ".SH" : value + ".SZ";
         }
         if (US_PLAIN.matcher(value).matches()) {
@@ -46,7 +49,7 @@ public final class SymbolNormalizer {
     public static String parseMarket(String symbol) {
         String normalized = normalize(symbol);
         String exchange = parseExchange(normalized);
-        if ("SZ".equals(exchange) || "SH".equals(exchange)) {
+        if ("SZ".equals(exchange) || "SH".equals(exchange) || "BJ".equals(exchange)) {
             return "CN";
         }
         return exchange;
