@@ -60,10 +60,16 @@ stock-ai-rule:
   market-data:
     provider:
       # 可选：mock / csv / tushare。外部 token 缺失时自动降级到 fallback-type。
-      type: ${MARKET_DATA_PROVIDER:mock}
+      type: ${MARKET_DATA_PROVIDER:aktools}
       fallback-type: ${MARKET_DATA_FALLBACK_PROVIDER:mock}
       token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:}}
       api-url: ${MARKET_DATA_PROVIDER_API_URL:https://api.tushare.pro}
+      ak-tools-base-url: ${AKTOOLS_BASE_URL:http://127.0.0.1:8090}
+      connect-timeout: ${MARKET_DATA_CONNECT_TIMEOUT:5s}
+      read-timeout: ${MARKET_DATA_READ_TIMEOUT:60s}
+      retry-count: ${MARKET_DATA_RETRY_COUNT:3}
+      minimum-stock-count: ${MARKET_DATA_MINIMUM_STOCK_COUNT:4000}
+      minimum-quote-coverage: ${MARKET_DATA_MINIMUM_QUOTE_COVERAGE:0.95}
       stock-list-csv-path: ${MARKET_DATA_STOCK_LIST_CSV_PATH:}
       daily-quote-csv-path: ${MARKET_DATA_DAILY_QUOTE_CSV_PATH:}
       trade-calendar-csv-path: ${MARKET_DATA_TRADE_CALENDAR_CSV_PATH:}

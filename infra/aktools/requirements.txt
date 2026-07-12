@@ -1,0 +1,2 @@
+aktools==0.0.91
+akshare==1.18.64

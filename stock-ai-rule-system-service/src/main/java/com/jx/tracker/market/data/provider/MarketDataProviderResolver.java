@@ -33,8 +33,19 @@ public class MarketDataProviderResolver {
             case "mock" -> mock(false, null);
             case "csv" -> csv(false, null);
             case "tushare" -> resolveTushare();
+            case "aktools" -> resolveAkTools();
             default -> fallback("unsupported provider type: " + type);
         };
+    }
+
+    private MarketDataProviderSelection resolveAkTools() {
+        return new MarketDataProviderSelection(
+                new AkToolsMarketDataProvider(
+                        properties.getAkToolsBaseUrl(), restClientBuilder, objectMapper),
+                AkToolsMarketDataProvider.DATA_SOURCE,
+                false,
+                null
+        );
     }
 
     private MarketDataProviderSelection resolveTushare() {
