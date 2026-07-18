@@ -104,6 +104,22 @@ class RiskMigrationContractTest {
         assertThat(migration).doesNotContain("UPDATE stock_signal_daily SET `signal`");
     }
 
+    @Test
+    void signalMigrationCreatesAppendOnlyPointInTimeHistoryAndSeedsExistingRows() throws IOException {
+        String migration = resource("/db/migration/V2__risk_warning_foundation.sql");
+
+        assertThat(migration).contains(
+                "CREATE TABLE stock_signal_daily_history",
+                "signal_id BIGINT NOT NULL",
+                "signal_direction VARCHAR(16) NOT NULL",
+                "available_at DATETIME(3) NOT NULL",
+                "KEY idx_stock_signal_daily_history_pit (signal_date, symbol, available_at, id)",
+                "INSERT INTO stock_signal_daily_history",
+                "SELECT id, symbol, signal_date, `signal`, signal_direction",
+                "COALESCE(created_at, CURRENT_TIMESTAMP(3))"
+        );
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(path)) {
             assertThat(input).as(path).isNotNull();
