@@ -21,6 +21,15 @@ const routes: RouteRecordRaw[] = [
         path: '/stock/signals',
       },
       {
+        component: () => import('#/views/stock/risk/center/index.vue'),
+        meta: {
+          icon: 'lucide:shield-alert',
+          title: '风险中心',
+        },
+        name: 'StockRiskCenter',
+        path: '/stock/risks',
+      },
+      {
         component: () => import('#/views/stock/detail/index.vue'),
         meta: {
           icon: 'lucide:search-check',
