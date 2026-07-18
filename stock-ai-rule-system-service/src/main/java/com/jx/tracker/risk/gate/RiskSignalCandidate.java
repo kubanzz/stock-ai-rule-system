@@ -7,6 +7,7 @@ import com.jx.tracker.risk.model.SignalDirection;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 
 /** 待进行影子闸门评估的正式信号；方向是只读输入，闸门不得改写。 */
 public record RiskSignalCandidate(
@@ -33,5 +34,12 @@ public record RiskSignalCandidate(
         relevantRiskObjects = relevantRiskObjects == null || relevantRiskObjects.isEmpty()
                 ? List.of(signalObject)
                 : List.copyOf(relevantRiskObjects);
+    }
+
+    public static String stockSignalReference(String symbol, LocalDate tradeDate) {
+        if (symbol == null || symbol.isBlank() || tradeDate == null) {
+            throw new IllegalArgumentException("symbol and tradeDate are required");
+        }
+        return "signal:" + symbol.trim().toUpperCase(Locale.ROOT) + ":" + tradeDate;
     }
 }
