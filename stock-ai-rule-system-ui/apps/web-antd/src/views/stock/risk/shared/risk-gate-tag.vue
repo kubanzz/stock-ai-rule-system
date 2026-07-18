@@ -8,9 +8,7 @@ import { Tag } from 'ant-design-vue';
 import { getGatePresentation } from './presentation';
 
 const props = defineProps<{ status: RiskGateStatus }>();
-const presentation = computed(() =>
-  getGatePresentation(props.status, false),
-);
+const presentation = computed(() => getGatePresentation(props.status, false));
 </script>
 
 <template>

@@ -1,7 +1,4 @@
-import type {
-  RiskGateStatus,
-  RiskLevel,
-} from '#/api/stock/risk/types';
+import type { RiskGateStatus, RiskLevel } from '#/api/stock/risk/types';
 
 export interface RiskPresentation {
   color: string;

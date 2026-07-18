@@ -105,6 +105,6 @@ export async function getRiskObjectTrend(
   return unwrapAjaxResult(response.data);
 }
 
-export type * from './types';
 export { normalizeRiskObjectQuery, RISK_API_PATHS } from './contract';
+export type * from './types';
 export { RISK_DECISION_SUPPORT_NOTICE } from './types';

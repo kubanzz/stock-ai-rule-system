@@ -17,7 +17,11 @@ const rows = computed(() => [
 
 <template>
   <div class="space-y-2">
-    <div v-for="row in rows" :key="row.code" class="grid grid-cols-[92px_1fr] items-center gap-3">
+    <div
+      v-for="row in rows"
+      :key="row.code"
+      class="grid grid-cols-[92px_1fr] items-center gap-3"
+    >
       <span class="text-sm">{{ row.code }} · {{ row.label }}</span>
       <Progress
         v-if="row.value !== null"

@@ -23,8 +23,9 @@ defineProps<{ evidence: RiskEvidence[] }>();
         <span>{{ formatRiskScore(item.score) }}</span>
       </div>
       <div class="mt-2 text-xs text-gray-500">
-        来源：{{ item.source }} · 可用时间：{{ item.availableAt }} ·
-        质量：{{ item.qualityStatus }}
+        来源：{{ item.source }} · 可用时间：{{ item.availableAt }} · 质量：{{
+          item.qualityStatus
+        }}
       </div>
     </div>
   </div>

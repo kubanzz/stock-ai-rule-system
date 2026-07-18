@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  normalizeRiskObjectQuery,
-  RISK_API_PATHS,
-} from './contract';
+import { normalizeRiskObjectQuery, RISK_API_PATHS } from './contract';
 import {
   mockIncompleteRiskObject,
   mockRiskOverview,
@@ -47,9 +44,9 @@ describe('risk api contract', () => {
     expect(
       normalizeRiskObjectQuery({ pageNum: Number.NaN, pageSize: Infinity }),
     ).toMatchObject({ pageNum: 1, pageSize: 20 });
-    expect(normalizeRiskObjectQuery({ pageNum: 2.9, pageSize: 10.8 })).toMatchObject(
-      { pageNum: 2, pageSize: 10 },
-    );
+    expect(
+      normalizeRiskObjectQuery({ pageNum: 2.9, pageSize: 10.8 }),
+    ).toMatchObject({ pageNum: 2, pageSize: 10 });
   });
 
   it('keeps directions, risk levels and gates independent', () => {
@@ -71,7 +68,7 @@ describe('risk api contract', () => {
   });
 
   it('keeps the fixed notice outside individual snapshots', () => {
-    expect('riskDisclaimer' in mockRiskSnapshots[0]!).toBe(false);
+    expect(mockRiskSnapshots[0]).not.toHaveProperty('riskDisclaimer');
     expect(mockRiskOverview.riskDisclaimer).toBe(RISK_DECISION_SUPPORT_NOTICE);
   });
 
@@ -83,9 +80,7 @@ describe('risk api contract', () => {
     expect(evidence.every((item) => item.observedAt && item.availableAt)).toBe(
       true,
     );
-    expect(mockRiskOverview.riskDisclaimer).toBe(
-      RISK_DECISION_SUPPORT_NOTICE,
-    );
+    expect(mockRiskOverview.riskDisclaimer).toBe(RISK_DECISION_SUPPORT_NOTICE);
     expect(RISK_DECISION_SUPPORT_NOTICE).toBe(
       '风险预警仅用于辅助决策，不构成投资建议，不保证收益；风险分是综合指标分数，不代表事件发生概率。',
     );

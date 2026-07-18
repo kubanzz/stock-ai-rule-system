@@ -7,8 +7,8 @@ import type {
   RiskOverview,
   RiskOverviewQuery,
   RiskSnapshot,
-  RiskTrendQuery,
   RiskTrendPoint,
+  RiskTrendQuery,
 } from './types';
 
 import { RISK_DECISION_SUPPORT_NOTICE } from './types';
@@ -36,8 +36,7 @@ function evidence(
 }
 
 function snapshot(
-  overrides: Partial<RiskSnapshot> &
-    Pick<RiskSnapshot, 'horizon' | 'object'>,
+  overrides: Partial<RiskSnapshot> & Pick<RiskSnapshot, 'horizon' | 'object'>,
 ): RiskSnapshot {
   const { horizon, object, ...rest } = overrides;
   return {
@@ -152,6 +151,12 @@ const incompleteSnapshot = snapshot({
   vScore: null,
 });
 
+function requireMockSnapshot(index: number): RiskSnapshot {
+  const result = mockRiskSnapshots.at(index);
+  if (!result) throw new Error(`缺少风险快照模拟数据：${index}`);
+  return result;
+}
+
 export const mockIncompleteRiskObject: RiskObjectListItem = {
   name: '历史不足示例',
   object: incompleteSnapshot.object,
@@ -159,9 +164,9 @@ export const mockIncompleteRiskObject: RiskObjectListItem = {
   snapshot: incompleteSnapshot,
 };
 
-const marketSnapshot = mockRiskSnapshots[0]!;
-const sectorSnapshot = mockRiskSnapshots[3]!;
-const stockSnapshot = mockRiskSnapshots[4]!;
+const marketSnapshot = requireMockSnapshot(0);
+const sectorSnapshot = requireMockSnapshot(3);
+const stockSnapshot = requireMockSnapshot(4);
 
 export const mockRiskObjects: RiskObjectListItem[] = [
   {
@@ -213,17 +218,8 @@ export const mockRiskOverview: RiskOverview = {
   tradeDate: '2026-07-18',
 };
 
-export const mockRiskObjectDetail: RiskObjectDetail = {
-  ...mockRiskObjects[2]!,
-  activeTriggers: ['估值高分位', '市场宽度恶化', 'ETF 连续净流出'],
-  parentObjects: [
-    { objectId: 'CN-A', objectType: 'market' },
-    { objectId: 'SW1:801120', objectType: 'sector' },
-  ],
-  snapshots: mockRiskSnapshots.filter(
-    (item) => item.object.objectId === '600519.SH',
-  ),
-};
+export const mockRiskObjectDetail: RiskObjectDetail =
+  selectMockRiskObjectDetail('stock', '600519.SH');
 
 export const mockRiskTrend: RiskTrendPoint[] = [
   ['2026-07-14', 53.2, 'watch'],
@@ -259,15 +255,15 @@ export function selectMockRiskOverview(
   );
   return {
     highRiskObjects: selectMockRiskObjects({ horizon, tradeDate }).filter(
-      (item) =>
-        item.snapshot.level === 'critical',
+      (item) => item.snapshot.level === 'critical',
     ),
     horizon,
     levelCounts,
     marketSnapshot:
       snapshots.find(
         (item) =>
-          item.object.objectType === 'market' && item.object.objectId === 'CN-A',
+          item.object.objectType === 'market' &&
+          item.object.objectId === 'CN-A',
       ) ?? null,
     riskDisclaimer: RISK_DECISION_SUPPORT_NOTICE,
     tradeDate,
@@ -309,15 +305,17 @@ export function selectMockRiskObjectDetail(
   if (!item) {
     throw new Error(`未找到风险对象 ${objectType}/${objectId}`);
   }
-  const parentObjects =
-    objectType === 'market'
-      ? []
-      : objectType === 'sector'
-        ? [{ objectId: 'CN-A', objectType: 'market' as const }]
-        : [
-            { objectId: 'CN-A', objectType: 'market' as const },
-            { objectId: 'SW1:801120', objectType: 'sector' as const },
-          ];
+  let parentObjects: RiskObjectDetail['parentObjects'];
+  if (objectType === 'market') {
+    parentObjects = [];
+  } else if (objectType === 'sector') {
+    parentObjects = [{ objectId: 'CN-A', objectType: 'market' }];
+  } else {
+    parentObjects = [
+      { objectId: 'CN-A', objectType: 'market' },
+      { objectId: 'SW1:801120', objectType: 'sector' },
+    ];
+  }
   const objectSnapshots = mockRiskSnapshots.filter(
     (candidate) =>
       candidate.object.objectType === objectType &&
@@ -354,13 +352,15 @@ export function selectMockRiskTrend(
   objectId: string,
   query: RiskTrendQuery = {},
 ): RiskTrendPoint[] {
-  const horizonScale =
-    query.horizon === '20-60d' ? 0.78 : query.horizon === '5-20d' ? 0.9 : 1;
-  const objectScale = objectType === 'market' ? 0.82 : objectType === 'sector' ? 0.92 : 1;
-  const identityOffset = [...objectId].reduce(
-    (total, character) => total + character.charCodeAt(0),
-    0,
-  ) % 3;
+  const horizonScale = query.horizon
+    ? { '1-5d': 1, '5-20d': 0.9, '20-60d': 0.78 }[query.horizon]
+    : 1;
+  const objectScale = { market: 0.82, sector: 0.92, stock: 1 }[objectType];
+  const identityOffset =
+    [...objectId].reduce(
+      (total, character) => total + (character.codePointAt(0) ?? 0),
+      0,
+    ) % 3;
   return mockRiskTrend
     .filter(
       (item) =>
@@ -371,7 +371,8 @@ export function selectMockRiskTrend(
       const totalScore = Math.min(
         100,
         Math.round(
-          ((item.totalScore ?? 0) * horizonScale * objectScale + identityOffset) *
+          ((item.totalScore ?? 0) * horizonScale * objectScale +
+            identityOffset) *
             10,
         ) / 10,
       );
@@ -379,15 +380,15 @@ export function selectMockRiskTrend(
         ...item,
         aScore: item.aScore === null ? null : item.aScore * objectScale,
         cScore: item.cScore === null ? null : item.cScore * objectScale,
-        level:
-          totalScore >= 65
-            ? 'critical'
-            : totalScore >= 60
-              ? 'warning'
-              : totalScore >= 50
-                ? 'watch'
-                : 'normal',
+        level: riskLevelForScore(totalScore),
         totalScore,
       };
     });
+}
+
+function riskLevelForScore(score: number): RiskTrendPoint['level'] {
+  if (score >= 65) return 'critical';
+  if (score >= 60) return 'warning';
+  if (score >= 50) return 'watch';
+  return 'normal';
 }

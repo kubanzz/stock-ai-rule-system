@@ -16,13 +16,15 @@ export const RISK_API_PATHS = {
 export function normalizeRiskObjectQuery(
   query: RiskObjectQuery = {},
 ): RiskObjectQuery {
-  const requestedPageNum = Number.isFinite(query.pageNum) ? query.pageNum! : 1;
-  const requestedPageSize = Number.isFinite(query.pageSize)
-    ? query.pageSize!
-    : 20;
+  const requestedPageNum = finiteOrDefault(query.pageNum, 1);
+  const requestedPageSize = finiteOrDefault(query.pageSize, 20);
   return {
     ...query,
     pageNum: Math.max(1, Math.trunc(requestedPageNum)),
     pageSize: Math.min(100, Math.max(1, Math.trunc(requestedPageSize))),
   };
+}
+
+function finiteOrDefault(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
