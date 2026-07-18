@@ -18,7 +18,10 @@ public enum MarketRiskIndicator {
     C2("C2", RiskDimension.LOCAL_CONFIRMATION, "20"),
     C3("C3", RiskDimension.LOCAL_CONFIRMATION, "15"),
     C4("C4", RiskDimension.LOCAL_CONFIRMATION, "15"),
-    C5("C5", RiskDimension.LOCAL_CONFIRMATION, "15");
+    C5("C5", RiskDimension.LOCAL_CONFIRMATION, "15"),
+    A3("A3", RiskDimension.FORCED_SELLING, "15"),
+    A4("A4", RiskDimension.FORCED_SELLING, "20"),
+    A5("A5", RiskDimension.FORCED_SELLING, "20");
 
     private final String code;
     private final RiskDimension dimension;

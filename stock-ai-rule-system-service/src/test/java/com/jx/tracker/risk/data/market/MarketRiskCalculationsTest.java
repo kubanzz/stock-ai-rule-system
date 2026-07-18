@@ -46,9 +46,47 @@ class MarketRiskCalculationsTest {
         assertThat(breadth.advanceRatio()).isEqualByComparingTo("0.6000000000");
         assertThat(breadth.newHighLowBalance()).isEqualByComparingTo("0.1000000000");
         assertThat(breadth.aboveMovingAverageRatio()).isEqualByComparingTo("0.7000000000");
+        assertThat(breadth.declineRatio()).isEqualByComparingTo("0.4000000000");
+        assertThat(breadth.newLowRatio()).isEqualByComparingTo("0.0500000000");
+        assertThat(breadth.belowMovingAverageRatio()).isEqualByComparingTo("0.3000000000");
         assertThat(MarketRiskCalculations.relativeReturn(
                 decimals("100", "110"), decimals("100", "105"), 1
         )).contains(new BigDecimal("0.0500000000"));
+    }
+
+    @Test
+    void calculatesRealizedVolatilityExpansionAndReturnCorrelationWithoutInventingMissingValues() {
+        List<BigDecimal> volatileClose = decimals("100", "101", "100", "102", "99", "104", "97");
+        List<BigDecimal> correlatedBenchmark = decimals("200", "202", "200", "204", "198", "208", "194");
+
+        assertThat(MarketRiskCalculations.realizedVolatilityRatio(volatileClose, 3, 6))
+                .hasValueSatisfying(value -> assertThat(value).isGreaterThan(BigDecimal.ONE));
+        assertThat(MarketRiskCalculations.rollingReturnCorrelation(
+                volatileClose, correlatedBenchmark, 6
+        )).contains(new BigDecimal("1.0000000000"));
+
+        assertThat(MarketRiskCalculations.realizedVolatilityRatio(volatileClose.subList(0, 5), 3, 6))
+                .isEmpty();
+        assertThat(MarketRiskCalculations.realizedVolatilityRatio(
+                decimals("100", "100", "100", "100", "100", "100", "100"), 3, 6
+        )).isEmpty();
+        assertThat(MarketRiskCalculations.realizedVolatilityRatio(
+                decimals("100", "103", "97", "100", "100", "100", "100"), 3, 6
+        )).isEmpty();
+        assertThat(MarketRiskCalculations.rollingReturnCorrelation(
+                decimals("100", "101", "102"), decimals("200", "200", "200"), 2
+        )).isEmpty();
+        assertThat(MarketRiskCalculations.rollingReturnCorrelation(
+                decimals("100", "100", "100"), decimals("200", "202", "205"), 2
+        )).isEmpty();
+        assertThat(MarketRiskCalculations.rollingReturnCorrelation(
+                decimals("100", "110", "99", "108.9"), decimals("100", "90", "99", "89.1"), 3
+        )).contains(new BigDecimal("-1.0000000000"));
+        assertThat(MarketRiskCalculations.rollingReturnCorrelation(
+                decimals("100", "102", "101", "104", "103"),
+                decimals("200", "201", "202", "204", "203"), 4
+        )).hasValueSatisfying(value -> assertThat(value)
+                .isBetween(new BigDecimal("-1"), BigDecimal.ONE));
     }
 
     @Test

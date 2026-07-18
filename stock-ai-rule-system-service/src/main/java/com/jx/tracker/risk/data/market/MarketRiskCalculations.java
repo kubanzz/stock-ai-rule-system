@@ -103,6 +103,59 @@ public final class MarketRiskCalculations {
         return Optional.of(sample.getLast().subtract(mean).divide(standardDeviation, SCALE, ROUNDING));
     }
 
+    public static Optional<BigDecimal> realizedVolatilityRatio(
+            List<BigDecimal> closes,
+            int shortWindow,
+            int longWindow
+    ) {
+        requireWindow(shortWindow);
+        if (longWindow < shortWindow) {
+            throw new IllegalArgumentException("longWindow must not be shorter than shortWindow");
+        }
+        Optional<BigDecimal> shortVolatility = realizedVolatility(closes, shortWindow);
+        Optional<BigDecimal> longVolatility = realizedVolatility(closes, longWindow);
+        if (shortVolatility.isEmpty() || longVolatility.isEmpty()
+                || shortVolatility.orElseThrow().signum() == 0
+                || longVolatility.orElseThrow().signum() == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(shortVolatility.orElseThrow()
+                .divide(longVolatility.orElseThrow(), SCALE, ROUNDING));
+    }
+
+    public static Optional<BigDecimal> rollingReturnCorrelation(
+            List<BigDecimal> closes,
+            List<BigDecimal> benchmarkCloses,
+            int window
+    ) {
+        requireWindow(window);
+        Optional<List<BigDecimal>> assetReturns = trailingReturns(closes, window);
+        Optional<List<BigDecimal>> benchmarkReturns = trailingReturns(benchmarkCloses, window);
+        if (assetReturns.isEmpty() || benchmarkReturns.isEmpty()) {
+            return Optional.empty();
+        }
+        List<BigDecimal> first = assetReturns.orElseThrow();
+        List<BigDecimal> second = benchmarkReturns.orElseThrow();
+        BigDecimal firstMean = average(first);
+        BigDecimal secondMean = average(second);
+        BigDecimal covariance = BigDecimal.ZERO;
+        BigDecimal firstVariance = BigDecimal.ZERO;
+        BigDecimal secondVariance = BigDecimal.ZERO;
+        for (int index = 0; index < window; index++) {
+            BigDecimal firstDelta = first.get(index).subtract(firstMean);
+            BigDecimal secondDelta = second.get(index).subtract(secondMean);
+            covariance = covariance.add(firstDelta.multiply(secondDelta));
+            firstVariance = firstVariance.add(firstDelta.pow(2));
+            secondVariance = secondVariance.add(secondDelta.pow(2));
+        }
+        if (firstVariance.signum() == 0 || secondVariance.signum() == 0) {
+            return Optional.empty();
+        }
+        BigDecimal denominator = firstVariance.multiply(secondVariance).sqrt(MathContext.DECIMAL128);
+        BigDecimal correlation = covariance.divide(denominator, SCALE, ROUNDING);
+        return Optional.of(correlation.max(BigDecimal.ONE.negate()).min(BigDecimal.ONE));
+    }
+
     public static MarketBreadth marketBreadth(
             int advancingCount,
             int decliningCount,
@@ -121,7 +174,10 @@ public final class MarketRiskCalculations {
         return new MarketBreadth(
                 BigDecimal.valueOf(advancingCount).divide(total, SCALE, ROUNDING),
                 BigDecimal.valueOf(newHighCount - newLowCount).divide(total, SCALE, ROUNDING),
-                BigDecimal.valueOf(aboveMovingAverageCount).divide(total, SCALE, ROUNDING)
+                BigDecimal.valueOf(aboveMovingAverageCount).divide(total, SCALE, ROUNDING),
+                BigDecimal.valueOf(decliningCount).divide(total, SCALE, ROUNDING),
+                BigDecimal.valueOf(newLowCount).divide(total, SCALE, ROUNDING),
+                BigDecimal.valueOf(totalCount - aboveMovingAverageCount).divide(total, SCALE, ROUNDING)
         );
     }
 
@@ -144,6 +200,45 @@ public final class MarketRiskCalculations {
         }
         return sample.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
                 .divide(BigDecimal.valueOf(window), SCALE + 2, ROUNDING);
+    }
+
+    private static Optional<BigDecimal> realizedVolatility(List<BigDecimal> closes, int window) {
+        Optional<List<BigDecimal>> returns = trailingReturns(closes, window);
+        if (returns.isEmpty()) {
+            return Optional.empty();
+        }
+        List<BigDecimal> sample = returns.orElseThrow();
+        BigDecimal mean = average(sample);
+        BigDecimal variance = sample.stream()
+                .map(value -> value.subtract(mean).pow(2))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(window), SCALE + 8, ROUNDING);
+        return Optional.of(variance.sqrt(MathContext.DECIMAL128));
+    }
+
+    private static Optional<List<BigDecimal>> trailingReturns(List<BigDecimal> closes, int window) {
+        if (closes == null || closes.size() <= window) {
+            return Optional.empty();
+        }
+        int firstIndex = closes.size() - window - 1;
+        java.util.ArrayList<BigDecimal> returns = new java.util.ArrayList<>(window);
+        for (int index = firstIndex + 1; index < closes.size(); index++) {
+            BigDecimal previous = closes.get(index - 1);
+            BigDecimal current = closes.get(index);
+            if (previous == null || current == null) {
+                return Optional.empty();
+            }
+            if (previous.signum() == 0) {
+                throw new IllegalArgumentException("return denominator must not be zero");
+            }
+            returns.add(current.divide(previous, SCALE + 8, ROUNDING).subtract(BigDecimal.ONE));
+        }
+        return Optional.of(List.copyOf(returns));
+    }
+
+    private static BigDecimal average(List<BigDecimal> values) {
+        return values.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(values.size()), SCALE + 12, ROUNDING);
     }
 
     private static void requireWindow(int window) {

@@ -5,6 +5,9 @@ import java.math.BigDecimal;
 public record MarketBreadth(
         BigDecimal advanceRatio,
         BigDecimal newHighLowBalance,
-        BigDecimal aboveMovingAverageRatio
+        BigDecimal aboveMovingAverageRatio,
+        BigDecimal declineRatio,
+        BigDecimal newLowRatio,
+        BigDecimal belowMovingAverageRatio
 ) {
 }

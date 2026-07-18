@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.data.market;
 
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
@@ -14,8 +15,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,10 +38,31 @@ class MarketRiskDataProviderTest {
                 .allMatch(dataset -> provider.supports(dataset.code()));
         RiskProviderBatch emptyBatch = provider.fetch("breadth", request(null));
         assertThat(emptyBatch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
-        assertThat(provider.coverageReport("breadth", emptyBatch).items()).singleElement()
-                .satisfies(item -> assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO));
+        assertThat(provider.coverageReport("breadth", emptyBatch).items()).hasSize(2)
+                .allSatisfy(item -> assertThat(item.qualityStatus())
+                        .isEqualTo(RiskDataQualityStatus.VALID_ZERO));
         assertThat(provider.supportedIndicatorCodes())
-                .containsExactlyInAnyOrder("V1", "V3", "V4", "S1", "S2", "S4", "C1", "C2", "C3", "C4", "C5");
+                .containsExactlyInAnyOrder(
+                        "V1", "V3", "V4", "S1", "S2", "S4", "C1", "C2", "C3", "C4", "C5",
+                        "A3", "A4", "A5"
+                );
+    }
+
+    @Test
+    void marketIndicatorCatalogKeepsFrameworkWeightsForStaticIntegrationCoverage() {
+        assertThat(MarketRiskIndicator.A3.weight()).isEqualByComparingTo("15");
+        assertThat(MarketRiskIndicator.A4.weight()).isEqualByComparingTo("20");
+        assertThat(MarketRiskIndicator.A5.weight()).isEqualByComparingTo("20");
+
+        Map<RiskDimension, BigDecimal> supportedWeights = Arrays.stream(MarketRiskIndicator.values())
+                .collect(Collectors.groupingBy(
+                        MarketRiskIndicator::dimension,
+                        Collectors.reducing(BigDecimal.ZERO, MarketRiskIndicator::weight, BigDecimal::add)
+                ));
+        assertThat(supportedWeights).containsEntry(RiskDimension.STRUCTURAL_FRAGILITY, new BigDecimal("55"))
+                .containsEntry(RiskDimension.EXTERNAL_TRANSMISSION, new BigDecimal("70"))
+                .containsEntry(RiskDimension.LOCAL_CONFIRMATION, new BigDecimal("85"))
+                .containsEntry(RiskDimension.FORCED_SELLING, new BigDecimal("55"));
     }
 
     @Test
@@ -108,7 +133,7 @@ class MarketRiskDataProviderTest {
 
         assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
         assertThat(batch.observations()).extracting(RiskObservation::indicatorCode)
-                .contains("V3", "V4", "C1", "C3", "C4", "C5");
+                .contains("V3", "V4", "C1", "C3", "C4", "C5", "A3", "A5");
         assertThat(batch.observations())
                 .anySatisfy(observation -> {
                     assertThat(observation.horizon()).isEqualTo(RiskHorizon.LONG_TERM);
@@ -122,7 +147,174 @@ class MarketRiskDataProviderTest {
                     assertThat(observation.attributes()).containsKeys(
                             "window", "contextWindow", "baselineWindow", "metric", "observationKey"
                     );
+                })
+                .anySatisfy(observation -> {
+                    assertThat(observation.horizon()).isEqualTo(RiskHorizon.LONG_TERM);
+                    assertThat(observation.indicatorCode()).isEqualTo("A3");
+                    assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+                    assertThat(observation.value()).isNull();
                 });
+    }
+
+    @Test
+    void dailySeriesProducesThreeHorizonA3AndA5ProxiesWithSourceTimeSemantics() {
+        RiskProviderBatch batch = provider(volatileDailyPoints(130), null)
+                .fetch("market_daily", request(null));
+
+        List<RiskObservation> latest = batch.observations().stream()
+                .filter(observation -> observation.tradeDate().equals(END_DATE))
+                .filter(observation -> observation.indicatorCode().equals("A3")
+                        || observation.indicatorCode().equals("A5"))
+                .toList();
+        assertThat(latest).hasSize(6)
+                .extracting(RiskObservation::horizon)
+                .containsExactlyInAnyOrder(
+                        RiskHorizon.SHORT_TERM, RiskHorizon.MEDIUM_TERM, RiskHorizon.LONG_TERM,
+                        RiskHorizon.SHORT_TERM, RiskHorizon.MEDIUM_TERM, RiskHorizon.LONG_TERM
+                );
+        assertThat(latest).allSatisfy(observation -> {
+            assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(observation.value()).isNotNull().isNotZero();
+            assertThat(observation.observedAt()).isEqualTo(END_DATE.atTime(15, 0));
+            assertThat(observation.availableAt()).isEqualTo(END_DATE.atTime(16, 0));
+            assertThat(observation.attributes()).containsEntry("proxy", true)
+                    .containsKeys("proxyFormula", "observationKey");
+        });
+        assertThat(latest).filteredOn(observation -> observation.indicatorCode().equals("A3"))
+                .allSatisfy(observation -> assertThat(observation.attributes())
+                        .containsKeys("trendDistance", "realizedVolatilityRatio"));
+        assertThat(provider(volatileDailyPoints(130), null)
+                .coverageReport("market_daily", batch).supportedIndicatorCodes())
+                .contains("A3", "A5");
+    }
+
+    @Test
+    void a3TreatsFlatRecentReturnsAsInsufficientInsteadOfAvailableZero() {
+        RiskProviderBatch batch = provider(flatRecentDailyPoints(25), null)
+                .fetch("market_daily", request(null));
+
+        assertThat(batch.observations()).filteredOn(observation ->
+                        observation.tradeDate().equals(END_DATE)
+                                && observation.horizon() == RiskHorizon.SHORT_TERM
+                                && observation.indicatorCode().equals("A3"))
+                .singleElement()
+                .satisfies(observation -> {
+                    assertThat(observation.qualityStatus())
+                            .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+                    assertThat(observation.value()).isNull();
+                });
+    }
+
+    @Test
+    void a3AndA5RejectStaleHistoryInsteadOfPublishingAvailableValues() {
+        List<MarketSourceRecord> records = new ArrayList<>(volatileDailyPoints(30));
+        int staleIndex = records.size() - 2;
+        MarketDailyPoint original = (MarketDailyPoint) records.get(staleIndex);
+        records.set(staleIndex, new MarketDailyPoint(
+                original.object(), original.tradeDate(), original.open(), original.close(), original.volume(),
+                original.benchmarkClose(), original.leaderClose(), original.observedAt(), original.availableAt(),
+                original.source(), RiskDataQualityStatus.STALE
+        ));
+
+        RiskProviderBatch batch = provider(records, null).fetch("market_daily", request(null));
+
+        assertThat(batch.observations()).filteredOn(observation ->
+                        observation.tradeDate().equals(END_DATE)
+                                && observation.horizon() == RiskHorizon.SHORT_TERM
+                                && (observation.indicatorCode().equals("A3")
+                                || observation.indicatorCode().equals("A5")))
+                .hasSize(2)
+                .allSatisfy(observation -> {
+                    assertThat(observation.qualityStatus())
+                            .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+                    assertThat(observation.value()).isNull();
+                });
+    }
+
+    @Test
+    void everyDailyDerivedIndicatorRejectsNonAvailableHistory() {
+        for (RiskDataQualityStatus invalidQuality : List.of(
+                RiskDataQualityStatus.STALE,
+                RiskDataQualityStatus.UNAVAILABLE,
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY
+        )) {
+            List<MarketSourceRecord> records = new ArrayList<>(volatileDailyPoints(30));
+            int invalidIndex = records.size() - 2;
+            MarketDailyPoint original = (MarketDailyPoint) records.get(invalidIndex);
+            records.set(invalidIndex, new MarketDailyPoint(
+                    original.object(), original.tradeDate(), original.open(), original.close(), original.volume(),
+                    original.benchmarkClose(), original.leaderClose(), original.observedAt(), original.availableAt(),
+                    original.source(), invalidQuality
+            ));
+
+            RiskProviderBatch batch = provider(records, null).fetch("market_daily", request(null));
+
+            assertThat(batch.observations()).filteredOn(observation ->
+                            observation.tradeDate().equals(END_DATE)
+                                    && observation.horizon() == RiskHorizon.SHORT_TERM
+                                    && List.of("V3", "V4", "C1", "C3", "C4", "C5", "A3", "A5")
+                                    .contains(observation.indicatorCode()))
+                    .as("history quality %s", invalidQuality)
+                    .hasSize(9)
+                    .allSatisfy(observation -> {
+                        assertThat(observation.qualityStatus())
+                                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+                        assertThat(observation.value()).isNull();
+                    });
+        }
+    }
+
+    @Test
+    void c3NeedsOnlyTwoAvailablePointsForNonDownDayButRequiresVolumeContextWhenDown() {
+        RiskProviderBatch nonDownBatch = provider(dailyPoints(2), null)
+                .fetch("market_daily", request(null));
+        List<MarketSourceRecord> downRecords = new ArrayList<>(dailyPoints(2));
+        MarketDailyPoint latest = (MarketDailyPoint) downRecords.getLast();
+        downRecords.set(1, new MarketDailyPoint(
+                latest.object(), latest.tradeDate(), new BigDecimal("89"), new BigDecimal("90"), latest.volume(),
+                latest.benchmarkClose(), latest.leaderClose(), latest.observedAt(), latest.availableAt(),
+                latest.source(), RiskDataQualityStatus.AVAILABLE
+        ));
+        RiskProviderBatch downBatch = provider(downRecords, null)
+                .fetch("market_daily", request(null));
+
+        assertThat(shortTermLatestMetric(nonDownBatch, "C3", "downVolumeRatio"))
+                .satisfies(observation -> {
+                    assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+                    assertThat(observation.value()).isZero();
+                });
+        assertThat(shortTermLatestMetric(downBatch, "C3", "downVolumeRatio"))
+                .satisfies(observation -> {
+                    assertThat(observation.qualityStatus())
+                            .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+                    assertThat(observation.value()).isNull();
+                });
+    }
+
+    @Test
+    void lateHistoricalRevisionDoesNotLeakIntoEarlierDailyProxyObservations() {
+        List<MarketSourceRecord> originalRecords = volatileDailyPoints(30);
+        RiskProviderBatch originalBatch = provider(originalRecords, null)
+                .fetch("market_daily", request(null));
+        List<MarketSourceRecord> revisedRecords = new ArrayList<>(originalRecords);
+        MarketDailyPoint revisedSource = (MarketDailyPoint) revisedRecords.get(revisedRecords.size() - 3);
+        revisedRecords.add(new MarketDailyPoint(
+                revisedSource.object(), revisedSource.tradeDate(), new BigDecimal("999"), new BigDecimal("999"),
+                revisedSource.volume(), new BigDecimal("888"), revisedSource.leaderClose(),
+                END_DATE.atTime(9, 0), END_DATE.atTime(10, 0), "late-revision", RiskDataQualityStatus.AVAILABLE
+        ));
+        RiskProviderBatch revisedBatch = provider(revisedRecords, null)
+                .fetch("market_daily", request(null));
+        LocalDate earlierDate = END_DATE.minusDays(1);
+
+        assertThat(dailyDerivedValues(revisedBatch, earlierDate))
+                .isEqualTo(dailyDerivedValues(originalBatch, earlierDate));
+        assertThat(revisedBatch.observations()).filteredOn(observation ->
+                        observation.tradeDate().equals(earlierDate)
+                                && (observation.indicatorCode().equals("A3")
+                                || observation.indicatorCode().equals("A5")))
+                .allSatisfy(observation -> assertThat(observation.availableAt())
+                        .isEqualTo(earlierDate.atTime(16, 0)));
     }
 
     @Test
@@ -135,7 +327,17 @@ class MarketRiskDataProviderTest {
         RiskProviderBatch breadthBatch = breadthProvider.fetch("breadth", request(null));
 
         assertThat(breadthBatch.observations()).extracting(RiskObservation::indicatorCode)
-                .containsOnly("C2");
+                .containsOnly("C2", "A4");
+        assertThat(breadthBatch.observations())
+                .filteredOn(observation -> observation.indicatorCode().equals("A4"))
+                .hasSize(9)
+                .allSatisfy(observation -> {
+                    assertThat(observation.dimension()).isEqualTo(RiskDimension.FORCED_SELLING);
+                    assertThat(observation.attributes()).containsEntry("proxy", true)
+                            .containsEntry("proxyFormula", "dailyBreadthLiquidityDepth");
+                    assertThat(observation.observedAt()).isEqualTo(END_DATE.atTime(15, 0));
+                    assertThat(observation.availableAt()).isEqualTo(END_DATE.atTime(16, 0));
+                });
         assertThat(breadthProvider.coverageReport("breadth", breadthBatch).weightedCoverageRatio())
                 .isEqualByComparingTo(BigDecimal.ONE);
 
@@ -210,6 +412,73 @@ class MarketRiskDataProviderTest {
             ));
         }
         return records;
+    }
+
+    private List<MarketSourceRecord> volatileDailyPoints(int size) {
+        List<MarketSourceRecord> records = new ArrayList<>();
+        LocalDate first = END_DATE.minusDays(size - 1L);
+        BigDecimal close = new BigDecimal("180");
+        BigDecimal benchmark = new BigDecimal("240");
+        for (int index = 0; index < size; index++) {
+            LocalDate date = first.plusDays(index);
+            BigDecimal targetReturn = index < size - 20
+                    ? BigDecimal.valueOf((index % 5) - 2L).movePointLeft(3)
+                    : BigDecimal.valueOf(index % 2 == 0 ? -35 : 12).movePointLeft(3);
+            BigDecimal benchmarkReturn = targetReturn.multiply(new BigDecimal("0.85"));
+            close = close.multiply(BigDecimal.ONE.add(targetReturn));
+            benchmark = benchmark.multiply(BigDecimal.ONE.add(benchmarkReturn));
+            records.add(new MarketDailyPoint(
+                    MARKET, date, close, close, BigDecimal.valueOf(2000L + index),
+                    benchmark, benchmark.multiply(new BigDecimal("1.01")),
+                    date.atTime(15, 0), date.atTime(16, 0), "fixed", RiskDataQualityStatus.AVAILABLE
+            ));
+        }
+        return records;
+    }
+
+    private List<MarketSourceRecord> flatRecentDailyPoints(int size) {
+        List<MarketSourceRecord> records = new ArrayList<>();
+        LocalDate first = END_DATE.minusDays(size - 1L);
+        BigDecimal close = new BigDecimal("100");
+        for (int index = 0; index < size; index++) {
+            LocalDate date = first.plusDays(index);
+            if (index < size - 6) {
+                BigDecimal dailyReturn = BigDecimal.valueOf(index % 2 == 0 ? 2 : -2).movePointLeft(2);
+                close = close.multiply(BigDecimal.ONE.add(dailyReturn));
+            }
+            records.add(new MarketDailyPoint(
+                    MARKET, date, close, close, BigDecimal.valueOf(1000L + index),
+                    close.multiply(new BigDecimal("1.1")), close.multiply(new BigDecimal("1.2")),
+                    date.atTime(15, 0), date.atTime(16, 0), "fixed", RiskDataQualityStatus.AVAILABLE
+            ));
+        }
+        return records;
+    }
+
+    private Map<String, BigDecimal> dailyDerivedValues(RiskProviderBatch batch, LocalDate tradeDate) {
+        return batch.observations().stream()
+                .filter(observation -> observation.tradeDate().equals(tradeDate))
+                .filter(observation -> observation.horizon() == RiskHorizon.SHORT_TERM)
+                .filter(observation -> List.of("V3", "V4", "C1", "C3", "C4", "C5", "A3", "A5")
+                        .contains(observation.indicatorCode()))
+                .collect(Collectors.toMap(
+                        observation -> observation.indicatorCode() + ":" + observation.attributes().get("metric"),
+                        RiskObservation::value
+                ));
+    }
+
+    private RiskObservation shortTermLatestMetric(
+            RiskProviderBatch batch,
+            String indicatorCode,
+            String metric
+    ) {
+        return batch.observations().stream()
+                .filter(observation -> observation.tradeDate().equals(END_DATE))
+                .filter(observation -> observation.horizon() == RiskHorizon.SHORT_TERM)
+                .filter(observation -> observation.indicatorCode().equals(indicatorCode))
+                .filter(observation -> metric.equals(observation.attributes().get("metric")))
+                .findFirst()
+                .orElseThrow();
     }
 
     private List<MarketSourceRecord> crossMarketPoints(int size) {
