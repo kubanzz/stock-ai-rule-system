@@ -220,7 +220,7 @@ describe('stock real backend contract', () => {
       'src/views/stock/risk/center/risk-center-state.ts',
     );
 
-    expect(stockRoutes).toContain("#/views/stock/risk/center/index.vue");
+    expect(stockRoutes).toContain('#/views/stock/risk/center/index.vue');
     expect(riskApi).toContain('getRiskOverview');
     expect(riskApi).toContain('getRiskObjects');
     expect(riskApi).toContain('getRiskObjectDetail');

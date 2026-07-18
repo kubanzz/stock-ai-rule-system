@@ -48,7 +48,7 @@ export function buildSignalDashboardCsv(
   riskHorizon: RiskHorizon,
 ) {
   return [CSV_HEADERS, ...rows.map((row) => dashboardRow(row, riskHorizon))]
-    .map((line) => line.map(escapeCsvCell).join(','))
+    .map((line) => line.map((cell) => escapeCsvCell(cell)).join(','))
     .join('\n');
 }
 

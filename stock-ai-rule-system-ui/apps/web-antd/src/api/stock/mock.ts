@@ -322,19 +322,26 @@ function buildDashboardRiskSnapshot(
   const ready = seed.riskState === 'ready';
   const stale = seed.riskState === 'stale';
   const horizonScore = riskHorizonScore[horizon];
-  const qualityStatus: RiskDataQualityStatus = stale
-    ? 'stale'
-    : ready
-      ? 'available'
-      : 'insufficient_history';
+  let qualityStatus: RiskDataQualityStatus = 'insufficient_history';
+  if (stale) {
+    qualityStatus = 'stale';
+  } else if (ready) {
+    qualityStatus = 'available';
+  }
   const score = ready ? horizonScore.score : null;
   const dimensionScore = score === null ? null : Math.min(100, score + 2);
+  let completeness = 0.58;
+  if (ready) {
+    completeness = 0.92;
+  } else if (stale) {
+    completeness = 0.84;
+  }
 
   return {
     aScore: dimensionScore === null ? null : dimensionScore - 9,
     cScore: dimensionScore === null ? null : dimensionScore + 1,
     calculatedAt: '2026-07-18T18:10:00+08:00',
-    completeness: ready ? 0.92 : stale ? 0.84 : 0.58,
+    completeness,
     evidence: [
       dashboardRiskEvidence('V', 'V1', qualityStatus, dimensionScore),
       dashboardRiskEvidence('T', 'T2', qualityStatus, dimensionScore),
@@ -496,11 +503,12 @@ export function selectMockSignalDashboard(
       };
     })
     .filter((row) => {
-      const signalMatched = query.signal
-        ? query.signal === 'pending'
-          ? row.signalStatus === 'pending'
-          : row.signal === query.signal
-        : true;
+      let signalMatched = true;
+      if (query.signal === 'pending') {
+        signalMatched = row.signalStatus === 'pending';
+      } else if (query.signal) {
+        signalMatched = row.signal === query.signal;
+      }
       const symbolMatched = query.symbol
         ? `${row.symbol}${row.name ?? ''}`
             .toLowerCase()

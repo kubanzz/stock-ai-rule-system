@@ -34,10 +34,11 @@ describe('signal dashboard risk aggregate mock', () => {
         row.riskGateDecision,
     );
 
-    expect(explanationRows.map((row) => row.signal).toSorted()).toEqual([
-      'bearish',
-      'watch',
-    ]);
+    expect(
+      explanationRows
+        .map((row) => row.signal)
+        .toSorted((left, right) => left.localeCompare(right)),
+    ).toEqual(['bearish', 'watch']);
     for (const row of explanationRows) {
       expect(row.riskGateDecision).toMatchObject({
         enforced: false,
@@ -56,7 +57,9 @@ describe('signal dashboard risk aggregate mock', () => {
     );
 
     expect(
-      legacyRows.map((row) => row.riskGateDecision?.signalDirection).toSorted(),
+      legacyRows
+        .map((row) => row.riskGateDecision?.signalDirection ?? '')
+        .toSorted((left, right) => left.localeCompare(right)),
     ).toEqual(['bearish', 'watch']);
     for (const row of legacyRows) {
       expect(row.riskGateDecision).toMatchObject({
