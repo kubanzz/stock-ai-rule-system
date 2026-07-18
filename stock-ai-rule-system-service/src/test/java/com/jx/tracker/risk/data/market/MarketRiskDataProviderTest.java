@@ -12,6 +12,7 @@ import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 class MarketRiskDataProviderTest {
 
@@ -38,7 +40,9 @@ class MarketRiskDataProviderTest {
                 .allMatch(dataset -> provider.supports(dataset.code()));
         RiskProviderBatch emptyBatch = provider.fetch("breadth", request(null));
         assertThat(emptyBatch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
-        assertThat(provider.coverageReport("breadth", emptyBatch).items()).hasSize(2)
+        assertThat(provider.coverageReport(
+                "breadth", emptyBatch, MARKET, RiskHorizon.SHORT_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
+        ).items()).hasSize(2)
                 .allSatisfy(item -> assertThat(item.qualityStatus())
                         .isEqualTo(RiskDataQualityStatus.VALID_ZERO));
         assertThat(provider.supportedIndicatorCodes())
@@ -183,8 +187,9 @@ class MarketRiskDataProviderTest {
         assertThat(latest).filteredOn(observation -> observation.indicatorCode().equals("A3"))
                 .allSatisfy(observation -> assertThat(observation.attributes())
                         .containsKeys("trendDistance", "realizedVolatilityRatio"));
-        assertThat(provider(volatileDailyPoints(130), null)
-                .coverageReport("market_daily", batch).supportedIndicatorCodes())
+        assertThat(provider(volatileDailyPoints(130), null).coverageReport(
+                "market_daily", batch, MARKET, RiskHorizon.SHORT_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
+        ).supportedIndicatorCodes())
                 .contains("A3", "A5");
     }
 
@@ -318,6 +323,93 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void lateHistoricalRevisionDoesNotLeakIntoEarlierCrossMarketS1() {
+        List<MarketSourceRecord> originalRecords = crossMarketPoints(70);
+        RiskProviderBatch originalBatch = provider(originalRecords, null)
+                .fetch("cross_market", request(null));
+        List<MarketSourceRecord> revisedRecords = new ArrayList<>(originalRecords);
+        CrossMarketPoint revisedSource = (CrossMarketPoint) revisedRecords.get(revisedRecords.size() - 3);
+        revisedRecords.add(new CrossMarketPoint(
+                revisedSource.object(), revisedSource.tradeDate(), new BigDecimal("0.99"),
+                revisedSource.dynamicCorrelation(), revisedSource.confirmedDownMarketCount(),
+                revisedSource.observedMarketCount(), END_DATE.atTime(8, 0), END_DATE.atTime(8, 30),
+                "late-revision", RiskDataQualityStatus.AVAILABLE
+        ));
+        RiskProviderBatch revisedBatch = provider(revisedRecords, null)
+                .fetch("cross_market", request(null));
+        LocalDate earlierDate = END_DATE.minusDays(1);
+
+        assertThat(metricValue(revisedBatch, earlierDate, "S1", "standardizedLeadingReturn"))
+                .isEqualByComparingTo(metricValue(
+                        originalBatch, earlierDate, "S1", "standardizedLeadingReturn"
+                ));
+        assertThat(revisedBatch.observations()).filteredOn(observation ->
+                        observation.tradeDate().equals(earlierDate)
+                                && observation.horizon() == RiskHorizon.SHORT_TERM
+                                && observation.indicatorCode().equals("S1"))
+                .singleElement()
+                .satisfies(observation -> assertThat(observation.availableAt())
+                        .isEqualTo(earlierDate.atTime(9, 0)));
+        assertThat(metricValue(revisedBatch, END_DATE, "S1", "standardizedLeadingReturn"))
+                .isNotEqualByComparingTo(metricValue(
+                        originalBatch, END_DATE, "S1", "standardizedLeadingReturn"
+                ));
+        assertThat(revisedBatch.observations()).filteredOn(observation ->
+                        observation.tradeDate().equals(END_DATE)
+                                && observation.horizon() == RiskHorizon.SHORT_TERM
+                                && observation.indicatorCode().equals("S1"))
+                .singleElement()
+                .satisfies(observation -> assertThat(observation.availableAt())
+                        .isEqualTo(END_DATE.atTime(9, 0)));
+    }
+
+    @Test
+    void conflictingRevisionsWithIdenticalTimestampsFailDeterministically() {
+        MarketDailyPoint original = (MarketDailyPoint) dailyPoints(1).getFirst();
+        MarketDailyPoint conflict = new MarketDailyPoint(
+                original.object(), original.tradeDate(), original.open(), new BigDecimal("999"), original.volume(),
+                original.benchmarkClose(), original.leaderClose(), original.observedAt(), original.availableAt(),
+                "conflict", RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch firstOrder = provider(List.of(original, conflict), null)
+                .fetch("market_daily", request(null));
+        RiskProviderBatch reversedOrder = provider(List.of(conflict, original), null)
+                .fetch("market_daily", request(null));
+
+        assertThat(firstOrder.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(reversedOrder.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(firstOrder.errorMessage()).isEqualTo(reversedOrder.errorMessage())
+                .contains("ambiguous source revisions");
+    }
+
+    @Test
+    void fiveYearMultiObjectBackfillCompletesWithinBoundedWindowComplexity() {
+        List<RiskObjectKey> objects = List.of(
+                new RiskObjectKey(RiskObjectType.STOCK, "000001.SZ"),
+                new RiskObjectKey(RiskObjectType.STOCK, "000002.SZ"),
+                new RiskObjectKey(RiskObjectType.STOCK, "600519.SH"),
+                new RiskObjectKey(RiskObjectType.STOCK, "600000.SH"),
+                new RiskObjectKey(RiskObjectType.STOCK, "300750.SZ"),
+                new RiskObjectKey(RiskObjectType.STOCK, "920992.BJ"),
+                new RiskObjectKey(RiskObjectType.STOCK, "000333.SZ"),
+                new RiskObjectKey(RiskObjectType.STOCK, "601318.SH")
+        );
+        List<MarketSourceRecord> records = objects.stream()
+                .flatMap(object -> dailyPoints(object, 1250).stream())
+                .toList();
+        RiskProviderRequest backfillRequest = new RiskProviderRequest(
+                objects, List.of(RiskHorizon.SHORT_TERM), END_DATE.minusDays(1249), END_DATE, null
+        );
+
+        assertTimeout(Duration.ofSeconds(6), () -> {
+            RiskProviderBatch batch = provider(records, null).fetch("market_daily", backfillRequest);
+            assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(batch.observations()).hasSize(1250 * objects.size() * 9);
+        });
+    }
+
+    @Test
     void breadthAndCrossMarketExposeC2S1S2S4AndCoverageQuality() {
         List<MarketSourceRecord> breadth = List.of(new BreadthPoint(
                 MARKET, END_DATE, 60, 40, 15, 5, 70, 100,
@@ -338,7 +430,9 @@ class MarketRiskDataProviderTest {
                     assertThat(observation.observedAt()).isEqualTo(END_DATE.atTime(15, 0));
                     assertThat(observation.availableAt()).isEqualTo(END_DATE.atTime(16, 0));
                 });
-        assertThat(breadthProvider.coverageReport("breadth", breadthBatch).weightedCoverageRatio())
+        assertThat(breadthProvider.coverageReport(
+                "breadth", breadthBatch, MARKET, RiskHorizon.SHORT_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
+        ).weightedCoverageRatio())
                 .isEqualByComparingTo(BigDecimal.ONE);
 
         List<MarketSourceRecord> cross = crossMarketPoints(65);
@@ -373,6 +467,53 @@ class MarketRiskDataProviderTest {
                 assertThat(observation.attributes()).containsEntry("sectorId", "SW1:801780"));
     }
 
+    @Test
+    void coverageUsesExactObjectHorizonTradeDateAndAsOfTuple() {
+        MarketRiskDataProvider provider = provider(dailyPoints(65), null);
+        RiskProviderBatch batch = provider.fetch("market_daily", request(null));
+
+        MarketRiskCoverageReport latestLong = provider.coverageReport(
+                "market_daily", batch, MARKET, RiskHorizon.LONG_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
+        );
+        Map<String, MarketRiskCoverageItem> byIndicator = latestLong.items().stream()
+                .collect(Collectors.toMap(MarketRiskCoverageItem::indicatorCode, item -> item));
+
+        assertThat(byIndicator.get("V4").qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(byIndicator.get("A3").qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(byIndicator.get("C5").qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(latestLong.weightedCoverageRatio()).isEqualByComparingTo("0.6296296296");
+
+        MarketRiskCoverageReport beforeAvailability = provider.coverageReport(
+                "market_daily", batch, MARKET, RiskHorizon.LONG_TERM, END_DATE, END_DATE.atTime(15, 30)
+        );
+        assertThat(beforeAvailability.items()).allSatisfy(item ->
+                assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE));
+    }
+
+    @Test
+    void compositeV1CoverageRequiresPeAndRiskPremiumComponents() {
+        ValuationPoint partial = new ValuationPoint(
+                MARKET, END_DATE, new BigDecimal("18"), new BigDecimal("0.04"), null,
+                END_DATE.atTime(15, 0), END_DATE.atTime(16, 0), "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        MarketRiskDataProvider provider = provider(List.of(partial), null);
+        RiskProviderBatch batch = provider.fetch("valuation", request(null));
+
+        MarketRiskCoverageReport report = provider.coverageReport(
+                "valuation", batch, MARKET, RiskHorizon.SHORT_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
+        );
+
+        assertThat(report.items()).singleElement().satisfies(item -> {
+            assertThat(item.indicatorCode()).isEqualTo("V1");
+            assertThat(item.observationCount()).isEqualTo(2);
+            assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        });
+        assertThat(report.weightedCoverageRatio()).isEqualByComparingTo(BigDecimal.ZERO.setScale(10));
+    }
+
     private MarketRiskDataProvider provider(
             List<MarketSourceRecord> records,
             RiskIngestionCheckpoint checkpoint
@@ -399,19 +540,39 @@ class MarketRiskDataProviderTest {
     }
 
     private List<MarketSourceRecord> dailyPoints(int size) {
+        return dailyPoints(MARKET, size);
+    }
+
+    private List<MarketSourceRecord> dailyPoints(RiskObjectKey object, int size) {
         List<MarketSourceRecord> records = new ArrayList<>();
         LocalDate first = END_DATE.minusDays(size - 1L);
         for (int index = 0; index < size; index++) {
             LocalDate date = first.plusDays(index);
             BigDecimal close = new BigDecimal("100").add(BigDecimal.valueOf(index));
             records.add(new MarketDailyPoint(
-                    MARKET, date, close.subtract(BigDecimal.ONE), close, BigDecimal.valueOf(1000L + index),
+                    object, date, close.subtract(BigDecimal.ONE), close, BigDecimal.valueOf(1000L + index),
                     new BigDecimal("200").add(BigDecimal.valueOf(index)),
                     new BigDecimal("300").subtract(BigDecimal.valueOf(index).multiply(new BigDecimal("0.2"))),
                     date.atTime(15, 0), date.atTime(16, 0), "fixed", RiskDataQualityStatus.AVAILABLE
             ));
         }
         return records;
+    }
+
+    private BigDecimal metricValue(
+            RiskProviderBatch batch,
+            LocalDate tradeDate,
+            String indicatorCode,
+            String metric
+    ) {
+        return batch.observations().stream()
+                .filter(observation -> observation.tradeDate().equals(tradeDate))
+                .filter(observation -> observation.horizon() == RiskHorizon.SHORT_TERM)
+                .filter(observation -> observation.indicatorCode().equals(indicatorCode))
+                .filter(observation -> metric.equals(observation.attributes().get("metric")))
+                .map(RiskObservation::value)
+                .findFirst()
+                .orElseThrow();
     }
 
     private List<MarketSourceRecord> volatileDailyPoints(int size) {

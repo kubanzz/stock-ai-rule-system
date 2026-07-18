@@ -15,7 +15,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,6 +38,26 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             MarketDatasetCode.CROSS_MARKET, List.of(
                     MarketRiskIndicator.S1, MarketRiskIndicator.S2, MarketRiskIndicator.S4
             )
+    );
+    private static final Map<MarketRiskIndicator, Set<String>> REQUIRED_METRICS = Map.ofEntries(
+            Map.entry(MarketRiskIndicator.V1, Set.of("peTtm", "riskPremium")),
+            Map.entry(MarketRiskIndicator.V3, Set.of("relativeReturn")),
+            Map.entry(MarketRiskIndicator.V4, Set.of("volumeRatio")),
+            Map.entry(MarketRiskIndicator.S1, Set.of("standardizedLeadingReturn")),
+            Map.entry(MarketRiskIndicator.S2, Set.of("dynamicCorrelation")),
+            Map.entry(MarketRiskIndicator.S4, Set.of("crossMarketConfirmation")),
+            Map.entry(MarketRiskIndicator.C1, Set.of("leaderRelativeReturn")),
+            Map.entry(MarketRiskIndicator.C2, Set.of(
+                    "advanceRatio", "newHighLowBalance", "aboveMovingAverageRatio"
+            )),
+            Map.entry(MarketRiskIndicator.C3, Set.of("downVolumeRatio")),
+            Map.entry(MarketRiskIndicator.C4, Set.of("relativeStrength")),
+            Map.entry(MarketRiskIndicator.C5, Set.of("trendDistance", "openingGap")),
+            Map.entry(MarketRiskIndicator.A3, Set.of("trendVolatilityDeleveragingProxy")),
+            Map.entry(MarketRiskIndicator.A4, Set.of(
+                    "declineRatio", "newLowRatio", "belowMovingAverageRatio"
+            )),
+            Map.entry(MarketRiskIndicator.A5, Set.of("returnCorrelation"))
     );
 
     private final MarketRiskSourceClient sourceClient;
@@ -104,10 +123,17 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         return MarketRiskIndicator.codes();
     }
 
-    public MarketRiskCoverageReport coverageReport(String datasetCode, RiskProviderBatch batch) {
+    public MarketRiskCoverageReport coverageReport(
+            String datasetCode,
+            RiskProviderBatch batch,
+            RiskObjectKey object,
+            RiskHorizon horizon,
+            LocalDate tradeDate,
+            LocalDateTime asOf
+    ) {
         MarketDatasetCode dataset = MarketDatasetCode.fromCode(datasetCode);
-        if (batch == null) {
-            throw new IllegalArgumentException("batch must not be null");
+        if (batch == null || object == null || horizon == null || tradeDate == null || asOf == null) {
+            throw new IllegalArgumentException("coverage batch and evaluation tuple must not be null");
         }
         List<MarketRiskIndicator> supported = DATASET_INDICATORS.getOrDefault(dataset, List.of());
         BigDecimal totalWeight = supported.stream()
@@ -115,10 +141,20 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<MarketRiskCoverageItem> items = supported.stream().map(indicator -> {
             List<RiskObservation> matches = batch.observations().stream()
+                    .filter(observation -> object.equals(observation.object()))
+                    .filter(observation -> horizon == observation.horizon())
+                    .filter(observation -> tradeDate.equals(observation.tradeDate()))
+                    .filter(observation -> !observation.availableAt().isAfter(asOf))
                     .filter(observation -> indicator.code().equals(observation.indicatorCode()))
                     .toList();
+            List<RiskDataQualityStatus> requiredQualities = REQUIRED_METRICS.get(indicator).stream()
+                    .map(metric -> matches.stream()
+                            .filter(observation -> metric.equals(observation.attributes().get("metric")))
+                            .toList())
+                    .map(component -> strongestQuality(component, batch.qualityStatus()))
+                    .toList();
             return new MarketRiskCoverageItem(
-                    indicator.code(), indicator.weight(), strongestQuality(matches, batch.qualityStatus()), matches.size()
+                    indicator.code(), indicator.weight(), requiredQuality(requiredQualities), matches.size()
             );
         }).toList();
         BigDecimal availableWeight = items.stream()
@@ -133,6 +169,22 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                 .map(MarketRiskIndicator::code)
                 .collect(Collectors.toUnmodifiableSet());
         return new MarketRiskCoverageReport(dataset.code(), codes, items, ratio);
+    }
+
+    private RiskDataQualityStatus requiredQuality(List<RiskDataQualityStatus> components) {
+        if (components.stream().anyMatch(quality -> quality == RiskDataQualityStatus.UNAVAILABLE)) {
+            return RiskDataQualityStatus.UNAVAILABLE;
+        }
+        if (components.stream().anyMatch(quality -> quality == RiskDataQualityStatus.STALE)) {
+            return RiskDataQualityStatus.STALE;
+        }
+        if (components.stream().anyMatch(quality -> quality == RiskDataQualityStatus.INSUFFICIENT_HISTORY)) {
+            return RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+        }
+        if (components.stream().allMatch(quality -> quality == RiskDataQualityStatus.VALID_ZERO)) {
+            return RiskDataQualityStatus.VALID_ZERO;
+        }
+        return RiskDataQualityStatus.AVAILABLE;
     }
 
     private boolean eligible(
@@ -159,7 +211,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         for (MarketSourceRecord record : records) {
             String key = sourceRecordKey(record);
             MarketSourceRecord existing = unique.get(key);
-            if (existing == null || record.availableAt().isAfter(existing.availableAt())) {
+            if (existing == null || revisionOrder(record, existing) > 0) {
                 unique.put(key, record);
             }
         }
@@ -170,10 +222,29 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             MarketDatasetCode dataset,
             List<MarketSourceRecord> records
     ) {
-        if (dataset == MarketDatasetCode.MARKET_DAILY) {
+        validateUnambiguousRevisions(records);
+        if (dataset == MarketDatasetCode.MARKET_DAILY || dataset == MarketDatasetCode.CROSS_MARKET) {
             return List.copyOf(records);
         }
         return deduplicateSourceRecords(records);
+    }
+
+    private void validateUnambiguousRevisions(List<MarketSourceRecord> records) {
+        Map<String, MarketSourceRecord> revisions = new LinkedHashMap<>();
+        for (MarketSourceRecord record : records) {
+            String revisionKey = sourceRecordKey(record) + ":" + record.observedAt() + ":" + record.availableAt();
+            MarketSourceRecord existing = revisions.putIfAbsent(revisionKey, record);
+            if (existing != null && !existing.equals(record)) {
+                throw new IllegalArgumentException("ambiguous source revisions: " + revisionKey);
+            }
+        }
+    }
+
+    private int revisionOrder(MarketSourceRecord first, MarketSourceRecord second) {
+        int availabilityOrder = first.availableAt().compareTo(second.availableAt());
+        return availabilityOrder != 0
+                ? availabilityOrder
+                : first.observedAt().compareTo(second.observedAt());
     }
 
     private String sourceRecordKey(MarketSourceRecord record) {
@@ -279,73 +350,38 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         Map<RiskObjectKey, List<MarketDailyPoint>> groups = records.stream()
                 .map(record -> cast(record, MarketDailyPoint.class))
                 .collect(Collectors.groupingBy(MarketDailyPoint::object));
+        int maximumHistoryPoints = request.horizons().stream()
+                .map(RiskWindowPolicy::forHorizon)
+                .mapToInt(windows -> windows.contextWindow() + 1)
+                .max()
+                .orElseThrow();
         List<RiskObservation> output = new ArrayList<>();
         groups.values().forEach(points -> {
-            Map<LocalDate, List<MarketDailyPoint>> revisionsByDate = points.stream()
-                    .collect(Collectors.groupingBy(
-                            MarketDailyPoint::tradeDate,
-                            Collectors.collectingAndThen(Collectors.toList(), revisions -> revisions.stream()
-                                    .sorted(Comparator.comparing(MarketDailyPoint::availableAt)
-                                            .thenComparing(MarketDailyPoint::observedAt))
-                                    .toList())
-                    ));
-            List<LocalDate> tradeDates = revisionsByDate.keySet().stream()
-                    .sorted()
-                    .toList();
-            for (LocalDate tradeDate : tradeDates) {
+            PointInTimeMarketSeries<MarketDailyPoint> series = new PointInTimeMarketSeries<>(points);
+            for (int index = 0; index < series.size(); index++) {
+                LocalDate tradeDate = series.tradeDateAt(index);
                 if (tradeDate.isBefore(request.startDate())) {
                     continue;
                 }
-                Optional<MarketDailyPoint> selected = latestDailyPointAsOf(
-                        revisionsByDate.getOrDefault(tradeDate, List.of()), tradeDate.atTime(LocalTime.MAX)
-                );
+                Optional<MarketDailyPoint> selected = series.targetAt(index);
                 if (selected.isEmpty()) {
                     continue;
                 }
                 MarketDailyPoint point = selected.orElseThrow();
-                List<MarketDailyPoint> history = dailyHistoryAsOf(
-                        revisionsByDate, tradeDates, tradeDate, point.availableAt()
+                PointInTimeMarketSeries.HistoryWindow<MarketDailyPoint> history = series.trailingWindow(
+                        index, point.availableAt(), maximumHistoryPoints
                 );
-                List<LocalDate> expectedTradeDates = tradeDates.stream()
-                        .filter(date -> !date.isAfter(tradeDate))
-                        .toList();
                 for (RiskHorizon horizon : request.horizons()) {
-                    output.addAll(dailyObservations(point, history, expectedTradeDates, horizon));
+                    output.addAll(dailyObservations(point, history, horizon));
                 }
             }
         });
         return List.copyOf(output);
     }
 
-    private Optional<MarketDailyPoint> latestDailyPointAsOf(
-            List<MarketDailyPoint> revisions,
-            LocalDateTime asOf
-    ) {
-        return revisions.stream()
-                .filter(point -> !point.availableAt().isAfter(asOf))
-                .max(Comparator.comparing(MarketDailyPoint::availableAt)
-                        .thenComparing(MarketDailyPoint::observedAt));
-    }
-
-    private List<MarketDailyPoint> dailyHistoryAsOf(
-            Map<LocalDate, List<MarketDailyPoint>> revisionsByDate,
-            List<LocalDate> tradeDates,
-            LocalDate tradeDate,
-            LocalDateTime asOf
-    ) {
-        return tradeDates.stream()
-                .filter(date -> !date.isAfter(tradeDate))
-                .map(date -> latestDailyPointAsOf(
-                        revisionsByDate.getOrDefault(date, List.of()), asOf
-                ))
-                .flatMap(Optional::stream)
-                .toList();
-    }
-
     private List<RiskObservation> dailyObservations(
             MarketDailyPoint point,
-            List<MarketDailyPoint> history,
-            List<LocalDate> expectedTradeDates,
+            PointInTimeMarketSeries.HistoryWindow<MarketDailyPoint> history,
             RiskHorizon horizon
     ) {
         RiskWindowPolicy.WindowSpec windows = RiskWindowPolicy.forHorizon(horizon);
@@ -359,15 +395,9 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                 "volume", point.volume()
         );
 
-        Optional<List<MarketDailyPoint>> mainHistory = availableTrailingHistory(
-                history, expectedTradeDates, windows.mainWindow() + 1
-        );
-        Optional<List<MarketDailyPoint>> contextHistory = availableTrailingHistory(
-                history, expectedTradeDates, windows.contextWindow()
-        );
-        Optional<List<MarketDailyPoint>> adjacentHistory = availableTrailingHistory(
-                history, expectedTradeDates, 2
-        );
+        Optional<List<MarketDailyPoint>> mainHistory = history.availableTrailing(windows.mainWindow() + 1);
+        Optional<List<MarketDailyPoint>> contextHistory = history.availableTrailing(windows.contextWindow());
+        Optional<List<MarketDailyPoint>> adjacentHistory = history.availableTrailing(2);
         Optional<BigDecimal> relativeReturn = mainHistory.flatMap(points ->
                 MarketRiskCalculations.relativeReturn(
                         points.stream().map(MarketDailyPoint::close).toList(),
@@ -393,9 +423,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                 MarketRiskCalculations.distanceFromMovingAverage(
                         points.stream().map(MarketDailyPoint::close).toList(), windows.contextWindow()
                 ));
-        Optional<List<MarketDailyPoint>> a3History = availableTrailingHistory(
-                history, expectedTradeDates, windows.contextWindow() + 1
-        );
+        Optional<List<MarketDailyPoint>> a3History = history.availableTrailing(windows.contextWindow() + 1);
         Optional<List<BigDecimal>> a3Closes = a3History.map(points -> points.stream()
                 .map(MarketDailyPoint::close).toList());
         Optional<BigDecimal> a3TrendDistance = a3Closes.flatMap(values ->
@@ -457,30 +485,6 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         return observations;
     }
 
-    private Optional<List<MarketDailyPoint>> availableTrailingHistory(
-            List<MarketDailyPoint> history,
-            List<LocalDate> expectedTradeDates,
-            int requiredPoints
-    ) {
-        if (expectedTradeDates.size() < requiredPoints) {
-            return Optional.empty();
-        }
-        List<LocalDate> requiredDates = expectedTradeDates.subList(
-                expectedTradeDates.size() - requiredPoints, expectedTradeDates.size()
-        );
-        Map<LocalDate, MarketDailyPoint> byTradeDate = history.stream()
-                .collect(Collectors.toMap(MarketDailyPoint::tradeDate, point -> point));
-        List<MarketDailyPoint> result = new ArrayList<>(requiredPoints);
-        for (LocalDate requiredDate : requiredDates) {
-            MarketDailyPoint dependency = byTradeDate.get(requiredDate);
-            if (dependency == null || dependency.qualityStatus() != RiskDataQualityStatus.AVAILABLE) {
-                return Optional.empty();
-            }
-            result.add(dependency);
-        }
-        return Optional.of(List.copyOf(result));
-    }
-
     private List<RiskObservation> breadth(
             List<MarketSourceRecord> records,
             RiskProviderRequest request
@@ -532,19 +536,27 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         Map<RiskObjectKey, List<CrossMarketPoint>> groups = records.stream()
                 .map(record -> cast(record, CrossMarketPoint.class))
                 .collect(Collectors.groupingBy(CrossMarketPoint::object));
+        int maximumHistoryPoints = request.horizons().stream()
+                .map(RiskWindowPolicy::forHorizon)
+                .mapToInt(RiskWindowPolicy.WindowSpec::baselineWindow)
+                .max()
+                .orElseThrow();
         List<RiskObservation> output = new ArrayList<>();
         groups.values().forEach(points -> {
-            List<CrossMarketPoint> sorted = points.stream()
-                    .sorted(Comparator.comparing(CrossMarketPoint::tradeDate)
-                            .thenComparing(CrossMarketPoint::availableAt))
-                    .toList();
-            for (int index = 0; index < sorted.size(); index++) {
-                CrossMarketPoint point = sorted.get(index);
-                if (point.tradeDate().isBefore(request.startDate())) {
+            PointInTimeMarketSeries<CrossMarketPoint> series = new PointInTimeMarketSeries<>(points);
+            for (int index = 0; index < series.size(); index++) {
+                LocalDate tradeDate = series.tradeDateAt(index);
+                if (tradeDate.isBefore(request.startDate())) {
                     continue;
                 }
-                List<BigDecimal> returns = sorted.subList(0, index + 1).stream()
-                        .map(CrossMarketPoint::leadingAssetReturn).toList();
+                Optional<CrossMarketPoint> selected = series.targetAt(index);
+                if (selected.isEmpty()) {
+                    continue;
+                }
+                CrossMarketPoint point = selected.orElseThrow();
+                PointInTimeMarketSeries.HistoryWindow<CrossMarketPoint> history = series.trailingWindow(
+                        index, point.availableAt(), maximumHistoryPoints
+                );
                 for (RiskHorizon horizon : request.horizons()) {
                     RiskWindowPolicy.WindowSpec windows = RiskWindowPolicy.forHorizon(horizon);
                     Map<String, Object> raw = mapOf(
@@ -556,9 +568,15 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                             "confirmedDownMarketCount", point.confirmedDownMarketCount(),
                             "observedMarketCount", point.observedMarketCount()
                     );
+                    Optional<BigDecimal> standardizedReturn = history
+                            .availableTrailing(windows.baselineWindow())
+                            .flatMap(trailing -> MarketRiskCalculations.standardizedLatestValue(
+                                    trailing.stream().map(CrossMarketPoint::leadingAssetReturn).toList(),
+                                    windows.baselineWindow()
+                            ));
                     output.add(computed(
                             point, horizon, MarketRiskIndicator.S1,
-                            MarketRiskCalculations.standardizedLatestValue(returns, windows.baselineWindow()),
+                            standardizedReturn,
                             "zscore", "standardizedLeadingReturn", raw
                     ));
                     output.add(observation(

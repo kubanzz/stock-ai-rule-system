@@ -25,7 +25,7 @@
 
 指标权重沿用风险框架评分卡。市场 Provider 的静态目录支持权重为 V=55、S=70、C=85、A=55，合计 265/500；A3、A4、A5 的目录权重分别为 15、20、20。跨 market 与 flow 的 26 项全局静态覆盖由集成线按完整目录验收，不能把某次运行返回的 `unavailable` 当作静态支持。
 
-`MarketRiskCoverageReport` 只描述单个数据集在本次请求中的实际 `availability/quality`。有真实观测或业务上有效的 `valid_zero` 才计入该运行时报告；源失败与历史不足不计入可用权重。是否达到正式评分的 80% 总覆盖及 V、C、A、T/S 必备证据门槛，由风险引擎统一决定。
+`MarketRiskCoverageReport` 只描述单个数据集在指定 `object + horizon + tradeDate + asOf` 评估元组上的实际 `availability/quality`，不得跨对象、周期或历史日期选择“最强质量”。有真实观测或业务上有效的 `valid_zero` 才计入该运行时报告；源失败与历史不足不计入可用权重。复合指标必须具备全部必需分量：V1 为 `peTtm + riskPremium`，C2 为三个宽度分量，C5 为趋势距离与开盘缺口，A4 为三个深度代理分量。是否达到正式评分的 80% 总覆盖及 V、C、A、T/S 必备证据门槛，由风险引擎统一决定。
 
 ## A3—A5 日频代理公式
 
@@ -40,11 +40,15 @@
 - 短、中、长周期主窗口分别为 5、20、60 个交易日；上下文窗口为 `20/60`、`60/120`、`120/250`。
 - 5 年滚动基线由调用方通过请求区间提供；Provider 保留早于输出起点的上下文记录，只输出 `startDate` 至 `endDate` 内的观测。
 - 日频盘后评估以 `endDate 23:59:59.999999999` 为可用截止时点，同时拒绝 `tradeDate > endDate` 的记录。
-- `market_daily` 的每个目标交易日先选择该日截止前可用的最新版本，所有历史依赖再按目标记录的 `availableAt` 做 point-in-time 选择；迟到修订不得反灌更早观测。
+- `market_daily` 与 `cross_market` 的每个目标交易日先选择该日截止前可用的最新版本，所有历史依赖再按目标记录的 `availableAt` 做 point-in-time 选择；迟到修订不得反灌更早观测，S1 的派生 `availableAt` 为全部输入的最大可用时点。
 - V3、V4、C1、C3、C4、C5、A3、A5 的主窗口、上下文窗口或相邻日窗口必须连续且全部为 `available`；任一依赖为 `stale`、`unavailable` 或 `insufficient_history`，对应派生项一律输出 `insufficient_history` 且 `value=null`。
+- S1 的标准化窗口同样必须全部为 `available`；短、中、长周期分别复用 60、120、250 点基线尾窗。
 - C3 先用最近两个连续可用点判断当日涨跌：非跌日直接输出真实 0；仅在下跌日继续要求完整成交量上下文并输出量比，上下文不足时不得把缺失量比制造为 0。
 - 普通观测为 `available`；历史窗口不足为 `insufficient_history` 且 `value=null`；成功空集合为 `valid_zero`；源调用异常为 `unavailable` 并保留错误摘要。
 - `observationKey` 由对象、周期、交易日、指标和原始分量构成；同一源记录重复返回时按稳定键去重，保证回填重跑幂等。`eventKey` 使用同一稳定键规则供事件型补源复用。
+- 同一对象、交易日、`observedAt`、`availableAt` 出现内容不同的修订时，由于缺少可确定排序的版本号，Provider 显式拒绝该批次并返回 `unavailable`；不得依赖上游返回顺序任选一条。
+
+五年回填按对象预建 `tradeDate → sorted revisions` 索引，每个目标日只选择请求周期需要的最大尾窗，并在三个周期间复用；复杂度受 `交易日数 × 最大窗口` 约束，不为每个周期回扫全历史或重复构建日期映射。
 
 当前连续窗口使用上游返回的交易日集合识别缺口；如果上游整日漏传且未返回任何质量记录，Provider 无法仅凭价格序列识别该缺失日。正式接入需由上游返回完整交易日质量记录，或在集成线接入 A 股交易日历进行缺口校验。
 
