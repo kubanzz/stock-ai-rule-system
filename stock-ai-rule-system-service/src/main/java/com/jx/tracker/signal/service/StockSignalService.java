@@ -16,9 +16,11 @@ import com.jx.tracker.rule.engine.RuleEngineExecutor;
 import com.jx.tracker.rule.engine.RuleExecutionRequest;
 import com.jx.tracker.rule.engine.RuleExecutionResult;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +47,7 @@ public class StockSignalService {
         this.signalScoringService = signalScoringService;
     }
 
+    @Transactional
     public StockSignalDaily generateDailySignal(String symbol, LocalDate signalDate, Map<String, Object> factors) {
         List<RuleDefinition> activeRules = ruleDefinitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>()
                 .eq(RuleDefinition::getStatus, RuleLifecycleStatus.ACTIVE.getCode())
@@ -77,16 +80,15 @@ public class StockSignalService {
                 .riskDisclaimer(StockRiskConstants.SIGNAL_RISK_DISCLAIMER)
                 .build();
 
-        StockSignalDaily existing = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
+        stockSignalDailyMapper.upsertSignal(signal);
+        StockSignalDaily persisted = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                 .eq(StockSignalDaily::getSymbol, symbol)
                 .eq(StockSignalDaily::getSignalDate, signalDate));
-        if (existing == null) {
-            stockSignalDailyMapper.insert(signal);
-            return signal;
+        if (persisted == null || persisted.getId() == null) {
+            throw new IllegalStateException("signal upsert did not return a persisted row");
         }
-
-        signal.setId(existing.getId());
-        stockSignalDailyMapper.updateById(signal);
+        signal.setId(persisted.getId());
+        stockSignalDailyMapper.insertSignalHistoryIfChanged(signal.getId(), LocalDateTime.now());
         return signal;
     }
 
@@ -108,6 +110,7 @@ public class StockSignalService {
                 .last(signalDate == null, "LIMIT 1"));
     }
 
+    @Transactional
     public List<StockSignalDaily> generateDailySignalsFromFactors(LocalDate signalDate, List<String> symbols) {
         LambdaQueryWrapper<StockFactorDaily> wrapper = new LambdaQueryWrapper<StockFactorDaily>()
                 .eq(signalDate != null, StockFactorDaily::getTradeDate, signalDate)

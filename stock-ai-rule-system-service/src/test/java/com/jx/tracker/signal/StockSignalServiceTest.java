@@ -223,10 +223,15 @@ class StockSignalServiceTest {
                 new Class<?>[]{StockSignalDailyMapper.class},
                 (proxy, method, args) -> {
                     if ("selectOne".equals(method.getName())) {
-                        return null;
+                        return insertedSignal.get();
                     }
-                    if ("insert".equals(method.getName())) {
-                        insertedSignal.set((StockSignalDaily) args[0]);
+                    if ("upsertSignal".equals(method.getName())) {
+                        StockSignalDaily signal = (StockSignalDaily) args[0];
+                        signal.setId(1L);
+                        insertedSignal.set(signal);
+                        return 1;
+                    }
+                    if ("insertSignalHistoryIfChanged".equals(method.getName())) {
                         return 1;
                     }
                     throw new UnsupportedOperationException(method.getName());

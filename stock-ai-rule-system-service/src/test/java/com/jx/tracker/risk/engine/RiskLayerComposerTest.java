@@ -82,6 +82,108 @@ class RiskLayerComposerTest {
         assertThat(composition.mScore()).isEqualByComparingTo("1.05");
     }
 
+    @Test
+    void keepsMissingSubstituteDimensionAtZeroContributionAcrossFixedLayers() {
+        RiskSnapshot market = snapshotWithDimensions(
+                RiskObjectType.MARKET, "CN-A", "80", null, "80", "80", "60");
+        RiskSnapshot sector = snapshotWithDimensions(
+                RiskObjectType.SECTOR, "SW1:801780", "60", "70", null, "60", "50");
+        RiskSnapshot stock = snapshotWithDimensions(
+                RiskObjectType.STOCK, "600000.SH", "40", "50", null, "40", "40");
+
+        RiskLayerComposition composition = composer.compose(market, sector, stock);
+
+        assertThat(composition.tScore()).isEqualByComparingTo("44.5000");
+        assertThat(composition.sScore()).isEqualByComparingTo("20.0000");
+        RiskScoreResult scored = new RiskScoringEngine().scoreLayers(new RiskLayerScoreRequest(
+                stock.object(), stock.horizon(), stock.tradeDate(), stock.tradeDate().minusDays(1),
+                stock.calculatedAt(), composition, List.of(),
+                new ExtremeRiskConfirmation(new BigDecimal("99"), true, true), "risk-engine-test-v1"));
+        assertThat(scored.missingReasons()).isEmpty();
+        assertThat(scored.snapshot().totalScore()).isNotNull();
+    }
+
+    @Test
+    void inheritedTransmissionOnlyProvidesEligibilityAndIsNotRepeatedAcrossLayers() {
+        RiskSnapshot market = transmissionSnapshot(
+                RiskObjectType.MARKET, "CN-A", "80", false, null);
+        RiskSnapshot sector = transmissionSnapshot(
+                RiskObjectType.SECTOR, "SW1:801780", "80", true, "CN-A");
+        RiskSnapshot stock = transmissionSnapshot(
+                RiskObjectType.STOCK, "600000.SH", "80", true, "CN-A");
+
+        RiskLayerComposition composition = composer.compose(market, sector, stock);
+
+        assertThat(composition.sScore()).isEqualByComparingTo("20.0000");
+        assertThat(composition.evidence()).filteredOn(item ->
+                        item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .singleElement()
+                .satisfies(item -> assertThat(item.details())
+                        .containsEntry("layerObjectId", "CN-A")
+                        .doesNotContainKey("inherited"));
+    }
+
+    @Test
+    void addingALayerNeverOverwritesExistingEvidenceOrigin() {
+        RiskEvidence marketEvidence = new RiskEvidence(
+                RiskDimension.EXTERNAL_TRANSMISSION, "S1", new BigDecimal("80"), new BigDecimal("80"),
+                LocalDateTime.of(2026, 7, 18, 15, 0), LocalDateTime.of(2026, 7, 18, 16, 0),
+                "source-a", RiskDataQualityStatus.AVAILABLE,
+                Map.of("layerObjectType", "market", "layerObjectId", "CN-A"));
+
+        RiskEvidence relayered = com.jx.tracker.risk.model.RiskEvidenceProvenance.withLayer(
+                marketEvidence, new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780"));
+
+        assertThat(relayered.details())
+                .containsEntry("layerObjectType", "market")
+                .containsEntry("layerObjectId", "CN-A");
+    }
+
+    private RiskSnapshot transmissionSnapshot(
+            RiskObjectType objectType,
+            String objectId,
+            String score,
+            boolean inherited,
+            String inheritedFrom
+    ) {
+        BigDecimal value = new BigDecimal(score);
+        Map<String, Object> details = inherited
+                ? Map.of("inherited", true, "inheritedFromObjectType", "market",
+                "inheritedFromObjectId", inheritedFrom)
+                : Map.of();
+        return new RiskSnapshot(
+                new RiskObjectKey(objectType, objectId), RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18), value, null, value, value, value,
+                BigDecimal.ONE, value, RiskLevel.WATCH, RiskStage.FRAGILE,
+                BigDecimal.ONE, BigDecimal.ONE, List.of(new RiskEvidence(
+                RiskDimension.EXTERNAL_TRANSMISSION, "S1", value, value,
+                LocalDateTime.of(2026, 7, 18, 15, 0),
+                LocalDateTime.of(2026, 7, 18, 16, 0), "source-a",
+                RiskDataQualityStatus.AVAILABLE, details)), "risk-engine-test-v1",
+                LocalDateTime.of(2026, 7, 18, 16, 0));
+    }
+
+    private RiskSnapshot snapshotWithDimensions(
+            RiskObjectType objectType,
+            String objectId,
+            String v,
+            String t,
+            String s,
+            String c,
+            String a
+    ) {
+        return new RiskSnapshot(
+                new RiskObjectKey(objectType, objectId), RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18), decimal(v), decimal(t), decimal(s), decimal(c), decimal(a),
+                BigDecimal.ONE, new BigDecimal("60"), RiskLevel.WATCH, RiskStage.FRAGILE,
+                BigDecimal.ONE, BigDecimal.ONE, List.of(), "risk-engine-test-v1",
+                LocalDateTime.of(2026, 7, 18, 16, 0));
+    }
+
+    private BigDecimal decimal(String value) {
+        return value == null ? null : new BigDecimal(value);
+    }
+
     private RiskSnapshot snapshot(
             RiskObjectType objectType,
             String objectId,

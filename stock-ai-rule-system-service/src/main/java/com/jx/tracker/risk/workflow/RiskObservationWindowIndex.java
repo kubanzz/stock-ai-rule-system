@@ -31,7 +31,8 @@ final class RiskObservationWindowIndex {
                             new ObjectHorizon(observation.object(), observation.horizon()),
                             ignored -> new HashMap<>())
                     .computeIfAbsent(
-                            new IndicatorSeries(observation.dimension().getCode(), observation.indicatorCode()),
+                            new IndicatorSeries(observation.dimension().getCode(), observation.indicatorCode(),
+                                    observation.componentCode()),
                             ignored -> new TreeMap<>())
                     .computeIfAbsent(observation.tradeDate(), ignored -> new ArrayList<>())
                     .add(observation);
@@ -78,6 +79,6 @@ final class RiskObservationWindowIndex {
     private record ObjectHorizon(RiskObjectKey object, RiskHorizon horizon) {
     }
 
-    private record IndicatorSeries(String dimensionCode, String indicatorCode) {
+    private record IndicatorSeries(String dimensionCode, String indicatorCode, String componentCode) {
     }
 }

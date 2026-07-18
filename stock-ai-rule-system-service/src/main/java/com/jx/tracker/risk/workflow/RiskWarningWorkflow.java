@@ -12,6 +12,7 @@ import com.jx.tracker.risk.gate.ShadowRiskGate;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
+import com.jx.tracker.risk.model.RiskEvidenceProvenance;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
@@ -212,6 +213,8 @@ public final class RiskWarningWorkflow {
                     evidenceByObject.put(object, evidenceAssembler.assemble(
                             object, horizon, tradeDate, evaluationAsOf, eligibleHistory));
                 }
+                evidenceByObject = inheritExternalTransmission(
+                        orderedDateObjects, tradeDate, evaluationAsOf, exposureIndex, evidenceByObject);
                 Map<RiskObjectKey, RiskScoreResult> rawResults = new LinkedHashMap<>();
                 Map<RiskObjectKey, EventContext> eventContexts = new LinkedHashMap<>();
                 for (RiskObjectKey object : orderedDateObjects) {
@@ -265,6 +268,71 @@ public final class RiskWarningWorkflow {
             }
         }
         return stored;
+    }
+
+    /**
+     * S 描述外部价格发现链。行业继承市场 S，个股优先继承所属行业 S、再回退市场 S；
+     * 继承只在本层完全没有可用 S 时提供评分资格，不改变 25%/35%/40% 层权重，也保留来源对象供审计。
+     */
+    private Map<RiskObjectKey, List<RiskEvidence>> inheritExternalTransmission(
+            List<RiskObjectKey> orderedObjects,
+            LocalDate tradeDate,
+            LocalDateTime asOf,
+            RiskIndustryExposureIndex exposureIndex,
+            Map<RiskObjectKey, List<RiskEvidence>> assembled
+    ) {
+        Map<RiskObjectKey, List<RiskEvidence>> resolved = new LinkedHashMap<>();
+        for (RiskObjectKey object : orderedObjects) {
+            List<RiskEvidence> own = assembled.getOrDefault(object, List.of());
+            RiskObjectKey inheritedFrom = switch (object.objectType()) {
+                case MARKET -> null;
+                case SECTOR -> CN_A;
+                case STOCK -> {
+                    RiskObjectKey sector = effectiveSector(object, tradeDate, asOf, exposureIndex);
+                    yield sector != null && resolved.containsKey(sector) ? sector : CN_A;
+                }
+            };
+            List<RiskEvidence> inherited = inheritedFrom == null
+                    ? List.of() : resolved.getOrDefault(
+                    inheritedFrom, assembled.getOrDefault(inheritedFrom, List.of()));
+            resolved.put(object, mergeInheritedTransmission(own, inherited, inheritedFrom));
+        }
+        return resolved;
+    }
+
+    private List<RiskEvidence> mergeInheritedTransmission(
+            List<RiskEvidence> own,
+            List<RiskEvidence> inherited,
+            RiskObjectKey inheritedFrom
+    ) {
+        boolean hasUsableOwnTransmission = own.stream()
+                .filter(item -> item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .anyMatch(this::usableEvidence);
+        if (hasUsableOwnTransmission) {
+            return own;
+        }
+        List<RiskEvidence> merged = own.stream()
+                .filter(item -> item.dimension() != RiskDimension.EXTERNAL_TRANSMISSION)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        inherited.stream()
+                .filter(item -> item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .map(item -> inheritedEvidence(item, inheritedFrom))
+                .forEach(merged::add);
+        return List.copyOf(merged);
+    }
+
+    private RiskEvidence inheritedEvidence(RiskEvidence evidence, RiskObjectKey inheritedFrom) {
+        RiskObjectKey origin = RiskEvidenceProvenance.layerObject(evidence, inheritedFrom);
+        Map<String, Object> details = new LinkedHashMap<>(evidence.details());
+        details.put("inherited", true);
+        details.putIfAbsent("inheritedFromObjectType", origin.objectType().getCode());
+        details.putIfAbsent("inheritedFromObjectId", origin.objectId());
+        details.putIfAbsent(RiskEvidenceProvenance.LAYER_OBJECT_TYPE, origin.objectType().getCode());
+        details.putIfAbsent(RiskEvidenceProvenance.LAYER_OBJECT_ID, origin.objectId());
+        return new RiskEvidence(
+                evidence.dimension(), evidence.indicatorCode(), evidence.score(), evidence.rawValue(),
+                evidence.observedAt(), evidence.availableAt(), evidence.source(),
+                evidence.qualityStatus(), details);
     }
 
     private int persistGates(RiskWorkflowRequest request, List<StoredRiskSnapshot> storedSnapshots) {

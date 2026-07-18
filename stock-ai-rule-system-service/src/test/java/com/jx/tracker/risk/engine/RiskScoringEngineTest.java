@@ -100,6 +100,68 @@ class RiskScoringEngineTest {
         ).snapshot().level()).isEqualTo(RiskLevel.WARNING);
     }
 
+    @Test
+    void treatsTriggerAndExternalTransmissionAsSubstituteGatesWithoutReweighting() {
+        Map<RiskDimension, BigDecimal> scores = scores(80, 60, 70, 80, 60);
+
+        RiskScoreResult withoutTrigger = scoreWithoutDimension(
+                RiskDimension.SUBSTANTIVE_TRIGGER, scores);
+        RiskScoreResult withoutTransmission = scoreWithoutDimension(
+                RiskDimension.EXTERNAL_TRANSMISSION, scores);
+
+        assertThat(withoutTrigger.missingReasons()).doesNotContain(
+                "DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:T", "MISSING_REAL_EVIDENCE:T_OR_S");
+        assertThat(withoutTrigger.snapshot().totalScore()).isEqualByComparingTo("59.5000");
+        assertThat(withoutTrigger.snapshot().level()).isEqualTo(RiskLevel.WARNING);
+        assertThat(withoutTransmission.missingReasons()).doesNotContain(
+                "DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:S", "MISSING_REAL_EVIDENCE:T_OR_S");
+        assertThat(withoutTransmission.snapshot().totalScore()).isEqualByComparingTo("61.0000");
+        assertThat(withoutTransmission.snapshot().level()).isEqualTo(RiskLevel.WARNING);
+    }
+
+    @Test
+    void rejectsExactEightyPercentCompletenessWhenNeitherTriggerNorTransmissionReachesSixtyPercent() {
+        List<String> halfTrigger = List.of("T1", "T3");
+        List<String> halfTransmission = List.of("S1", "S3");
+        List<RiskEvidence> evidence = RiskIndicatorCatalog.definitions().stream()
+                .filter(definition -> definition.dimension() == RiskDimension.STRUCTURAL_FRAGILITY
+                        || definition.dimension() == RiskDimension.LOCAL_CONFIRMATION
+                        || definition.dimension() == RiskDimension.FORCED_SELLING
+                        || halfTrigger.contains(definition.code())
+                        || halfTransmission.contains(definition.code()))
+                .map(definition -> new RiskEvidence(
+                        definition.dimension(), definition.code(), new BigDecimal("80"), new BigDecimal("80"),
+                        AS_OF.minusHours(1), AS_OF.minusMinutes(30), "test",
+                        RiskDataQualityStatus.AVAILABLE, Map.of()))
+                .toList();
+
+        RiskScoreResult result = engine.score(new RiskScoreRequest(
+                MARKET, RiskHorizon.SHORT_TERM, TRADE_DATE, TRADE_DATE.minusDays(1), AS_OF,
+                BigDecimal.ONE, evidence, List.of(), ExtremeRiskConfirmation.none(),
+                "risk-engine-test-v1"));
+
+        assertThat(result.snapshot().completeness()).isEqualByComparingTo("0.8000");
+        assertThat(result.snapshot().tScore()).isNull();
+        assertThat(result.snapshot().sScore()).isNull();
+        assertThat(result.snapshot().totalScore()).isNull();
+        assertThat(result.missingReasons())
+                .contains("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:T_OR_S")
+                .doesNotContain("MISSING_REAL_EVIDENCE:T_OR_S");
+    }
+
+    private RiskScoreResult scoreWithoutDimension(
+            RiskDimension missing,
+            Map<RiskDimension, BigDecimal> scores
+    ) {
+        List<RiskEvidence> evidence = evidence(scores, AS_OF).stream()
+                .filter(item -> item.dimension() != missing)
+                .toList();
+        return engine.score(new RiskScoreRequest(
+                MARKET, RiskHorizon.SHORT_TERM, TRADE_DATE, TRADE_DATE.minusDays(1), AS_OF,
+                BigDecimal.ONE, evidence, List.of(),
+                new ExtremeRiskConfirmation(new BigDecimal("99"), true, true), "risk-engine-test-v1"));
+    }
+
     private RiskScoreResult score(
             RiskHorizon horizon,
             Map<RiskDimension, BigDecimal> scores,

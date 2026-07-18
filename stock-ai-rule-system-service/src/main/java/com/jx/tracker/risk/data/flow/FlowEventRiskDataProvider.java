@@ -4,6 +4,7 @@ import com.jx.tracker.risk.data.event.EventEconomicMeaningDictionary;
 import com.jx.tracker.risk.data.event.FlowEventTranslation;
 import com.jx.tracker.risk.data.event.FlowEventTranslator;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.provider.RiskDataProvider;
 import com.jx.tracker.risk.provider.RiskEvent;
 import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
@@ -105,7 +106,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                         coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
             }
             return new FlowEventFetchResult(
-                    RiskProviderBatch.validZero(sourceBatch.source(), nextCheckpoint, sourceBatch.fetchedAt()),
+                    auditedValidZeroBatch(dataset, request, sourceBatch, nextCheckpoint),
                     coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
         }
 
@@ -126,8 +127,8 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                         coverage(dataset, request, emptyBatch, List.of(), List.of(), 0));
             }
             return new FlowEventFetchResult(
-                    RiskProviderBatch.validZero(sourceBatch.source(), safeCheckpoint(dataset, request, sourceBatch),
-                            sourceBatch.fetchedAt()),
+                    auditedValidZeroBatch(dataset, request, emptyBatch,
+                            safeCheckpoint(dataset, request, sourceBatch)),
                     coverage(dataset, request, emptyBatch, List.of(), List.of(), 0));
         }
 
@@ -165,8 +166,12 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                                 translatedObservations, translatedEvents, rejected));
             }
             return new FlowEventFetchResult(
-                    RiskProviderBatch.validZero(sourceBatch.source(), nextCheckpoint, sourceBatch.fetchedAt()),
+                    auditedValidZeroBatch(dataset, request, sourceBatch, nextCheckpoint),
                     coverage(dataset, request, sourceBatch, translatedObservations, translatedEvents, rejected));
+        }
+        if (!incompleteHistory) {
+            translatedObservations = completeCurrentDateEventZeros(
+                    dataset, request, sourceBatch, translatedObservations);
         }
         if (incompleteHistory) {
             translatedObservations = auditOnlyObservations(translatedObservations, incompleteReason);
@@ -183,6 +188,86 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         return new FlowEventFetchResult(
                 batch, coverage(dataset, request, sourceBatch,
                 translatedObservations, translatedEvents, rejected));
+    }
+
+    private RiskProviderBatch auditedValidZeroBatch(
+            FlowEventDataset dataset,
+            RiskProviderRequest request,
+            FlowEventSourceBatch sourceBatch,
+            RiskIngestionCheckpoint checkpoint
+    ) {
+        if (!dataset.eventDataset()) {
+            return RiskProviderBatch.validZero(sourceBatch.source(), checkpoint, sourceBatch.fetchedAt());
+        }
+        if (!sourceBatch.historyComplete()) {
+            return new RiskProviderBatch(
+                    sourceBatch.source(), List.of(), List.of(), null,
+                    RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                    incompleteHistoryReason(dataset, sourceBatch), sourceBatch.fetchedAt());
+        }
+        List<RiskObservation> zeroObservations = completeCurrentDateEventZeros(
+                dataset, request, sourceBatch, List.of());
+        if (zeroObservations.isEmpty()) {
+            return RiskProviderBatch.validZero(sourceBatch.source(), checkpoint, sourceBatch.fetchedAt());
+        }
+        return new RiskProviderBatch(
+                sourceBatch.source(), zeroObservations, List.of(), checkpoint,
+                RiskDataQualityStatus.VALID_ZERO, null, sourceBatch.fetchedAt());
+    }
+
+    private List<RiskObservation> completeCurrentDateEventZeros(
+            FlowEventDataset dataset,
+            RiskProviderRequest request,
+            FlowEventSourceBatch sourceBatch,
+            List<RiskObservation> existing
+    ) {
+        if (!dataset.eventDataset() || !sourceBatch.historyComplete()
+                || dataset.indicatorCodes().equals(List.of("M"))) {
+            return List.copyOf(existing);
+        }
+        Set<String> present = existing.stream()
+                .filter(item -> item.tradeDate().equals(request.endDate()))
+                .map(item -> currentDateIdentity(
+                        item.object(), item.horizon(), item.indicatorCode()))
+                .collect(java.util.stream.Collectors.toSet());
+        List<RiskObservation> completed = new ArrayList<>(existing);
+        for (RiskObjectKey object : request.objects()) {
+            for (var horizon : request.horizons()) {
+                for (String code : dataset.indicatorCodes()) {
+                    if (present.contains(currentDateIdentity(object, horizon, code))) {
+                        continue;
+                    }
+                    completed.add(new RiskObservation(
+                            object, horizon, request.endDate(),
+                            com.jx.tracker.risk.model.RiskDimension.SUBSTANTIVE_TRIGGER,
+                            code, code, BigDecimal.ZERO, "score",
+                            sourceBatch.fetchedAt(), sourceBatch.fetchedAt(), sourceBatch.source(),
+                            RiskDataQualityStatus.VALID_ZERO,
+                            Map.of("validZeroAudit", true, "noEvent", true,
+                                    "datasetCode", dataset.code())));
+                }
+            }
+        }
+        return List.copyOf(completed);
+    }
+
+    private String incompleteHistoryReason(
+            FlowEventDataset dataset,
+            FlowEventSourceBatch sourceBatch
+    ) {
+        if (sourceBatch.failureReason() != null && !sourceBatch.failureReason().isBlank()) {
+            return sourceBatch.failureReason();
+        }
+        if (sourceBatch.fallbackReason() != null && !sourceBatch.fallbackReason().isBlank()) {
+            return sourceBatch.fallbackReason();
+        }
+        return dataset.code() + " history is incomplete; valid zero cannot be proven";
+    }
+
+    private String currentDateIdentity(RiskObjectKey object, com.jx.tracker.risk.model.RiskHorizon horizon,
+                                       String indicatorCode) {
+        return object.objectType().getCode() + ":" + object.objectId() + ":"
+                + horizon.getCode() + ":" + indicatorCode;
     }
 
     private void validateCheckpoint(FlowEventDataset dataset, RiskProviderRequest request) {
@@ -356,7 +441,8 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             }
         }
 
-        boolean sourceZero = sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO;
+        boolean sourceZero = sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
+                && sourceBatch.historyComplete();
         boolean sourceUnavailable = sourceBatch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE;
         boolean sourceInsufficient = sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
                 || !sourceBatch.historyComplete();

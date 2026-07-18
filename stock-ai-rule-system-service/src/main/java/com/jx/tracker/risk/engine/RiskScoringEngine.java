@@ -48,7 +48,7 @@ public final class RiskScoringEngine {
                 .divide(new BigDecimal("500"), 4, RoundingMode.HALF_UP);
         List<String> missingReasons = missingReasons(completeness, dimensionScores, validByCode);
         boolean formal = missingReasons.isEmpty();
-        addEvidenceReasons(missingReasons, selectedEvidence);
+        addEvidenceReasons(missingReasons, selectedEvidence, dimensionScores);
 
         BigDecimal totalScore = null;
         RiskLevel level = null;
@@ -93,8 +93,12 @@ public final class RiskScoringEngine {
             missingReasons.add("LAYER_COVERAGE_BELOW_80_PERCENT");
         }
         Map<RiskDimension, BigDecimal> scores = compositionScores(composition);
-        if (scores.values().stream().anyMatch(value -> value == null)) {
-            missingReasons.add("LAYER_DIMENSION_SCORE_MISSING");
+        requireLayerDimension(missingReasons, scores, RiskDimension.STRUCTURAL_FRAGILITY);
+        requireLayerDimension(missingReasons, scores, RiskDimension.LOCAL_CONFIRMATION);
+        requireLayerDimension(missingReasons, scores, RiskDimension.FORCED_SELLING);
+        if (scores.get(RiskDimension.SUBSTANTIVE_TRIGGER) == null
+                && scores.get(RiskDimension.EXTERNAL_TRANSMISSION) == null) {
+            missingReasons.add("LAYER_TRIGGER_OR_TRANSMISSION_MISSING");
         }
         if (composition.mScore() == null) {
             missingReasons.add("LAYER_MODIFIER_MISSING");
@@ -204,14 +208,16 @@ public final class RiskScoringEngine {
         if (completeness.compareTo(FORMAL_COMPLETENESS) < 0) {
             reasons.add("OVERALL_COMPLETENESS_BELOW_80_PERCENT");
         }
-        for (RiskDimension dimension : RiskDimension.values()) {
-            if (dimensionScores.get(dimension) == null) {
-                reasons.add("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:" + dimension.getCode());
-            }
-        }
+        requireDimensionScore(reasons, dimensionScores, RiskDimension.STRUCTURAL_FRAGILITY);
+        requireDimensionScore(reasons, dimensionScores, RiskDimension.LOCAL_CONFIRMATION);
+        requireDimensionScore(reasons, dimensionScores, RiskDimension.FORCED_SELLING);
         requireEvidence(reasons, validByCode, RiskDimension.STRUCTURAL_FRAGILITY);
         requireEvidence(reasons, validByCode, RiskDimension.LOCAL_CONFIRMATION);
         requireEvidence(reasons, validByCode, RiskDimension.FORCED_SELLING);
+        if (dimensionScores.get(RiskDimension.SUBSTANTIVE_TRIGGER) == null
+                && dimensionScores.get(RiskDimension.EXTERNAL_TRANSMISSION) == null) {
+            reasons.add("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:T_OR_S");
+        }
         boolean hasTriggerOrTransmission = validByCode.values().stream().anyMatch(evidence ->
                 evidence.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER
                         || evidence.dimension() == RiskDimension.EXTERNAL_TRANSMISSION
@@ -222,12 +228,21 @@ public final class RiskScoringEngine {
         return reasons;
     }
 
-    private void addEvidenceReasons(List<String> reasons, List<RiskEvidence> selectedEvidence) {
+    private void addEvidenceReasons(
+            List<String> reasons,
+            List<RiskEvidence> selectedEvidence,
+            Map<RiskDimension, BigDecimal> dimensionScores
+    ) {
         Map<String, RiskEvidence> selectedByCode = new HashMap<>();
         for (RiskEvidence evidence : selectedEvidence) {
             selectedByCode.put(evidence.indicatorCode(), evidence);
         }
         for (RiskIndicatorDefinition definition : RiskIndicatorCatalog.definitions()) {
+            if (dimensionScores.get(definition.dimension()) == null
+                    && (definition.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER
+                    || definition.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)) {
+                continue;
+            }
             RiskEvidence evidence = selectedByCode.get(definition.code());
             if (evidence == null) {
                 reasons.add("EVIDENCE_MISSING:" + definition.code());
@@ -235,6 +250,26 @@ public final class RiskScoringEngine {
                     && evidence.qualityStatus() != RiskDataQualityStatus.VALID_ZERO) {
                 reasons.add("EVIDENCE_" + evidence.qualityStatus().name() + ":" + definition.code());
             }
+        }
+    }
+
+    private void requireDimensionScore(
+            List<String> reasons,
+            Map<RiskDimension, BigDecimal> dimensionScores,
+            RiskDimension dimension
+    ) {
+        if (dimensionScores.get(dimension) == null) {
+            reasons.add("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:" + dimension.getCode());
+        }
+    }
+
+    private void requireLayerDimension(
+            List<String> reasons,
+            Map<RiskDimension, BigDecimal> scores,
+            RiskDimension dimension
+    ) {
+        if (scores.get(dimension) == null) {
+            reasons.add("LAYER_DIMENSION_SCORE_MISSING:" + dimension.getCode());
         }
     }
 
@@ -255,7 +290,10 @@ public final class RiskScoringEngine {
     ) {
         BigDecimal weighted = BigDecimal.ZERO;
         for (Map.Entry<RiskDimension, BigDecimal> weight : DIMENSION_WEIGHTS.entrySet()) {
-            weighted = weighted.add(dimensionScores.get(weight.getKey()).multiply(weight.getValue()));
+            BigDecimal score = dimensionScores.get(weight.getKey());
+            if (score != null) {
+                weighted = weighted.add(score.multiply(weight.getValue()));
+            }
         }
         return weighted.multiply(timeCorrectionFactor)
                 .min(new BigDecimal("100"))
@@ -332,8 +370,7 @@ public final class RiskScoringEngine {
 
     private RiskLevel rawLevel(Map<RiskDimension, BigDecimal> scores, BigDecimal totalScore) {
         BigDecimal v = scores.get(RiskDimension.STRUCTURAL_FRAGILITY);
-        BigDecimal triggerOrTransmission = scores.get(RiskDimension.SUBSTANTIVE_TRIGGER)
-                .max(scores.get(RiskDimension.EXTERNAL_TRANSMISSION));
+        BigDecimal triggerOrTransmission = triggerOrTransmission(scores);
         BigDecimal c = scores.get(RiskDimension.LOCAL_CONFIRMATION);
         BigDecimal a = scores.get(RiskDimension.FORCED_SELLING);
         if (atLeast(v, 60) && atLeast(triggerOrTransmission, 50) && atLeast(c, 60)
@@ -359,8 +396,7 @@ public final class RiskScoringEngine {
             BigDecimal totalScore
     ) {
         BigDecimal v = scores.get(RiskDimension.STRUCTURAL_FRAGILITY);
-        BigDecimal triggerOrTransmission = scores.get(RiskDimension.SUBSTANTIVE_TRIGGER)
-                .max(scores.get(RiskDimension.EXTERNAL_TRANSMISSION));
+        BigDecimal triggerOrTransmission = triggerOrTransmission(scores);
         BigDecimal c = scores.get(RiskDimension.LOCAL_CONFIRMATION);
         BigDecimal a = scores.get(RiskDimension.FORCED_SELLING);
         return switch (currentLevel) {
@@ -379,6 +415,18 @@ public final class RiskScoringEngine {
 
     private boolean atMost(BigDecimal value, int threshold) {
         return value.compareTo(BigDecimal.valueOf(threshold)) <= 0;
+    }
+
+    private BigDecimal triggerOrTransmission(Map<RiskDimension, BigDecimal> scores) {
+        BigDecimal trigger = scores.get(RiskDimension.SUBSTANTIVE_TRIGGER);
+        BigDecimal transmission = scores.get(RiskDimension.EXTERNAL_TRANSMISSION);
+        if (trigger == null) {
+            return transmission;
+        }
+        if (transmission == null) {
+            return trigger;
+        }
+        return trigger.max(transmission);
     }
 
     private RiskStage stageFor(RiskLevel level) {

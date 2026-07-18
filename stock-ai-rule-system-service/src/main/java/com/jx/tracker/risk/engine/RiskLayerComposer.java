@@ -57,6 +57,7 @@ public final class RiskLayerComposer {
         List<RiskEvidence> evidence = new ArrayList<>();
         for (WeightedLayer layer : confirmedLayers) {
             layer.snapshot().evidence().stream()
+                    .filter(item -> !isInheritedTransmission(item))
                     .map(item -> RiskEvidenceProvenance.withLayer(item, layer.snapshot().object()))
                     .forEach(evidence::add);
         }
@@ -64,7 +65,7 @@ public final class RiskLayerComposer {
         return new RiskLayerComposition(
                 weightedScore(confirmedLayers, RiskSnapshot::vScore),
                 weightedScore(confirmedLayers, RiskSnapshot::tScore),
-                weightedScore(confirmedLayers, RiskSnapshot::sScore),
+                weightedTransmissionScore(confirmedLayers),
                 weightedScore(confirmedLayers, RiskSnapshot::cScore),
                 weightedScore(confirmedLayers, RiskSnapshot::aScore),
                 mScore,
@@ -79,14 +80,40 @@ public final class RiskLayerComposer {
             SnapshotScore score
     ) {
         BigDecimal weighted = BigDecimal.ZERO;
+        boolean present = false;
         for (WeightedLayer layer : layers) {
             BigDecimal layerScore = score.get(layer.snapshot());
-            if (layerScore == null) {
-                return null;
+            if (layerScore != null) {
+                present = true;
+                weighted = weighted.add(layerScore.multiply(layer.weight()));
             }
-            weighted = weighted.add(layerScore.multiply(layer.weight()));
         }
-        return weighted.setScale(4, RoundingMode.HALF_UP);
+        return present ? weighted.setScale(4, RoundingMode.HALF_UP) : null;
+    }
+
+    private BigDecimal weightedTransmissionScore(List<WeightedLayer> layers) {
+        BigDecimal weighted = BigDecimal.ZERO;
+        boolean present = false;
+        for (WeightedLayer layer : layers) {
+            BigDecimal layerScore = layer.snapshot().sScore();
+            if (layerScore != null && !hasOnlyInheritedTransmission(layer.snapshot())) {
+                present = true;
+                weighted = weighted.add(layerScore.multiply(layer.weight()));
+            }
+        }
+        return present ? weighted.setScale(4, RoundingMode.HALF_UP) : null;
+    }
+
+    private boolean hasOnlyInheritedTransmission(RiskSnapshot snapshot) {
+        List<RiskEvidence> transmission = snapshot.evidence().stream()
+                .filter(item -> item.dimension() == com.jx.tracker.risk.model.RiskDimension.EXTERNAL_TRANSMISSION)
+                .toList();
+        return !transmission.isEmpty() && transmission.stream().allMatch(this::isInheritedTransmission);
+    }
+
+    private boolean isInheritedTransmission(RiskEvidence evidence) {
+        return evidence.dimension() == com.jx.tracker.risk.model.RiskDimension.EXTERNAL_TRANSMISSION
+                && Boolean.TRUE.equals(evidence.details().get("inherited"));
     }
 
     private boolean isConfirmed(RiskSnapshot snapshot) {

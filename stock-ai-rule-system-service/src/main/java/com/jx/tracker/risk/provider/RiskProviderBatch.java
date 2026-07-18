@@ -31,9 +31,11 @@ public record RiskProviderBatch(
             throw new IllegalArgumentException("fetchedAt must not be null");
         }
         if (qualityStatus == RiskDataQualityStatus.VALID_ZERO
-                && (!observations.isEmpty() || !events.isEmpty() || !industryExposures.isEmpty()
-                || errorMessage != null)) {
-            throw new IllegalArgumentException("valid_zero batch must be empty and successful");
+                && (!events.isEmpty() || !industryExposures.isEmpty() || errorMessage != null
+                || observations.stream().anyMatch(observation ->
+                observation.qualityStatus() != RiskDataQualityStatus.VALID_ZERO))) {
+            throw new IllegalArgumentException(
+                    "valid_zero batch may only contain auditable valid_zero observations");
         }
         if (qualityStatus == RiskDataQualityStatus.UNAVAILABLE) {
             if (!observations.isEmpty() || !events.isEmpty() || !industryExposures.isEmpty()) {

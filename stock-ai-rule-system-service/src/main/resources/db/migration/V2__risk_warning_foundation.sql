@@ -19,7 +19,50 @@ WHERE signal_direction IS NULL;
 
 ALTER TABLE stock_signal_daily
     MODIFY COLUMN signal_direction VARCHAR(16) NOT NULL DEFAULT 'watch' COMMENT '信号方向：bullish/bearish/watch',
+    ADD COLUMN signal_content_fingerprint CHAR(64) CHARACTER SET ascii
+        GENERATED ALWAYS AS (
+            SHA2(CAST(JSON_ARRAY(
+                symbol, signal_date, `signal`, signal_direction, signal_level,
+                bullish_score, bearish_score, risk_score, confidence,
+                triggered_rules, explanation, risk_disclaimer
+            ) AS CHAR), 256)
+        ) STORED COMMENT '正式信号全部业务内容的确定性 SHA-256 指纹',
     ADD KEY idx_stock_signal_daily_direction_date (signal_direction, signal_date);
+
+CREATE TABLE stock_signal_daily_history (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    signal_id BIGINT NOT NULL COMMENT 'stock_signal_daily.id，同一正式信号的稳定标识',
+    version_no BIGINT NOT NULL COMMENT '同一正式信号内单调递增的内容版本号',
+    symbol VARCHAR(32) NOT NULL,
+    signal_date DATE NOT NULL,
+    `signal` VARCHAR(32) NULL COMMENT '保留 high_risk 等历史信号值用于审计',
+    signal_direction VARCHAR(16) NOT NULL COMMENT 'bullish/bearish/watch',
+    signal_level VARCHAR(32) NULL,
+    bullish_score DECIMAL(10,4) NULL,
+    bearish_score DECIMAL(10,4) NULL,
+    risk_score DECIMAL(10,4) NULL,
+    confidence DECIMAL(10,4) NULL,
+    triggered_rules JSON NULL,
+    explanation TEXT NULL,
+    risk_disclaimer VARCHAR(512) NULL,
+    content_fingerprint CHAR(64) CHARACTER SET ascii NOT NULL COMMENT '由正式表统一生成的全业务内容 SHA-256 指纹',
+    available_at DATETIME(3) NOT NULL COMMENT '该版本首次可供风险闸门使用的时间',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_stock_signal_daily_history_version (signal_id, version_no),
+    KEY idx_stock_signal_daily_history_pit (signal_date, symbol, available_at, id),
+    KEY idx_stock_signal_daily_history_signal (signal_id, available_at, id),
+    KEY idx_stock_signal_daily_history_fingerprint (signal_id, content_fingerprint)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='正式股票信号的追加式版本历史';
+
+INSERT INTO stock_signal_daily_history (
+    signal_id, version_no, symbol, signal_date, `signal`, signal_direction, signal_level,
+    bullish_score, bearish_score, risk_score, confidence, triggered_rules,
+    explanation, risk_disclaimer, content_fingerprint, available_at
+)
+SELECT id, 1, symbol, signal_date, `signal`, signal_direction, signal_level,
+       bullish_score, bearish_score, risk_score, confidence, triggered_rules,
+       explanation, risk_disclaimer, signal_content_fingerprint, CURRENT_TIMESTAMP(3)
+FROM stock_signal_daily;
 
 CREATE TABLE risk_object_exposure (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -54,6 +97,7 @@ CREATE TABLE risk_indicator_observation (
     trade_date DATE NOT NULL,
     dimension_code CHAR(1) NOT NULL COMMENT 'V/T/S/C/A',
     indicator_code VARCHAR(64) NOT NULL,
+    component_code VARCHAR(64) NOT NULL COMMENT '复合指标子项；单项默认与指标代码一致',
     indicator_value DECIMAL(30,10) NULL COMMENT '不可用时保持 NULL，不以 0 代替',
     unit VARCHAR(32) NOT NULL,
     observed_at DATETIME(3) NOT NULL,
@@ -63,7 +107,7 @@ CREATE TABLE risk_indicator_observation (
     payload_json JSON NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY uk_risk_indicator_object_code_date_source (
-        object_type, object_id, horizon, trade_date, indicator_code, source
+        object_type, object_id, horizon, trade_date, indicator_code, component_code, available_at, source
     ),
     KEY idx_risk_indicator_object_date (object_type, object_id, trade_date),
     KEY idx_risk_indicator_dimension_date (dimension_code, trade_date),

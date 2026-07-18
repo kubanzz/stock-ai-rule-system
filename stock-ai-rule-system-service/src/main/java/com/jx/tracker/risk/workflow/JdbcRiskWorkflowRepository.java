@@ -91,9 +91,9 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         jdbcTemplate.update("""
                 INSERT INTO risk_indicator_observation (
                     object_type, object_id, horizon, trade_date, dimension_code,
-                    indicator_code, indicator_value, unit, observed_at, available_at,
+                    indicator_code, component_code, indicator_value, unit, observed_at, available_at,
                     source, quality_status, payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     indicator_value = VALUES(indicator_value), unit = VALUES(unit),
                     observed_at = VALUES(observed_at), available_at = VALUES(available_at),
@@ -101,7 +101,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 """,
                 observation.object().objectType().getCode(), observation.object().objectId(),
                 observation.horizon().getCode(), observation.tradeDate(), observation.dimension().getCode(),
-                observation.indicatorCode(), observation.value(), observation.unit(),
+                observation.indicatorCode(), observation.componentCode(), observation.value(), observation.unit(),
                 observation.observedAt(), observation.availableAt(), observation.source(),
                 observation.qualityStatus().getCode(), json(observation.attributes()));
     }
@@ -224,7 +224,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     .addValue("horizons", request.horizons().stream().map(RiskHorizon::getCode).toList());
             return namedJdbcTemplate.query("""
                     SELECT object_type, object_id, horizon, trade_date, dimension_code,
-                           indicator_code, indicator_value, unit, observed_at, available_at,
+                           indicator_code, component_code, indicator_value, unit, observed_at, available_at,
                            source, quality_status, payload_json
                     FROM risk_indicator_observation
                     WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
@@ -427,7 +427,8 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 object(resultSet), RiskHorizon.fromCode(resultSet.getString("horizon")),
                 resultSet.getObject("trade_date", LocalDate.class),
                 RiskDimension.fromCode(resultSet.getString("dimension_code")),
-                resultSet.getString("indicator_code"), resultSet.getBigDecimal("indicator_value"),
+                resultSet.getString("indicator_code"), resultSet.getString("component_code"),
+                resultSet.getBigDecimal("indicator_value"),
                 resultSet.getString("unit"), resultSet.getTimestamp("observed_at").toLocalDateTime(),
                 resultSet.getTimestamp("available_at").toLocalDateTime(), resultSet.getString("source"),
                 RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")),

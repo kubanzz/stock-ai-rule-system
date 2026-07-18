@@ -27,6 +27,7 @@ class RiskMigrationContractTest {
         assertThat(migration).contains(
                 "CREATE TABLE risk_object_exposure",
                 "CREATE TABLE risk_indicator_observation",
+                "component_code VARCHAR(64) NOT NULL",
                 "CREATE TABLE risk_event_fact",
                 "CREATE TABLE risk_score_snapshot",
                 "CREATE TABLE risk_score_evidence",
@@ -40,6 +41,7 @@ class RiskMigrationContractTest {
                 "layer_object_id VARCHAR(64) NOT NULL",
                 "UNIQUE KEY uk_risk_score_snapshot_object_horizon_date_model",
                 "UNIQUE KEY uk_risk_score_evidence_snapshot_layer_indicator_source",
+                "object_type, object_id, horizon, trade_date, indicator_code, component_code, available_at, source",
                 "CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100))",
                 "CHECK (m_score IS NULL OR (m_score >= 0.90 AND m_score <= 1.20))",
                 "CHECK (risk_confidence IS NULL OR (risk_confidence >= 0 AND risk_confidence <= 1))",
@@ -102,6 +104,25 @@ class RiskMigrationContractTest {
                 "ELSE 'watch'"
         );
         assertThat(migration).doesNotContain("UPDATE stock_signal_daily SET `signal`");
+    }
+
+    @Test
+    void signalMigrationCreatesAppendOnlyPointInTimeHistoryAndSeedsExistingRows() throws IOException {
+        String migration = resource("/db/migration/V2__risk_warning_foundation.sql");
+
+        assertThat(migration).contains(
+                "CREATE TABLE stock_signal_daily_history",
+                "signal_id BIGINT NOT NULL",
+                "signal_direction VARCHAR(16) NOT NULL",
+                "available_at DATETIME(3) NOT NULL",
+                "content_fingerprint CHAR(64) CHARACTER SET ascii NOT NULL",
+                "UNIQUE KEY uk_stock_signal_daily_history_version (signal_id, version_no)",
+                "KEY idx_stock_signal_daily_history_pit (signal_date, symbol, available_at, id)",
+                "INSERT INTO stock_signal_daily_history",
+                "SELECT id, 1, symbol, signal_date, `signal`, signal_direction",
+                "CURRENT_TIMESTAMP(3)"
+        );
+        assertThat(migration).doesNotContain("COALESCE(created_at, CURRENT_TIMESTAMP(3))");
     }
 
     private String resource(String path) throws IOException {

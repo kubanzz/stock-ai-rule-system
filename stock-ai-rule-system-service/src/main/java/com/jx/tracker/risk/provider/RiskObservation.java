@@ -16,6 +16,7 @@ public record RiskObservation(
         LocalDate tradeDate,
         RiskDimension dimension,
         String indicatorCode,
+        String componentCode,
         BigDecimal value,
         String unit,
         LocalDateTime observedAt,
@@ -31,12 +32,43 @@ public record RiskObservation(
         required(tradeDate, "tradeDate");
         required(dimension, "dimension");
         notBlank(indicatorCode, "indicatorCode");
+        notBlank(componentCode, "componentCode");
         required(qualityStatus, "qualityStatus");
         validateValue(value, qualityStatus);
         notBlank(unit, "unit");
         availabilityOrder(observedAt, availableAt);
         notBlank(source, "source");
         attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+    }
+
+    /**
+     * 兼容单分量调用；市场复合指标以 attributes.metric 作为稳定分量身份。
+     */
+    public RiskObservation(
+            RiskObjectKey object,
+            RiskHorizon horizon,
+            LocalDate tradeDate,
+            RiskDimension dimension,
+            String indicatorCode,
+            BigDecimal value,
+            String unit,
+            LocalDateTime observedAt,
+            LocalDateTime availableAt,
+            String source,
+            RiskDataQualityStatus qualityStatus,
+            Map<String, Object> attributes
+    ) {
+        this(object, horizon, tradeDate, dimension, indicatorCode,
+                inferredComponentCode(indicatorCode, attributes), value, unit, observedAt,
+                availableAt, source, qualityStatus, attributes);
+    }
+
+    private static String inferredComponentCode(String indicatorCode, Map<String, Object> attributes) {
+        Object metric = attributes == null ? null : attributes.get("metric");
+        if (metric == null || metric.toString().isBlank()) {
+            return indicatorCode;
+        }
+        return metric.toString();
     }
 
     private static void validateValue(BigDecimal value, RiskDataQualityStatus qualityStatus) {

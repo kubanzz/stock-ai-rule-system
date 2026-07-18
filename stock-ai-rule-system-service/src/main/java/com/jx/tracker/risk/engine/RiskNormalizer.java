@@ -112,7 +112,8 @@ public final class RiskNormalizer {
                 continue;
             }
             ObservationSeriesKey observationSeriesKey = new ObservationSeriesKey(
-                    observation.object(), observation.dimension(), observation.indicatorCode()
+                    observation.object(), observation.dimension(), observation.indicatorCode(),
+                    observation.componentCode()
             );
             if (seriesKey == null) {
                 seriesKey = observationSeriesKey;
@@ -138,7 +139,7 @@ public final class RiskNormalizer {
     }
 
     private RiskNormalizationResult insufficientIfNeeded(List<BigDecimal> values, RiskHorizon horizon) {
-        if (values.size() < RiskHorizonProfile.forHorizon(horizon).primaryWindow()) {
+        if (values.size() < RiskHorizonProfile.forHorizon(horizon).maxHistoryDays()) {
             return insufficient(values.size());
         }
         return null;
@@ -165,7 +166,8 @@ public final class RiskNormalizer {
     private record ObservationSeriesKey(
             RiskObjectKey object,
             RiskDimension dimension,
-            String indicatorCode
+            String indicatorCode,
+            String componentCode
     ) {
     }
 }

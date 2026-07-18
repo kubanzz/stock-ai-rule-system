@@ -87,12 +87,24 @@ class RiskWorkflowPlannerTest {
         var request = plan.dailyRequest(
                 TRADE_DATE, AS_OF, List.of(), "risk-runtime-v1", LocalTime.of(19, 0));
 
-        assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(5));
+        assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(6));
         assertThat(request.scoreStartDate()).isEqualTo(TRADE_DATE);
         assertThat(request.endDate()).isEqualTo(TRADE_DATE);
         assertThat(request.asOf()).isEqualTo(AS_OF);
         assertThat(request.modelVersion()).isEqualTo("risk-runtime-v1");
         assertThat(request.afterCloseCutoff()).isEqualTo(LocalTime.of(19, 0));
+    }
+
+    @Test
+    void planBuildsFiveYearBackfillWithASeparateSixYearBaselineBuffer() {
+        RiskWorkflowPlan plan = planner().plan(List.of("600519.SH"));
+
+        var request = plan.fiveYearBackfillRequest(
+                TRADE_DATE, AS_OF, List.of(), "risk-runtime-v1", LocalTime.of(19, 0));
+
+        assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(11));
+        assertThat(request.scoreStartDate()).isEqualTo(TRADE_DATE.minusYears(5));
+        assertThat(request.endDate()).isEqualTo(TRADE_DATE);
     }
 
     @Test
