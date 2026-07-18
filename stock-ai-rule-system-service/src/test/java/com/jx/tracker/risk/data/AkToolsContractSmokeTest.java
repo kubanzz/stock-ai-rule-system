@@ -44,7 +44,7 @@ class AkToolsContractSmokeTest {
 
     private void verify(EndpointSpec spec) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri(spec.path(), spec.query()))
-                .timeout(Duration.ofSeconds(90))
+                .timeout(Duration.ofSeconds(180))
                 .GET()
                 .build();
         HttpResponse<String> response = HTTP_CLIENT.send(
