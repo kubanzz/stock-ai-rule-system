@@ -61,7 +61,7 @@ class RiskAssessmentQueryServiceImplTest {
         when(evidenceMapper.selectBySnapshotIds(List.of(1L, 2L, 3L)))
                 .thenReturn(List.of(unavailable, activeTrigger));
         when(exposureMapper.selectActiveParents("stock", "600519.SH", TRADE_DATE, CALCULATED_AT))
-                .thenReturn(List.of(exposure("sector", "BK0475", "stale")));
+                .thenReturn(List.of(exposure("sector", "BK0475", "available")));
 
         RiskObjectDetail detail = service.objectDetail("stock", "600519.SH", null, null);
 
@@ -125,6 +125,39 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
+    void overviewMasksStaleMarketAndExcludesStaleCriticalFromCountsAndHighRiskFilter() {
+        RiskScoreSnapshotEntity staleMarket = snapshot(
+                11L, "1-5d", "0.90", "stale", "critical", "market", "CN-A");
+        RiskScoreSnapshotEntity staleCritical = snapshot(
+                12L, "1-5d", "0.90", "stale", "critical", "stock", "600519.SH");
+        RiskScoreSnapshotEntity availableCritical = snapshot(
+                13L, "1-5d", "0.90", "available", "critical", "stock", "000001.SZ");
+        availableCritical.setObjectName("平安银行");
+        when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
+        when(snapshotMapper.selectForOverview("1-5d", TRADE_DATE))
+                .thenReturn(List.of(staleMarket, staleCritical, availableCritical));
+
+        var overview = service.overview("1-5d", null);
+
+        assertThat(overview.marketSnapshot()).satisfies(snapshot -> {
+            assertThat(snapshot.totalScore()).isNull();
+            assertThat(snapshot.level()).isNull();
+            assertThat(snapshot.stage()).isNull();
+            assertThat(snapshot.riskConfidence()).isNull();
+            assertThat(snapshot.completeness()).isEqualByComparingTo("0.90");
+            assertThat(snapshot.modelVersion()).isEqualTo("risk-v1");
+            assertThat(snapshot.calculatedAt()).isEqualTo(CALCULATED_AT);
+        });
+        assertThat(overview.levelCounts()).filteredOn(item -> item.level().equals("critical"))
+                .singleElement().satisfies(item -> assertThat(item.count()).isEqualTo(1));
+        assertThat(overview.highRiskObjects()).singleElement().satisfies(item -> {
+            assertThat(item.object().objectId()).isEqualTo("000001.SZ");
+            assertThat(item.snapshot().totalScore()).isEqualByComparingTo("75");
+            assertThat(item.snapshot().level()).isEqualTo("critical");
+        });
+    }
+
+    @Test
     void overviewWithoutAnyAvailableTradeDateDoesNotBreakNonNullFrontendContract() {
         when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(null);
 
@@ -183,6 +216,34 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
+    void levelFilteredPageDoesNotExposeAFormalConclusionForStaleRows() {
+        RiskScoreSnapshotEntity staleCritical = snapshot(
+                21L, "1-5d", "0.95", "stale", "critical", "stock", "600519.SH");
+        when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
+        when(snapshotMapper.countObjectPage(
+                "stock", "critical", "1-5d", TRADE_DATE, null, null, null
+        )).thenReturn(1L);
+        when(snapshotMapper.selectObjectPage(
+                "stock", "critical", "1-5d", TRADE_DATE, null,
+                null, null, 0L, 20
+        )).thenReturn(List.of(staleCritical));
+
+        PageResult<RiskObjectListItem> page = service.listObjects(
+                "stock", "critical", "1-5d", null, null,
+                null, null, 1, 20);
+
+        assertThat(page.getRows()).singleElement().satisfies(item -> {
+            assertThat(item.snapshot().totalScore()).isNull();
+            assertThat(item.snapshot().level()).isNull();
+            assertThat(item.snapshot().stage()).isNull();
+            assertThat(item.snapshot().riskConfidence()).isNull();
+            assertThat(item.snapshot().completeness()).isEqualByComparingTo("0.95");
+            assertThat(item.snapshot().modelVersion()).isEqualTo("risk-v1");
+            assertThat(item.snapshot().calculatedAt()).isEqualTo(CALCULATED_AT);
+        });
+    }
+
+    @Test
     void parentFilterRequiresBothStableTypeAndId() {
         assertThatThrownBy(() -> service.listObjects(
                 "stock", null, "1-5d", TRADE_DATE, null,
@@ -194,14 +255,34 @@ class RiskAssessmentQueryServiceImplTest {
     @Test
     void detailQueryAndTrendRespectRequestedHorizonAndDateRange() {
         RiskScoreSnapshotEntity longTerm = snapshot(4L, "20-60d", "0.90", "stale", "watch");
+        RiskScoreEvidenceEntity staleEvidence = evidence(41L, 4L, "T", "credit_event", "stale");
+        staleEvidence.setEvidenceJson("{\"qualityHint\":\"源数据已过期\",\"auditId\":\"audit-41\"}");
         when(snapshotMapper.selectForObject("stock", "600519.SH", "20-60d", TRADE_DATE))
                 .thenReturn(List.of(longTerm));
-        when(evidenceMapper.selectBySnapshotIds(List.of(4L))).thenReturn(List.of());
+        when(evidenceMapper.selectBySnapshotIds(List.of(4L))).thenReturn(List.of(staleEvidence));
         when(exposureMapper.selectActiveParents("stock", "600519.SH", TRADE_DATE, CALCULATED_AT))
                 .thenReturn(List.of());
 
         var detail = service.objectDetail("stock", "600519.SH", "20-60d", TRADE_DATE);
         assertThat(detail.snapshot().horizon()).isEqualTo("20-60d");
+        assertThat(detail.snapshot().totalScore()).isNull();
+        assertThat(detail.snapshot().level()).isNull();
+        assertThat(detail.snapshot().stage()).isNull();
+        assertThat(detail.snapshot().riskConfidence()).isNull();
+        assertThat(detail.snapshot().completeness()).isEqualByComparingTo("0.90");
+        assertThat(detail.snapshot().modelVersion()).isEqualTo("risk-v1");
+        assertThat(detail.snapshot().calculatedAt()).isEqualTo(CALCULATED_AT);
+        assertThat(detail.snapshot().evidence()).singleElement().satisfies(item -> {
+            assertThat(item.qualityStatus()).isEqualTo("stale");
+            assertThat(item.rawValue()).isNull();
+            assertThat(item.score()).isNull();
+            assertThat(item.source()).isEqualTo("test");
+            assertThat(item.observedAt()).isEqualTo(CALCULATED_AT.minusHours(1));
+            assertThat(item.availableAt()).isEqualTo(CALCULATED_AT);
+            assertThat(item.details())
+                    .containsEntry("qualityHint", "源数据已过期")
+                    .containsEntry("auditId", "audit-41");
+        });
         assertThat(detail.snapshots()).singleElement();
 
         LocalDate start = LocalDate.of(2026, 7, 1);
@@ -211,8 +292,10 @@ class RiskAssessmentQueryServiceImplTest {
 
         assertThat(trend).singleElement().satisfies(point -> {
             assertThat(point.tradeDate()).isEqualTo(TRADE_DATE);
-            assertThat(point.level()).isEqualTo("watch");
-            assertThat(point.totalScore()).isEqualByComparingTo("75");
+            assertThat(point.vScore()).isNull();
+            assertThat(point.totalScore()).isNull();
+            assertThat(point.level()).isNull();
+            assertThat(point.completeness()).isEqualByComparingTo("0.90");
         });
         verify(snapshotMapper).selectTrend("stock", "600519.SH", "20-60d", start, TRADE_DATE);
     }

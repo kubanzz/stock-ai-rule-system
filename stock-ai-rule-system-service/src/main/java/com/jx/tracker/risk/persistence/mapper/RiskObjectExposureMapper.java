@@ -18,6 +18,7 @@ public interface RiskObjectExposureMapper extends BaseMapper<RiskObjectExposureE
               AND valid_from <= #{tradeDate}
               AND (valid_to IS NULL OR valid_to >= #{tradeDate})
               AND available_at <= #{asOf}
+              AND quality_status IN ('available', 'valid_zero')
             ORDER BY exposure_weight DESC, parent_object_type, parent_object_id
             """)
     List<RiskObjectExposureEntity> selectActiveParents(
