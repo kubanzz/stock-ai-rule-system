@@ -99,14 +99,15 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                         sourceBatch.source(), sourceBatch.nextCheckpoint(), sourceBatch.fetchedAt()
                 );
             }
+            List<IndustryExposure> industryExposures = typedIndustryExposures(dataset, eligible);
             List<RiskObservation> observations = transform(dataset, eligible, request);
-            if (observations.isEmpty()) {
+            if (observations.isEmpty() && industryExposures.isEmpty()) {
                 return RiskProviderBatch.validZero(
                         sourceBatch.source(), sourceBatch.nextCheckpoint(), sourceBatch.fetchedAt()
                 );
             }
             return new RiskProviderBatch(
-                    sourceBatch.source(), observations, List.of(), sourceBatch.nextCheckpoint(),
+                    sourceBatch.source(), observations, List.of(), industryExposures, sourceBatch.nextCheckpoint(),
                     RiskDataQualityStatus.AVAILABLE, null, sourceBatch.fetchedAt()
             );
         } catch (RuntimeException exception) {
@@ -199,7 +200,14 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         if (record.availableAt().isAfter(evaluationCutoff)) {
             return false;
         }
+        if ((dataset == MarketDatasetCode.CN_A_STOCK_MASTER || dataset == MarketDatasetCode.SW1_MEMBERSHIP)
+                && !request.objects().contains(record.object())) {
+            return false;
+        }
         validateCanonicalObject(record.object());
+        if (record instanceof IndustryExposure exposure) {
+            validateCanonicalObject(exposure.sector());
+        }
         if (dataset == MarketDatasetCode.CN_A_STOCK_MASTER || dataset == MarketDatasetCode.SW1_MEMBERSHIP) {
             return true;
         }
@@ -248,11 +256,13 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
     }
 
     private String sourceRecordKey(MarketSourceRecord record) {
-        String suffix = record instanceof IndustryExposure exposure
-                ? ":" + exposure.sector().objectId() + ":" + exposure.validFrom() + ":" + exposure.validTo()
-                : "";
+        if (record instanceof IndustryExposure exposure) {
+            return record.getClass().getName() + ":" + exposure.stock().objectType().getCode() + ":"
+                    + exposure.stock().objectId() + ":" + exposure.sector().objectId() + ":"
+                    + exposure.validFrom() + ":" + exposure.source();
+        }
         return record.getClass().getName() + ":" + record.object().objectType().getCode() + ":"
-                + record.object().objectId() + ":" + record.tradeDate() + suffix;
+                + record.object().objectId() + ":" + record.tradeDate();
     }
 
     private void validateCanonicalObject(RiskObjectKey object) {
@@ -279,6 +289,18 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             case BREADTH -> breadth(records, request);
             case CROSS_MARKET -> crossMarket(records, request);
         };
+    }
+
+    private List<IndustryExposure> typedIndustryExposures(
+            MarketDatasetCode dataset,
+            List<MarketSourceRecord> records
+    ) {
+        if (dataset != MarketDatasetCode.SW1_MEMBERSHIP) {
+            return List.of();
+        }
+        return records.stream()
+                .map(record -> cast(record, IndustryExposure.class))
+                .toList();
     }
 
     private List<RiskObservation> stockMaster(
