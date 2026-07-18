@@ -101,7 +101,14 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
             }
             if (current.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
                 components.add(new ComponentScore(componentCode, BigDecimal.ZERO, BigDecimal.ZERO,
-                        RiskDataQualityStatus.VALID_ZERO, 1, current.source(),
+                        RiskDataQualityStatus.VALID_ZERO, 1, "valid_zero", current.source(),
+                        current.observedAt(), current.availableAt()));
+                continue;
+            }
+            if (isDirectRiskScore(current)) {
+                BigDecimal directScore = current.value().setScale(4, RoundingMode.HALF_UP);
+                components.add(new ComponentScore(componentCode, directScore, directScore,
+                        RiskDataQualityStatus.AVAILABLE, 1, "direct_0_100", current.source(),
                         current.observedAt(), current.availableAt()));
                 continue;
             }
@@ -116,7 +123,7 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
             }
             BigDecimal oriented = orient(indicator.indicatorCode(), componentCode, normalized.value());
             components.add(new ComponentScore(componentCode, oriented, current.value(),
-                    RiskDataQualityStatus.AVAILABLE, normalized.sampleCount(), current.source(),
+                    RiskDataQualityStatus.AVAILABLE, normalized.sampleCount(), "rolling_percentile", current.source(),
                     current.observedAt(), current.availableAt()));
         }
 
@@ -133,7 +140,8 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
 
     private Map<String, Object> details(RiskObservation representative, List<ComponentScore> components) {
         Map<String, Object> details = new LinkedHashMap<>();
-        details.put("normalization", "rolling_percentile");
+        List<String> normalizations = components.stream().map(ComponentScore::normalization).distinct().toList();
+        details.put("normalization", normalizations.size() == 1 ? normalizations.getFirst() : "mixed");
         details.put("sampleCount", components.stream().mapToInt(ComponentScore::sampleCount).min().orElse(0));
         details.put("tradeDate", representative.tradeDate().toString());
         details.put("extremeCandidate", representative.dimension() == RiskDimension.LOCAL_CONFIRMATION
@@ -143,7 +151,8 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
         for (ComponentScore component : components) {
             componentValues.put(component.code(), Map.of(
                     "rawValue", component.rawValue(), "score", component.score(),
-                    "sampleCount", component.sampleCount(), "source", component.source(),
+                    "sampleCount", component.sampleCount(), "normalization", component.normalization(),
+                    "source", component.source(),
                     "observedAt", component.observedAt().toString(),
                     "availableAt", component.availableAt().toString()));
             directions.put(component.code(), RiskIndicatorComponentCatalog
@@ -180,6 +189,12 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
                 .divide(BigDecimal.valueOf(values.size()), 4, RoundingMode.HALF_UP);
     }
 
+    private boolean isDirectRiskScore(RiskObservation observation) {
+        return "score".equals(observation.unit())
+                && Boolean.TRUE.equals(observation.attributes().get("alreadyNormalizedRiskScore"))
+                && "direct-0-100-v1".equals(observation.attributes().get("normalizationContract"));
+    }
+
     private record IndicatorKey(RiskDimension dimension, String indicatorCode) {
     }
 
@@ -192,6 +207,7 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
             BigDecimal rawValue,
             RiskDataQualityStatus qualityStatus,
             int sampleCount,
+            String normalization,
             String source,
             LocalDateTime observedAt,
             LocalDateTime availableAt

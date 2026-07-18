@@ -87,7 +87,7 @@ class RiskWarningWorkflowTest {
         RiskWorkflowRunSummary first = workflow.run(request);
         RiskWorkflowRunSummary second = workflow.run(request);
 
-        assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(5));
+        assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(6));
         assertThat(request.scoreStartDate()).isEqualTo(DATE);
         assertThat(provider.requests()).hasSize(2);
         assertThat(provider.requests().get(0).checkpoint()).isNull();
@@ -119,7 +119,7 @@ class RiskWarningWorkflowTest {
                 DATE, AS_OF,
                 List.of(new RiskCollectionTask("provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
                 List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
-        assertThat(backfill.collectionStartDate()).isEqualTo(DATE.minusYears(5));
+        assertThat(backfill.collectionStartDate()).isEqualTo(DATE.minusYears(11));
         assertThat(backfill.scoreStartDate()).isEqualTo(DATE.minusYears(5));
 
         InMemoryRepository repository = new InMemoryRepository();
@@ -655,10 +655,11 @@ class RiskWarningWorkflowTest {
                 return RiskProviderBatch.validZero("fixture-flow", null, AS_OF);
             }
         };
+        DelegatingCapturingEvaluator evaluator = new DelegatingCapturingEvaluator();
         RiskWarningWorkflow workflow = new RiskWarningWorkflow(
                 List.of(marketProvider, emptyFlowProvider), repository,
                 new PercentileRiskEvidenceAssembler(new RiskNormalizer()),
-                new DefaultRiskSnapshotEvaluator(new RiskScoringEngine()), new ShadowRiskGate());
+                evaluator, new ShadowRiskGate());
 
         workflow.run(RiskWorkflowRequest.daily(
                 DATE, AS_OF, plan.collectionTasks(), List.of(RiskHorizon.SHORT_TERM),
@@ -676,12 +677,22 @@ class RiskWarningWorkflowTest {
         assertThat(sector.evidence()).filteredOn(item -> item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
                 .allSatisfy(item -> assertThat(item.details())
                         .containsEntry("inherited", true)
-                        .containsEntry("inheritedFromObjectId", "CN-A"));
-        assertThat(stock.sScore()).isEqualByComparingTo(market.sScore());
+                        .containsEntry("inheritedFromObjectId", "CN-A")
+                        .containsEntry("layerObjectType", "market")
+                        .containsEntry("layerObjectId", "CN-A"));
+        assertThat(stock.sScore()).isEqualByComparingTo(market.sScore().multiply(new BigDecimal("0.25")));
         assertThat(stock.evidence()).filteredOn(item ->
-                        item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION
-                                && STOCK.objectId().equals(item.details().get("layerObjectId")))
-                .allSatisfy(item -> assertThat(item.details()).containsEntry("inherited", true));
+                        item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .allSatisfy(item -> assertThat(item.details())
+                        .containsEntry("layerObjectId", "CN-A")
+                        .doesNotContainKey("inherited"));
+        assertThat(evaluator.rawRequests.get(STOCK).evidence()).filteredOn(item ->
+                        item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .allSatisfy(item -> assertThat(item.details())
+                        .containsEntry("inherited", true)
+                        .containsEntry("inheritedFromObjectId", "CN-A")
+                        .containsEntry("layerObjectType", "market")
+                        .containsEntry("layerObjectId", "CN-A"));
     }
 
     private RiskSnapshot storedSnapshot(InMemoryRepository repository, RiskObjectKey object) {
@@ -695,8 +706,19 @@ class RiskWarningWorkflowTest {
     private List<RiskObservation> fullBaselineObservations() {
         List<RiskObservation> observations = new ArrayList<>();
         List<RiskObjectKey> localObjects = List.of(MARKET, SECTOR, STOCK);
+        List<LocalDate> tradingDates = new ArrayList<>();
+        tradingDates.add(DATE);
+        LocalDate candidate = DATE.minusDays(1);
+        while (tradingDates.size() < 1_250) {
+            if (candidate.getDayOfWeek() != java.time.DayOfWeek.SATURDAY
+                    && candidate.getDayOfWeek() != java.time.DayOfWeek.SUNDAY) {
+                tradingDates.add(candidate);
+            }
+            candidate = candidate.minusDays(1);
+        }
+        java.util.Collections.reverse(tradingDates);
         for (int index = 0; index < 1_250; index++) {
-            LocalDate date = DATE.minusDays(1_249L - index);
+            LocalDate date = tradingDates.get(index);
             BigDecimal value = BigDecimal.valueOf(index % 100 + 1L);
             for (var definition : RiskIndicatorCatalog.definitions()) {
                 if (definition.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER) {
@@ -1055,6 +1077,23 @@ class RiskWarningWorkflowTest {
                     request.composition().coverage(), request.composition().riskConfidence(),
                     request.composition().evidence(), request.modelVersion(), request.asOf());
             return new RiskScoreResult(snapshot, List.of());
+        }
+    }
+
+    private static final class DelegatingCapturingEvaluator implements RiskSnapshotEvaluator {
+        private final DefaultRiskSnapshotEvaluator delegate =
+                new DefaultRiskSnapshotEvaluator(new RiskScoringEngine());
+        private final Map<RiskObjectKey, RiskScoreRequest> rawRequests = new LinkedHashMap<>();
+
+        @Override
+        public RiskScoreResult evaluate(RiskScoreRequest request) {
+            rawRequests.put(request.object(), request);
+            return delegate.evaluate(request);
+        }
+
+        @Override
+        public RiskScoreResult evaluateLayers(RiskLayerScoreRequest request) {
+            return delegate.evaluateLayers(request);
         }
     }
 

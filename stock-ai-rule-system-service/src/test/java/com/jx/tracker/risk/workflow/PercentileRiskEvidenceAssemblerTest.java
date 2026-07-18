@@ -121,6 +121,29 @@ class PercentileRiskEvidenceAssemblerTest {
                 List.of("declineRatio", "newLowRatio", "belowMovingAverageRatio"), true);
     }
 
+    @Test
+    void usesAuditedZeroToOneHundredEventSeverityDirectlyWithoutAHistoryBaseline() {
+        RiskObjectKey object = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+        LocalDate tradeDate = LocalDate.of(2026, 7, 18);
+        RiskObservation severity = new RiskObservation(
+                object, RiskHorizon.SHORT_TERM, tradeDate, RiskDimension.SUBSTANTIVE_TRIGGER,
+                "T4", "T4", new BigDecimal("73"), "score",
+                tradeDate.atTime(18, 0), tradeDate.atTime(19, 0), "event-source",
+                RiskDataQualityStatus.AVAILABLE,
+                Map.of("alreadyNormalizedRiskScore", true, "normalizationContract", "direct-0-100-v1"));
+
+        List<RiskEvidence> evidence = new PercentileRiskEvidenceAssembler(new RiskNormalizer())
+                .assemble(object, RiskHorizon.SHORT_TERM, tradeDate, tradeDate.atTime(20, 0),
+                        List.of(severity));
+
+        assertThat(evidence).singleElement().satisfies(item -> {
+            assertThat(item.score()).isEqualByComparingTo("73.0000");
+            assertThat(item.rawValue()).isEqualByComparingTo("73.0000");
+            assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(item.details()).containsEntry("normalization", "direct_0_100");
+        });
+    }
+
     private void assertCompositeRisk(
             String indicator,
             RiskDimension dimension,

@@ -8,9 +8,14 @@ import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
+import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
+import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.workflow.JdbcRiskWorkflowRepository;
+import com.jx.tracker.risk.workflow.RiskCollectionTask;
+import com.jx.tracker.risk.workflow.RiskWorkflowRequest;
 import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -69,6 +74,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(repeated.migrationsExecuted).isZero();
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
+            assertObservationCorrectionsRemainPointInTime(schema);
             assertLayeredEvidenceDoesNotOverwrite(schema);
             assertExposureRevisionIsMonotonic(schema);
             assertSignalHistoryOnlyAppendsContentChanges(schema);
@@ -115,6 +121,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(currentVersion(schema)).isEqualTo("2");
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
+            assertObservationCorrectionsRemainPointInTime(schema);
             assertLayeredEvidenceDoesNotOverwrite(schema);
             assertExposureRevisionIsMonotonic(schema);
             assertSeedUsesOneConservativeMigrationTime(schema, migrationStartedAt, migrationFinishedAt);
@@ -188,6 +195,63 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(result.next()).isTrue();
             assertThat(result.getInt(1)).isEqualTo(2);
         }
+    }
+
+    private void assertObservationCorrectionsRemainPointInTime(String schema) {
+        JdbcTemplate jdbc = jdbc(schema);
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime firstAvailableAt = date.atTime(18, 0);
+        LocalDateTime correctedAvailableAt = date.atTime(19, 0);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "601398.SH");
+        RiskObservation original = new RiskObservation(
+                stock, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V3", new BigDecimal("10"), "ratio", date.atTime(15, 0), firstAvailableAt,
+                "mysql-smoke", RiskDataQualityStatus.AVAILABLE, Map.of("revision", "original"));
+        RiskObservation correction = new RiskObservation(
+                stock, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V3", new BigDecimal("20"), "ratio", date.atTime(15, 0), correctedAvailableAt,
+                "mysql-smoke", RiskDataQualityStatus.AVAILABLE, Map.of("revision", "correction"));
+
+        repository.saveObservation(original);
+        repository.saveObservation(original);
+        repository.saveObservation(correction);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM risk_indicator_observation
+                WHERE object_type = 'stock' AND object_id = '601398.SH'
+                  AND indicator_code = 'V3' AND trade_date = '2026-07-18'
+                """, Integer.class)).isEqualTo(2);
+        List<RiskObservation> beforeCorrection = repository.findObservations(
+                        dailyRequest(date, firstAvailableAt.plusMinutes(30), stock)).stream()
+                .filter(observation -> observation.object().equals(stock))
+                .filter(observation -> observation.indicatorCode().equals("V3"))
+                .toList();
+        List<RiskObservation> afterCorrection = repository.findObservations(
+                        dailyRequest(date, correctedAvailableAt.plusMinutes(30), stock)).stream()
+                .filter(observation -> observation.object().equals(stock))
+                .filter(observation -> observation.indicatorCode().equals("V3"))
+                .toList();
+
+        assertThat(beforeCorrection).singleElement().satisfies(observation -> {
+            assertThat(observation.value()).isEqualByComparingTo("10");
+            assertThat(observation.availableAt()).isEqualTo(firstAvailableAt);
+        });
+        assertThat(afterCorrection).extracting(RiskObservation::availableAt)
+                .containsExactly(firstAvailableAt, correctedAvailableAt);
+        assertThat(afterCorrection.getLast().value()).isEqualByComparingTo("20");
+    }
+
+    private RiskWorkflowRequest dailyRequest(
+            LocalDate date,
+            LocalDateTime asOf,
+            RiskObjectKey object
+    ) {
+        return RiskWorkflowRequest.daily(
+                date, asOf,
+                List.of(new RiskCollectionTask(
+                        "mysql-smoke", "observation-revision", object.objectId(), List.of(object))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "mysql-smoke");
     }
 
     private void assertLayeredEvidenceDoesNotOverwrite(String schema) throws Exception {

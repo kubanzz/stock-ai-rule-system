@@ -21,6 +21,8 @@ public record RiskWorkflowRequest(
 ) {
 
     public static final LocalTime DEFAULT_AFTER_CLOSE_CUTOFF = LocalTime.of(20, 0);
+    public static final int BASELINE_COLLECTION_YEARS = 6;
+    public static final int BACKFILL_SCORE_YEARS = 5;
 
     public RiskWorkflowRequest {
         collectionTasks = collectionTasks == null ? List.of() : List.copyOf(collectionTasks);
@@ -64,7 +66,7 @@ public record RiskWorkflowRequest(
             String modelVersion
     ) {
         return new RiskWorkflowRequest(
-                tasks, horizons, tradeDate.minusYears(5), tradeDate, tradeDate,
+                tasks, horizons, baselineCollectionStart(tradeDate), tradeDate, tradeDate,
                 asOf, signals, modelVersion, DEFAULT_AFTER_CLOSE_CUTOFF);
     }
 
@@ -76,9 +78,17 @@ public record RiskWorkflowRequest(
             List<RiskSignalCandidate> signals,
             String modelVersion
     ) {
-        LocalDate startDate = endDate.minusYears(5);
+        LocalDate scoreStartDate = endDate.minusYears(BACKFILL_SCORE_YEARS);
         return new RiskWorkflowRequest(
-                tasks, horizons, startDate, startDate, endDate,
+                tasks, horizons, baselineCollectionStart(scoreStartDate), scoreStartDate, endDate,
                 asOf, signals, modelVersion, DEFAULT_AFTER_CLOSE_CUTOFF);
+    }
+
+    /** 六个自然年是对 1250 个 A 股交易观测的保守采集缓冲；源覆盖不足时仍保持 insufficient。 */
+    public static LocalDate baselineCollectionStart(LocalDate scoreStartDate) {
+        if (scoreStartDate == null) {
+            throw new IllegalArgumentException("scoreStartDate must not be null");
+        }
+        return scoreStartDate.minusYears(BASELINE_COLLECTION_YEARS);
     }
 }

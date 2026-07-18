@@ -214,6 +214,10 @@ public final class RiskScoringEngine {
         requireEvidence(reasons, validByCode, RiskDimension.STRUCTURAL_FRAGILITY);
         requireEvidence(reasons, validByCode, RiskDimension.LOCAL_CONFIRMATION);
         requireEvidence(reasons, validByCode, RiskDimension.FORCED_SELLING);
+        if (dimensionScores.get(RiskDimension.SUBSTANTIVE_TRIGGER) == null
+                && dimensionScores.get(RiskDimension.EXTERNAL_TRANSMISSION) == null) {
+            reasons.add("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:T_OR_S");
+        }
         boolean hasTriggerOrTransmission = validByCode.values().stream().anyMatch(evidence ->
                 evidence.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER
                         || evidence.dimension() == RiskDimension.EXTERNAL_TRANSMISSION

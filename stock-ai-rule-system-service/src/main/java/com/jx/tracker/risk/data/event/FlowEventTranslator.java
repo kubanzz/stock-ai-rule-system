@@ -92,6 +92,8 @@ public final class FlowEventTranslator {
         }
         Map<String, Object> eventPayload = new HashMap<>(attributes);
         eventPayload.put("economicMeaning", meaning.code());
+        eventPayload.put("alreadyNormalizedRiskScore", true);
+        eventPayload.put("normalizationContract", "direct-0-100-v1");
         boolean adverse = adverse(dataset, record);
         if (!adverse || (record.value() != null && record.value().signum() == 0)) {
             RiskObservation zero = observation(

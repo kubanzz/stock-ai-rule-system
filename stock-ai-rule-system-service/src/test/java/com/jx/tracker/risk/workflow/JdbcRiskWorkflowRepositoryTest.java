@@ -178,6 +178,57 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
+    void observationCorrectionsAppendByAvailabilityTimeAndRemainPointInTimeReadable() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_observation_revisions;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_observation (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL(30, 10), unit VARCHAR(32),
+                    observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), payload_json VARCHAR(1024),
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
+                           component_code, available_at, source))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime firstAvailableAt = date.atTime(18, 0);
+        LocalDateTime correctedAvailableAt = date.atTime(19, 0);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "601398.SH");
+        RiskObservation original = new RiskObservation(
+                stock, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V3", new BigDecimal("10"), "ratio", date.atTime(15, 0), firstAvailableAt,
+                "source-a", RiskDataQualityStatus.AVAILABLE, Map.of("revision", "original"));
+        RiskObservation correction = new RiskObservation(
+                stock, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V3", new BigDecimal("20"), "ratio", date.atTime(15, 0), correctedAvailableAt,
+                "source-a", RiskDataQualityStatus.AVAILABLE, Map.of("revision", "correction"));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.saveObservation(original);
+        repository.saveObservation(original);
+        repository.saveObservation(correction);
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_indicator_observation", Integer.class))
+                .isEqualTo(2);
+        List<RiskObservation> beforeCorrection = repository.findObservations(
+                dailyRequest(date, firstAvailableAt.plusMinutes(30), stock));
+        List<RiskObservation> afterCorrection = repository.findObservations(
+                dailyRequest(date, correctedAvailableAt.plusMinutes(30), stock));
+
+        assertThat(beforeCorrection).singleElement().satisfies(observation -> {
+            assertThat(observation.value()).isEqualByComparingTo("10");
+            assertThat(observation.availableAt()).isEqualTo(firstAvailableAt);
+        });
+        assertThat(afterCorrection).extracting(RiskObservation::availableAt)
+                .containsExactly(firstAvailableAt, correctedAvailableAt);
+        assertThat(afterCorrection.getLast().value()).isEqualByComparingTo("20");
+    }
+
+    @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
     void batchReadsPushBoundObjectScopeIntoParameterizedSqlExactlyOncePerArtifact() {
         JdbcTemplate jdbc = new JdbcTemplate();
@@ -469,6 +520,18 @@ class JdbcRiskWorkflowRepositoryTest {
         assertThat(jdbc.queryForList(
                 "SELECT layer_object_id FROM risk_score_evidence ORDER BY layer_object_id", String.class))
                 .containsExactly("600519.SH", "CN-A", "SW1:801780");
+    }
+
+    private RiskWorkflowRequest dailyRequest(
+            LocalDate date,
+            LocalDateTime asOf,
+            RiskObjectKey object
+    ) {
+        return RiskWorkflowRequest.daily(
+                date, asOf,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", object.objectId(), List.of(object))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
     }
 
     private static final class RecordingJdbcTemplate extends JdbcTemplate {

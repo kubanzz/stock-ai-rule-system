@@ -103,6 +103,66 @@ class RiskLayerComposerTest {
         assertThat(scored.snapshot().totalScore()).isNotNull();
     }
 
+    @Test
+    void inheritedTransmissionOnlyProvidesEligibilityAndIsNotRepeatedAcrossLayers() {
+        RiskSnapshot market = transmissionSnapshot(
+                RiskObjectType.MARKET, "CN-A", "80", false, null);
+        RiskSnapshot sector = transmissionSnapshot(
+                RiskObjectType.SECTOR, "SW1:801780", "80", true, "CN-A");
+        RiskSnapshot stock = transmissionSnapshot(
+                RiskObjectType.STOCK, "600000.SH", "80", true, "CN-A");
+
+        RiskLayerComposition composition = composer.compose(market, sector, stock);
+
+        assertThat(composition.sScore()).isEqualByComparingTo("20.0000");
+        assertThat(composition.evidence()).filteredOn(item ->
+                        item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .singleElement()
+                .satisfies(item -> assertThat(item.details())
+                        .containsEntry("layerObjectId", "CN-A")
+                        .doesNotContainKey("inherited"));
+    }
+
+    @Test
+    void addingALayerNeverOverwritesExistingEvidenceOrigin() {
+        RiskEvidence marketEvidence = new RiskEvidence(
+                RiskDimension.EXTERNAL_TRANSMISSION, "S1", new BigDecimal("80"), new BigDecimal("80"),
+                LocalDateTime.of(2026, 7, 18, 15, 0), LocalDateTime.of(2026, 7, 18, 16, 0),
+                "source-a", RiskDataQualityStatus.AVAILABLE,
+                Map.of("layerObjectType", "market", "layerObjectId", "CN-A"));
+
+        RiskEvidence relayered = com.jx.tracker.risk.model.RiskEvidenceProvenance.withLayer(
+                marketEvidence, new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780"));
+
+        assertThat(relayered.details())
+                .containsEntry("layerObjectType", "market")
+                .containsEntry("layerObjectId", "CN-A");
+    }
+
+    private RiskSnapshot transmissionSnapshot(
+            RiskObjectType objectType,
+            String objectId,
+            String score,
+            boolean inherited,
+            String inheritedFrom
+    ) {
+        BigDecimal value = new BigDecimal(score);
+        Map<String, Object> details = inherited
+                ? Map.of("inherited", true, "inheritedFromObjectType", "market",
+                "inheritedFromObjectId", inheritedFrom)
+                : Map.of();
+        return new RiskSnapshot(
+                new RiskObjectKey(objectType, objectId), RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18), value, null, value, value, value,
+                BigDecimal.ONE, value, RiskLevel.WATCH, RiskStage.FRAGILE,
+                BigDecimal.ONE, BigDecimal.ONE, List.of(new RiskEvidence(
+                RiskDimension.EXTERNAL_TRANSMISSION, "S1", value, value,
+                LocalDateTime.of(2026, 7, 18, 15, 0),
+                LocalDateTime.of(2026, 7, 18, 16, 0), "source-a",
+                RiskDataQualityStatus.AVAILABLE, details)), "risk-engine-test-v1",
+                LocalDateTime.of(2026, 7, 18, 16, 0));
+    }
+
     private RiskSnapshot snapshotWithDimensions(
             RiskObjectType objectType,
             String objectId,

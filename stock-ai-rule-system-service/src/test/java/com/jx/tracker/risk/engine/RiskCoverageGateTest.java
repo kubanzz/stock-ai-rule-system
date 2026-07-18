@@ -102,7 +102,10 @@ class RiskCoverageGateTest {
                 "EVIDENCE_INSUFFICIENT_HISTORY:V1"
         );
         assertFormalQuartetIsAbsent(missingTAndS);
-        assertThat(missingTAndS.missingReasons()).contains("MISSING_REAL_EVIDENCE:T_OR_S");
+        assertThat(missingTAndS.missingReasons()).contains(
+                "DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:T_OR_S",
+                "MISSING_REAL_EVIDENCE:T_OR_S"
+        );
     }
 
     @Test

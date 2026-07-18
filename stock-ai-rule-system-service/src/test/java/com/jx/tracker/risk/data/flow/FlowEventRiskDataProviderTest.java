@@ -79,6 +79,39 @@ class FlowEventRiskDataProviderTest {
     }
 
     @Test
+    void mixedSuccessfulEventBatchAuditsCurrentDateZerosForMissingObjectsAndIndicators() {
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(available("aktools",
+                record("notice-trust", new BigDecimal("70"), "notice",
+                        Map.of("economicMeaning", "market_trust", "adverse", true))));
+        RiskProviderRequest request = new RiskProviderRequest(
+                List.of(STOCK, OTHER_STOCK), List.of(RiskHorizon.SHORT_TERM), START, END, null);
+
+        RiskProviderBatch batch = provider.fetch("stock_announcement", request);
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.observations()).hasSize(8);
+        assertThat(batch.observations()).filteredOn(item -> item.object().equals(STOCK))
+                .hasSize(4)
+                .filteredOn(item -> item.indicatorCode().equals("T4"))
+                .singleElement().satisfies(item -> {
+                    assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+                    assertThat(item.attributes())
+                            .containsEntry("alreadyNormalizedRiskScore", true)
+                            .containsEntry("normalizationContract", "direct-0-100-v1");
+                });
+        assertThat(batch.observations()).filteredOn(item ->
+                        item.object().equals(OTHER_STOCK)
+                                || !item.indicatorCode().equals("T4"))
+                .allSatisfy(item -> {
+                    assertThat(item.tradeDate()).isEqualTo(END);
+                    assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+                    assertThat(item.attributes())
+                            .containsEntry("validZeroAudit", true)
+                            .containsEntry("noEvent", true);
+                });
+    }
+
+    @Test
     void supplementIsUsedOnlyForUnavailableOrInsufficientPrimaryAndAuditsReason() {
         FlowEventSourceClient primary = request -> FlowEventSourceBatch.insufficientHistory(
                 "aktools", "only recent history", LocalDate.of(2025, 1, 1), AVAILABLE_AT);
@@ -394,11 +427,11 @@ class FlowEventRiskDataProviderTest {
                 .coverageReport();
 
         assertThat(coverage.indicators()).containsExactly(
-                new IndicatorCoverage("T1", new BigDecimal("30"), 0, 0, 0, 0),
-                new IndicatorCoverage("T2", new BigDecimal("25"), 0, 0, 0, 0),
-                new IndicatorCoverage("T3", new BigDecimal("20"), 0, 0, 0, 0),
+                new IndicatorCoverage("T1", new BigDecimal("30"), 0, 1, 0, 0),
+                new IndicatorCoverage("T2", new BigDecimal("25"), 0, 1, 0, 0),
+                new IndicatorCoverage("T3", new BigDecimal("20"), 0, 1, 0, 0),
                 new IndicatorCoverage("T4", new BigDecimal("25"), 1, 0, 0, 0));
-        assertThat(coverage.weightedCoverage()).isEqualByComparingTo("0.2500");
+        assertThat(coverage.weightedCoverage()).isEqualByComparingTo("1.0000");
     }
 
     @Test
