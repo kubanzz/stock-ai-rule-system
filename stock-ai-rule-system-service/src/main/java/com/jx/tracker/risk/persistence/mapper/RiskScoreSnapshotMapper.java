@@ -10,6 +10,14 @@ import java.util.List;
 
 public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEntity> {
 
+    String FORMAL_LEVEL_FILTER = """
+              <if test="level != null">
+                AND s.risk_level = #{level}
+                AND s.quality_status IN ('available', 'valid_zero')
+                AND s.completeness &gt;= 0.80
+              </if>
+            """;
+
     @Select("SELECT MAX(trade_date) FROM risk_score_snapshot WHERE horizon = #{horizon}")
     LocalDate selectLatestTradeDate(@Param("horizon") String horizon);
 
@@ -57,7 +65,7 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             WHERE s.horizon = #{horizon}
               AND s.trade_date = #{tradeDate}
               <if test="objectType != null">AND s.object_type = #{objectType}</if>
-              <if test="level != null">AND s.risk_level = #{level}</if>
+            """ + FORMAL_LEVEL_FILTER + """
               <if test="keyword != null">
                 AND (s.object_id LIKE CONCAT('%', #{keyword}, '%')
                   OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%'))
@@ -104,7 +112,7 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             WHERE s.horizon = #{horizon}
               AND s.trade_date = #{tradeDate}
               <if test="objectType != null">AND s.object_type = #{objectType}</if>
-              <if test="level != null">AND s.risk_level = #{level}</if>
+            """ + FORMAL_LEVEL_FILTER + """
               <if test="keyword != null">
                 AND (s.object_id LIKE CONCAT('%', #{keyword}, '%')
                   OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%'))
