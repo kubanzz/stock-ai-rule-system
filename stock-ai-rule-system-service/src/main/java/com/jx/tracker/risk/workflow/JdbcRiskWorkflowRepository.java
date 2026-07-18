@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.engine.RiskIndicatorCatalog;
+import com.jx.tracker.risk.data.market.IndustryExposure;
+import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.gate.ShadowGateResult;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
@@ -20,6 +22,7 @@ import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,6 +31,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,13 +56,14 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
             String scopeKey
     ) {
         List<RiskIngestionCheckpoint> checkpoints = jdbcTemplate.query("""
-                SELECT checkpoint_value, checkpoint_at
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(checkpoint_value, '$.cursor')) AS cursor, checkpoint_at
                 FROM risk_ingestion_checkpoint
                 WHERE provider_code = ? AND dataset_code = ? AND scope_key = ?
+                  AND JSON_EXTRACT(checkpoint_value, '$.cursor') IS NOT NULL
                 """, (resultSet, rowNum) -> new RiskIngestionCheckpoint(
                 datasetCode,
                 scopeKey,
-                readJson(resultSet.getString("checkpoint_value")).get("cursor").toString(),
+                resultSet.getString("cursor"),
                 resultSet.getTimestamp("checkpoint_at").toLocalDateTime()
         ), providerCode, datasetCode, scopeKey);
         return checkpoints.stream().findFirst();
@@ -129,6 +134,37 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     }
 
     @Override
+    public void saveIngestionStatus(
+            String providerCode,
+            String datasetCode,
+            String scopeKey,
+            RiskIngestionCheckpoint currentCheckpoint,
+            RiskProviderBatch batch
+    ) {
+        String cursor = currentCheckpoint == null ? null : currentCheckpoint.cursor();
+        LocalDateTime checkpointAt = currentCheckpoint == null
+                ? batch.fetchedAt() : currentCheckpoint.checkpointAt();
+        Map<String, Object> checkpointValue = new HashMap<>();
+        if (cursor != null) {
+            checkpointValue.put("cursor", cursor);
+        }
+        jdbcTemplate.update("""
+                INSERT INTO risk_ingestion_checkpoint (
+                    provider_code, dataset_code, scope_key, checkpoint_value, checkpoint_at,
+                    observed_at, available_at, source, quality_status, last_error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    checkpoint_value = checkpoint_value, checkpoint_at = checkpoint_at,
+                    observed_at = VALUES(observed_at), available_at = VALUES(available_at),
+                    source = VALUES(source), quality_status = VALUES(quality_status),
+                    last_error = VALUES(last_error)
+                """,
+                providerCode, datasetCode, scopeKey, json(checkpointValue),
+                checkpointAt, batch.fetchedAt(), batch.fetchedAt(), batch.source(),
+                batch.qualityStatus().getCode(), batch.errorMessage());
+    }
+
+    @Override
     public List<RiskObservation> findObservations(RiskWorkflowRequest request) {
         Set<RiskObjectKey> requestedObjects = new HashSet<>();
         request.collectionTasks().forEach(task -> requestedObjects.addAll(task.objects()));
@@ -142,32 +178,57 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
                 """, this::mapObservation,
                 request.collectionStartDate(), request.endDate(), request.asOf()).stream()
-                .filter(observation -> requestedObjects.contains(observation.object()))
+                .filter(observation -> requestedLayerCandidate(observation.object(), requestedObjects))
                 .filter(observation -> request.horizons().contains(observation.horizon()))
                 .toList();
     }
 
     @Override
-    public List<RiskSnapshot> findSnapshotHistory(
-            RiskObjectKey object,
-            RiskHorizon horizon,
-            LocalDate startDate,
-            LocalDate endDate,
-            LocalDateTime asOf,
-            String modelVersion
-    ) {
+    public List<RiskEvent> findEvents(RiskWorkflowRequest request) {
+        Set<RiskObjectKey> requestedObjects = requestedObjects(request);
+        return jdbcTemplate.query("""
+                SELECT object_type, object_id, trade_date, dimension_code, event_type, event_key,
+                       severity_score, occurred_at, observed_at, available_at,
+                       source, quality_status, event_payload
+                FROM risk_event_fact
+                WHERE trade_date BETWEEN ? AND ? AND available_at <= ?
+                ORDER BY trade_date, object_type, object_id, event_type, event_key, available_at
+                """, this::mapEvent,
+                request.collectionStartDate(), request.endDate(), request.asOf()).stream()
+                .filter(event -> requestedLayerCandidate(event.object(), requestedObjects))
+                .toList();
+    }
+
+    @Override
+    public List<IndustryExposure> findIndustryExposures(RiskWorkflowRequest request) {
+        Set<RiskObjectKey> requestedObjects = requestedObjects(request);
+        return jdbcTemplate.query("""
+                SELECT object_type, object_id, parent_object_type, parent_object_id,
+                       valid_from, valid_to, observed_at, available_at, source, quality_status
+                FROM risk_object_exposure
+                WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)
+                  AND available_at <= ?
+                ORDER BY object_id, valid_from, available_at
+                """, this::mapExposure,
+                request.endDate(), request.collectionStartDate(), request.asOf()).stream()
+                .filter(exposure -> requestedObjects.contains(exposure.stock()))
+                .toList();
+    }
+
+    @Override
+    public List<RiskSnapshot> findSnapshotHistory(RiskWorkflowRequest request) {
         return jdbcTemplate.query("""
                 SELECT object_type, object_id, horizon, trade_date,
                        v_score, t_score, s_score, c_score, a_score, m_score, total_score,
                        risk_level, risk_stage, completeness, risk_confidence,
                        model_version, calculated_at
                 FROM risk_score_snapshot
-                WHERE object_type = ? AND object_id = ? AND horizon = ?
-                  AND trade_date BETWEEN ? AND ? AND calculated_at <= ? AND model_version = ?
-                ORDER BY trade_date, calculated_at
+                WHERE trade_date BETWEEN ? AND ? AND calculated_at <= ? AND model_version = ?
+                ORDER BY object_type, object_id, horizon, trade_date, calculated_at
                 """, this::mapSnapshot,
-                object.objectType().getCode(), object.objectId(), horizon.getCode(),
-                startDate, endDate, asOf, modelVersion);
+                request.collectionStartDate(), request.endDate(), request.asOf(), request.modelVersion()).stream()
+                .filter(snapshot -> request.horizons().contains(snapshot.horizon()))
+                .toList();
     }
 
     @Override
@@ -213,7 +274,15 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     }
 
     @Override
-    public void saveEvidence(long snapshotId, RiskEvidence evidence) {
+    @Transactional
+    public void replaceEvidence(long snapshotId, List<RiskEvidence> evidence) {
+        jdbcTemplate.update("DELETE FROM risk_score_evidence WHERE snapshot_id = ?", snapshotId);
+        for (RiskEvidence item : evidence) {
+            insertEvidence(snapshotId, item);
+        }
+    }
+
+    private void insertEvidence(long snapshotId, RiskEvidence evidence) {
         jdbcTemplate.update("""
                 INSERT INTO risk_score_evidence (
                     snapshot_id, dimension_code, indicator_code, raw_value, indicator_score,
@@ -229,6 +298,14 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 snapshotId, evidence.dimension().getCode(), evidence.indicatorCode(), evidence.rawValue(),
                 evidence.score(), weightedContribution(evidence), evidence.observedAt(), evidence.availableAt(),
                 evidence.source(), evidence.qualityStatus().getCode(), json(evidence.details()));
+    }
+
+    @Override
+    public void deleteGate(RiskSignalCandidate signal, String modelVersion) {
+        jdbcTemplate.update("""
+                DELETE FROM risk_gate_result
+                WHERE signal_reference = ? AND horizon = ? AND model_version = ?
+                """, signal.signalReference(), signal.horizon().getCode(), modelVersion);
     }
 
     @Override
@@ -276,6 +353,34 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 readJson(resultSet.getString("payload_json")));
     }
 
+    private RiskEvent mapEvent(ResultSet resultSet, int rowNum) throws SQLException {
+        return new RiskEvent(
+                object(resultSet), resultSet.getObject("trade_date", LocalDate.class),
+                RiskDimension.fromCode(resultSet.getString("dimension_code")),
+                resultSet.getString("event_type"), resultSet.getString("event_key"),
+                resultSet.getBigDecimal("severity_score"),
+                resultSet.getTimestamp("occurred_at").toLocalDateTime(),
+                resultSet.getTimestamp("observed_at").toLocalDateTime(),
+                resultSet.getTimestamp("available_at").toLocalDateTime(),
+                resultSet.getString("source"),
+                RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")),
+                readJson(resultSet.getString("event_payload")));
+    }
+
+    private IndustryExposure mapExposure(ResultSet resultSet, int rowNum) throws SQLException {
+        return new IndustryExposure(
+                object(resultSet),
+                new RiskObjectKey(
+                        RiskObjectType.fromCode(resultSet.getString("parent_object_type")),
+                        resultSet.getString("parent_object_id")),
+                resultSet.getObject("valid_from", LocalDate.class),
+                resultSet.getObject("valid_to", LocalDate.class),
+                resultSet.getTimestamp("observed_at").toLocalDateTime(),
+                resultSet.getTimestamp("available_at").toLocalDateTime(),
+                resultSet.getString("source"),
+                RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")));
+    }
+
     private RiskSnapshot mapSnapshot(ResultSet resultSet, int rowNum) throws SQLException {
         String level = resultSet.getString("risk_level");
         String stage = resultSet.getString("risk_stage");
@@ -297,6 +402,23 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         return new RiskObjectKey(
                 RiskObjectType.fromCode(resultSet.getString("object_type")),
                 resultSet.getString("object_id"));
+    }
+
+    private Set<RiskObjectKey> requestedObjects(RiskWorkflowRequest request) {
+        Set<RiskObjectKey> requestedObjects = new HashSet<>();
+        request.collectionTasks().forEach(task -> requestedObjects.addAll(task.objects()));
+        request.signals().forEach(signal -> requestedObjects.addAll(signal.relevantRiskObjects()));
+        return requestedObjects;
+    }
+
+    private boolean requestedLayerCandidate(RiskObjectKey object, Set<RiskObjectKey> requestedObjects) {
+        if (requestedObjects.contains(object)) {
+            return true;
+        }
+        boolean containsStock = requestedObjects.stream()
+                .anyMatch(requested -> requested.objectType() == RiskObjectType.STOCK);
+        return containsStock && (object.objectType() == RiskObjectType.SECTOR
+                || (object.objectType() == RiskObjectType.MARKET && "CN-A".equals(object.objectId())));
     }
 
     private BigDecimal weightedContribution(RiskEvidence evidence) {

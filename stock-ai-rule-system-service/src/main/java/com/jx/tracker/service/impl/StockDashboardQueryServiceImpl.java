@@ -297,17 +297,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             StockSignalDaily persistedSignal,
             StockDashboardRiskOverlay overlay
     ) {
-        String displaySignal = row.signal();
-        if (persistedSignal != null
-                && SignalType.HIGH_RISK.getCode().equals(persistedSignal.getSignal())) {
-            if (overlay != null && overlay.gateDecision() != null) {
-                displaySignal = overlay.gateDecision().signalDirection().getCode();
-            } else if (isDirectionalSignal(persistedSignal.getSignalDirection())) {
-                displaySignal = persistedSignal.getSignalDirection();
-            }
-        }
         return new StockConsoleVo.SignalRow(
-                row.symbol(), row.name(), row.price(), row.changePct(), displaySignal,
+                row.symbol(), row.name(), row.price(), row.changePct(), displaySignal(persistedSignal),
                 row.bullishScore(), row.bearishScore(), row.riskScore(), row.confidence(),
                 row.triggeredRuleCount(), row.suggestedPeriod(), row.updatedAt(),
                 row.signalStatus(), row.quoteStatus(),
@@ -363,8 +354,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     }
 
     private String displaySignal(StockSignalDaily signal) {
-        if (signal != null && SignalType.HIGH_RISK.getCode().equals(signal.getSignal())
-                && isDirectionalSignal(signal.getSignalDirection())) {
+        if (signal != null && isDirectionalSignal(signal.getSignalDirection())) {
             return signal.getSignalDirection();
         }
         return signal == null ? null : signal.getSignal();

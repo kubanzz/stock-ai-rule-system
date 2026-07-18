@@ -2,6 +2,8 @@ package com.jx.tracker.risk.workflow;
 
 import com.jx.tracker.risk.engine.RiskScoreRequest;
 import com.jx.tracker.risk.engine.RiskScoreResult;
+import com.jx.tracker.risk.engine.RiskLayerScoreRequest;
+import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.gate.ShadowGateResult;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,19 +41,22 @@ class RiskWarningWorkflowTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 7, 18);
     private static final LocalDateTime AS_OF = LocalDateTime.of(2026, 7, 18, 20, 0);
+    private static final RiskObjectKey MARKET = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+    private static final RiskObjectKey SECTOR = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
     private static final RiskObjectKey STOCK = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
 
     @Test
     void dailyRunWritesEveryArtifactIdempotentlyResumesCheckpointAndRejectsFutureData() {
         InMemoryRepository repository = new InMemoryRepository();
-        CapturingProvider provider = new CapturingProvider(availableBatch());
+        addExposure(repository);
+        CapturingProvider provider = new CapturingProvider(layeredAvailableBatch());
         RiskWarningWorkflow workflow = workflow(repository, provider);
         RiskSignalCandidate signal = new RiskSignalCandidate(
                 "signal:600519.SH:2026-07-18", STOCK, RiskHorizon.SHORT_TERM, DATE,
-                SignalDirection.BULLISH, new BigDecimal("0.85"), List.of(STOCK));
+                SignalDirection.BULLISH, new BigDecimal("0.85"), List.of(MARKET, SECTOR, STOCK));
         RiskWorkflowRequest request = RiskWorkflowRequest.daily(
                 DATE, AS_OF,
-                List.of(new RiskCollectionTask("provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "all", List.of(MARKET, SECTOR, STOCK))),
                 List.of(RiskHorizon.SHORT_TERM), List.of(signal), "risk-v1");
 
         RiskWorkflowRunSummary first = workflow.run(request);
@@ -61,10 +67,10 @@ class RiskWarningWorkflowTest {
         assertThat(provider.requests()).hasSize(2);
         assertThat(provider.requests().get(0).checkpoint()).isNull();
         assertThat(provider.requests().get(1).checkpoint()).isNotNull();
-        assertThat(repository.observations).hasSize(1);
+        assertThat(repository.observations).hasSize(3);
         assertThat(repository.events).hasSize(1);
         assertThat(repository.snapshots).isNotEmpty();
-        assertThat(repository.evidence).hasSize(1);
+        assertThat(repository.evidence).hasSize(5);
         assertThat(repository.gates).hasSize(1);
         assertThat(repository.checkpoints).hasSize(1);
         assertThat(repository.observations.values()).allMatch(observation -> !observation.availableAt().isAfter(AS_OF));
@@ -94,7 +100,29 @@ class RiskWarningWorkflowTest {
 
         assertThat(summary.unavailableDatasetCount()).isEqualTo(1);
         assertThat(repository.checkpoints).isEmpty();
+        assertThat(repository.ingestionStatuses).singleElement().satisfies(batch -> {
+            assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+            assertThat(batch.errorMessage()).isEqualTo("source failed");
+        });
         assertThat(repository.gates).isEmpty();
+    }
+
+    @Test
+    void validZeroBatchPersistsSuccessfulZeroStatusWithoutInventingRecords() {
+        InMemoryRepository repository = new InMemoryRepository();
+        RiskProviderBatch zero = RiskProviderBatch.validZero("source-a", null, AS_OF);
+
+        workflow(repository, new CapturingProvider(zero)).run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(repository.observations).isEmpty();
+        assertThat(repository.events).isEmpty();
+        assertThat(repository.ingestionStatuses).singleElement()
+                .extracting(RiskProviderBatch::qualityStatus)
+                .isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        assertThat(repository.checkpoints).isEmpty();
     }
 
     @Test
@@ -116,7 +144,143 @@ class RiskWarningWorkflowTest {
         assertThat(repository.checkpoints).isEmpty();
     }
 
+    @Test
+    void historicalScoreUsesSameDayAfterCloseCutoffAndExcludesNextDayAvailableData() {
+        LocalDate nextDate = DATE.plusDays(1);
+        LocalDateTime nextAsOf = nextDate.atTime(20, 0);
+        RiskObservation sameDay = observation(MARKET, "V1", DATE, DATE.atTime(19, 30));
+        RiskObservation nextDayAvailable = observation(MARKET, "V2", DATE, nextDate.atTime(9, 0));
+        RiskProviderBatch batch = new RiskProviderBatch(
+                "source-a", List.of(sameDay, nextDayAvailable), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, null, nextAsOf);
+
+        InMemoryRepository repository = new InMemoryRepository();
+        RiskWorkflowRequest request = RiskWorkflowRequest.fiveYearBackfill(
+                nextDate, nextAsOf,
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "market:CN-A", List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        workflow(repository, new CapturingProvider(batch)).run(request);
+
+        RiskSnapshot historical = repository.snapshots.values().stream()
+                .map(StoredRiskSnapshot::snapshot)
+                .filter(snapshot -> snapshot.tradeDate().equals(DATE))
+                .findFirst().orElseThrow();
+        assertThat(request.afterCloseCutoff()).isEqualTo(LocalTime.of(20, 0));
+        assertThat(historical.calculatedAt()).isEqualTo(DATE.atTime(20, 0));
+        assertThat(historical.evidence()).extracting(RiskEvidence::indicatorCode)
+                .containsExactly("V1");
+    }
+
+    @Test
+    void stockScoreUsesFixedMarketSectorStockWeightsAndMaximumConfirmedModifier() {
+        RiskObjectKey market = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+        RiskObjectKey sector = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
+        InMemoryRepository repository = new InMemoryRepository();
+        repository.exposures.add(new IndustryExposure(
+                STOCK, sector, DATE.minusYears(1), null, DATE.atStartOfDay(), DATE.atStartOfDay(),
+                "source-a", RiskDataQualityStatus.AVAILABLE));
+        List<RiskObservation> observations = List.of(
+                observation(market, "V1", new BigDecimal("20")),
+                observation(sector, "V1", new BigDecimal("40")),
+                observation(STOCK, "V1", new BigDecimal("80")));
+        LayerCapturingEvaluator evaluator = new LayerCapturingEvaluator();
+        RiskEvent marketExtreme = event(market, DATE, "market-extreme", DATE.atTime(19, 0), Map.of(
+                "extremePercentile", "99", "priceConfirmed", true, "fundFlowConfirmed", true));
+
+        workflow(repository, new CapturingProvider(new RiskProviderBatch(
+                "source-a", observations, List.of(marketExtreme), null,
+                RiskDataQualityStatus.AVAILABLE, null, AS_OF)), evaluator)
+                .run(RiskWorkflowRequest.daily(
+                        DATE, AS_OF,
+                        List.of(new RiskCollectionTask(
+                                "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                        List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(evaluator.layerRequest).isNotNull();
+        assertThat(evaluator.layerRequest.composition().vScore()).isEqualByComparingTo("51.0000");
+        assertThat(evaluator.layerRequest.composition().coverage()).isEqualByComparingTo("1.0000");
+        assertThat(evaluator.layerRequest.composition().mScore()).isEqualByComparingTo("1.10");
+        assertThat(evaluator.layerRequest.extremeConfirmation().permitsImmediateEscalation()).isTrue();
+    }
+
+    @Test
+    void pointInTimeEventsDriveWindowModifierAndSameDayExtremeConfirmationOnly() {
+        InMemoryRepository repository = new InMemoryRepository();
+        repository.events.put("current", event(STOCK, DATE, "current", DATE.atTime(19, 0), Map.of(
+                "modifierCandidate", true, "confirmed", true, "mScore", "1.15",
+                "extremePercentile", "99", "priceConfirmed", true, "fundFlowConfirmed", true)));
+        repository.events.put("future", event(STOCK, DATE, "future", DATE.plusDays(1).atTime(9, 0), Map.of(
+                "modifierCandidate", true, "confirmed", true, "mScore", "1.20",
+                "extremePercentile", "100", "priceConfirmed", true, "fundFlowConfirmed", true)));
+        RequestCapturingEvaluator evaluator = new RequestCapturingEvaluator();
+
+        workflow(repository, new CapturingProvider(RiskProviderBatch.validZero("source-a", null, AS_OF)), evaluator)
+                .run(RiskWorkflowRequest.daily(
+                        DATE, AS_OF,
+                        List.of(new RiskCollectionTask("provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                        List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(evaluator.request.timeCorrectionFactor()).isEqualByComparingTo("1.15");
+        assertThat(evaluator.request.extremeConfirmation().percentile()).isEqualByComparingTo("99");
+        assertThat(evaluator.request.extremeConfirmation().priceConfirmed()).isTrue();
+        assertThat(evaluator.request.extremeConfirmation().fundFlowConfirmed()).isTrue();
+    }
+
+    @Test
+    void recomputationReplacesEvidenceAndRemovesGateWhenSnapshotBecomesIncomplete() {
+        InMemoryRepository repository = new InMemoryRepository();
+        addExposure(repository);
+        RiskSignalCandidate signal = new RiskSignalCandidate(
+                "signal:600519.SH:2026-07-18", STOCK, RiskHorizon.SHORT_TERM, DATE,
+                SignalDirection.BULLISH, new BigDecimal("0.85"), List.of(MARKET, SECTOR, STOCK));
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "all", List.of(MARKET, SECTOR, STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(signal), "risk-v1");
+        RiskWarningWorkflow workflow = workflow(repository, new CapturingProvider(layeredAvailableBatch()));
+
+        workflow.run(request);
+        long originalId = repository.snapshots.values().stream()
+                .filter(stored -> stored.snapshot().object().equals(STOCK))
+                .findFirst().orElseThrow().id();
+        assertThat(repository.gates).hasSize(1);
+        repository.observations.clear();
+        workflow(repository, new CapturingProvider(RiskProviderBatch.validZero("source-a", null, AS_OF))).run(request);
+
+        assertThat(repository.snapshots.values()).filteredOn(stored -> stored.snapshot().object().equals(STOCK))
+                .singleElement().satisfies(stored -> {
+            assertThat(stored.id()).isEqualTo(originalId);
+            assertThat(stored.snapshot().level()).isNull();
+            assertThat(stored.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        });
+        assertThat(repository.evidence).isEmpty();
+        assertThat(repository.gates).isEmpty();
+    }
+
+    @Test
+    void backfillUsesOneBatchReadPerArtifactTypeInsteadOfPerDateHistoryQueries() {
+        InMemoryRepository repository = new InMemoryRepository();
+        workflow(repository, new CapturingProvider(availableBatch())).run(RiskWorkflowRequest.fiveYearBackfill(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(repository.observationReads).isEqualTo(1);
+        assertThat(repository.eventReads).isEqualTo(1);
+        assertThat(repository.exposureReads).isEqualTo(1);
+        assertThat(repository.historyReads).isEqualTo(1);
+    }
+
     private RiskWarningWorkflow workflow(InMemoryRepository repository, RiskDataProvider provider) {
+        return workflow(repository, provider, defaultEvaluator());
+    }
+
+    private RiskWarningWorkflow workflow(
+            InMemoryRepository repository,
+            RiskDataProvider provider,
+            RiskSnapshotEvaluator evaluator
+    ) {
         RiskEvidenceAssembler assembler = (object, horizon, tradeDate, asOf, observations) ->
                 observations.stream()
                         .filter(observation -> observation.object().equals(object))
@@ -127,7 +291,12 @@ class RiskWarningWorkflowTest {
                                 observation.value(), observation.observedAt(), observation.availableAt(),
                                 observation.source(), observation.qualityStatus(), Map.of()))
                         .toList();
-        RiskSnapshotEvaluator evaluator = request -> {
+        return new RiskWarningWorkflow(
+                List.of(provider), repository, assembler, evaluator, new ShadowRiskGate());
+    }
+
+    private RiskSnapshotEvaluator defaultEvaluator() {
+        return request -> {
             if (request.evidence().isEmpty()) {
                 return new RiskScoreResult(new RiskSnapshot(
                         request.object(), request.horizon(), request.tradeDate(),
@@ -144,8 +313,6 @@ class RiskWarningWorkflowTest {
                     request.evidence(), request.modelVersion(), request.asOf());
             return new RiskScoreResult(snapshot, List.of());
         };
-        return new RiskWarningWorkflow(
-                List.of(provider), repository, assembler, evaluator, new ShadowRiskGate());
     }
 
     private RiskProviderBatch availableBatch() {
@@ -157,9 +324,45 @@ class RiskWarningWorkflowTest {
                 RiskDataQualityStatus.AVAILABLE, null, AS_OF);
     }
 
+    private RiskProviderBatch layeredAvailableBatch() {
+        return new RiskProviderBatch(
+                "source-a", List.of(
+                observation(MARKET, "V1", new BigDecimal("10")),
+                observation(SECTOR, "V2", new BigDecimal("10")),
+                observation(STOCK, "V3", new BigDecimal("10"))),
+                List.of(event("event-1", AS_OF.minusHours(1))),
+                new RiskIngestionCheckpoint("dataset-a", "all", "cursor-2", AS_OF),
+                RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+    }
+
+    private void addExposure(InMemoryRepository repository) {
+        repository.exposures.add(new IndustryExposure(
+                STOCK, SECTOR, DATE.minusYears(1), null, DATE.atStartOfDay(), DATE.atStartOfDay(),
+                "source-a", RiskDataQualityStatus.AVAILABLE));
+    }
+
     private RiskObservation observation(String code, LocalDate date, LocalDateTime availableAt) {
         return new RiskObservation(
                 STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
+                code, new BigDecimal("10"), "ratio", availableAt.minusMinutes(1), availableAt,
+                "source-a", RiskDataQualityStatus.AVAILABLE, Map.of());
+    }
+
+    private RiskObservation observation(RiskObjectKey object, String code, BigDecimal value) {
+        return new RiskObservation(
+                object, RiskHorizon.SHORT_TERM, DATE, RiskDimension.STRUCTURAL_FRAGILITY,
+                code, value, "score", AS_OF.minusHours(2), AS_OF.minusHours(1),
+                "source-a", RiskDataQualityStatus.AVAILABLE, Map.of());
+    }
+
+    private RiskObservation observation(
+            RiskObjectKey object,
+            String code,
+            LocalDate date,
+            LocalDateTime availableAt
+    ) {
+        return new RiskObservation(
+                object, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
                 code, new BigDecimal("10"), "ratio", availableAt.minusMinutes(1), availableAt,
                 "source-a", RiskDataQualityStatus.AVAILABLE, Map.of());
     }
@@ -169,6 +372,78 @@ class RiskWarningWorkflowTest {
                 STOCK, DATE, RiskDimension.SUBSTANTIVE_TRIGGER, "announcement", key,
                 new BigDecimal("80"), availableAt.minusHours(1), availableAt.minusMinutes(1), availableAt,
                 "source-a", RiskDataQualityStatus.AVAILABLE, Map.of());
+    }
+
+    private RiskEvent event(
+            RiskObjectKey object,
+            LocalDate date,
+            String key,
+            LocalDateTime availableAt,
+            Map<String, Object> payload
+    ) {
+        return new RiskEvent(
+                object, date, RiskDimension.SUBSTANTIVE_TRIGGER, "announcement", key,
+                new BigDecimal("80"), availableAt.minusHours(1), availableAt.minusMinutes(1), availableAt,
+                "source-a", RiskDataQualityStatus.AVAILABLE, payload);
+    }
+
+    private static final class RequestCapturingEvaluator implements RiskSnapshotEvaluator {
+        private RiskScoreRequest request;
+
+        @Override
+        public RiskScoreResult evaluate(RiskScoreRequest request) {
+            this.request = request;
+            return incomplete(request);
+        }
+    }
+
+    private static final class LayerCapturingEvaluator implements RiskSnapshotEvaluator {
+        private RiskLayerScoreRequest layerRequest;
+
+        @Override
+        public RiskScoreResult evaluate(RiskScoreRequest request) {
+            BigDecimal score = switch (request.object().objectType()) {
+                case MARKET -> new BigDecimal("20");
+                case SECTOR -> new BigDecimal("40");
+                case STOCK -> new BigDecimal("80");
+            };
+            BigDecimal modifier = switch (request.object().objectType()) {
+                case MARKET -> new BigDecimal("0.90");
+                case SECTOR -> new BigDecimal("1.10");
+                case STOCK -> new BigDecimal("1.00");
+            };
+            return formal(request, score, modifier);
+        }
+
+        @Override
+        public RiskScoreResult evaluateLayers(RiskLayerScoreRequest request) {
+            this.layerRequest = request;
+            RiskSnapshot snapshot = new RiskSnapshot(
+                    request.object(), request.horizon(), request.tradeDate(),
+                    request.composition().vScore(), request.composition().tScore(), request.composition().sScore(),
+                    request.composition().cScore(), request.composition().aScore(), request.composition().mScore(),
+                    new BigDecimal("51"), RiskLevel.WARNING, RiskStage.REPRICING,
+                    request.composition().coverage(), request.composition().riskConfidence(),
+                    request.composition().evidence(), request.modelVersion(), request.asOf());
+            return new RiskScoreResult(snapshot, List.of());
+        }
+
+        private RiskScoreResult formal(RiskScoreRequest request, BigDecimal score, BigDecimal modifier) {
+            RiskSnapshot snapshot = new RiskSnapshot(
+                    request.object(), request.horizon(), request.tradeDate(),
+                    score, score, score, score, score, modifier, score,
+                    RiskLevel.WARNING, RiskStage.REPRICING, BigDecimal.ONE, BigDecimal.ONE,
+                    request.evidence(), request.modelVersion(), request.asOf());
+            return new RiskScoreResult(snapshot, List.of());
+        }
+    }
+
+    private static RiskScoreResult incomplete(RiskScoreRequest request) {
+        return new RiskScoreResult(new RiskSnapshot(
+                request.object(), request.horizon(), request.tradeDate(),
+                null, null, null, null, null, BigDecimal.ONE,
+                null, null, null, BigDecimal.ZERO, null,
+                List.of(), request.modelVersion(), request.asOf()), List.of("DATA_INSUFFICIENT"));
     }
 
     private static final class CapturingProvider implements RiskDataProvider {
@@ -207,6 +482,12 @@ class RiskWarningWorkflowTest {
         private final Map<String, RiskEvidence> evidence = new LinkedHashMap<>();
         private final Map<String, ShadowGateResult> gates = new LinkedHashMap<>();
         private final Map<String, RiskIngestionCheckpoint> checkpoints = new LinkedHashMap<>();
+        private final List<RiskProviderBatch> ingestionStatuses = new ArrayList<>();
+        private final List<IndustryExposure> exposures = new ArrayList<>();
+        private int observationReads;
+        private int eventReads;
+        private int exposureReads;
+        private int historyReads;
         private long nextSnapshotId = 1;
 
         @Override
@@ -232,14 +513,32 @@ class RiskWarningWorkflowTest {
         }
 
         @Override
+        public void saveIngestionStatus(String providerCode, String datasetCode, String scopeKey,
+                                        RiskIngestionCheckpoint currentCheckpoint, RiskProviderBatch batch) {
+            ingestionStatuses.add(batch);
+        }
+
+        @Override
         public List<RiskObservation> findObservations(RiskWorkflowRequest request) {
+            observationReads++;
             return List.copyOf(observations.values());
         }
 
         @Override
-        public List<RiskSnapshot> findSnapshotHistory(RiskObjectKey object, RiskHorizon horizon,
-                                                       LocalDate startDate, LocalDate endDate,
-                                                       LocalDateTime asOf, String modelVersion) {
+        public List<RiskEvent> findEvents(RiskWorkflowRequest request) {
+            eventReads++;
+            return List.copyOf(events.values());
+        }
+
+        @Override
+        public List<IndustryExposure> findIndustryExposures(RiskWorkflowRequest request) {
+            exposureReads++;
+            return List.copyOf(exposures);
+        }
+
+        @Override
+        public List<RiskSnapshot> findSnapshotHistory(RiskWorkflowRequest request) {
+            historyReads++;
             return snapshots.values().stream().map(StoredRiskSnapshot::snapshot).toList();
         }
 
@@ -248,13 +547,24 @@ class RiskWarningWorkflowTest {
                                                 LocalDateTime observedAt, LocalDateTime availableAt) {
             String key = snapshot.object() + ":" + snapshot.horizon() + ":" + snapshot.tradeDate()
                     + ":" + snapshot.modelVersion();
-            return snapshots.computeIfAbsent(key,
-                    ignored -> new StoredRiskSnapshot(nextSnapshotId++, snapshot, observedAt, availableAt, qualityStatus));
+            StoredRiskSnapshot existing = snapshots.get(key);
+            StoredRiskSnapshot replacement = new StoredRiskSnapshot(
+                    existing == null ? nextSnapshotId++ : existing.id(),
+                    snapshot, observedAt, availableAt, qualityStatus);
+            snapshots.put(key, replacement);
+            return replacement;
         }
 
         @Override
-        public void saveEvidence(long snapshotId, RiskEvidence item) {
-            evidence.put(snapshotId + ":" + item.indicatorCode() + ":" + item.source(), item);
+        public void replaceEvidence(long snapshotId, List<RiskEvidence> items) {
+            evidence.keySet().removeIf(key -> key.startsWith(snapshotId + ":"));
+            items.forEach(item -> evidence.put(
+                    snapshotId + ":" + item.indicatorCode() + ":" + item.source(), item));
+        }
+
+        @Override
+        public void deleteGate(RiskSignalCandidate signal, String modelVersion) {
+            gates.remove(signal.signalReference() + ":" + signal.horizon() + ":" + modelVersion);
         }
 
         @Override

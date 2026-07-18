@@ -120,7 +120,7 @@ class StockDashboardQueryServiceImplTest {
     }
 
     @Test
-    void attachesSelectedHorizonRiskAndUsesGateDirectionForLegacyHighRiskSignal() {
+    void attachesSelectedHorizonRiskButAlwaysDisplaysPersistedSignalDirection() {
         StockSignalDaily legacy = signal("000004.SZ", DATE, "high_risk", "0.80", 1, null);
         legacy.setSignalDirection("bearish");
         RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "000004.SZ");
@@ -150,7 +150,7 @@ class StockDashboardQueryServiceImplTest {
         assertThat(result.signals()).singleElement().satisfies(row -> {
             assertThat(row.riskSnapshot()).isSameAs(snapshot);
             assertThat(row.riskGateDecision()).isSameAs(decision);
-            assertThat(row.signal()).isEqualTo("bullish");
+            assertThat(row.signal()).isEqualTo("bearish");
         });
         verify(stockDashboardRiskReader).findBySymbols(
                 org.mockito.ArgumentMatchers.eq(DATE),

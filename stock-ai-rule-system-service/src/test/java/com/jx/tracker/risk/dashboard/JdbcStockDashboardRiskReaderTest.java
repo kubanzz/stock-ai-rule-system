@@ -61,6 +61,45 @@ class JdbcStockDashboardRiskReaderTest {
         assertThat(overlay.gateDecision().enforced()).isFalse();
     }
 
+    @Test
+    void hidesIncompleteLatestModelAndOnlyReturnsGateLinkedToCurrentFormalSnapshot() {
+        JdbcTemplate jdbc = jdbc();
+        createSchema(jdbc);
+        LocalDate date = LocalDate.of(2026, 7, 10);
+        LocalDateTime asOf = date.atTime(20, 0);
+        jdbc.update("""
+                INSERT INTO risk_score_snapshot VALUES
+                (1, 'stock', '000004.SZ', '1-5d', ?, 70, 70, 70, 70, 70, 1.00, 70,
+                 'warning', 'repricing', 0.85, 0.85, 'risk-v1', ?, ?, 'risk-engine', 'available', ?),
+                (2, 'stock', '000004.SZ', '1-5d', ?, NULL, NULL, NULL, NULL, NULL, 1.00, NULL,
+                 NULL, NULL, 0.40, NULL, 'risk-v2', ?, ?, 'risk-engine', 'insufficient_history', ?),
+                (3, 'market', 'CN-A', '1-5d', ?, 75, 75, 75, 75, 75, 1.00, 75,
+                 'warning', 'repricing', 0.90, 0.90, 'risk-v1', ?, ?, 'risk-engine', 'available', ?)
+                """,
+                date, date.atTime(17, 0), date.atTime(17, 0), date.atTime(17, 1),
+                date, date.atTime(18, 0), date.atTime(18, 0), date.atTime(18, 1),
+                date, date.atTime(17, 0), date.atTime(17, 0), date.atTime(17, 1));
+        String reference = RiskSignalCandidate.stockSignalReference("000004.SZ", date);
+        jdbc.update("""
+                INSERT INTO risk_gate_result VALUES
+                (1, 3, ?, 'market', 'CN-A', '1-5d', ?, 'bearish', 0.80, 0.80,
+                 'notice', 0, '当前正式快照建议', 'risk-v1', ?, ?, 'risk-gate', 'available', ?),
+                (2, 2, ?, 'stock', '000004.SZ', '1-5d', ?, 'bullish', 0.80, 0.00,
+                 'block', 0, '不得泄露的旧结果', 'risk-v2', ?, ?, 'risk-gate', 'available', ?)
+                """,
+                reference, date, date.atTime(17, 0), date.atTime(17, 0), date.atTime(17, 2),
+                reference, date, date.atTime(18, 0), date.atTime(18, 0), date.atTime(18, 2));
+
+        StockDashboardRiskOverlay overlay = new JdbcStockDashboardRiskReader(jdbc, new ObjectMapper())
+                .findBySymbols(date, RiskHorizon.SHORT_TERM, List.of("000004.SZ"), asOf)
+                .get("000004.SZ");
+
+        assertThat(overlay.snapshot().modelVersion()).isEqualTo("risk-v1");
+        assertThat(overlay.snapshot().level()).isEqualTo(RiskLevel.WARNING);
+        assertThat(overlay.gateDecision().modelVersion()).isEqualTo("risk-v1");
+        assertThat(overlay.gateDecision().signalDirection()).isEqualTo(SignalDirection.BEARISH);
+    }
+
     private JdbcTemplate jdbc() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:dashboard_risk_reader;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");

@@ -70,7 +70,7 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
         Map<Long, List<RiskEvidence>> evidence = evidence(snapshots.values().stream()
                 .map(SnapshotRow::id).toList(), asOf);
         Map<String, GateDecision> gates = latestGates(
-                parameters, distinctSymbols, tradeDate, horizon);
+                parameters, distinctSymbols, tradeDate, snapshots);
 
         Set<String> resultSymbols = new LinkedHashSet<>();
         resultSymbols.addAll(snapshots.keySet());
@@ -93,6 +93,9 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
                 FROM risk_score_snapshot
                 WHERE object_type = 'stock' AND object_id IN (:symbols)
                   AND horizon = :horizon AND trade_date = :tradeDate AND available_at <= :asOf
+                  AND quality_status = 'available' AND completeness >= 0.80
+                  AND total_score IS NOT NULL AND risk_level IS NOT NULL
+                  AND risk_stage IS NOT NULL AND risk_confidence IS NOT NULL
                 ORDER BY calculated_at DESC, id DESC
                 """, parameters, this::mapSnapshotRow);
         Map<String, SnapshotRow> latest = new LinkedHashMap<>();
@@ -124,20 +127,33 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
             MapSqlParameterSource parameters,
             List<String> symbols,
             LocalDate tradeDate,
-            RiskHorizon horizon
+            Map<String, SnapshotRow> snapshots
     ) {
+        if (snapshots.isEmpty()) {
+            return Map.of();
+        }
         Map<String, String> symbolByReference = symbols.stream().collect(Collectors.toMap(
                 symbol -> RiskSignalCandidate.stockSignalReference(symbol, tradeDate),
                 Function.identity(), (first, ignored) -> first, LinkedHashMap::new));
         parameters.addValue("references", symbolByReference.keySet());
         List<GateRow> rows = jdbc.query("""
-                SELECT signal_reference, object_type, object_id, horizon, trade_date,
-                       signal_direction, original_confidence, suggested_confidence,
-                       suggested_action, enforced, reason, model_version, calculated_at
-                FROM risk_gate_result
-                WHERE signal_reference IN (:references) AND horizon = :horizon
-                  AND trade_date = :tradeDate AND available_at <= :asOf
-                ORDER BY calculated_at DESC, id DESC
+                SELECT g.signal_reference, g.object_type, g.object_id,
+                       g.horizon, g.trade_date, g.signal_direction,
+                       g.original_confidence, g.suggested_confidence,
+                       g.suggested_action, g.enforced, g.reason,
+                       g.model_version, g.calculated_at
+                FROM risk_gate_result g
+                JOIN risk_score_snapshot snapshot ON snapshot.id = g.snapshot_id
+                WHERE g.signal_reference IN (:references) AND g.horizon = :horizon
+                  AND g.trade_date = :tradeDate AND g.available_at <= :asOf
+                  AND g.quality_status = 'available'
+                  AND snapshot.horizon = g.horizon AND snapshot.trade_date = g.trade_date
+                  AND snapshot.model_version = g.model_version
+                  AND snapshot.available_at <= :asOf AND snapshot.quality_status = 'available'
+                  AND snapshot.completeness >= 0.80 AND snapshot.total_score IS NOT NULL
+                  AND snapshot.risk_level IS NOT NULL AND snapshot.risk_stage IS NOT NULL
+                  AND snapshot.risk_confidence IS NOT NULL
+                ORDER BY g.calculated_at DESC, g.id DESC
                 """, parameters, (resultSet, rowNum) -> new GateRow(
                 resultSet.getString("signal_reference"), mapGate(resultSet)));
         Map<String, GateDecision> latest = new LinkedHashMap<>();
