@@ -1,6 +1,9 @@
 package com.jx.tracker.risk.engine;
 
 import com.jx.tracker.risk.model.RiskHorizon;
+import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
+import com.jx.tracker.risk.model.RiskEvidence;
 import com.jx.tracker.risk.model.RiskLevel;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
@@ -12,6 +15,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,6 +39,9 @@ class RiskLayerComposerTest {
         assertThat(composition.mScore()).isEqualByComparingTo("1.10");
         assertThat(composition.coverage()).isEqualByComparingTo("1.0000");
         assertThat(composition.riskConfidence()).isEqualByComparingTo("0.9050");
+        assertThat(composition.evidence()).hasSize(3);
+        assertThat(composition.evidence()).extracting(item -> item.details().get("layerObjectId"))
+                .containsExactly("CN-A", "SW1-801780", "600000.SH");
     }
 
     @Test
@@ -94,7 +101,11 @@ class RiskLayerComposerTest {
                 RiskStage.FRAGILE,
                 BigDecimal.ONE,
                 new BigDecimal(riskConfidence),
-                List.of(),
+                List.of(new RiskEvidence(
+                        RiskDimension.STRUCTURAL_FRAGILITY, "V1", value, value,
+                        LocalDateTime.of(2026, 7, 18, 15, 0),
+                        LocalDateTime.of(2026, 7, 18, 16, 0),
+                        "source-a", RiskDataQualityStatus.AVAILABLE, Map.of())),
                 "risk-engine-test-v1",
                 LocalDateTime.of(2026, 7, 18, 16, 0)
         );

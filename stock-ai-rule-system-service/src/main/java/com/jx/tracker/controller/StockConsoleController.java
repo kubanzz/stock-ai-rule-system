@@ -3,6 +3,7 @@ package com.jx.tracker.controller;
 import com.jx.tracker.common.AjaxResult;
 import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.vo.StockConsoleVo;
+import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.service.StockConsoleQueryService;
 import com.jx.tracker.service.StockDashboardQueryService;
 import com.jx.tracker.service.StockWatchlistService;
@@ -43,13 +44,14 @@ public class StockConsoleController {
                                 @RequestParam(value = "industry", required = false) String industry,
                                 @RequestParam(value = "confidenceMin", required = false) BigDecimal confidenceMin,
                                 @RequestParam(value = "confidenceMax", required = false) BigDecimal confidenceMax,
+                                @RequestParam(value = "riskHorizon", defaultValue = "1-5d") String riskHorizon,
                                 @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
                                 @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
                                 @RequestParam(value = "sortField", required = false) String sortField,
                                 @RequestParam(value = "sortOrder", required = false) String sortOrder) {
         StockConsoleVo.SignalDashboardQuery query = new StockConsoleVo.SignalDashboardQuery(
                 date, market, poolCode, symbol, signal, industry, confidenceMin, confidenceMax,
-                pageNum, pageSize, sortField, sortOrder
+                pageNum, pageSize, sortField, sortOrder, RiskHorizon.fromCode(riskHorizon)
         );
         return AjaxResult.success(stockDashboardQueryService.dashboard(query));
     }

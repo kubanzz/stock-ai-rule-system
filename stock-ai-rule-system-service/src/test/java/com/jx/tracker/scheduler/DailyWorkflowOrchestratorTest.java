@@ -35,6 +35,7 @@ class DailyWorkflowOrchestratorTest {
                         "market_data_sync",
                         "factor_calculation",
                         "rule_signal_generation",
+                        "risk_warning",
                         "prediction_validation",
                         "ai_review",
                         "candidate_rule_backtest"

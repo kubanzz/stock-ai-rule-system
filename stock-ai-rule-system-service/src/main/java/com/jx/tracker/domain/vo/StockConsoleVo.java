@@ -1,6 +1,10 @@
 package com.jx.tracker.domain.vo;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.jx.tracker.market.data.util.MarketCodeNormalizer;
+import com.jx.tracker.risk.model.GateDecision;
+import com.jx.tracker.risk.model.RiskHorizon;
+import com.jx.tracker.risk.model.RiskSnapshot;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -36,8 +40,21 @@ public final class StockConsoleVo {
             String suggestedPeriod,
             LocalDateTime updatedAt,
             String signalStatus,
-            String quoteStatus
+            String quoteStatus,
+            RiskSnapshot riskSnapshot,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            GateDecision riskGateDecision
     ) {
+        public SignalRow(
+                String symbol, String name, BigDecimal price, BigDecimal changePct, String signal,
+                BigDecimal bullishScore, BigDecimal bearishScore, BigDecimal riskScore,
+                BigDecimal confidence, int triggeredRuleCount, String suggestedPeriod,
+                LocalDateTime updatedAt, String signalStatus, String quoteStatus
+        ) {
+            this(symbol, name, price, changePct, signal, bullishScore, bearishScore, riskScore,
+                    confidence, triggeredRuleCount, suggestedPeriod, updatedAt, signalStatus, quoteStatus,
+                    null, null);
+        }
     }
 
     public record SignalDashboardQuery(
@@ -52,7 +69,8 @@ public final class StockConsoleVo {
             int pageNum,
             int pageSize,
             String sortField,
-            String sortOrder
+            String sortOrder,
+            RiskHorizon riskHorizon
     ) {
         private static final Set<String> SORT_FIELDS = Set.of(
                 "symbol", "price", "changePct", "signal", "bullishScore", "bearishScore",
@@ -69,6 +87,16 @@ public final class StockConsoleVo {
             pageSize = pageSize < 1 ? 20 : Math.min(pageSize, 100);
             sortField = sortField != null && SORT_FIELDS.contains(sortField) ? sortField : "confidence";
             sortOrder = "asc".equalsIgnoreCase(sortOrder) ? "asc" : "desc";
+            riskHorizon = riskHorizon == null ? RiskHorizon.SHORT_TERM : riskHorizon;
+        }
+
+        public SignalDashboardQuery(
+                LocalDate date, String market, String poolCode, String symbol, String signal,
+                String industry, BigDecimal confidenceMin, BigDecimal confidenceMax,
+                int pageNum, int pageSize, String sortField, String sortOrder
+        ) {
+            this(date, market, poolCode, symbol, signal, industry, confidenceMin, confidenceMax,
+                    pageNum, pageSize, sortField, sortOrder, RiskHorizon.SHORT_TERM);
         }
 
         private static String defaultIfBlank(String value, String defaultValue) {
@@ -122,8 +150,19 @@ public final class StockConsoleVo {
             int pageNum,
             int pageSize,
             List<String> availableIndustries,
-            LocalDateTime dataUpdatedAt
+            LocalDateTime dataUpdatedAt,
+            RiskHorizon riskHorizon
     ) {
+        public SignalDashboardOverview(
+                LocalDate tradeDate, String riskDisclaimer, List<MetricCard> metrics,
+                List<SignalRow> signals, MarketContext marketContext, long total,
+                int pageNum, int pageSize, List<String> availableIndustries,
+                LocalDateTime dataUpdatedAt
+        ) {
+            this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total, pageNum, pageSize,
+                    availableIndustries, dataUpdatedAt, RiskHorizon.SHORT_TERM);
+        }
+
         public SignalDashboardOverview(
                 LocalDate tradeDate,
                 String riskDisclaimer,
@@ -132,7 +171,8 @@ public final class StockConsoleVo {
                 MarketContext marketContext,
                 long total
         ) {
-            this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total, 1, 20, List.of(), null);
+            this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total,
+                    1, 20, List.of(), null, RiskHorizon.SHORT_TERM);
         }
     }
 

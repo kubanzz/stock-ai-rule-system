@@ -75,6 +75,7 @@ class StockSignalServiceTest {
         assertThat(inserted.getSymbol()).isEqualTo("AAPL");
         assertThat(inserted.getSignalDate()).isEqualTo(LocalDate.of(2026, 6, 20));
         assertThat(inserted.getSignal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(inserted.getSignalDirection()).isEqualTo(SignalType.BULLISH.getCode());
         assertThat(inserted.getSignalLevel()).isEqualTo("强看涨");
         assertThat(inserted.getBullishScore()).isEqualByComparingTo(new BigDecimal("75"));
         assertThat(inserted.getTriggeredRules()).contains("R_TREND_BREAKOUT_001");

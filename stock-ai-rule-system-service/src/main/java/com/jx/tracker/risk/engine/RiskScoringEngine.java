@@ -85,6 +85,56 @@ public final class RiskScoringEngine {
         return new RiskScoreResult(snapshot, missingReasons);
     }
 
+    /** 使用固定市场/行业/个股层级合成结果评分，不对缺失层重新分配权重。 */
+    public RiskScoreResult scoreLayers(RiskLayerScoreRequest request) {
+        RiskLayerComposition composition = request.composition();
+        List<String> missingReasons = new ArrayList<>();
+        if (composition.coverage().compareTo(FORMAL_COMPLETENESS) < 0) {
+            missingReasons.add("LAYER_COVERAGE_BELOW_80_PERCENT");
+        }
+        Map<RiskDimension, BigDecimal> scores = compositionScores(composition);
+        if (scores.values().stream().anyMatch(value -> value == null)) {
+            missingReasons.add("LAYER_DIMENSION_SCORE_MISSING");
+        }
+        if (composition.mScore() == null) {
+            missingReasons.add("LAYER_MODIFIER_MISSING");
+        }
+
+        BigDecimal totalScore = null;
+        RiskLevel level = null;
+        RiskStage stage = null;
+        if (missingReasons.isEmpty()) {
+            totalScore = calculateTotal(scores, composition.mScore());
+            RiskLevel rawLevel = rawLevel(scores, totalScore);
+            RiskScoreRequest transitionRequest = new RiskScoreRequest(
+                    request.object(), request.horizon(), request.tradeDate(), request.previousTradingDate(),
+                    request.asOf(), composition.mScore(), composition.evidence(), request.history(),
+                    request.extremeConfirmation(), request.modelVersion());
+            RiskTransition transition = transition(transitionRequest, rawLevel, scores, totalScore);
+            level = transition.level();
+            stage = transition.easing() ? RiskStage.EASING : stageFor(level);
+        }
+
+        RiskSnapshot snapshot = new RiskSnapshot(
+                request.object(), request.horizon(), request.tradeDate(),
+                composition.vScore(), composition.tScore(), composition.sScore(),
+                composition.cScore(), composition.aScore(), composition.mScore(),
+                totalScore, level, stage, composition.coverage(),
+                missingReasons.isEmpty() ? composition.riskConfidence() : null,
+                composition.evidence(), request.modelVersion(), request.asOf());
+        return new RiskScoreResult(snapshot, missingReasons);
+    }
+
+    private Map<RiskDimension, BigDecimal> compositionScores(RiskLayerComposition composition) {
+        Map<RiskDimension, BigDecimal> scores = new EnumMap<>(RiskDimension.class);
+        scores.put(RiskDimension.STRUCTURAL_FRAGILITY, composition.vScore());
+        scores.put(RiskDimension.SUBSTANTIVE_TRIGGER, composition.tScore());
+        scores.put(RiskDimension.EXTERNAL_TRANSMISSION, composition.sScore());
+        scores.put(RiskDimension.LOCAL_CONFIRMATION, composition.cScore());
+        scores.put(RiskDimension.FORCED_SELLING, composition.aScore());
+        return scores;
+    }
+
     private List<RiskEvidence> selectLatestEligibleEvidence(RiskScoreRequest request) {
         Map<String, RiskEvidence> selected = new HashMap<>();
         for (RiskEvidence evidence : request.evidence()) {

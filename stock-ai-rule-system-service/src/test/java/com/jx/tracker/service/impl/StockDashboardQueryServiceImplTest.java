@@ -18,6 +18,17 @@ import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.risk.dashboard.StockDashboardRiskOverlay;
+import com.jx.tracker.risk.dashboard.StockDashboardRiskReader;
+import com.jx.tracker.risk.model.GateDecision;
+import com.jx.tracker.risk.model.RiskGateStatus;
+import com.jx.tracker.risk.model.RiskHorizon;
+import com.jx.tracker.risk.model.RiskLevel;
+import com.jx.tracker.risk.model.RiskObjectKey;
+import com.jx.tracker.risk.model.RiskObjectType;
+import com.jx.tracker.risk.model.RiskSnapshot;
+import com.jx.tracker.risk.model.RiskStage;
+import com.jx.tracker.risk.model.SignalDirection;
 import com.jx.tracker.service.StockMarketContextService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +72,8 @@ class StockDashboardQueryServiceImplTest {
     private StockWatchlistItemMapper stockWatchlistItemMapper;
     @Mock
     private StockMarketContextService stockMarketContextService;
+    @Mock
+    private StockDashboardRiskReader stockDashboardRiskReader;
 
     private StockDashboardQueryServiceImpl service;
 
@@ -77,9 +90,11 @@ class StockDashboardQueryServiceImplTest {
                 stockActualResultMapper,
                 stockWatchlistMapper,
                 stockWatchlistItemMapper,
-                stockMarketContextService
+                stockMarketContextService,
+                stockDashboardRiskReader
         );
         lenient().when(stockMarketContextService.marketContext(any(), any(), any())).thenReturn(emptyMarketContext());
+        lenient().when(stockDashboardRiskReader.findBySymbols(any(), any(), any(), any())).thenReturn(Map.of());
     }
 
     @Test
@@ -97,10 +112,50 @@ class StockDashboardQueryServiceImplTest {
         assertThat(defaults.pageSize()).isEqualTo(20);
         assertThat(defaults.sortField()).isEqualTo("confidence");
         assertThat(defaults.sortOrder()).isEqualTo("desc");
+        assertThat(defaults.riskHorizon().getCode()).isEqualTo("1-5d");
         assertThat(bounded.pageSize()).isEqualTo(100);
         assertThat(bounded.sortOrder()).isEqualTo("asc");
         assertThat(bounded.market()).isEqualTo("港股");
         assertThat(bounded.poolCode()).isEqualTo("growth");
+    }
+
+    @Test
+    void attachesSelectedHorizonRiskButAlwaysDisplaysPersistedSignalDirection() {
+        StockSignalDaily legacy = signal("000004.SZ", DATE, "high_risk", "0.80", 1, null);
+        legacy.setSignalDirection("bearish");
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "000004.SZ");
+        RiskSnapshot snapshot = new RiskSnapshot(
+                stock, RiskHorizon.MEDIUM_TERM, DATE,
+                new BigDecimal("80"), new BigDecimal("75"), new BigDecimal("70"),
+                new BigDecimal("80"), new BigDecimal("70"), BigDecimal.ONE,
+                new BigDecimal("77"), RiskLevel.CRITICAL, RiskStage.STAMPEDE,
+                new BigDecimal("0.90"), new BigDecimal("0.90"), List.of(),
+                "risk-v1", DATE.atTime(18, 0));
+        GateDecision decision = new GateDecision(
+                stock, RiskHorizon.MEDIUM_TERM, DATE, SignalDirection.BULLISH,
+                new BigDecimal("0.80"), new BigDecimal("0.60"),
+                RiskGateStatus.DOWNGRADE, false, "影子建议", "risk-v1", DATE.atTime(18, 1));
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000004.SZ", "丁", "A股", "医药")));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(legacy));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
+        when(stockDashboardRiskReader.findBySymbols(any(), any(), any(), any())).thenReturn(Map.of(
+                "000004.SZ", new StockDashboardRiskOverlay(snapshot, decision)));
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
+                DATE, "A股", "all", null, null, null, null, null,
+                1, 20, "confidence", "desc", RiskHorizon.MEDIUM_TERM));
+
+        assertThat(result.riskHorizon()).isEqualTo(RiskHorizon.MEDIUM_TERM);
+        assertThat(result.signals()).singleElement().satisfies(row -> {
+            assertThat(row.riskSnapshot()).isSameAs(snapshot);
+            assertThat(row.riskGateDecision()).isSameAs(decision);
+            assertThat(row.signal()).isEqualTo("bearish");
+        });
+        verify(stockDashboardRiskReader).findBySymbols(
+                org.mockito.ArgumentMatchers.eq(DATE),
+                org.mockito.ArgumentMatchers.eq(RiskHorizon.MEDIUM_TERM),
+                org.mockito.ArgumentMatchers.eq(List.of("000004.SZ")), any());
     }
 
     @Test

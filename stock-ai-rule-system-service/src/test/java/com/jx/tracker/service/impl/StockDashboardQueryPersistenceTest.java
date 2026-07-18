@@ -39,6 +39,9 @@ class StockDashboardQueryPersistenceTest {
 
     @BeforeEach
     void resetSchema() {
+        jdbcTemplate.execute("DROP TABLE IF EXISTS risk_gate_result");
+        jdbcTemplate.execute("DROP TABLE IF EXISTS risk_score_evidence");
+        jdbcTemplate.execute("DROP TABLE IF EXISTS risk_score_snapshot");
         jdbcTemplate.execute("DROP TABLE IF EXISTS stock_actual_result");
         jdbcTemplate.execute("DROP TABLE IF EXISTS market_data_sync_run");
         jdbcTemplate.execute("DROP TABLE IF EXISTS trade_calendar");
@@ -168,6 +171,35 @@ class StockDashboardQueryPersistenceTest {
                     sort_order INT NOT NULL DEFAULT 0,
                     created_at DATETIME,
                     updated_at DATETIME
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE risk_score_snapshot (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    v_score DECIMAL, t_score DECIMAL, s_score DECIMAL, c_score DECIMAL, a_score DECIMAL,
+                    m_score DECIMAL, total_score DECIMAL, risk_level VARCHAR(16), risk_stage VARCHAR(16),
+                    completeness DECIMAL, risk_confidence DECIMAL, model_version VARCHAR(64),
+                    observed_at TIMESTAMP, available_at TIMESTAMP, source VARCHAR(64),
+                    quality_status VARCHAR(32), calculated_at TIMESTAMP
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE risk_score_evidence (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, snapshot_id BIGINT, dimension_code CHAR(1),
+                    indicator_code VARCHAR(64), raw_value DECIMAL, indicator_score DECIMAL,
+                    weighted_contribution DECIMAL, observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), evidence_json VARCHAR(1024)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE risk_gate_result (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, snapshot_id BIGINT, signal_reference VARCHAR(64),
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    signal_direction VARCHAR(16), original_confidence DECIMAL, suggested_confidence DECIMAL,
+                    suggested_action VARCHAR(16), enforced BOOLEAN, reason VARCHAR(512), model_version VARCHAR(64),
+                    observed_at TIMESTAMP, available_at TIMESTAMP, source VARCHAR(64),
+                    quality_status VARCHAR(32), calculated_at TIMESTAMP
                 )
                 """);
 
