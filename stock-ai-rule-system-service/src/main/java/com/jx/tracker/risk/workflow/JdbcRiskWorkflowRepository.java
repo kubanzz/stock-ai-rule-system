@@ -127,6 +127,39 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     }
 
     @Override
+    public void saveIndustryExposure(IndustryExposure exposure) {
+        jdbcTemplate.update("""
+                INSERT INTO risk_object_exposure (
+                    object_type, object_id, parent_object_type, parent_object_id,
+                    exposure_weight, valid_from, valid_to, observed_at, available_at,
+                    source, quality_status, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    id = id
+                """,
+                exposure.stock().objectType().getCode(), exposure.stock().objectId(),
+                exposure.sector().objectType().getCode(), exposure.sector().objectId(),
+                BigDecimal.ONE, exposure.validFrom(), exposure.validTo(),
+                exposure.observedAt(), exposure.availableAt(), exposure.source(),
+                exposure.qualityStatus().getCode(), json(Map.of()));
+        jdbcTemplate.update("""
+                UPDATE risk_object_exposure
+                SET exposure_weight = ?, valid_to = ?, observed_at = ?, available_at = ?,
+                    quality_status = ?, metadata_json = ?
+                WHERE object_type = ? AND object_id = ?
+                  AND parent_object_type = ? AND parent_object_id = ?
+                  AND valid_from = ? AND source = ?
+                  AND (available_at < ? OR (available_at = ? AND observed_at < ?))
+                """,
+                BigDecimal.ONE, exposure.validTo(), exposure.observedAt(), exposure.availableAt(),
+                exposure.qualityStatus().getCode(), json(Map.of()),
+                exposure.stock().objectType().getCode(), exposure.stock().objectId(),
+                exposure.sector().objectType().getCode(), exposure.sector().objectId(),
+                exposure.validFrom(), exposure.source(),
+                exposure.availableAt(), exposure.availableAt(), exposure.observedAt());
+    }
+
+    @Override
     public void saveCheckpoint(
             String providerCode,
             String datasetCode,

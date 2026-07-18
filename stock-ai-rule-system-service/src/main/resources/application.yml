@@ -62,6 +62,15 @@ jx:
   tracker:
 
 stock-ai-rule:
+  risk-warning:
+    # 风险模块与五年回填默认关闭；影子闸门没有自动执行开关。
+    enabled: ${RISK_WARNING_ENABLED:false}
+    backfill-enabled: ${RISK_WARNING_BACKFILL_ENABLED:false}
+    # 为空时复用 market-data.provider.ak-tools-base-url。
+    ak-tools-base-url: ${RISK_WARNING_AKTOOLS_BASE_URL:}
+    model-version: ${RISK_WARNING_MODEL_VERSION:risk-warning-v1}
+    after-close-cutoff: ${RISK_WARNING_AFTER_CLOSE_CUTOFF:20:00}
+    collection-chunk-size: ${RISK_WARNING_COLLECTION_CHUNK_SIZE:200}
   market-data:
     provider:
       # 可选：mock / csv / tushare。外部 token 缺失时自动降级到 fallback-type。
