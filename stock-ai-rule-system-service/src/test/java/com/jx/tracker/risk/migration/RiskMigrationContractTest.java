@@ -40,8 +40,10 @@ class RiskMigrationContractTest {
                 "CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100))",
                 "CHECK (m_score IS NULL OR (m_score >= 0.90 AND m_score <= 1.20))",
                 "CHECK (risk_confidence IS NULL OR (risk_confidence >= 0 AND risk_confidence <= 1))",
+                "CHECK ((total_score IS NULL AND risk_level IS NULL AND risk_stage IS NULL AND risk_confidence IS NULL) OR (total_score IS NOT NULL AND risk_level IS NOT NULL AND risk_stage IS NOT NULL AND risk_confidence IS NOT NULL AND completeness >= 0.80))",
                 "original_confidence DECIMAL(6,5) NOT NULL",
                 "suggested_confidence DECIMAL(6,5) NOT NULL",
+                "suggested_action VARCHAR(16) NOT NULL",
                 "CHECK (original_confidence >= 0 AND original_confidence <= 1)",
                 "CHECK (suggested_confidence >= 0 AND suggested_confidence <= 1)"
         );

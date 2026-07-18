@@ -134,6 +134,7 @@ CREATE TABLE risk_score_snapshot (
     CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100)),
     CHECK (completeness >= 0 AND completeness <= 1),
     CHECK (risk_confidence IS NULL OR (risk_confidence >= 0 AND risk_confidence <= 1)),
+    CHECK ((total_score IS NULL AND risk_level IS NULL AND risk_stage IS NULL AND risk_confidence IS NULL) OR (total_score IS NOT NULL AND risk_level IS NOT NULL AND risk_stage IS NOT NULL AND risk_confidence IS NOT NULL AND completeness >= 0.80)),
     CHECK (available_at >= observed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='风险评分幂等快照';
 
@@ -171,7 +172,7 @@ CREATE TABLE risk_gate_result (
     signal_direction VARCHAR(16) NOT NULL COMMENT 'bullish/bearish/watch',
     original_confidence DECIMAL(6,5) NOT NULL,
     suggested_confidence DECIMAL(6,5) NOT NULL,
-    suggested_action VARCHAR(16) NULL COMMENT 'normal/notice/downgrade/block',
+    suggested_action VARCHAR(16) NOT NULL COMMENT 'normal/notice/downgrade/block',
     enforced TINYINT(1) NOT NULL DEFAULT 0 COMMENT '首轮必须为影子模式',
     reason VARCHAR(512) NOT NULL,
     evidence_json JSON NULL,
