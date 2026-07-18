@@ -386,6 +386,9 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
     ) {
         RiskWindowPolicy.WindowSpec windows = RiskWindowPolicy.forHorizon(horizon);
         Map<String, Object> raw = mapOf(
+                "datasetCode", MarketDatasetCode.MARKET_DAILY.code(),
+                "tradingDay", true,
+                "marketPrice", true,
                 "window", windows.mainWindow(),
                 "contextWindow", windows.contextWindow(),
                 "baselineWindow", windows.baselineWindow(),

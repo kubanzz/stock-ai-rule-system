@@ -1,7 +1,6 @@
 package com.jx.tracker.risk.workflow;
 
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
-import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.provider.RiskObservation;
 
@@ -12,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -20,6 +20,8 @@ import java.util.TreeMap;
  */
 final class RiskTradingDayCalendar {
 
+    private static final Set<String> MARKET_DAILY_PRICE_INDICATORS = Set.of(
+            "V3", "V4", "C1", "C3", "C4", "C5", "A3", "A5");
     private final NavigableMap<LocalDate, List<LocalDateTime>> availabilityByDate = new TreeMap<>();
 
     RiskTradingDayCalendar(List<RiskObservation> observations) {
@@ -66,9 +68,14 @@ final class RiskTradingDayCalendar {
                 && observation.qualityStatus() != RiskDataQualityStatus.VALID_ZERO) {
             return false;
         }
-        return observation.dimension() == RiskDimension.LOCAL_CONFIRMATION
-                || booleanAttribute(observation, "tradingDay")
-                || booleanAttribute(observation, "marketPrice");
+        return booleanAttribute(observation, "tradingDay")
+                || booleanAttribute(observation, "marketPrice")
+                || isMarketDailyPriceProvenance(observation);
+    }
+
+    private boolean isMarketDailyPriceProvenance(RiskObservation observation) {
+        return "market_daily".equals(observation.attributes().get("datasetCode"))
+                && MARKET_DAILY_PRICE_INDICATORS.contains(observation.indicatorCode());
     }
 
     private boolean booleanAttribute(RiskObservation observation, String key) {

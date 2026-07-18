@@ -194,6 +194,20 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void marketDailyObservationsDeclareExplicitTradingDayPriceProvenance() {
+        RiskProviderBatch batch = provider(dailyPoints(30), null)
+                .fetch("market_daily", request(null));
+
+        assertThat(batch.observations())
+                .filteredOn(observation -> observation.qualityStatus() == RiskDataQualityStatus.AVAILABLE)
+                .isNotEmpty()
+                .allSatisfy(observation -> assertThat(observation.attributes())
+                        .containsEntry("datasetCode", "market_daily")
+                        .containsEntry("tradingDay", true)
+                        .containsEntry("marketPrice", true));
+    }
+
+    @Test
     void a3TreatsFlatRecentReturnsAsInsufficientInsteadOfAvailableZero() {
         RiskProviderBatch batch = provider(flatRecentDailyPoints(25), null)
                 .fetch("market_daily", request(null));

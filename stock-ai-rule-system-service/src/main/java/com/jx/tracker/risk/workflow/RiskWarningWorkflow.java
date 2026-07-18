@@ -337,28 +337,36 @@ public final class RiskWarningWorkflow {
         return result;
     }
 
-    private void addLayerObjects(
+    LayerObjectExpansionMetrics addLayerObjects(
             Set<RiskObjectKey> objects,
             List<IndustryExposure> exposures,
             RiskWorkflowRequest request
     ) {
-        List<RiskObjectKey> stocks = objects.stream()
+        Set<RiskObjectKey> stocks = objects.stream()
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
-                .toList();
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (stocks.isEmpty()) {
-            return;
+            return new LayerObjectExpansionMetrics(0, 0, 0);
         }
         objects.add(CN_A);
-        exposures.stream()
-                .filter(exposure -> stocks.contains(exposure.stock()))
-                .filter(exposure -> exposure.validTo() == null
-                        || !exposure.validTo().isBefore(request.scoreStartDate()))
-                .filter(exposure -> !exposure.validFrom().isAfter(request.endDate()))
-                .filter(exposure -> !exposure.availableAt().isAfter(request.asOf()))
-                .filter(exposure -> exposure.qualityStatus() == RiskDataQualityStatus.AVAILABLE
-                        || exposure.qualityStatus() == RiskDataQualityStatus.VALID_ZERO)
-                .map(IndustryExposure::sector)
-                .forEach(objects::add);
+        int exposureRowsVisited = 0;
+        int matchedExposureRows = 0;
+        for (IndustryExposure exposure : exposures) {
+            exposureRowsVisited++;
+            if (!stocks.contains(exposure.stock())
+                    || (exposure.validTo() != null
+                    && exposure.validTo().isBefore(request.scoreStartDate()))
+                    || exposure.validFrom().isAfter(request.endDate())
+                    || exposure.availableAt().isAfter(request.asOf())
+                    || (exposure.qualityStatus() != RiskDataQualityStatus.AVAILABLE
+                    && exposure.qualityStatus() != RiskDataQualityStatus.VALID_ZERO)) {
+                continue;
+            }
+            matchedExposureRows++;
+            objects.add(exposure.sector());
+        }
+        return new LayerObjectExpansionMetrics(
+                stocks.size(), exposureRowsVisited, matchedExposureRows);
     }
 
     private Set<RiskObjectKey> withLayerDependencies(
@@ -599,6 +607,13 @@ public final class RiskWarningWorkflow {
     }
 
     private record ObjectHorizon(RiskObjectKey object, RiskHorizon horizon) {
+    }
+
+    record LayerObjectExpansionMetrics(
+            int requestedStockCount,
+            int exposureRowsVisited,
+            int matchedExposureRows
+    ) {
     }
 
     private record EventContext(

@@ -88,8 +88,20 @@ class RiskWorkflowPointInTimeIndexTest {
                 STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
                 "V1", BigDecimal.TEN, "score", date.atTime(18, 0), date.atTime(19, 0),
                 "fundamental-source", RiskDataQualityStatus.AVAILABLE, Map.of());
+        RiskObservation membership = new RiskObservation(
+                STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION,
+                "DATA_SW1_MEMBERSHIP", BigDecimal.ONE, "boolean",
+                date.atTime(18, 0), date.atTime(19, 0),
+                "membership-source", RiskDataQualityStatus.AVAILABLE,
+                Map.of("metric", "industryMembership"));
+        RiskObservation nonPriceConfirmation = new RiskObservation(
+                STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION,
+                "C2", BigDecimal.TEN, "ratio", date.atTime(18, 0), date.atTime(19, 0),
+                "breadth-source", RiskDataQualityStatus.AVAILABLE,
+                Map.of("metric", "advanceRatio"));
 
-        RiskTradingDayCalendar calendar = new RiskTradingDayCalendar(List.of(structural));
+        RiskTradingDayCalendar calendar = new RiskTradingDayCalendar(
+                List.of(structural, membership, nonPriceConfirmation));
 
         assertThat(calendar.windowStart(RiskHorizon.SHORT_TERM, date, date.atTime(20, 0))).isEmpty();
     }

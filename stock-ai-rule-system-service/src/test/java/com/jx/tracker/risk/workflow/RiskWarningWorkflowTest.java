@@ -43,9 +43,11 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -498,6 +500,35 @@ class RiskWarningWorkflowTest {
         assertThat(repository.historyReads).isEqualTo(1);
     }
 
+    @Test
+    void layerObjectExpansionVisitsEachExposureOnceWithLargeStockScope() {
+        int size = 5_000;
+        Set<RiskObjectKey> objects = java.util.stream.IntStream.range(0, size)
+                .mapToObj(index -> new RiskObjectKey(
+                        RiskObjectType.STOCK, String.format("%06d.SH", index)))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<IndustryExposure> exposures = objects.stream().map(stock -> new IndustryExposure(
+                stock, SECTOR, DATE.minusYears(1), null,
+                DATE.atTime(18, 0), DATE.atTime(19, 0),
+                "source-a", RiskDataQualityStatus.AVAILABLE)).toList();
+        RiskWarningWorkflow workflow = workflow(
+                new InMemoryRepository(),
+                new CapturingProvider(RiskProviderBatch.validZero("source-a", null, AS_OF)));
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        RiskWarningWorkflow.LayerObjectExpansionMetrics metrics =
+                workflow.addLayerObjects(objects, exposures, request);
+
+        assertThat(metrics.requestedStockCount()).isEqualTo(size);
+        assertThat(metrics.exposureRowsVisited()).isEqualTo(size);
+        assertThat(metrics.matchedExposureRows()).isEqualTo(size);
+        assertThat(objects).contains(MARKET, SECTOR);
+    }
+
     private RiskWarningWorkflow workflow(InMemoryRepository repository, RiskDataProvider provider) {
         return workflow(repository, provider, defaultEvaluator());
     }
@@ -608,7 +639,10 @@ class RiskWarningWorkflowTest {
         return new RiskObservation(
                 MARKET, horizon, date, dimension, indicatorCode, value, "score",
                 date.atTime(18, 0), date.atTime(19, 0), "market-confirmation",
-                RiskDataQualityStatus.AVAILABLE, Map.of("pointInTime", true));
+                RiskDataQualityStatus.AVAILABLE, Map.of(
+                        "pointInTime", true,
+                        "tradingDay", true,
+                        "marketPrice", true));
     }
 
     private RiskEvent event(String key, LocalDateTime availableAt) {
