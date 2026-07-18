@@ -60,12 +60,13 @@ import {
   mockRules,
   mockRuleVersions,
   mockRunCenterOverview,
-  mockSignalDashboard,
   mockSignals,
   mockStockResearchDetail,
   mockWatchlists,
   mockWorkflowDependencies,
+  selectMockSignalDashboard,
 } from './mock';
+import { RISK_DECISION_SUPPORT_NOTICE } from './risk/types';
 
 interface RawResponse<T> {
   data: T;
@@ -212,15 +213,19 @@ export async function getStockSignals(params: StockSignalQuery = {}) {
 export async function getSignalDashboard(
   params: SignalDashboardQuery = {},
 ): Promise<SignalDashboardOverview> {
-  return requestOrMock(
+  const dashboard = await requestOrMock(
     async () => {
       const response = await baseRequestClient.get<
         RawResponse<StockAjaxResult<SignalDashboardOverview>>
       >('/signals/dashboard', { params });
       return unwrapAjaxResult(response.data);
     },
-    () => mockSignalDashboard,
+    () => selectMockSignalDashboard(params),
   );
+  return {
+    ...dashboard,
+    riskDisclaimer: RISK_DECISION_SUPPORT_NOTICE,
+  };
 }
 
 export async function getWatchlists(params: { market?: string } = {}) {

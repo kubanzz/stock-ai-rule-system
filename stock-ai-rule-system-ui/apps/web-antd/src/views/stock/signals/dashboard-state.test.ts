@@ -14,8 +14,25 @@ describe('signal dashboard query state', () => {
       pageNum: 1,
       pageSize: 20,
       poolCode: 'my-follow',
+      riskHorizon: '1-5d',
       sortField: 'confidence',
       sortOrder: 'desc',
+    });
+  });
+
+  it('switches the risk horizon without changing the signal direction filter', () => {
+    const current = {
+      ...createDashboardQuery(),
+      pageNum: 4,
+      signal: 'bearish' as const,
+    };
+
+    expect(
+      applyDashboardFilters(current, { riskHorizon: '20-60d' }),
+    ).toMatchObject({
+      pageNum: 1,
+      riskHorizon: '20-60d',
+      signal: 'bearish',
     });
   });
 

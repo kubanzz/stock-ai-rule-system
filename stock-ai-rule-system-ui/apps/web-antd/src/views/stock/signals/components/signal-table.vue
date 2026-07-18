@@ -24,6 +24,15 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
+import { RiskGateTag, RiskLevelTag, RiskScoreDisplay } from '../../risk/shared';
+import {
+  formatConfidence,
+  getRiskSnapshotState,
+  RISK_SNAPSHOT_STATE_LABELS,
+  RISK_STAGE_LABELS,
+} from '../risk-dashboard-state';
+import SignalRiskDetail from './signal-risk-detail.vue';
+
 const props = defineProps<{
   industries: string[];
   loading?: boolean;
@@ -67,8 +76,19 @@ const columns: TableColumnsType<SignalDashboardRow> = [
     title: '看跌分',
     width: 82,
   },
-  { dataIndex: 'riskScore', key: 'riskScore', title: '风险分', width: 82 },
+  {
+    dataIndex: 'riskSnapshot',
+    key: 'riskSnapshot',
+    title: '风险预警',
+    width: 168,
+  },
   { dataIndex: 'confidence', key: 'confidence', title: '置信度', width: 130 },
+  {
+    dataIndex: 'riskGateDecision',
+    key: 'riskGateDecision',
+    title: '影子闸门',
+    width: 176,
+  },
   {
     dataIndex: 'triggeredRuleCount',
     key: 'triggeredRuleCount',
@@ -100,14 +120,14 @@ const signalOptions = [
   { label: '看涨', value: 'bullish' },
   { label: '看跌', value: 'bearish' },
   { label: '观望', value: 'watch' },
-  { label: '高风险', value: 'high_risk' },
+  { label: '历史高风险', value: 'high_risk' },
   { label: '待生成信号', value: 'pending' },
 ];
 
 const signalMeta: Record<SignalType, { color: string; label: string }> = {
   bearish: { color: 'red', label: '看跌' },
   bullish: { color: 'green', label: '看涨' },
-  high_risk: { color: 'volcano', label: '高风险' },
+  high_risk: { color: 'volcano', label: '历史高风险' },
   watch: { color: 'gold', label: '观望' },
 };
 
@@ -118,6 +138,17 @@ function percent(value: null | number) {
 
 function scoreText(value: null | number) {
   return value === null ? '--' : value;
+}
+
+function riskStageText(record: Record<string, unknown>) {
+  const row = record as unknown as SignalDashboardRow;
+  const stage = row.riskSnapshot?.stage;
+  return stage ? RISK_STAGE_LABELS[stage] : '--';
+}
+
+function riskState(record: Record<string, unknown>) {
+  const row = record as unknown as SignalDashboardRow;
+  return getRiskSnapshotState(row.riskSnapshot);
 }
 
 function handleTableChange(page: TablePaginationConfig) {
@@ -234,10 +265,13 @@ function openRecord(record: Record<string, unknown>) {
       :loading="loading"
       :pagination="pagination"
       row-key="symbol"
-      :scroll="{ x: 1210 }"
+      :scroll="{ x: 1470 }"
       size="small"
       @change="handleTableChange"
     >
+      <template #expandedRowRender="{ record }">
+        <SignalRiskDetail :row="record" />
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'symbol'">
           <button class="stock-link" type="button" @click="openRecord(record)">
@@ -266,16 +300,57 @@ function openRecord(record: Record<string, unknown>) {
           <span v-if="record.confidence === null">--</span>
           <Progress v-else :percent="percent(record.confidence)" size="small" />
         </template>
-        <template v-else-if="column.key === 'riskScore'">
-          <span :class="(record.riskScore ?? 0) >= 60 ? 'negative' : ''">
-            {{ scoreText(record.riskScore) }}
-          </span>
+        <template v-else-if="column.key === 'riskSnapshot'">
+          <div v-if="riskState(record) === 'ready'" class="risk-summary-cell">
+            <div>
+              <RiskLevelTag :level="record.riskSnapshot?.level" />
+              <RiskScoreDisplay
+                :completeness="record.riskSnapshot?.completeness"
+                :score="record.riskSnapshot?.totalScore"
+              />
+            </div>
+            <small>
+              {{ riskStageText(record) }} · 完整度
+              {{ Math.round((record.riskSnapshot?.completeness ?? 0) * 100) }}%
+            </small>
+          </div>
+          <div v-else class="risk-summary-cell">
+            <Tag :color="riskState(record) === 'stale' ? 'orange' : 'default'">
+              {{ RISK_SNAPSHOT_STATE_LABELS[riskState(record)] }}
+            </Tag>
+            <small v-if="record.riskSnapshot">
+              完整度
+              {{ Math.round(record.riskSnapshot.completeness * 100) }}%
+            </small>
+          </div>
         </template>
         <template v-else-if="column.key === 'bullishScore'">
           {{ scoreText(record.bullishScore) }}
         </template>
         <template v-else-if="column.key === 'bearishScore'">
           {{ scoreText(record.bearishScore) }}
+        </template>
+        <template v-else-if="column.key === 'riskGateDecision'">
+          <div v-if="record.riskGateDecision" class="gate-summary-cell">
+            <RiskGateTag :status="record.riskGateDecision.suggestedAction" />
+            <small>
+              {{ formatConfidence(record.riskGateDecision.originalConfidence) }}
+              →
+              {{
+                formatConfidence(record.riskGateDecision.suggestedConfidence)
+              }}
+            </small>
+            <small>enforced=false · 未执行</small>
+            <small
+              v-if="
+                record.riskGateDecision.signalDirection === 'bearish' ||
+                record.riskGateDecision.signalDirection === 'watch'
+              "
+            >
+              仅风险说明
+            </small>
+          </div>
+          <span v-else class="muted">暂无建议</span>
         </template>
         <template v-else-if="column.key === 'actions'">
           <Button type="link" @click="openRecord(record)">详情</Button>
@@ -353,6 +428,25 @@ function openRecord(record: Record<string, unknown>) {
 
 .negative {
   color: #e5484d;
+}
+
+.risk-summary-cell,
+.gate-summary-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.risk-summary-cell > div {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.risk-summary-cell small,
+.gate-summary-cell small,
+.muted {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 @media (max-width: 900px) {

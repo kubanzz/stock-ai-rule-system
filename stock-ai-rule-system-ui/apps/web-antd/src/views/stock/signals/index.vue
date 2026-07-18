@@ -24,6 +24,7 @@ import SignalMetricGrid from './components/signal-metric-grid.vue';
 import SignalTable from './components/signal-table.vue';
 import StockPickerDrawer from './components/stock-picker-drawer.vue';
 import WatchlistManagerDrawer from './components/watchlist-manager-drawer.vue';
+import { buildSignalDashboardCsv } from './dashboard-export';
 import {
   applyDashboardFilters,
   applyDashboardPagination,
@@ -45,7 +46,7 @@ const initialMetrics: DashboardMetricCard[] = [
   { label: '看涨', tone: 'green', unit: '条', value: null },
   { label: '看跌', tone: 'red', unit: '条', value: null },
   { label: '观望', tone: 'gold', unit: '条', value: null },
-  { label: '高风险', tone: 'purple', unit: '条', value: null },
+  { label: '严重风险', tone: 'purple', unit: '个', value: null },
 ];
 
 const metrics = computed(() => dashboard.value?.metrics ?? initialMetrics);
@@ -141,39 +142,7 @@ function exportRows() {
     message.warning('当前筛选结果为空');
     return;
   }
-  const headers = [
-    '股票代码',
-    '名称',
-    '价格',
-    '涨跌幅',
-    '系统信号',
-    '看涨分',
-    '看跌分',
-    '风险分',
-    '置信度',
-    '规则数',
-    '建议周期',
-    '更新时间',
-  ];
-  const values = rows.map((row) => [
-    row.symbol,
-    row.name ?? '',
-    row.price ?? '',
-    row.changePct ?? '',
-    row.signalStatus === 'pending' ? '待生成信号' : row.signal,
-    row.bullishScore ?? '',
-    row.bearishScore ?? '',
-    row.riskScore ?? '',
-    row.confidence ?? '',
-    row.triggeredRuleCount,
-    row.suggestedPeriod ?? '',
-    row.updatedAt ?? '',
-  ]);
-  const csv = [headers, ...values]
-    .map((line) =>
-      line.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','),
-    )
-    .join('\n');
+  const csv = buildSignalDashboardCsv(rows, query.riskHorizon ?? '1-5d');
   const url = URL.createObjectURL(
     new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
   );

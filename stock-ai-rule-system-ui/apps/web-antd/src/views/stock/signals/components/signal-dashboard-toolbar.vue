@@ -9,6 +9,8 @@ import { Download, Plus, RotateCw, Settings } from '@vben/icons';
 
 import { Button, DatePicker, Select, Tooltip } from 'ant-design-vue';
 
+import { RISK_HORIZON_OPTIONS } from '../risk-dashboard-state';
+
 const props = defineProps<{
   loading?: boolean;
   query: DashboardQueryState;
@@ -49,6 +51,15 @@ function updateDate(value: unknown) {
     date: typeof value === 'string' && value ? value : undefined,
   });
 }
+
+function updateRiskHorizon(value: unknown) {
+  emit('filters', {
+    riskHorizon:
+      typeof value === 'string'
+        ? (value as DashboardQueryState['riskHorizon'])
+        : undefined,
+  });
+}
 </script>
 
 <template>
@@ -77,6 +88,14 @@ function updateDate(value: unknown) {
           allow-clear
           value-format="YYYY-MM-DD"
           @update:value="updateDate"
+        />
+      </div>
+      <div class="field-group field-risk-horizon">
+        <span class="field-label">风险周期</span>
+        <Select
+          :options="RISK_HORIZON_OPTIONS"
+          :value="query.riskHorizon"
+          @update:value="updateRiskHorizon"
         />
       </div>
     </div>
@@ -147,6 +166,10 @@ function updateDate(value: unknown) {
   width: 148px;
 }
 
+.field-risk-horizon {
+  width: 152px;
+}
+
 .button-icon {
   width: 15px;
   height: 15px;
@@ -165,12 +188,13 @@ function updateDate(value: unknown) {
 
   .toolbar-filters {
     display: grid;
-    grid-template-columns: 1fr 112px 148px;
+    grid-template-columns: 1fr 112px 148px 152px;
   }
 
   .field-pool,
   .field-market,
-  .field-date {
+  .field-date,
+  .field-risk-horizon {
     width: auto;
   }
 
@@ -185,7 +209,7 @@ function updateDate(value: unknown) {
   }
 
   .field-date {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 }
 </style>
