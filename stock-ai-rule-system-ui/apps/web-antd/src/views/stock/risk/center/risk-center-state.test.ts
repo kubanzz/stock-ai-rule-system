@@ -8,8 +8,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildRiskHierarchy,
+  buildRiskObjectQueries,
+  buildRiskTrendQuery,
   buildRiskTriggerTimeline,
   buildSectorMatrix,
+  createRequestSequence,
   createRiskCenterQuery,
   riskDataState,
 } from './risk-center-state';
@@ -61,6 +64,24 @@ describe('risk center state', () => {
     });
   });
 
+  it('caps historical trend queries at the selected trade date', () => {
+    expect(
+      buildRiskTrendQuery({
+        ...createRiskCenterQuery(),
+        tradeDate: '2026-07-16',
+      }),
+    ).toEqual({ endDate: '2026-07-16', horizon: '1-5d' });
+  });
+
+  it('accepts only the latest async request token', () => {
+    const sequence = createRequestSequence();
+    const oldRequest = sequence.next();
+    const latestRequest = sequence.next();
+
+    expect(sequence.isCurrent(oldRequest)).toBe(false);
+    expect(sequence.isCurrent(latestRequest)).toBe(true);
+  });
+
   it('builds a sector-only matrix ordered by severity and score', () => {
     const rows = [
       object('A 股', 'market', 'CN-A', 70, 'critical'),
@@ -75,44 +96,44 @@ describe('risk center state', () => {
   });
 
   it('keeps the market-sector-stock drilldown levels distinct', () => {
-    const rows = [
-      object('A 股', 'market', 'CN-A', 60, 'warning'),
-      object('食品饮料', 'sector', 'SW1:801120', 62, 'warning'),
-      object('贵州茅台', 'stock', '600519.SH', 69, 'critical'),
-    ];
-
-    const hierarchy = buildRiskHierarchy(rows);
+    const hierarchy = buildRiskHierarchy(
+      [object('A 股', 'market', 'CN-A', 60, 'warning')],
+      [object('食品饮料', 'sector', 'SW1:801120', 62, 'warning')],
+      [object('贵州茅台', 'stock', '600519.SH', 69, 'critical')],
+    );
 
     expect(hierarchy.market).toHaveLength(1);
     expect(hierarchy.sectors).toHaveLength(1);
     expect(hierarchy.stocks).toHaveLength(1);
   });
 
-  it('filters the stock level when drilling into a sector', () => {
-    const selectedSector = object(
-      '食品饮料',
-      'sector',
+  it('builds separate object queries with a stable sector parent id', () => {
+    const queries = buildRiskObjectQueries(
+      {
+        ...createRiskCenterQuery(),
+        keyword: '茅台',
+        tradeDate: '2026-07-18',
+      },
       'SW1:801120',
-      62,
-      'warning',
     );
-    const rows = [
-      selectedSector,
-      {
-        ...object('贵州茅台', 'stock', '600519.SH', 69, 'critical'),
-        parentName: '食品饮料',
-      },
-      {
-        ...object('中国平安', 'stock', '601318.SH', 55, 'watch'),
-        parentName: '非银金融',
-      },
-    ];
 
-    expect(
-      buildRiskHierarchy(rows, selectedSector).stocks.map(
-        (item) => item.object.objectId,
-      ),
-    ).toEqual(['600519.SH']);
+    expect(queries.market).toMatchObject({
+      objectType: 'market',
+      pageNum: 1,
+      pageSize: 1,
+    });
+    expect(queries.sector).toMatchObject({
+      objectType: 'sector',
+      pageNum: 1,
+      pageSize: 100,
+    });
+    expect(queries.stock).toMatchObject({
+      keyword: '茅台',
+      objectType: 'stock',
+      parentObjectId: 'SW1:801120',
+      parentObjectType: 'sector',
+      tradeDate: '2026-07-18',
+    });
   });
 
   it('builds an active trigger timeline with point-in-time lineage', () => {
@@ -205,5 +226,26 @@ describe('risk center state', () => {
         }),
       ),
     ).toBe('stale');
+    expect(
+      riskDataState(
+        snapshot({
+          evidence: [
+            {
+              availableAt: '2026-07-18T16:00:00+08:00',
+              details: {},
+              dimension: 'C',
+              indicatorCode: 'C2',
+              observedAt: '2026-07-18T15:00:00+08:00',
+              qualityStatus: 'unavailable',
+              rawValue: null,
+              score: null,
+              source: 'aktools',
+            },
+          ],
+          level: null,
+          totalScore: null,
+        }),
+      ),
+    ).toBe('unavailable');
   });
 });

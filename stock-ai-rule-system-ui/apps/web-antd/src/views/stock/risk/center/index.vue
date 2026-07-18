@@ -44,8 +44,11 @@ import {
 } from '../shared';
 import {
   buildRiskHierarchy,
+  buildRiskObjectQueries,
+  buildRiskTrendQuery,
   buildRiskTriggerTimeline,
   buildSectorMatrix,
+  createRequestSequence,
   createRiskCenterQuery,
   riskDataState,
 } from './risk-center-state';
@@ -56,13 +59,20 @@ import RiskTriggerTimeline from './risk-trigger-timeline.vue';
 
 const loading = ref(false);
 const detailLoading = ref(false);
+const stockLoading = ref(false);
 const overview = ref<RiskOverview>();
-const objectRows = ref<RiskObjectListItem[]>([]);
+const marketRows = ref<RiskObjectListItem[]>([]);
+const sectorObjectRows = ref<RiskObjectListItem[]>([]);
+const stockRows = ref<RiskObjectListItem[]>([]);
 const objectTotal = ref(0);
+const activeSectorId = ref<string>();
 const selected = ref<RiskObjectListItem>();
 const detail = ref<RiskObjectDetail>();
 const trend = ref<RiskTrendPoint[]>([]);
 const query = reactive<RiskObjectQuery>(createRiskCenterQuery());
+const centerRequests = createRequestSequence();
+const detailRequests = createRequestSequence();
+const stockRequests = createRequestSequence();
 
 const horizonOptions: Array<{ label: string; value: RiskHorizon }> = [
   { label: '短期（1–5 日）', value: '1-5d' },
@@ -84,9 +94,9 @@ const trendColumns = [
   { dataIndex: 'completeness', key: 'completeness', title: '完整度' },
 ];
 
-const sectorRows = computed(() => buildSectorMatrix(objectRows.value));
+const sectorRows = computed(() => buildSectorMatrix(sectorObjectRows.value));
 const hierarchy = computed(() =>
-  buildRiskHierarchy(objectRows.value, selected.value),
+  buildRiskHierarchy(marketRows.value, sectorObjectRows.value, stockRows.value),
 );
 const activeTimeline = computed(() =>
   buildRiskTriggerTimeline(detail.value ?? null),
@@ -95,71 +105,153 @@ const selectedDataState = computed(() =>
   riskDataState(detail.value?.snapshot ?? selected.value?.snapshot ?? null),
 );
 
+function resetSelection() {
+  selected.value = undefined;
+  detail.value = undefined;
+  trend.value = [];
+  detailLoading.value = false;
+}
+
 async function loadDetail(item: RiskObjectListItem) {
+  const requestId = detailRequests.next();
   selected.value = item;
   detailLoading.value = true;
   try {
     const params = { horizon: query.horizon, tradeDate: query.tradeDate };
     const [detailResult, trendResult] = await Promise.all([
       getRiskObjectDetail(item.object.objectType, item.object.objectId, params),
-      getRiskObjectTrend(item.object.objectType, item.object.objectId, {
-        horizon: query.horizon,
-      }),
+      getRiskObjectTrend(
+        item.object.objectType,
+        item.object.objectId,
+        buildRiskTrendQuery(query),
+      ),
     ]);
+    if (!detailRequests.isCurrent(requestId)) return;
     detail.value = detailResult;
     trend.value = trendResult;
   } catch (error) {
+    if (!detailRequests.isCurrent(requestId)) return;
     detail.value = undefined;
     trend.value = [];
     message.error(error instanceof Error ? error.message : '风险详情加载失败');
   } finally {
-    detailLoading.value = false;
+    if (detailRequests.isCurrent(requestId)) {
+      detailLoading.value = false;
+    }
   }
 }
 
+async function loadStockRows(parentSectorId = activeSectorId.value) {
+  const requestId = stockRequests.next();
+  stockLoading.value = true;
+  try {
+    const queries = buildRiskObjectQueries(query, parentSectorId);
+    const result = await getRiskObjects(queries.stock);
+    if (!stockRequests.isCurrent(requestId)) return;
+    stockRows.value = result.rows;
+    objectTotal.value = result.total;
+  } catch (error) {
+    if (!stockRequests.isCurrent(requestId)) return;
+    stockRows.value = [];
+    objectTotal.value = 0;
+    message.error(
+      error instanceof Error ? error.message : '个股风险列表加载失败',
+    );
+  } finally {
+    if (stockRequests.isCurrent(requestId)) {
+      stockLoading.value = false;
+    }
+  }
+}
+
+async function selectRiskObject(item: RiskObjectListItem) {
+  if (item.object.objectType === 'sector') {
+    activeSectorId.value = item.object.objectId;
+    query.pageNum = 1;
+    await Promise.all([loadStockRows(item.object.objectId), loadDetail(item)]);
+    return;
+  }
+  if (item.object.objectType === 'market') {
+    const shouldReloadStocks = activeSectorId.value !== undefined;
+    activeSectorId.value = undefined;
+    query.pageNum = 1;
+    await Promise.all([
+      shouldReloadStocks ? loadStockRows() : Promise.resolve(),
+      loadDetail(item),
+    ]);
+    return;
+  }
+  await loadDetail(item);
+}
+
 async function loadCenter() {
+  const requestId = centerRequests.next();
+  detailRequests.next();
+  stockRequests.next();
+  stockLoading.value = false;
   loading.value = true;
   try {
-    const [overviewResult, objectResult] = await Promise.all([
-      getRiskOverview({
-        horizon: query.horizon,
-        tradeDate: query.tradeDate,
-      }),
-      getRiskObjects({ ...query }),
-    ]);
+    const queries = buildRiskObjectQueries(query, activeSectorId.value);
+    const [overviewResult, marketResult, sectorResult, stockResult] =
+      await Promise.all([
+        getRiskOverview({
+          horizon: query.horizon,
+          tradeDate: query.tradeDate,
+        }),
+        getRiskObjects(queries.market),
+        getRiskObjects(queries.sector),
+        getRiskObjects(queries.stock),
+      ]);
+    if (!centerRequests.isCurrent(requestId)) return;
     overview.value = overviewResult;
-    objectRows.value = objectResult.rows;
-    objectTotal.value = objectResult.total;
+    marketRows.value = marketResult.rows;
+    sectorObjectRows.value = sectorResult.rows;
+    stockRows.value = stockResult.rows;
+    objectTotal.value = stockResult.total;
+
+    const allRows = [
+      ...marketResult.rows,
+      ...sectorResult.rows,
+      ...stockResult.rows,
+    ];
 
     const preferred = selected.value
-      ? objectResult.rows.find(
-          (item) => item.object.objectId === selected.value?.object.objectId,
+      ? allRows.find(
+          (item) =>
+            item.object.objectType === selected.value?.object.objectType &&
+            item.object.objectId === selected.value.object.objectId,
         )
       : undefined;
     const initial =
       preferred ??
-      objectResult.rows.find((item) => item.object.objectType === 'market') ??
-      objectResult.rows[0];
+      marketResult.rows[0] ??
+      sectorResult.rows[0] ??
+      stockResult.rows[0];
     if (initial) {
       await loadDetail(initial);
     } else {
-      selected.value = undefined;
-      detail.value = undefined;
-      trend.value = [];
+      resetSelection();
     }
   } catch (error) {
+    if (!centerRequests.isCurrent(requestId)) return;
     overview.value = undefined;
-    objectRows.value = [];
+    marketRows.value = [];
+    sectorObjectRows.value = [];
+    stockRows.value = [];
     objectTotal.value = 0;
+    activeSectorId.value = undefined;
     message.error(error instanceof Error ? error.message : '风险中心加载失败');
+    resetSelection();
   } finally {
-    loading.value = false;
+    if (centerRequests.isCurrent(requestId)) {
+      loading.value = false;
+    }
   }
 }
 
 async function changePage(pageNum: number) {
   query.pageNum = pageNum;
-  await loadCenter();
+  await loadStockRows();
 }
 
 async function changeHorizon(value: unknown) {
@@ -215,20 +307,20 @@ onMounted(loadCenter);
       <RiskOverviewPanel
         :loading="loading"
         :overview="overview"
-        @select="loadDetail"
+        @select="selectRiskObject"
       />
 
       <RiskSectorMatrix
         :loading="loading"
         :rows="sectorRows"
-        @select="loadDetail"
+        @select="selectRiskObject"
       />
 
       <RiskObjectDrilldown
         :hierarchy="hierarchy"
-        :loading="loading"
+        :loading="loading || stockLoading"
         :selected-id="selected?.object.objectId"
-        @select="loadDetail"
+        @select="selectRiskObject"
       />
 
       <Pagination

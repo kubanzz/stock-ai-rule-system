@@ -40,6 +40,20 @@ describe('risk api contract', () => {
     });
   });
 
+  it('keeps the stable parent object filter in the normalized query', () => {
+    expect(
+      normalizeRiskObjectQuery({
+        objectType: 'stock',
+        parentObjectId: 'SW1:801120',
+        parentObjectType: 'sector',
+      }),
+    ).toMatchObject({
+      objectType: 'stock',
+      parentObjectId: 'SW1:801120',
+      parentObjectType: 'sector',
+    });
+  });
+
   it('normalizes non-finite and fractional pagination safely', () => {
     expect(
       normalizeRiskObjectQuery({ pageNum: Number.NaN, pageSize: Infinity }),
@@ -142,6 +156,31 @@ describe('risk api contract', () => {
       startDate: '2026-07-16',
     });
     expect(marketTrend).toHaveLength(2);
+    expect(marketTrend.every((item) => item.tradeDate <= '2026-07-17')).toBe(
+      true,
+    );
     expect(marketTrend[0]?.totalScore).not.toBe(stockTrend[0]?.totalScore);
+  });
+
+  it('links mock sector and stock objects through stable parent ids', () => {
+    const sector = selectMockRiskObjects({ objectType: 'sector' }).find(
+      (item) => item.object.objectId === 'SW1:801120',
+    );
+    expect(sector?.name).toBe('食品饮料');
+
+    const stocks = selectMockRiskObjects({
+      objectType: 'stock',
+      parentObjectId: sector?.object.objectId,
+      parentObjectType: 'sector',
+    });
+    expect(stocks.map((item) => item.object.objectId)).toContain('600519.SH');
+    expect(stocks.every((item) => item.parentObject)).toBe(true);
+    expect(
+      stocks.every(
+        (item) =>
+          item.parentObject?.objectId === sector?.object.objectId &&
+          item.parentObject.objectType === 'sector',
+      ),
+    ).toBe(true);
   });
 });

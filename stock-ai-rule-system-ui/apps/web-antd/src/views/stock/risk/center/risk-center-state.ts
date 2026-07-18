@@ -6,14 +6,28 @@ import type {
   RiskObjectListItem,
   RiskObjectQuery,
   RiskSnapshot,
+  RiskTrendQuery,
 } from '#/api/stock/risk/types';
 
-export type RiskDataState = 'insufficient' | 'ready' | 'stale';
+export type RiskDataState = 'insufficient' | 'ready' | 'stale' | 'unavailable';
+
+export const RISK_DATA_STATE_LABELS: Record<RiskDataState, string> = {
+  insufficient: '数据不足',
+  ready: '数据有效',
+  stale: '数据过期',
+  unavailable: '数据不可用',
+};
 
 export interface RiskHierarchy {
   market: RiskObjectListItem[];
   sectors: RiskObjectListItem[];
   stocks: RiskObjectListItem[];
+}
+
+export interface RiskObjectQueries {
+  market: RiskObjectQuery;
+  sector: RiskObjectQuery;
+  stock: RiskObjectQuery;
 }
 
 export interface RiskTriggerTimelineItem extends RiskEvidence {
@@ -28,7 +42,7 @@ const LEVEL_RANK = {
   watch: 2,
 } as const;
 
-const STALE_QUALITY = new Set<RiskDataQualityStatus>(['stale', 'unavailable']);
+const STALE_QUALITY = new Set<RiskDataQualityStatus>(['stale']);
 
 export function createRiskCenterQuery(): Required<
   Pick<RiskObjectQuery, 'horizon' | 'pageNum' | 'pageSize'>
@@ -37,6 +51,28 @@ export function createRiskCenterQuery(): Required<
     horizon: '1-5d',
     pageNum: 1,
     pageSize: 100,
+  };
+}
+
+export function buildRiskTrendQuery(
+  query: Pick<RiskObjectQuery, 'horizon' | 'tradeDate'>,
+): RiskTrendQuery {
+  return {
+    endDate: query.tradeDate,
+    horizon: query.horizon,
+  };
+}
+
+export function createRequestSequence() {
+  let current = 0;
+  return {
+    isCurrent(requestId: number) {
+      return requestId === current;
+    },
+    next() {
+      current += 1;
+      return current;
+    },
   };
 }
 
@@ -58,22 +94,47 @@ export function buildSectorMatrix(
     });
 }
 
-export function buildRiskHierarchy(
-  rows: RiskObjectListItem[],
-  selected?: RiskObjectListItem,
-): RiskHierarchy {
-  let sectors = rows.filter((item) => item.object.objectType === 'sector');
-  let stocks = rows.filter((item) => item.object.objectType === 'stock');
-
-  if (selected?.object.objectType === 'sector') {
-    stocks = stocks.filter((item) => item.parentName === selected.name);
-  } else if (selected?.object.objectType === 'stock' && selected.parentName) {
-    sectors = sectors.filter((item) => item.name === selected.parentName);
-    stocks = stocks.filter((item) => item.parentName === selected.parentName);
-  }
-
+export function buildRiskObjectQueries(
+  query: RiskObjectQuery,
+  parentSectorId?: string,
+): RiskObjectQueries {
+  const sharedQuery = {
+    horizon: query.horizon,
+    keyword: query.keyword,
+    level: query.level,
+    tradeDate: query.tradeDate,
+  };
   return {
-    market: rows.filter((item) => item.object.objectType === 'market'),
+    market: {
+      ...sharedQuery,
+      objectType: 'market',
+      pageNum: 1,
+      pageSize: 1,
+    },
+    sector: {
+      ...sharedQuery,
+      objectType: 'sector',
+      pageNum: 1,
+      pageSize: 100,
+    },
+    stock: {
+      ...sharedQuery,
+      objectType: 'stock',
+      pageNum: query.pageNum,
+      pageSize: query.pageSize,
+      parentObjectId: parentSectorId,
+      parentObjectType: parentSectorId ? 'sector' : undefined,
+    },
+  };
+}
+
+export function buildRiskHierarchy(
+  market: RiskObjectListItem[],
+  sectors: RiskObjectListItem[],
+  stocks: RiskObjectListItem[],
+): RiskHierarchy {
+  return {
+    market,
     sectors,
     stocks,
   };
@@ -109,6 +170,14 @@ export function buildRiskTriggerTimeline(
 }
 
 export function riskDataState(snapshot: null | RiskSnapshot): RiskDataState {
+  if (snapshot?.evidence.some((item) => item.qualityStatus === 'unavailable')) {
+    return 'unavailable';
+  }
+  if (
+    snapshot?.evidence.some((item) => STALE_QUALITY.has(item.qualityStatus))
+  ) {
+    return 'stale';
+  }
   if (
     !snapshot ||
     snapshot.completeness < 0.8 ||
@@ -116,9 +185,6 @@ export function riskDataState(snapshot: null | RiskSnapshot): RiskDataState {
     snapshot.totalScore === null
   ) {
     return 'insufficient';
-  }
-  if (snapshot.evidence.some((item) => STALE_QUALITY.has(item.qualityStatus))) {
-    return 'stale';
   }
   return 'ready';
 }

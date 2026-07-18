@@ -3,9 +3,10 @@ import type { RiskHierarchy } from './risk-center-state';
 
 import type { RiskObjectListItem } from '#/api/stock/risk/types';
 
-import { Card, Empty } from 'ant-design-vue';
+import { Card, Empty, Tag } from 'ant-design-vue';
 
 import { RiskLevelTag, RiskScoreDisplay } from '../shared';
+import { RISK_DATA_STATE_LABELS, riskDataState } from './risk-center-state';
 
 defineProps<{
   hierarchy: RiskHierarchy;
@@ -45,11 +46,16 @@ const columns: Array<{
               <strong>{{ item.name }}</strong>
               <small>{{ item.object.objectId }}</small>
             </span>
-            <RiskScoreDisplay
-              :completeness="item.snapshot.completeness"
-              :score="item.snapshot.totalScore"
-            />
-            <RiskLevelTag :level="item.snapshot.level" />
+            <template v-if="riskDataState(item.snapshot) === 'ready'">
+              <RiskScoreDisplay
+                :completeness="item.snapshot.completeness"
+                :score="item.snapshot.totalScore"
+              />
+              <RiskLevelTag :level="item.snapshot.level" />
+            </template>
+            <Tag v-else color="default">
+              {{ RISK_DATA_STATE_LABELS[riskDataState(item.snapshot)] }}
+            </Tag>
           </button>
         </div>
         <Empty v-else :description="`暂无${column.title}数据`" />

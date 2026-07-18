@@ -1,9 +1,10 @@
 <script lang="ts" setup>
 import type { RiskObjectListItem, RiskOverview } from '#/api/stock/risk/types';
 
-import { Card, Empty, Statistic } from 'ant-design-vue';
+import { Card, Empty, Statistic, Tag } from 'ant-design-vue';
 
 import { RiskLevelTag, RiskScoreDisplay } from '../shared';
+import { RISK_DATA_STATE_LABELS, riskDataState } from './risk-center-state';
 
 defineProps<{
   loading: boolean;
@@ -38,11 +39,16 @@ const levelLabels = {
         "
       >
         <span class="overview-label">市场风险</span>
-        <RiskScoreDisplay
-          :completeness="overview.marketSnapshot.completeness"
-          :score="overview.marketSnapshot.totalScore"
-        />
-        <RiskLevelTag :level="overview.marketSnapshot.level" />
+        <template v-if="riskDataState(overview.marketSnapshot) === 'ready'">
+          <RiskScoreDisplay
+            :completeness="overview.marketSnapshot.completeness"
+            :score="overview.marketSnapshot.totalScore"
+          />
+          <RiskLevelTag :level="overview.marketSnapshot.level" />
+        </template>
+        <Tag v-else color="default">
+          {{ RISK_DATA_STATE_LABELS[riskDataState(overview.marketSnapshot)] }}
+        </Tag>
       </button>
       <div v-else class="market-card market-card--empty">市场数据不足</div>
 
@@ -63,7 +69,13 @@ const levelLabels = {
         @click="emit('select', item)"
       >
         {{ item.name }}
-        <RiskLevelTag :level="item.snapshot.level" />
+        <RiskLevelTag
+          v-if="riskDataState(item.snapshot) === 'ready'"
+          :level="item.snapshot.level"
+        />
+        <Tag v-else color="default">
+          {{ RISK_DATA_STATE_LABELS[riskDataState(item.snapshot)] }}
+        </Tag>
       </button>
     </div>
     <Empty v-if="!overview" description="暂无总览数据" />
