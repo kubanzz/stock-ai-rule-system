@@ -255,9 +255,24 @@ class FlowEventRiskDataProviderTest {
 
         assertThat(batch.events()).hasSize(2);
         assertThat(batch.events()).filteredOn(event -> event.eventKey().contains("reduce-1"))
-                .singleElement().satisfies(event -> assertThat(event.payload()).containsEntry("confirmed", false));
+                .singleElement().satisfies(event -> {
+                    assertThat(event.payload())
+                            .containsEntry("confirmed", false)
+                            .containsEntry("priceConfirmed", false)
+                            .containsEntry("fundFlowConfirmed", false)
+                            .containsEntry("modifierSeverity", new BigDecimal("8"))
+                            .containsEntry("confirmationContract", "pit-price-fund-evidence-v1");
+                    assertThat(event.severityScore()).isNull();
+                });
         assertThat(batch.events()).filteredOn(event -> event.eventKey().contains("reduce-2"))
-                .singleElement().satisfies(event -> assertThat(event.payload()).containsEntry("confirmed", true));
+                .singleElement().satisfies(event -> {
+                    assertThat(event.payload())
+                            .containsEntry("confirmed", true)
+                            .containsEntry("priceConfirmed", false)
+                            .containsEntry("fundFlowConfirmed", true)
+                            .doesNotContainKeys("probability", "crashProbability");
+                    assertThat(event.severityScore()).isEqualByComparingTo("9");
+                });
         assertThat(batch.observations()).isEmpty();
     }
 

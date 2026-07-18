@@ -20,6 +20,9 @@ import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.math.BigDecimal;
@@ -30,6 +33,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 class JdbcRiskWorkflowRepositoryTest {
 
@@ -74,7 +83,7 @@ class JdbcRiskWorkflowRepositoryTest {
         repository.saveEvent(event);
         StoredRiskSnapshot persisted = repository.saveSnapshot(
                 snapshot, RiskDataQualityStatus.AVAILABLE, timestamp, timestamp);
-        repository.replaceEvidence(stored.id(), List.of(evidence));
+        repository.replaceEvidence(stored.id(), stock, List.of(evidence));
         repository.saveGate(stored, gate, timestamp, timestamp);
         repository.saveCheckpoint("provider-a", "dataset-a", "stock:600519.SH", checkpoint, batch);
 
@@ -164,6 +173,224 @@ class JdbcRiskWorkflowRepositoryTest {
                 new RiskObjectKey(RiskObjectType.MARKET, "CN-A"),
                 new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780"),
                 new RiskObjectKey(RiskObjectType.STOCK, "600519.SH"));
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void batchReadsPushBoundObjectScopeIntoParameterizedSqlExactlyOncePerArtifact() {
+        JdbcTemplate jdbc = new JdbcTemplate();
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                jdbc, named, new ObjectMapper());
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        String injectedObjectId = "600519.SH' OR 1=1 --";
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                date, date.atTime(20, 0),
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "stock:600519.SH",
+                        List.of(new RiskObjectKey(RiskObjectType.STOCK, injectedObjectId)))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        repository.findObservations(request);
+        repository.findEvents(request);
+        repository.findSnapshotHistory(request);
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<SqlParameterSource> parameters =
+                org.mockito.ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(named, times(3)).query(sql.capture(), parameters.capture(), any(RowMapper.class));
+        assertThat(sql.getAllValues()).allSatisfy(value -> assertThat(value)
+                .contains("object_type = :scopeObjectType0 AND object_id = :scopeObjectId0")
+                .contains("object_type = :layerSectorType")
+                .contains("object_type = :layerMarketType AND object_id = :layerMarketId")
+                .doesNotContain(injectedObjectId));
+        assertThat(parameters.getAllValues()).allSatisfy(value -> {
+            assertThat(value.getValue("scopeObjectType0")).isEqualTo("stock");
+            assertThat(value.getValue("scopeObjectId0")).isEqualTo(injectedObjectId);
+            assertThat(value.getValue("layerSectorType")).isEqualTo("sector");
+            assertThat(value.getValue("layerMarketId")).isEqualTo("CN-A");
+        });
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void nonStockBatchReadOnlyUsesExplicitBoundObjects() {
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                new JdbcTemplate(), named, new ObjectMapper());
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                date, date.atTime(20, 0),
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "market:CN-A",
+                        List.of(new RiskObjectKey(RiskObjectType.MARKET, "CN-A")))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        repository.findObservations(request);
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<SqlParameterSource> parameters =
+                org.mockito.ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(named).query(sql.capture(), parameters.capture(), any(RowMapper.class));
+        assertThat(sql.getValue())
+                .contains("object_type = :scopeObjectType0 AND object_id = :scopeObjectId0")
+                .doesNotContain("layerSectorType", "layerMarketType");
+        assertThat(parameters.getValue().getValue("scopeObjectId0")).isEqualTo("CN-A");
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void largeObjectScopeUsesBoundedChunksAndAddsLayerCandidatesOnlyOnce() {
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                new JdbcTemplate(), named, new ObjectMapper());
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        List<RiskObjectKey> stocks = java.util.stream.IntStream.range(0, 501)
+                .mapToObj(index -> new RiskObjectKey(
+                        RiskObjectType.STOCK, String.format("%06d.SH", index)))
+                .toList();
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                date, date.atTime(20, 0),
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "all", stocks)),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        repository.findObservations(request);
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<SqlParameterSource> parameters =
+                org.mockito.ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(named, times(3)).query(sql.capture(), parameters.capture(), any(RowMapper.class));
+        assertThat(parameters.getAllValues()).allSatisfy(value -> {
+            long objectIds = java.util.Arrays.stream(value.getParameterNames())
+                    .filter(name -> name.startsWith("scopeObjectId"))
+                    .count();
+            assertThat(objectIds).isLessThanOrEqualTo(250);
+        });
+        assertThat(sql.getAllValues()).filteredOn(value -> value.contains("layerSectorType")).hasSize(1);
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void exposureReadUsesOnlyRequestedStocksInBoundedPointInTimeChunks() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                jdbc, named, new ObjectMapper());
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime asOf = date.atTime(20, 0);
+        List<RiskObjectKey> stocks = java.util.stream.IntStream.range(0, 501)
+                .mapToObj(index -> new RiskObjectKey(
+                        RiskObjectType.STOCK, String.format("%06d.SH", index)))
+                .toList();
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                date, asOf,
+                List.of(new RiskCollectionTask("provider-a", "dataset-a", "all", stocks)),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        repository.findIndustryExposures(request);
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<SqlParameterSource> parameters =
+                org.mockito.ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(named, times(3)).query(sql.capture(), parameters.capture(), any(RowMapper.class));
+        assertThat(sql.getAllValues()).allSatisfy(value -> assertThat(value)
+                .contains("object_type = :stockObjectType")
+                .contains("object_id IN (:stockObjectIds)")
+                .contains("valid_from <= :endDate")
+                .contains("valid_to IS NULL OR valid_to >= :startDate")
+                .contains("available_at <= :asOf")
+                .doesNotContain(stocks.getFirst().objectId(), "layerSectorType", "layerMarketType"));
+        assertThat(parameters.getAllValues()).allSatisfy(value -> {
+            assertThat(value.getValue("stockObjectType")).isEqualTo("stock");
+            assertThat((List<?>) value.getValue("stockObjectIds")).hasSizeLessThanOrEqualTo(250);
+            assertThat(value.getValue("startDate")).isEqualTo(request.collectionStartDate());
+            assertThat(value.getValue("endDate")).isEqualTo(date);
+            assertThat(value.getValue("asOf")).isEqualTo(asOf);
+        });
+        assertThat(parameters.getAllValues().stream()
+                .flatMap(value -> ((List<?>) value.getValue("stockObjectIds")).stream())
+                .distinct()).hasSize(501);
+    }
+
+    @Test
+    void exposureReadExcludesUnrequestedAndFutureAvailableRows() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_exposure_scope;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_object_exposure (
+                    object_type VARCHAR(16), object_id VARCHAR(64),
+                    parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                    valid_from DATE, valid_to DATE, observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime asOf = date.atTime(20, 0);
+        jdbc.update("""
+                INSERT INTO risk_object_exposure VALUES
+                ('stock', '600519.SH', 'sector', 'SW1:801780', ?, NULL, ?, ?, 'source-a', 'available'),
+                ('stock', '000001.SZ', 'sector', 'SW1:801010', ?, NULL, ?, ?, 'source-a', 'available'),
+                ('stock', '600519.SH', 'sector', 'SW1:801790', ?, NULL, ?, ?, 'source-a', 'available')
+                """,
+                date.minusYears(1), date.atTime(18, 0), date.atTime(19, 0),
+                date.minusYears(1), date.atTime(18, 0), date.atTime(19, 0),
+                date.minusYears(1), date.atTime(18, 0), date.plusDays(1).atTime(9, 0));
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                date, asOf,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "stock:600519.SH",
+                        List.of(new RiskObjectKey(RiskObjectType.STOCK, "600519.SH")))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        List<com.jx.tracker.risk.data.market.IndustryExposure> exposures =
+                new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper()).findIndustryExposures(request);
+
+        assertThat(exposures).singleElement().satisfies(exposure -> {
+            assertThat(exposure.stock().objectId()).isEqualTo("600519.SH");
+            assertThat(exposure.sector().objectId()).isEqualTo("SW1:801780");
+            assertThat(exposure.availableAt()).isBeforeOrEqualTo(asOf);
+        });
+    }
+
+    @Test
+    void evidencePersistenceKeepsSameIndicatorAndSourceFromAllThreeLayers() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_evidence_layers;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_score_evidence (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, snapshot_id BIGINT,
+                    layer_object_type VARCHAR(16), layer_object_id VARCHAR(64),
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), raw_value DECIMAL,
+                    indicator_score DECIMAL, weighted_contribution DECIMAL,
+                    observed_at TIMESTAMP, available_at TIMESTAMP, source VARCHAR(64),
+                    quality_status VARCHAR(32), evidence_json VARCHAR(1024),
+                    UNIQUE(snapshot_id, layer_object_type, layer_object_id, indicator_code, source))
+                """);
+        LocalDateTime at = LocalDateTime.of(2026, 7, 18, 18, 0);
+        List<RiskEvidence> layers = List.of("CN-A", "SW1:801780", "600519.SH").stream()
+                .map(layer -> new RiskEvidence(
+                        RiskDimension.STRUCTURAL_FRAGILITY, "V1", new BigDecimal("80"),
+                        new BigDecimal("10"), at, at, "source-a", RiskDataQualityStatus.AVAILABLE,
+                        Map.of(
+                                "layerObjectType", layer.equals("CN-A") ? "market"
+                                        : layer.startsWith("SW1:") ? "sector" : "stock",
+                                "layerObjectId", layer)))
+                .toList();
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.replaceEvidence(
+                42L, new RiskObjectKey(RiskObjectType.STOCK, "600519.SH"), layers);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM risk_score_evidence WHERE snapshot_id = 42", Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForList(
+                "SELECT layer_object_id FROM risk_score_evidence ORDER BY layer_object_id", String.class))
+                .containsExactly("600519.SH", "CN-A", "SW1:801780");
     }
 
     private static final class RecordingJdbcTemplate extends JdbcTemplate {

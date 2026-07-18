@@ -10,6 +10,7 @@ import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.gate.ShadowGateResult;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
@@ -33,7 +34,9 @@ import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
+import java.util.TreeMap;
 
 /** 风险采集、评分、证据与影子闸门的幂等编排；配置层负责组合实际 Provider。 */
 public final class RiskWarningWorkflow {
@@ -45,6 +48,7 @@ public final class RiskWarningWorkflow {
     private final ShadowRiskGate shadowRiskGate;
     private final RiskLayerComposer layerComposer = new RiskLayerComposer();
     private static final RiskObjectKey CN_A = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+    private static final BigDecimal CONFIRMATION_SCORE = new BigDecimal("60");
 
     public RiskWarningWorkflow(
             List<RiskDataProvider> providers,
@@ -139,21 +143,16 @@ public final class RiskWarningWorkflow {
         request.signals().forEach(signal -> objects.addAll(signal.relevantRiskObjects()));
         addLayerObjects(objects, exposures, request);
 
-        Map<ObjectHorizon, List<RiskObservation>> observationsByObject = new HashMap<>();
-        for (RiskObservation observation : observations) {
-            observationsByObject.computeIfAbsent(
-                    new ObjectHorizon(observation.object(), observation.horizon()), ignored -> new ArrayList<>())
-                    .add(observation);
-        }
-        Map<RiskObjectKey, List<RiskEvent>> eventsByObject = new HashMap<>();
-        for (RiskEvent event : events) {
-            eventsByObject.computeIfAbsent(event.object(), ignored -> new ArrayList<>()).add(event);
-        }
-        Map<ObjectHorizon, List<RiskSnapshot>> historyByObject = new HashMap<>();
+        RiskObservationWindowIndex observationIndex = new RiskObservationWindowIndex(observations);
+        RiskTradingDayCalendar tradingCalendar = new RiskTradingDayCalendar(observations);
+        RiskEventWindowIndex eventIndex = new RiskEventWindowIndex(events);
+        RiskIndustryExposureIndex exposureIndex = new RiskIndustryExposureIndex(exposures);
+        Map<ObjectHorizon, NavigableMap<LocalDate, RiskSnapshot>> historyByObject = new HashMap<>();
         for (RiskSnapshot snapshot : loadedHistory) {
             historyByObject.computeIfAbsent(
-                    new ObjectHorizon(snapshot.object(), snapshot.horizon()), ignored -> new ArrayList<>())
-                    .add(snapshot);
+                            new ObjectHorizon(snapshot.object(), snapshot.horizon()), ignored -> new TreeMap<>())
+                    .merge(snapshot.tradeDate(), snapshot,
+                            (left, right) -> left.calculatedAt().isBefore(right.calculatedAt()) ? right : left);
         }
 
         Map<LocalDate, Set<RiskObjectKey>> objectsByDate = scoreObjectsByDate(
@@ -164,25 +163,28 @@ public final class RiskWarningWorkflow {
             LocalDate tradeDate = datedObjects.getKey();
             LocalDateTime evaluationAsOf = evaluationAsOf(tradeDate, request);
             Set<RiskObjectKey> dateObjects = withLayerDependencies(
-                    datedObjects.getValue(), tradeDate, evaluationAsOf, exposures);
+                    datedObjects.getValue(), tradeDate, evaluationAsOf, exposureIndex);
             for (RiskHorizon horizon : request.horizons()) {
+                List<RiskObjectKey> orderedDateObjects = orderedObjects(dateObjects);
+                Map<RiskObjectKey, List<RiskEvidence>> evidenceByObject = new LinkedHashMap<>();
+                for (RiskObjectKey object : orderedDateObjects) {
+                    List<RiskObservation> eligibleHistory = observationIndex.window(
+                            object, horizon, tradeDate, evaluationAsOf);
+                    evidenceByObject.put(object, evidenceAssembler.assemble(
+                            object, horizon, tradeDate, evaluationAsOf, eligibleHistory));
+                }
                 Map<RiskObjectKey, RiskScoreResult> rawResults = new LinkedHashMap<>();
                 Map<RiskObjectKey, EventContext> eventContexts = new LinkedHashMap<>();
-                for (RiskObjectKey object : orderedObjects(dateObjects)) {
-                    List<RiskObservation> eligibleHistory = observationsByObject
-                            .getOrDefault(new ObjectHorizon(object, horizon), List.of()).stream()
-                            .filter(observation -> !observation.availableAt().isAfter(evaluationAsOf))
-                            .filter(observation -> !observation.tradeDate().isAfter(tradeDate))
-                            .toList();
-                    List<RiskEvidence> evidence = evidenceAssembler.assemble(
-                            object, horizon, tradeDate, evaluationAsOf, eligibleHistory);
+                for (RiskObjectKey object : orderedDateObjects) {
+                    List<RiskEvidence> evidence = evidenceByObject.getOrDefault(object, List.of());
                     List<RiskSnapshot> history = eligibleSnapshotHistory(
                             historyByObject, object, horizon, tradeDate, evaluationAsOf);
-                    LocalDate previousTradingDate = history.stream().map(RiskSnapshot::tradeDate)
-                            .max(LocalDate::compareTo).orElse(null);
+                    LocalDate previousTradingDate = history.isEmpty() ? null : history.getFirst().tradeDate();
                     EventContext eventContext = eventContext(
                             object, horizon, tradeDate, evaluationAsOf,
-                            eventsByObject.getOrDefault(object, List.of()));
+                            eventIndex, tradingCalendar,
+                            confirmationEvidence(
+                                    object, tradeDate, evaluationAsOf, exposureIndex, evidenceByObject));
                     eventContexts.put(object, eventContext);
                     RiskScoreResult result = snapshotEvaluator.evaluate(new RiskScoreRequest(
                             object, horizon, tradeDate, previousTradingDate, evaluationAsOf,
@@ -191,17 +193,16 @@ public final class RiskWarningWorkflow {
                     rawResults.put(object, result);
                 }
 
-                for (RiskObjectKey object : orderedObjects(dateObjects)) {
+                for (RiskObjectKey object : orderedDateObjects) {
                     RiskScoreResult result = rawResults.get(object);
                     EventContext finalEventContext = eventContexts.get(object);
                     if (object.objectType() == RiskObjectType.STOCK) {
-                        RiskObjectKey sector = effectiveSector(object, tradeDate, evaluationAsOf, exposures);
+                        RiskObjectKey sector = effectiveSector(object, tradeDate, evaluationAsOf, exposureIndex);
                         RiskLayerComposition composition = layerComposer.compose(
                                 snapshot(rawResults, CN_A), snapshot(rawResults, sector), result.snapshot());
                         List<RiskSnapshot> history = eligibleSnapshotHistory(
                                 historyByObject, object, horizon, tradeDate, evaluationAsOf);
-                        LocalDate previousTradingDate = history.stream().map(RiskSnapshot::tradeDate)
-                                .max(LocalDate::compareTo).orElse(null);
+                        LocalDate previousTradingDate = history.isEmpty() ? null : history.getFirst().tradeDate();
                         finalEventContext = combineEventContexts(
                                 eventContexts.get(CN_A), eventContexts.get(sector), eventContexts.get(object));
                         result = snapshotEvaluator.evaluateLayers(new RiskLayerScoreRequest(
@@ -215,13 +216,12 @@ public final class RiskWarningWorkflow {
                             : RiskDataQualityStatus.AVAILABLE;
                     StoredRiskSnapshot storedSnapshot = repository.saveSnapshot(
                             result.snapshot(), quality, bounds.observedAt(), bounds.availableAt());
-                    repository.replaceEvidence(storedSnapshot.id(), result.snapshot().evidence());
+                    repository.replaceEvidence(
+                            storedSnapshot.id(), result.snapshot().object(), result.snapshot().evidence());
                     stored.add(storedSnapshot);
                     ObjectHorizon key = new ObjectHorizon(object, horizon);
-                    historyByObject.computeIfAbsent(key, ignored -> new ArrayList<>())
-                            .removeIf(snapshot -> snapshot.tradeDate().equals(tradeDate)
-                                    && snapshot.modelVersion().equals(request.modelVersion()));
-                    historyByObject.get(key).add(result.snapshot());
+                    historyByObject.computeIfAbsent(key, ignored -> new TreeMap<>())
+                            .put(tradeDate, result.snapshot());
                 }
             }
         }
@@ -342,36 +342,55 @@ public final class RiskWarningWorkflow {
             List<IndustryExposure> exposures,
             RiskWorkflowRequest request
     ) {
-        List<RiskObjectKey> stocks = objects.stream()
+        Set<RiskObjectKey> stocks = objects.stream()
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
-                .toList();
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (stocks.isEmpty()) {
             return;
         }
+        addLayerObjectsFromStockSet(objects, stocks, exposures, request);
+    }
+
+    LayerObjectExpansionMetrics addLayerObjectsFromStockSet(
+            Set<RiskObjectKey> objects,
+            Set<RiskObjectKey> requestedStocks,
+            List<IndustryExposure> exposures,
+            RiskWorkflowRequest request
+    ) {
         objects.add(CN_A);
-        exposures.stream()
-                .filter(exposure -> stocks.contains(exposure.stock()))
-                .filter(exposure -> exposure.validTo() == null
-                        || !exposure.validTo().isBefore(request.scoreStartDate()))
-                .filter(exposure -> !exposure.validFrom().isAfter(request.endDate()))
-                .filter(exposure -> !exposure.availableAt().isAfter(request.asOf()))
-                .filter(exposure -> exposure.qualityStatus() == RiskDataQualityStatus.AVAILABLE
-                        || exposure.qualityStatus() == RiskDataQualityStatus.VALID_ZERO)
-                .map(IndustryExposure::sector)
-                .forEach(objects::add);
+        int exposureRowsVisited = 0;
+        int membershipChecks = 0;
+        int matchedExposureRows = 0;
+        for (IndustryExposure exposure : exposures) {
+            exposureRowsVisited++;
+            membershipChecks++;
+            if (!requestedStocks.contains(exposure.stock())
+                    || (exposure.validTo() != null
+                    && exposure.validTo().isBefore(request.scoreStartDate()))
+                    || exposure.validFrom().isAfter(request.endDate())
+                    || exposure.availableAt().isAfter(request.asOf())
+                    || (exposure.qualityStatus() != RiskDataQualityStatus.AVAILABLE
+                    && exposure.qualityStatus() != RiskDataQualityStatus.VALID_ZERO)) {
+                continue;
+            }
+            matchedExposureRows++;
+            objects.add(exposure.sector());
+        }
+        return new LayerObjectExpansionMetrics(
+                requestedStocks.size(), exposureRowsVisited, membershipChecks, matchedExposureRows);
     }
 
     private Set<RiskObjectKey> withLayerDependencies(
             Set<RiskObjectKey> objects,
             LocalDate tradeDate,
             LocalDateTime asOf,
-            List<IndustryExposure> exposures
+            RiskIndustryExposureIndex exposureIndex
     ) {
         Set<RiskObjectKey> expanded = new LinkedHashSet<>(objects);
         for (RiskObjectKey object : objects) {
             if (object.objectType() == RiskObjectType.STOCK) {
                 expanded.add(CN_A);
-                RiskObjectKey sector = effectiveSector(object, tradeDate, asOf, exposures);
+                RiskObjectKey sector = effectiveSector(object, tradeDate, asOf, exposureIndex);
                 if (sector != null) {
                     expanded.add(sector);
                 }
@@ -387,35 +406,31 @@ public final class RiskWarningWorkflow {
     }
 
     private List<RiskSnapshot> eligibleSnapshotHistory(
-            Map<ObjectHorizon, List<RiskSnapshot>> history,
+            Map<ObjectHorizon, NavigableMap<LocalDate, RiskSnapshot>> history,
             RiskObjectKey object,
             RiskHorizon horizon,
             LocalDate tradeDate,
             LocalDateTime asOf
     ) {
-        return history.getOrDefault(new ObjectHorizon(object, horizon), List.of()).stream()
-                .filter(snapshot -> snapshot.tradeDate().isBefore(tradeDate))
-                .filter(snapshot -> !snapshot.calculatedAt().isAfter(asOf))
-                .sorted(Comparator.comparing(RiskSnapshot::tradeDate)
-                        .thenComparing(RiskSnapshot::calculatedAt))
-                .toList();
+        NavigableMap<LocalDate, RiskSnapshot> datedHistory =
+                history.getOrDefault(new ObjectHorizon(object, horizon), new TreeMap<>());
+        Map.Entry<LocalDate, RiskSnapshot> previous = datedHistory.lowerEntry(tradeDate);
+        while (previous != null) {
+            if (!previous.getValue().calculatedAt().isAfter(asOf)) {
+                return List.of(previous.getValue());
+            }
+            previous = datedHistory.lowerEntry(previous.getKey());
+        }
+        return List.of();
     }
 
     private RiskObjectKey effectiveSector(
             RiskObjectKey stock,
             LocalDate tradeDate,
             LocalDateTime asOf,
-            List<IndustryExposure> exposures
+            RiskIndustryExposureIndex exposureIndex
     ) {
-        return exposures.stream()
-                .filter(exposure -> exposure.stock().equals(stock))
-                .filter(exposure -> exposure.isEffectiveOn(tradeDate))
-                .filter(exposure -> !exposure.availableAt().isAfter(asOf))
-                .filter(exposure -> exposure.qualityStatus() == RiskDataQualityStatus.AVAILABLE
-                        || exposure.qualityStatus() == RiskDataQualityStatus.VALID_ZERO)
-                .max(Comparator.comparing(IndustryExposure::validFrom)
-                        .thenComparing(IndustryExposure::availableAt))
-                .map(IndustryExposure::sector).orElse(null);
+        return exposureIndex.effectiveSector(stock, tradeDate, asOf).orElse(null);
     }
 
     private RiskSnapshot snapshot(Map<RiskObjectKey, RiskScoreResult> results, RiskObjectKey object) {
@@ -427,33 +442,115 @@ public final class RiskWarningWorkflow {
             RiskHorizon horizon,
             LocalDate tradeDate,
             LocalDateTime asOf,
-            List<RiskEvent> events
+            RiskEventWindowIndex eventIndex,
+            RiskTradingDayCalendar tradingCalendar,
+            List<RiskEvidence> evidence
     ) {
-        LocalDate windowStart = tradeDate.minusDays(windowDays(horizon) - 1L);
-        List<RiskEvent> eligible = events.stream()
-                .filter(event -> event.object().equals(object))
-                .filter(event -> !event.tradeDate().isBefore(windowStart)
-                        && !event.tradeDate().isAfter(tradeDate))
-                .filter(event -> !event.availableAt().isAfter(asOf))
-                .filter(event -> event.qualityStatus() == RiskDataQualityStatus.AVAILABLE
-                        || event.qualityStatus() == RiskDataQualityStatus.VALID_ZERO)
-                .toList();
+        LocalDate windowStart = tradingCalendar.windowStart(horizon, tradeDate, asOf).orElse(null);
+        if (windowStart == null) {
+            return new EventContext(BigDecimal.ONE, ExtremeRiskConfirmation.none(), List.of());
+        }
+        List<RiskEvent> eligible = eventIndex.window(object, windowStart, tradeDate, asOf);
+        boolean evidencePriceConfirmed = confirmedByEvidence(
+                evidence, RiskDimension.LOCAL_CONFIRMATION, tradeDate);
+        boolean evidenceFundFlowConfirmed = confirmedByEvidence(
+                evidence, RiskDimension.FORCED_SELLING, tradeDate);
         BigDecimal modifier = eligible.stream()
                 .filter(event -> booleanPayload(event, "modifierCandidate"))
-                .filter(event -> booleanPayload(event, "confirmed"))
+                .filter(event -> booleanPayload(event, "confirmed")
+                        || (booleanPayload(event, "actualReduction")
+                        && (evidencePriceConfirmed || evidenceFundFlowConfirmed)))
                 .map(this::modifier)
                 .max(BigDecimal::compareTo)
                 .orElse(BigDecimal.ONE);
         List<RiskEvent> sameDay = eligible.stream()
                 .filter(event -> event.tradeDate().equals(tradeDate)).toList();
-        BigDecimal percentile = sameDay.stream().map(this::extremePercentile)
+        BigDecimal eventPercentile = sameDay.stream()
+                .filter(this::explicitExtremeCandidate)
+                .map(this::extremePercentile)
                 .max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
-        boolean priceConfirmed = sameDay.stream().anyMatch(event -> booleanPayload(event, "priceConfirmed"));
-        boolean fundFlowConfirmed = sameDay.stream().anyMatch(event -> booleanPayload(event, "fundFlowConfirmed"));
+        BigDecimal evidencePercentile = evidence.stream()
+                .filter(this::usableEvidence)
+                .filter(item -> sameDayEvidence(item, tradeDate))
+                .filter(this::explicitExtremeCandidate)
+                .map(RiskEvidence::score)
+                .max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+        BigDecimal percentile = eventPercentile.max(evidencePercentile)
+                .min(new BigDecimal("100")).max(BigDecimal.ZERO);
+        boolean priceConfirmed = evidencePriceConfirmed
+                || sameDay.stream()
+                .filter(this::explicitExtremeCandidate)
+                .filter(event -> event.dimension() == RiskDimension.LOCAL_CONFIRMATION)
+                .anyMatch(event -> booleanPayload(event, "priceConfirmed"));
+        boolean fundFlowConfirmed = evidenceFundFlowConfirmed
+                || sameDay.stream()
+                .filter(this::explicitExtremeCandidate)
+                .filter(event -> event.dimension() == RiskDimension.FORCED_SELLING)
+                .anyMatch(event -> booleanPayload(event, "fundFlowConfirmed"));
         return new EventContext(
                 modifier.min(new BigDecimal("1.20")).max(new BigDecimal("0.90")),
                 new ExtremeRiskConfirmation(percentile, priceConfirmed, fundFlowConfirmed),
                 eligible);
+    }
+
+    private List<RiskEvidence> confirmationEvidence(
+            RiskObjectKey object,
+            LocalDate tradeDate,
+            LocalDateTime asOf,
+            RiskIndustryExposureIndex exposureIndex,
+            Map<RiskObjectKey, List<RiskEvidence>> evidenceByObject
+    ) {
+        if (object.objectType() != RiskObjectType.STOCK) {
+            return evidenceByObject.getOrDefault(object, List.of());
+        }
+        RiskObjectKey sector = effectiveSector(object, tradeDate, asOf, exposureIndex);
+        List<RiskEvidence> evidence = new ArrayList<>();
+        evidence.addAll(evidenceByObject.getOrDefault(CN_A, List.of()));
+        if (sector != null) {
+            evidence.addAll(evidenceByObject.getOrDefault(sector, List.of()));
+        }
+        evidence.addAll(evidenceByObject.getOrDefault(object, List.of()));
+        return List.copyOf(evidence);
+    }
+
+    private boolean confirmedByEvidence(
+            List<RiskEvidence> evidence,
+            RiskDimension dimension,
+            LocalDate tradeDate
+    ) {
+        return evidence.stream()
+                .filter(item -> item.dimension() == dimension)
+                .filter(this::usableEvidence)
+                .filter(item -> sameDayEvidence(item, tradeDate))
+                .anyMatch(item -> item.score().compareTo(CONFIRMATION_SCORE) >= 0);
+    }
+
+    private boolean explicitExtremeCandidate(RiskEvidence evidence) {
+        return (evidence.dimension() == RiskDimension.LOCAL_CONFIRMATION
+                || evidence.dimension() == RiskDimension.FORCED_SELLING)
+                && booleanDetail(evidence, "extremeCandidate");
+    }
+
+    private boolean explicitExtremeCandidate(RiskEvent event) {
+        return (event.dimension() == RiskDimension.LOCAL_CONFIRMATION
+                || event.dimension() == RiskDimension.FORCED_SELLING)
+                && booleanPayload(event, "extremeCandidate");
+    }
+
+    private boolean sameDayEvidence(RiskEvidence evidence, LocalDate tradeDate) {
+        Object value = evidence.details().get("tradeDate");
+        return value != null && tradeDate.toString().equals(value.toString());
+    }
+
+    private boolean booleanDetail(RiskEvidence evidence, String key) {
+        Object value = evidence.details().get(key);
+        return value instanceof Boolean flag ? flag : value != null && Boolean.parseBoolean(value.toString());
+    }
+
+    private boolean usableEvidence(RiskEvidence evidence) {
+        return (evidence.qualityStatus() == RiskDataQualityStatus.AVAILABLE
+                || evidence.qualityStatus() == RiskDataQualityStatus.VALID_ZERO)
+                && evidence.score() != null;
     }
 
     private EventContext combineEventContexts(EventContext... contexts) {
@@ -479,21 +576,18 @@ public final class RiskWarningWorkflow {
                 events);
     }
 
-    private int windowDays(RiskHorizon horizon) {
-        return switch (horizon) {
-            case SHORT_TERM -> 5;
-            case MEDIUM_TERM -> 20;
-            case LONG_TERM -> 60;
-        };
-    }
-
     private BigDecimal modifier(RiskEvent event) {
         Object explicit = event.payload().get("mScore");
         if (explicit != null) {
             return decimal(explicit, BigDecimal.ONE);
         }
         if (event.severityScore() == null) {
-            return BigDecimal.ONE;
+            Object candidateSeverity = event.payload().get("modifierSeverity");
+            if (candidateSeverity == null) {
+                return BigDecimal.ONE;
+            }
+            return BigDecimal.ONE.add(decimal(candidateSeverity, BigDecimal.ZERO)
+                    .multiply(new BigDecimal("0.002")));
         }
         return BigDecimal.ONE.add(event.severityScore().multiply(new BigDecimal("0.002")));
     }
@@ -524,6 +618,14 @@ public final class RiskWarningWorkflow {
     }
 
     private record ObjectHorizon(RiskObjectKey object, RiskHorizon horizon) {
+    }
+
+    record LayerObjectExpansionMetrics(
+            int requestedStockCount,
+            int exposureRowsVisited,
+            int membershipChecks,
+            int matchedExposureRows
+    ) {
     }
 
     private record EventContext(

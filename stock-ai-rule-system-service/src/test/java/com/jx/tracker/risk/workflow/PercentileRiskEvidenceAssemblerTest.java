@@ -42,7 +42,38 @@ class PercentileRiskEvidenceAssemblerTest {
             assertThat(item.score()).isEqualByComparingTo("100.0000");
             assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
             assertThat(item.availableAt()).isBeforeOrEqualTo(asOf);
+            assertThat(item.details())
+                    .containsEntry("tradeDate", tradeDate.toString())
+                    .containsEntry("extremeCandidate", false);
         });
+    }
+
+    @Test
+    void marksOnlyCurrentPriceAndFundDimensionsAsExplicitExtremeCandidates() {
+        RiskObjectKey object = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+        LocalDate tradeDate = LocalDate.of(2026, 7, 18);
+        LocalDateTime asOf = tradeDate.atTime(20, 0);
+        List<RiskObservation> history = new ArrayList<>();
+        for (int index = 4; index >= 0; index--) {
+            LocalDate date = tradeDate.minusDays(index);
+            history.add(new RiskObservation(
+                    object, RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION,
+                    "C1", BigDecimal.valueOf(5 - index), "score",
+                    date.atTime(18, 0), date.atTime(19, 0), "price-source",
+                    RiskDataQualityStatus.AVAILABLE, Map.of("tradingDay", true)));
+            history.add(new RiskObservation(
+                    object, RiskHorizon.SHORT_TERM, date, RiskDimension.FORCED_SELLING,
+                    "A2", BigDecimal.valueOf(5 - index), "score",
+                    date.atTime(18, 0), date.atTime(19, 0), "fund-source",
+                    RiskDataQualityStatus.AVAILABLE, Map.of()));
+        }
+
+        List<RiskEvidence> evidence = new PercentileRiskEvidenceAssembler(new RiskNormalizer())
+                .assemble(object, RiskHorizon.SHORT_TERM, tradeDate, asOf, history);
+
+        assertThat(evidence).hasSize(2).allSatisfy(item -> assertThat(item.details())
+                .containsEntry("tradeDate", tradeDate.toString())
+                .containsEntry("extremeCandidate", true));
     }
 
     private RiskObservation observation(

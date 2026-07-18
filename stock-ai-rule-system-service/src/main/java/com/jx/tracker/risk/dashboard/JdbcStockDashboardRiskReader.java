@@ -8,6 +8,7 @@ import com.jx.tracker.risk.model.GateDecision;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
+import com.jx.tracker.risk.model.RiskEvidenceProvenance;
 import com.jx.tracker.risk.model.RiskGateStatus;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskLevel;
@@ -112,6 +113,7 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
                 .addValue("asOf", asOf);
         List<EvidenceRow> rows = jdbc.query("""
                 SELECT snapshot_id, dimension_code, indicator_code, raw_value, indicator_score,
+                       layer_object_type, layer_object_id,
                        observed_at, available_at, source, quality_status, evidence_json
                 FROM risk_score_evidence
                 WHERE snapshot_id IN (:snapshotIds) AND available_at <= :asOf
@@ -159,7 +161,9 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
         Map<String, GateDecision> latest = new LinkedHashMap<>();
         rows.forEach(row -> {
             String symbol = symbolByReference.get(row.signalReference());
-            if (symbol != null) {
+            SnapshotRow selectedSnapshot = snapshots.get(symbol);
+            if (symbol != null && selectedSnapshot != null
+                    && selectedSnapshot.modelVersion().equals(row.decision().modelVersion())) {
                 latest.putIfAbsent(symbol, row.decision());
             }
         });
@@ -185,6 +189,9 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
     }
 
     private RiskEvidence mapEvidence(ResultSet resultSet) throws SQLException {
+        Map<String, Object> details = new LinkedHashMap<>(readJson(resultSet.getString("evidence_json")));
+        details.put(RiskEvidenceProvenance.LAYER_OBJECT_TYPE, resultSet.getString("layer_object_type"));
+        details.put(RiskEvidenceProvenance.LAYER_OBJECT_ID, resultSet.getString("layer_object_id"));
         return new RiskEvidence(
                 RiskDimension.fromCode(resultSet.getString("dimension_code")),
                 resultSet.getString("indicator_code"), resultSet.getBigDecimal("indicator_score"),
@@ -193,7 +200,7 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
                 resultSet.getTimestamp("available_at").toLocalDateTime(),
                 resultSet.getString("source"),
                 RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")),
-                readJson(resultSet.getString("evidence_json")));
+                details);
     }
 
     private GateDecision mapGate(ResultSet resultSet) throws SQLException {

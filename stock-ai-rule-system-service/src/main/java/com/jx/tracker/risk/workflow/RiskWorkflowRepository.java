@@ -45,7 +45,7 @@ public interface RiskWorkflowRepository {
     StoredRiskSnapshot saveSnapshot(RiskSnapshot snapshot, RiskDataQualityStatus qualityStatus,
                                     LocalDateTime observedAt, LocalDateTime availableAt);
 
-    void replaceEvidence(long snapshotId, List<RiskEvidence> evidence);
+    void replaceEvidence(long snapshotId, RiskObjectKey snapshotObject, List<RiskEvidence> evidence);
 
     void deleteGate(RiskSignalCandidate signal, String modelVersion);
 

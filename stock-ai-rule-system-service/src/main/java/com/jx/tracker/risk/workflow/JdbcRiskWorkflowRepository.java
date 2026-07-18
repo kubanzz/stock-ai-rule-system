@@ -10,6 +10,7 @@ import com.jx.tracker.risk.gate.ShadowGateResult;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
+import com.jx.tracker.risk.model.RiskEvidenceProvenance;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskLevel;
 import com.jx.tracker.risk.model.RiskObjectKey;
@@ -20,7 +21,11 @@ import com.jx.tracker.risk.provider.RiskEvent;
 import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,11 +46,23 @@ import java.util.Set;
 @Repository
 public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
+    private static final int OBJECT_SCOPE_CHUNK_SIZE = 250;
     private final JdbcTemplate jdbcTemplate;
+    private final NamedParameterJdbcOperations namedJdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public JdbcRiskWorkflowRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate), objectMapper);
+    }
+
+    JdbcRiskWorkflowRepository(
+            JdbcTemplate jdbcTemplate,
+            NamedParameterJdbcOperations namedJdbcTemplate,
+            ObjectMapper objectMapper
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.namedJdbcTemplate = namedJdbcTemplate;
         this.objectMapper = objectMapper;
     }
 
@@ -166,69 +183,97 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
     @Override
     public List<RiskObservation> findObservations(RiskWorkflowRequest request) {
-        Set<RiskObjectKey> requestedObjects = new HashSet<>();
-        request.collectionTasks().forEach(task -> requestedObjects.addAll(task.objects()));
-        request.signals().forEach(signal -> requestedObjects.addAll(signal.relevantRiskObjects()));
-        return jdbcTemplate.query("""
-                SELECT object_type, object_id, horizon, trade_date, dimension_code,
-                       indicator_code, indicator_value, unit, observed_at, available_at,
-                       source, quality_status, payload_json
-                FROM risk_indicator_observation
-                WHERE trade_date BETWEEN ? AND ? AND available_at <= ?
-                ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
-                """, this::mapObservation,
-                request.collectionStartDate(), request.endDate(), request.asOf()).stream()
-                .filter(observation -> requestedLayerCandidate(observation.object(), requestedObjects))
-                .filter(observation -> request.horizons().contains(observation.horizon()))
-                .toList();
+        return objectSqlScopes(request).stream().flatMap(scope -> {
+            scope.parameters()
+                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("endDate", request.endDate())
+                    .addValue("asOf", request.asOf())
+                    .addValue("horizons", request.horizons().stream().map(RiskHorizon::getCode).toList());
+            return namedJdbcTemplate.query("""
+                    SELECT object_type, object_id, horizon, trade_date, dimension_code,
+                           indicator_code, indicator_value, unit, observed_at, available_at,
+                           source, quality_status, payload_json
+                    FROM risk_indicator_observation
+                    WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
+                      AND horizon IN (:horizons)
+                    """ + scope.predicate() + """
+                    ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
+                    """, scope.parameters(), this::mapObservation).stream();
+        }).toList();
     }
 
     @Override
     public List<RiskEvent> findEvents(RiskWorkflowRequest request) {
-        Set<RiskObjectKey> requestedObjects = requestedObjects(request);
-        return jdbcTemplate.query("""
-                SELECT object_type, object_id, trade_date, dimension_code, event_type, event_key,
-                       severity_score, occurred_at, observed_at, available_at,
-                       source, quality_status, event_payload
-                FROM risk_event_fact
-                WHERE trade_date BETWEEN ? AND ? AND available_at <= ?
-                ORDER BY trade_date, object_type, object_id, event_type, event_key, available_at
-                """, this::mapEvent,
-                request.collectionStartDate(), request.endDate(), request.asOf()).stream()
-                .filter(event -> requestedLayerCandidate(event.object(), requestedObjects))
-                .toList();
+        return objectSqlScopes(request).stream().flatMap(scope -> {
+            scope.parameters()
+                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("endDate", request.endDate())
+                    .addValue("asOf", request.asOf());
+            return namedJdbcTemplate.query("""
+                    SELECT object_type, object_id, trade_date, dimension_code, event_type, event_key,
+                           severity_score, occurred_at, observed_at, available_at,
+                           source, quality_status, event_payload
+                    FROM risk_event_fact
+                    WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
+                    """ + scope.predicate() + """
+                    ORDER BY trade_date, object_type, object_id, event_type, event_key, available_at
+                    """, scope.parameters(), this::mapEvent).stream();
+        }).toList();
     }
 
     @Override
     public List<IndustryExposure> findIndustryExposures(RiskWorkflowRequest request) {
-        Set<RiskObjectKey> requestedObjects = requestedObjects(request);
-        return jdbcTemplate.query("""
-                SELECT object_type, object_id, parent_object_type, parent_object_id,
-                       valid_from, valid_to, observed_at, available_at, source, quality_status
-                FROM risk_object_exposure
-                WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)
-                  AND available_at <= ?
-                ORDER BY object_id, valid_from, available_at
-                """, this::mapExposure,
-                request.endDate(), request.collectionStartDate(), request.asOf()).stream()
-                .filter(exposure -> requestedObjects.contains(exposure.stock()))
+        List<String> stockIds = requestedObjects(request).stream()
+                .filter(object -> object.objectType() == RiskObjectType.STOCK)
+                .map(RiskObjectKey::objectId)
+                .sorted()
                 .toList();
+        if (stockIds.isEmpty()) {
+            return List.of();
+        }
+        List<IndustryExposure> exposures = new java.util.ArrayList<>();
+        for (int offset = 0; offset < stockIds.size(); offset += OBJECT_SCOPE_CHUNK_SIZE) {
+            int end = Math.min(offset + OBJECT_SCOPE_CHUNK_SIZE, stockIds.size());
+            MapSqlParameterSource parameters = new MapSqlParameterSource()
+                    .addValue("stockObjectType", RiskObjectType.STOCK.getCode())
+                    .addValue("stockObjectIds", stockIds.subList(offset, end))
+                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("endDate", request.endDate())
+                    .addValue("asOf", request.asOf());
+            exposures.addAll(namedJdbcTemplate.query("""
+                    SELECT object_type, object_id, parent_object_type, parent_object_id,
+                           valid_from, valid_to, observed_at, available_at, source, quality_status
+                    FROM risk_object_exposure
+                    WHERE object_type = :stockObjectType AND object_id IN (:stockObjectIds)
+                      AND valid_from <= :endDate AND (valid_to IS NULL OR valid_to >= :startDate)
+                      AND available_at <= :asOf
+                    ORDER BY object_id, valid_from, available_at
+                    """, parameters, this::mapExposure));
+        }
+        return List.copyOf(exposures);
     }
 
     @Override
     public List<RiskSnapshot> findSnapshotHistory(RiskWorkflowRequest request) {
-        return jdbcTemplate.query("""
-                SELECT object_type, object_id, horizon, trade_date,
-                       v_score, t_score, s_score, c_score, a_score, m_score, total_score,
-                       risk_level, risk_stage, completeness, risk_confidence,
-                       model_version, calculated_at
-                FROM risk_score_snapshot
-                WHERE trade_date BETWEEN ? AND ? AND calculated_at <= ? AND model_version = ?
-                ORDER BY object_type, object_id, horizon, trade_date, calculated_at
-                """, this::mapSnapshot,
-                request.collectionStartDate(), request.endDate(), request.asOf(), request.modelVersion()).stream()
-                .filter(snapshot -> request.horizons().contains(snapshot.horizon()))
-                .toList();
+        return objectSqlScopes(request).stream().flatMap(scope -> {
+            scope.parameters()
+                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("endDate", request.endDate())
+                    .addValue("asOf", request.asOf())
+                    .addValue("modelVersion", request.modelVersion())
+                    .addValue("horizons", request.horizons().stream().map(RiskHorizon::getCode).toList());
+            return namedJdbcTemplate.query("""
+                    SELECT object_type, object_id, horizon, trade_date,
+                           v_score, t_score, s_score, c_score, a_score, m_score, total_score,
+                           risk_level, risk_stage, completeness, risk_confidence,
+                           model_version, calculated_at
+                    FROM risk_score_snapshot
+                    WHERE trade_date BETWEEN :startDate AND :endDate AND calculated_at <= :asOf
+                      AND model_version = :modelVersion AND horizon IN (:horizons)
+                    """ + scope.predicate() + """
+                    ORDER BY object_type, object_id, horizon, trade_date, calculated_at
+                    """, scope.parameters(), this::mapSnapshot).stream();
+        }).toList();
     }
 
     @Override
@@ -275,19 +320,21 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
     @Override
     @Transactional
-    public void replaceEvidence(long snapshotId, List<RiskEvidence> evidence) {
+    public void replaceEvidence(long snapshotId, RiskObjectKey snapshotObject, List<RiskEvidence> evidence) {
         jdbcTemplate.update("DELETE FROM risk_score_evidence WHERE snapshot_id = ?", snapshotId);
         for (RiskEvidence item : evidence) {
-            insertEvidence(snapshotId, item);
+            insertEvidence(snapshotId, snapshotObject, item);
         }
     }
 
-    private void insertEvidence(long snapshotId, RiskEvidence evidence) {
+    private void insertEvidence(long snapshotId, RiskObjectKey snapshotObject, RiskEvidence evidence) {
+        RiskObjectKey layerObject = RiskEvidenceProvenance.layerObject(evidence, snapshotObject);
         jdbcTemplate.update("""
                 INSERT INTO risk_score_evidence (
-                    snapshot_id, dimension_code, indicator_code, raw_value, indicator_score,
+                    snapshot_id, layer_object_type, layer_object_id,
+                    dimension_code, indicator_code, raw_value, indicator_score,
                     weighted_contribution, observed_at, available_at, source, quality_status, evidence_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     dimension_code = VALUES(dimension_code), raw_value = VALUES(raw_value),
                     indicator_score = VALUES(indicator_score),
@@ -295,7 +342,8 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     observed_at = VALUES(observed_at), available_at = VALUES(available_at),
                     quality_status = VALUES(quality_status), evidence_json = VALUES(evidence_json)
                 """,
-                snapshotId, evidence.dimension().getCode(), evidence.indicatorCode(), evidence.rawValue(),
+                snapshotId, layerObject.objectType().getCode(), layerObject.objectId(),
+                evidence.dimension().getCode(), evidence.indicatorCode(), evidence.rawValue(),
                 evidence.score(), weightedContribution(evidence), evidence.observedAt(), evidence.availableAt(),
                 evidence.source(), evidence.qualityStatus().getCode(), json(evidence.details()));
     }
@@ -411,14 +459,51 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         return requestedObjects;
     }
 
-    private boolean requestedLayerCandidate(RiskObjectKey object, Set<RiskObjectKey> requestedObjects) {
-        if (requestedObjects.contains(object)) {
-            return true;
+    private List<ObjectSqlScope> objectSqlScopes(RiskWorkflowRequest request) {
+        List<RiskObjectKey> requested = requestedObjects(request).stream()
+                .sorted(java.util.Comparator
+                        .comparing((RiskObjectKey object) -> object.objectType().getCode())
+                        .thenComparing(RiskObjectKey::objectId))
+                .toList();
+        if (requested.isEmpty()) {
+            throw new IllegalArgumentException("risk workflow object scope must not be empty");
         }
-        boolean containsStock = requestedObjects.stream()
-                .anyMatch(requested -> requested.objectType() == RiskObjectType.STOCK);
-        return containsStock && (object.objectType() == RiskObjectType.SECTOR
-                || (object.objectType() == RiskObjectType.MARKET && "CN-A".equals(object.objectId())));
+        boolean containsStock = requested.stream()
+                .anyMatch(object -> object.objectType() == RiskObjectType.STOCK);
+        List<RiskObjectKey> explicit = containsStock ? requested.stream()
+                .filter(object -> object.objectType() != RiskObjectType.SECTOR)
+                .filter(object -> object.objectType() != RiskObjectType.MARKET
+                        || !"CN-A".equals(object.objectId()))
+                .toList() : requested;
+        List<ObjectSqlScope> scopes = new java.util.ArrayList<>();
+        for (int offset = 0; offset < explicit.size(); offset += OBJECT_SCOPE_CHUNK_SIZE) {
+            int end = Math.min(offset + OBJECT_SCOPE_CHUNK_SIZE, explicit.size());
+            scopes.add(objectSqlScope(explicit.subList(offset, end), containsStock && offset == 0));
+        }
+        return List.copyOf(scopes);
+    }
+
+    private ObjectSqlScope objectSqlScope(List<RiskObjectKey> requested, boolean includeLayerCandidates) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource();
+        List<String> predicates = new java.util.ArrayList<>();
+        for (int index = 0; index < requested.size(); index++) {
+            RiskObjectKey object = requested.get(index);
+            parameters.addValue("scopeObjectType" + index, object.objectType().getCode());
+            parameters.addValue("scopeObjectId" + index, object.objectId());
+            predicates.add("(object_type = :scopeObjectType" + index
+                    + " AND object_id = :scopeObjectId" + index + ")");
+        }
+        if (includeLayerCandidates) {
+            parameters.addValue("layerMarketType", RiskObjectType.MARKET.getCode());
+            parameters.addValue("layerMarketId", "CN-A");
+            parameters.addValue("layerSectorType", RiskObjectType.SECTOR.getCode());
+            predicates.add("(object_type = :layerMarketType AND object_id = :layerMarketId)");
+            predicates.add("object_type = :layerSectorType");
+        }
+        return new ObjectSqlScope(" AND (" + String.join(" OR ", predicates) + ")\n", parameters);
+    }
+
+    private record ObjectSqlScope(String predicate, MapSqlParameterSource parameters) {
     }
 
     private BigDecimal weightedContribution(RiskEvidence evidence) {

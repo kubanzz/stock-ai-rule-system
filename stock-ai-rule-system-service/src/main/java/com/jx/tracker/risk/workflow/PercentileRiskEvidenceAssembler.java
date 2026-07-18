@@ -3,6 +3,7 @@ package com.jx.tracker.risk.workflow;
 import com.jx.tracker.risk.engine.RiskNormalizationResult;
 import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
@@ -36,24 +37,35 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
             List<RiskObservation> observations
     ) {
         Map<String, RiskObservation> currentByIndicator = new LinkedHashMap<>();
-        observations.stream()
+        Map<String, List<RiskObservation>> historyByIndicator = observations.stream()
                 .filter(observation -> observation.object().equals(object))
                 .filter(observation -> observation.horizon() == horizon)
-                .filter(observation -> observation.tradeDate().equals(tradeDate))
+                .filter(observation -> !observation.tradeDate().isAfter(tradeDate))
                 .filter(observation -> !observation.availableAt().isAfter(asOf))
+                .collect(java.util.stream.Collectors.groupingBy(
+                        observation -> indicatorKey(observation.dimension().getCode(), observation.indicatorCode()),
+                        LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()));
+        historyByIndicator.values().stream()
+                .flatMap(List::stream)
+                .filter(observation -> observation.tradeDate().equals(tradeDate))
                 .sorted(Comparator.comparing(RiskObservation::availableAt))
-                .forEach(observation -> currentByIndicator.put(observation.indicatorCode(), observation));
+                .forEach(observation -> currentByIndicator.put(
+                        indicatorKey(observation.dimension().getCode(), observation.indicatorCode()), observation));
         return currentByIndicator.values().stream()
                 .sorted(Comparator.comparing(RiskObservation::indicatorCode))
-                .map(current -> evidence(current, observations, horizon, tradeDate, asOf))
+                .map(current -> evidence(
+                        current,
+                        historyByIndicator.getOrDefault(
+                                indicatorKey(current.dimension().getCode(), current.indicatorCode()), List.of()),
+                        horizon, asOf))
                 .toList();
     }
 
     private RiskEvidence evidence(
             RiskObservation current,
-            List<RiskObservation> observations,
+            List<RiskObservation> series,
             RiskHorizon horizon,
-            LocalDate tradeDate,
             LocalDateTime asOf
     ) {
         if (current.qualityStatus() != RiskDataQualityStatus.AVAILABLE
@@ -63,14 +75,6 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
                     current.observedAt(), current.availableAt(), current.source(),
                     current.qualityStatus(), Map.of("normalization", "rolling_percentile"));
         }
-        List<RiskObservation> series = observations.stream()
-                .filter(observation -> observation.object().equals(current.object()))
-                .filter(observation -> observation.horizon() == horizon)
-                .filter(observation -> observation.dimension() == current.dimension())
-                .filter(observation -> observation.indicatorCode().equals(current.indicatorCode()))
-                .filter(observation -> !observation.tradeDate().isAfter(tradeDate))
-                .filter(observation -> !observation.availableAt().isAfter(asOf))
-                .toList();
         RiskNormalizationResult normalized = normalizer.rollingPercentile(
                 current.value(), series, horizon, asOf);
         if (normalized.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
@@ -80,10 +84,20 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
                     RiskDataQualityStatus.INSUFFICIENT_HISTORY,
                     Map.of("normalization", "rolling_percentile", "sampleCount", normalized.sampleCount()));
         }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("normalization", "rolling_percentile");
+        details.put("sampleCount", normalized.sampleCount());
+        details.put("tradeDate", current.tradeDate().toString());
+        details.put("extremeCandidate", current.dimension() == RiskDimension.LOCAL_CONFIRMATION
+                || current.dimension() == RiskDimension.FORCED_SELLING);
         return new RiskEvidence(
                 current.dimension(), current.indicatorCode(), normalized.value(), current.value(),
                 current.observedAt(), current.availableAt(), current.source(),
                 RiskDataQualityStatus.AVAILABLE,
-                Map.of("normalization", "rolling_percentile", "sampleCount", normalized.sampleCount()));
+                details);
+    }
+
+    private String indicatorKey(String dimensionCode, String indicatorCode) {
+        return dimensionCode + ":" + indicatorCode;
     }
 }

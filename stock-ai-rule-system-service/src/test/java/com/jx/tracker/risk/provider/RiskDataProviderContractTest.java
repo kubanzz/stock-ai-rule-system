@@ -1,5 +1,6 @@
 package com.jx.tracker.risk.provider;
 
+import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskHorizon;
@@ -19,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RiskDataProviderContractTest {
 
     private static final RiskObjectKey MARKET = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+    private static final RiskObjectKey STOCK = new RiskObjectKey(RiskObjectType.STOCK, "000001.SZ");
+    private static final RiskObjectKey SECTOR = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
     private static final LocalDateTime OBSERVED_AT = LocalDateTime.of(2026, 7, 18, 15, 0);
     private static final LocalDateTime AVAILABLE_AT = LocalDateTime.of(2026, 7, 18, 16, 0);
 
@@ -35,11 +38,32 @@ class RiskDataProviderContractTest {
         assertThat(validZero.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
         assertThat(validZero.observations()).isEmpty();
         assertThat(validZero.events()).isEmpty();
+        assertThat(validZero.industryExposures()).isEmpty();
         assertThat(validZero.errorMessage()).isNull();
         assertThat(validZero.fetchedAt()).isEqualTo(fetchedAt);
 
         assertThat(failed.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
         assertThat(failed.errorMessage()).isEqualTo("source timeout");
+        assertThat(failed.industryExposures()).isEmpty();
+    }
+
+    @Test
+    void typedIndustryExposureCanBeTheOnlyAvailableBatchRecordAndIsDefensivelyCopied() {
+        IndustryExposure exposure = new IndustryExposure(
+                STOCK, SECTOR, LocalDate.of(2025, 1, 1), LocalDate.of(2026, 12, 31),
+                OBSERVED_AT, AVAILABLE_AT, "aktools", RiskDataQualityStatus.AVAILABLE
+        );
+        List<IndustryExposure> mutableExposures = new java.util.ArrayList<>(List.of(exposure));
+
+        RiskProviderBatch batch = new RiskProviderBatch(
+                "aktools", List.of(), List.of(), mutableExposures, null,
+                RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
+        );
+        mutableExposures.clear();
+
+        assertThat(batch.industryExposures()).containsExactly(exposure);
+        assertThatThrownBy(() -> batch.industryExposures().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -118,6 +142,7 @@ class RiskDataProviderContractTest {
                 RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
         );
         assertThat(available.observations()).containsExactly(observation);
+        assertThat(available.industryExposures()).isEmpty();
     }
 
     @Test

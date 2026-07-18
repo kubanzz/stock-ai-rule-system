@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.engine;
 
 import com.jx.tracker.risk.model.RiskEvidence;
+import com.jx.tracker.risk.model.RiskEvidenceProvenance;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.model.RiskSnapshot;
 
@@ -55,7 +56,9 @@ public final class RiskLayerComposer {
                 .setScale(4, RoundingMode.HALF_UP);
         List<RiskEvidence> evidence = new ArrayList<>();
         for (WeightedLayer layer : confirmedLayers) {
-            evidence.addAll(layer.snapshot().evidence());
+            layer.snapshot().evidence().stream()
+                    .map(item -> RiskEvidenceProvenance.withLayer(item, layer.snapshot().object()))
+                    .forEach(evidence::add);
         }
 
         return new RiskLayerComposition(
