@@ -6,69 +6,22 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 风险 API wire DTO。字段名与前端 risk/types.ts 冻结契约保持一致。
+ */
 public final class RiskAssessmentDto {
 
     private RiskAssessmentDto() {
     }
 
-    public record Overview(
-            LocalDate tradeDate,
-            Map<String, Long> levelCounts,
-            long highRiskObjectCount,
-            List<RiskObjectSummary> highRiskObjects,
-            String riskNotice
-    ) {
+    public record RiskObjectRef(String objectType, String objectId) {
     }
 
-    public record RiskObjectSummary(
-            String objectType,
-            String objectId,
-            LocalDate tradeDate,
-            String riskLevel,
-            BigDecimal totalScore,
-            List<RiskPeriodAssessment> periods,
-            String riskNotice
-    ) {
-    }
-
-    public record RiskObjectDetail(
-            String objectType,
-            String objectId,
-            LocalDate tradeDate,
-            List<RiskPeriodAssessment> periods,
-            List<RiskEvidenceItem> activeTriggers,
-            List<RiskParent> parents,
-            String riskNotice
-    ) {
-    }
-
-    public record RiskPeriodAssessment(
-            String horizon,
-            LocalDate tradeDate,
-            BigDecimal vScore,
-            BigDecimal tScore,
-            BigDecimal sScore,
-            BigDecimal cScore,
-            BigDecimal aScore,
-            BigDecimal mScore,
-            BigDecimal totalScore,
-            String riskLevel,
-            String riskStage,
-            BigDecimal completeness,
-            BigDecimal riskConfidence,
-            String qualityStatus,
-            List<RiskEvidenceItem> evidence,
-            String modelVersion,
-            LocalDateTime calculatedAt
-    ) {
-    }
-
-    public record RiskEvidenceItem(
-            String dimensionCode,
+    public record RiskEvidence(
+            String dimension,
             String indicatorCode,
             BigDecimal rawValue,
-            BigDecimal indicatorScore,
-            BigDecimal weightedContribution,
+            BigDecimal score,
             LocalDateTime observedAt,
             LocalDateTime availableAt,
             String source,
@@ -77,31 +30,8 @@ public final class RiskAssessmentDto {
     ) {
     }
 
-    public record RiskParent(
-            String parentObjectType,
-            String parentObjectId,
-            BigDecimal exposureWeight,
-            LocalDate validFrom,
-            LocalDate validTo,
-            LocalDateTime observedAt,
-            LocalDateTime availableAt,
-            String source,
-            String qualityStatus,
-            Map<String, Object> metadata
-    ) {
-    }
-
-    public record RiskTrend(
-            String objectType,
-            String objectId,
-            LocalDate startDate,
-            LocalDate endDate,
-            List<RiskTrendPoint> points,
-            String riskNotice
-    ) {
-    }
-
-    public record RiskTrendPoint(
+    public record RiskSnapshot(
+            RiskObjectRef object,
             String horizon,
             LocalDate tradeDate,
             BigDecimal vScore,
@@ -111,13 +41,56 @@ public final class RiskAssessmentDto {
             BigDecimal aScore,
             BigDecimal mScore,
             BigDecimal totalScore,
-            String riskLevel,
-            String riskStage,
+            String level,
+            String stage,
             BigDecimal completeness,
             BigDecimal riskConfidence,
-            String qualityStatus,
+            List<RiskEvidence> evidence,
             String modelVersion,
             LocalDateTime calculatedAt
+    ) {
+    }
+
+    public record RiskLevelCount(String level, long count) {
+    }
+
+    public record RiskOverview(
+            String horizon,
+            LocalDate tradeDate,
+            List<RiskLevelCount> levelCounts,
+            RiskSnapshot marketSnapshot,
+            List<RiskObjectListItem> highRiskObjects,
+            String riskDisclaimer
+    ) {
+    }
+
+    public record RiskObjectListItem(
+            String name,
+            RiskObjectRef object,
+            RiskSnapshot snapshot
+    ) {
+    }
+
+    public record RiskObjectDetail(
+            String name,
+            RiskObjectRef object,
+            RiskSnapshot snapshot,
+            List<String> activeTriggers,
+            List<RiskObjectRef> parentObjects,
+            List<RiskSnapshot> snapshots
+    ) {
+    }
+
+    public record RiskTrendPoint(
+            LocalDate tradeDate,
+            BigDecimal vScore,
+            BigDecimal tScore,
+            BigDecimal sScore,
+            BigDecimal cScore,
+            BigDecimal aScore,
+            BigDecimal totalScore,
+            String level,
+            BigDecimal completeness
     ) {
     }
 }

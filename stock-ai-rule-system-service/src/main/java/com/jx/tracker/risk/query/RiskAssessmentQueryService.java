@@ -1,25 +1,40 @@
 package com.jx.tracker.risk.query;
 
 import com.jx.tracker.common.PageResult;
-import com.jx.tracker.risk.query.dto.RiskAssessmentDto.Overview;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectDetail;
-import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectSummary;
-import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskTrend;
+import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectListItem;
+import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskOverview;
+import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskTrendPoint;
 
 import java.time.LocalDate;
+import java.util.List;
 
 public interface RiskAssessmentQueryService {
 
-    Overview overview(LocalDate tradeDate);
+    RiskOverview overview(String horizon, LocalDate tradeDate);
 
-    PageResult<RiskObjectSummary> listObjects(
+    PageResult<RiskObjectListItem> listObjects(
             String objectType,
-            String riskLevel,
+            String level,
+            String horizon,
+            LocalDate tradeDate,
+            String keyword,
             int pageNum,
             int pageSize
     );
 
-    RiskObjectDetail objectDetail(String objectType, String objectId);
+    RiskObjectDetail objectDetail(
+            String objectType,
+            String objectId,
+            String horizon,
+            LocalDate tradeDate
+    );
 
-    RiskTrend trend(String objectType, String objectId, LocalDate startDate, LocalDate endDate);
+    List<RiskTrendPoint> trend(
+            String objectType,
+            String objectId,
+            String horizon,
+            LocalDate startDate,
+            LocalDate endDate
+    );
 }

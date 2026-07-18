@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface RiskObjectExposureMapper extends BaseMapper<RiskObjectExposureEntity> {
@@ -14,14 +15,15 @@ public interface RiskObjectExposureMapper extends BaseMapper<RiskObjectExposureE
             SELECT * FROM risk_object_exposure
             WHERE object_type = #{objectType}
               AND object_id = #{objectId}
-              AND valid_from &lt;= #{tradeDate}
-              AND (valid_to IS NULL OR valid_to &gt;= #{tradeDate})
-              AND available_at &lt; DATE_ADD(#{tradeDate}, INTERVAL 1 DAY)
+              AND valid_from <= #{tradeDate}
+              AND (valid_to IS NULL OR valid_to >= #{tradeDate})
+              AND available_at <= #{asOf}
             ORDER BY exposure_weight DESC, parent_object_type, parent_object_id
             """)
     List<RiskObjectExposureEntity> selectActiveParents(
             @Param("objectType") String objectType,
             @Param("objectId") String objectId,
-            @Param("tradeDate") LocalDate tradeDate
+            @Param("tradeDate") LocalDate tradeDate,
+            @Param("asOf") LocalDateTime asOf
     );
 }

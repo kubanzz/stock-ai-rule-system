@@ -4,7 +4,7 @@ import com.jx.tracker.common.AjaxResult;
 import com.jx.tracker.common.PageResult;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.risk.query.RiskAssessmentQueryService;
-import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectSummary;
+import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectListItem;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -30,31 +30,41 @@ public class RiskAssessmentController {
     @GetMapping("/overview")
     @Operation(summary = "查询风险总览")
     public AjaxResult overview(
+            @RequestParam(value = "horizon", required = false) String horizon,
             @RequestParam(value = "tradeDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tradeDate
     ) {
-        return AjaxResult.success(queryService.overview(tradeDate));
+        return AjaxResult.success(queryService.overview(horizon, tradeDate));
     }
 
     @GetMapping("/objects")
     @Operation(summary = "分页查询风险对象")
-    public PageResult<RiskObjectSummary> objects(
+    public PageResult<RiskObjectListItem> objects(
             @RequestParam(value = "objectType", required = false) String objectType,
-            @RequestParam(value = "riskLevel", required = false) String riskLevel,
+            @RequestParam(value = "level", required = false) String level,
+            @RequestParam(value = "horizon", required = false) String horizon,
+            @RequestParam(value = "tradeDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tradeDate,
+            @RequestParam(value = "keyword", required = false) String keyword,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize
     ) {
         validatePage(pageNum, pageSize);
-        return queryService.listObjects(objectType, riskLevel, pageNum, pageSize);
+        return queryService.listObjects(
+                objectType, level, horizon, tradeDate, keyword, pageNum, pageSize
+        );
     }
 
     @GetMapping("/objects/{objectType}/{objectId}")
     @Operation(summary = "查询风险对象详情")
     public AjaxResult objectDetail(
             @PathVariable("objectType") String objectType,
-            @PathVariable("objectId") String objectId
+            @PathVariable("objectId") String objectId,
+            @RequestParam(value = "horizon", required = false) String horizon,
+            @RequestParam(value = "tradeDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tradeDate
     ) {
-        return AjaxResult.success(queryService.objectDetail(objectType, objectId));
+        return AjaxResult.success(queryService.objectDetail(objectType, objectId, horizon, tradeDate));
     }
 
     @GetMapping("/objects/{objectType}/{objectId}/trend")
@@ -62,6 +72,7 @@ public class RiskAssessmentController {
     public AjaxResult trend(
             @PathVariable("objectType") String objectType,
             @PathVariable("objectId") String objectId,
+            @RequestParam(value = "horizon", required = false) String horizon,
             @RequestParam(value = "startDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(value = "endDate", required = false)
@@ -70,7 +81,9 @@ public class RiskAssessmentController {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new ServiceException("startDate 不能晚于 endDate", 400);
         }
-        return AjaxResult.success(queryService.trend(objectType, objectId, startDate, endDate));
+        return AjaxResult.success(queryService.trend(
+                objectType, objectId, horizon, startDate, endDate
+        ));
     }
 
     private void validatePage(int pageNum, int pageSize) {
