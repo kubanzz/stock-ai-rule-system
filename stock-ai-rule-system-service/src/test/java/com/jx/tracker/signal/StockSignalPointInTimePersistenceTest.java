@@ -32,7 +32,7 @@ class StockSignalPointInTimePersistenceTest {
     private final AtomicInteger generation = new AtomicInteger();
 
     @Test
-    void repeatedGenerationUpdatesTheFormalRowAndAppendsEveryAvailableVersion() {
+    void repeatedGenerationOnlyAppendsContentChangesAndPreservesReversions() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:signal_pit_service;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
                 "sa",
@@ -49,18 +49,24 @@ class StockSignalPointInTimePersistenceTest {
                     risk_score DECIMAL(10, 4), confidence DECIMAL(10, 4),
                     triggered_rules VARCHAR(1024), explanation VARCHAR(1024),
                     risk_disclaimer VARCHAR(512), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    signal_content_fingerprint VARCHAR(4096) GENERATED ALWAYS AS (
+                        CONCAT_WS('|', symbol, signal_date, `signal`, signal_direction, signal_level,
+                            bullish_score, bearish_score, risk_score, confidence,
+                            triggered_rules, explanation, risk_disclaimer)
+                    ),
                     UNIQUE (symbol, signal_date)
                 )
                 """);
         jdbc.execute("""
                 CREATE TABLE stock_signal_daily_history (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    signal_id BIGINT, symbol VARCHAR(32), signal_date DATE,
+                    signal_id BIGINT, version_no BIGINT, symbol VARCHAR(32), signal_date DATE,
                     `signal` VARCHAR(32), signal_direction VARCHAR(16), signal_level VARCHAR(32),
                     bullish_score DECIMAL(10, 4), bearish_score DECIMAL(10, 4),
                     risk_score DECIMAL(10, 4), confidence DECIMAL(10, 4),
                     triggered_rules VARCHAR(1024), explanation VARCHAR(1024),
-                    risk_disclaimer VARCHAR(512), available_at TIMESTAMP
+                    risk_disclaimer VARCHAR(512), content_fingerprint VARCHAR(4096),
+                    available_at TIMESTAMP, UNIQUE (signal_id, version_no)
                 )
                 """);
 
@@ -74,12 +80,17 @@ class StockSignalPointInTimePersistenceTest {
                     emptyRuleMapper(),
                     unusedFactorMapper(),
                     sqlSession.getMapper(StockSignalDailyMapper.class),
-                    request -> request.symbol().equals("600519.SH") && generation.getAndIncrement() == 0
-                            ? new RuleExecutionResult(new BigDecimal("75"), BigDecimal.ZERO, BigDecimal.ZERO, List.of(), List.of())
-                            : new RuleExecutionResult(BigDecimal.ZERO, new BigDecimal("80"), BigDecimal.ZERO, List.of(), List.of()),
+                    request -> {
+                        int currentGeneration = generation.getAndIncrement();
+                        return currentGeneration < 2 || currentGeneration >= 3
+                                ? new RuleExecutionResult(new BigDecimal("75"), BigDecimal.ZERO, BigDecimal.ZERO, List.of(), List.of())
+                                : new RuleExecutionResult(BigDecimal.ZERO, new BigDecimal("80"), BigDecimal.ZERO, List.of(), List.of());
+                    },
                     new SignalScoringService()
             );
 
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
             service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
             service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
         }
@@ -88,11 +99,11 @@ class StockSignalPointInTimePersistenceTest {
         assertThat(jdbc.queryForObject(
                 "SELECT signal_direction FROM stock_signal_daily WHERE symbol = '600519.SH'",
                 String.class
-        )).isEqualTo("bearish");
+        )).isEqualTo("bullish");
         assertThat(jdbc.queryForList(
                 "SELECT signal_direction FROM stock_signal_daily_history ORDER BY id",
                 String.class
-        )).containsExactly("bullish", "bearish");
+        )).containsExactly("bullish", "bearish", "bullish");
         assertThat(jdbc.queryForList(
                 "SELECT available_at FROM stock_signal_daily_history ORDER BY id",
                 Timestamp.class

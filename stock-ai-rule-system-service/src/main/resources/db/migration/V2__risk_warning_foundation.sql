@@ -19,11 +19,20 @@ WHERE signal_direction IS NULL;
 
 ALTER TABLE stock_signal_daily
     MODIFY COLUMN signal_direction VARCHAR(16) NOT NULL DEFAULT 'watch' COMMENT '信号方向：bullish/bearish/watch',
+    ADD COLUMN signal_content_fingerprint CHAR(64) CHARACTER SET ascii
+        GENERATED ALWAYS AS (
+            SHA2(CAST(JSON_ARRAY(
+                symbol, signal_date, `signal`, signal_direction, signal_level,
+                bullish_score, bearish_score, risk_score, confidence,
+                triggered_rules, explanation, risk_disclaimer
+            ) AS CHAR), 256)
+        ) STORED COMMENT '正式信号全部业务内容的确定性 SHA-256 指纹',
     ADD KEY idx_stock_signal_daily_direction_date (signal_direction, signal_date);
 
 CREATE TABLE stock_signal_daily_history (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     signal_id BIGINT NOT NULL COMMENT 'stock_signal_daily.id，同一正式信号的稳定标识',
+    version_no BIGINT NOT NULL COMMENT '同一正式信号内单调递增的内容版本号',
     symbol VARCHAR(32) NOT NULL,
     signal_date DATE NOT NULL,
     `signal` VARCHAR(32) NULL COMMENT '保留 high_risk 等历史信号值用于审计',
@@ -36,20 +45,23 @@ CREATE TABLE stock_signal_daily_history (
     triggered_rules JSON NULL,
     explanation TEXT NULL,
     risk_disclaimer VARCHAR(512) NULL,
+    content_fingerprint CHAR(64) CHARACTER SET ascii NOT NULL COMMENT '由正式表统一生成的全业务内容 SHA-256 指纹',
     available_at DATETIME(3) NOT NULL COMMENT '该版本首次可供风险闸门使用的时间',
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_stock_signal_daily_history_version (signal_id, version_no),
     KEY idx_stock_signal_daily_history_pit (signal_date, symbol, available_at, id),
-    KEY idx_stock_signal_daily_history_signal (signal_id, available_at, id)
+    KEY idx_stock_signal_daily_history_signal (signal_id, available_at, id),
+    KEY idx_stock_signal_daily_history_fingerprint (signal_id, content_fingerprint)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='正式股票信号的追加式版本历史';
 
 INSERT INTO stock_signal_daily_history (
-    signal_id, symbol, signal_date, `signal`, signal_direction, signal_level,
+    signal_id, version_no, symbol, signal_date, `signal`, signal_direction, signal_level,
     bullish_score, bearish_score, risk_score, confidence, triggered_rules,
-    explanation, risk_disclaimer, available_at
+    explanation, risk_disclaimer, content_fingerprint, available_at
 )
-SELECT id, symbol, signal_date, `signal`, signal_direction, signal_level,
+SELECT id, 1, symbol, signal_date, `signal`, signal_direction, signal_level,
        bullish_score, bearish_score, risk_score, confidence, triggered_rules,
-       explanation, risk_disclaimer, COALESCE(created_at, CURRENT_TIMESTAMP(3))
+       explanation, risk_disclaimer, signal_content_fingerprint, CURRENT_TIMESTAMP(3)
 FROM stock_signal_daily;
 
 CREATE TABLE risk_object_exposure (
