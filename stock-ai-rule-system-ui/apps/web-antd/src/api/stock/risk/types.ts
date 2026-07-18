@@ -1,5 +1,5 @@
 export const RISK_DECISION_SUPPORT_NOTICE =
-  '风险预警仅用于辅助决策，不构成投资建议或收益承诺。';
+  '风险预警仅用于辅助决策，不构成投资建议，不保证收益；风险分是综合指标分数，不代表事件发生概率。';
 
 export type SignalDirection = 'bearish' | 'bullish' | 'watch';
 export type RiskLevel = 'critical' | 'normal' | 'warning' | 'watch';
@@ -38,24 +38,33 @@ export interface RiskSnapshot {
   calculatedAt: string;
   completeness: number;
   evidence: RiskEvidence[];
-  gateEnforced?: boolean;
-  gateStatus?: RiskGateStatus;
   horizon: RiskHorizon;
   level: null | RiskLevel;
   mScore: null | number;
   modelVersion: string;
   object: RiskObjectRef;
-  originalConfidence?: null | number;
   riskConfidence: null | number;
   riskDisclaimer: string;
   sScore: null | number;
-  signalDirection?: SignalDirection;
   stage: null | RiskStage;
-  suggestedConfidence?: null | number;
   tScore: null | number;
   totalScore: null | number;
   tradeDate: string;
   vScore: null | number;
+}
+
+export interface RiskGateDecision {
+  calculatedAt: string;
+  enforced: false;
+  horizon: RiskHorizon;
+  modelVersion: string;
+  object: RiskObjectRef;
+  originalConfidence: number;
+  reason: string;
+  signalDirection: SignalDirection;
+  suggestedAction: RiskGateStatus;
+  suggestedConfidence: number;
+  tradeDate: string;
 }
 
 export interface RiskLevelCount {
@@ -73,6 +82,7 @@ export interface RiskOverview {
 }
 
 export interface RiskObjectListItem {
+  gateDecision?: RiskGateDecision;
   name: string;
   object: RiskObjectRef;
   parentName?: string;

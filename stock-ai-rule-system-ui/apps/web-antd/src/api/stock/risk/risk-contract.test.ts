@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeRiskObjectQuery,
   RISK_API_PATHS,
-} from './index';
+} from './contract';
 import {
   mockIncompleteRiskObject,
   mockRiskOverview,
@@ -40,13 +40,13 @@ describe('risk api contract', () => {
   });
 
   it('keeps directions, risk levels and gates independent', () => {
-    const snapshot = mockRiskSnapshots.find(
-      (item) => item.object.objectId === '600519.SH',
+    const item = mockRiskOverview.highRiskObjects.find(
+      (candidate) => candidate.object.objectId === '600519.SH',
     );
-    expect(snapshot?.level).toBe('critical');
-    expect(snapshot?.gateStatus).toBe('block');
-    expect(snapshot?.signalDirection).toBe('bullish');
-    expect(snapshot?.gateEnforced).toBe(false);
+    expect(item?.snapshot.level).toBe('critical');
+    expect(item?.gateDecision?.suggestedAction).toBe('block');
+    expect(item?.gateDecision?.signalDirection).toBe('bullish');
+    expect(item?.gateDecision?.enforced).toBe(false);
   });
 
   it('represents insufficient data without manufacturing a zero score', () => {
@@ -68,7 +68,18 @@ describe('risk api contract', () => {
     expect(mockRiskOverview.riskDisclaimer).toBe(
       RISK_DECISION_SUPPORT_NOTICE,
     );
-    expect(RISK_DECISION_SUPPORT_NOTICE).toContain('辅助决策');
-    expect(RISK_DECISION_SUPPORT_NOTICE).not.toContain('保证收益');
+    expect(RISK_DECISION_SUPPORT_NOTICE).toBe(
+      '风险预警仅用于辅助决策，不构成投资建议，不保证收益；风险分是综合指标分数，不代表事件发生概率。',
+    );
+  });
+
+  it('returns all three horizons for stock detail fixtures', () => {
+    expect(
+      new Set(
+        mockRiskSnapshots
+          .filter((item) => item.object.objectId === '600519.SH')
+          .map((item) => item.horizon),
+      ),
+    ).toEqual(new Set(['1-5d', '5-20d', '20-60d']));
   });
 });

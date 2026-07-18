@@ -14,10 +14,12 @@ import type {
 import { baseRequestClient } from '#/api/request';
 
 import { unwrapAjaxResult, unwrapStockPageResult } from '../ajax-result';
+import { normalizeRiskObjectQuery, RISK_API_PATHS } from './contract';
 import {
   mockRiskObjectDetail,
   mockRiskObjects,
   mockRiskOverview,
+  mockRiskSnapshots,
   mockRiskTrend,
 } from './mock';
 
@@ -32,29 +34,6 @@ interface AjaxResult<T> {
 }
 
 const USE_STOCK_MOCK = import.meta.env.VITE_STOCK_USE_MOCK === 'true';
-
-function encodePathSegment(value: string) {
-  return encodeURIComponent(value);
-}
-
-export const RISK_API_PATHS = {
-  detail: (objectType: RiskObjectType, objectId: string) =>
-    `/risks/objects/${objectType}/${encodePathSegment(objectId)}`,
-  objects: '/risks/objects',
-  overview: '/risks/overview',
-  trend: (objectType: RiskObjectType, objectId: string) =>
-    `/risks/objects/${objectType}/${encodePathSegment(objectId)}/trend`,
-} as const;
-
-export function normalizeRiskObjectQuery(
-  query: RiskObjectQuery = {},
-): RiskObjectQuery {
-  return {
-    ...query,
-    pageNum: Math.max(1, query.pageNum ?? 1),
-    pageSize: Math.min(100, Math.max(1, query.pageSize ?? 20)),
-  };
-}
 
 export async function getRiskOverview(
   params: RiskOverviewQuery = {},
@@ -111,7 +90,15 @@ export async function getRiskObjectDetail(
         candidate.object.objectId === objectId,
     );
     return item
-      ? { ...mockRiskObjectDetail, ...item, snapshots: [item.snapshot] }
+      ? {
+          ...mockRiskObjectDetail,
+          ...item,
+          snapshots: mockRiskSnapshots.filter(
+            (candidate) =>
+              candidate.object.objectType === objectType &&
+              candidate.object.objectId === objectId,
+          ),
+        }
       : mockRiskObjectDetail;
   }
   const response = await baseRequestClient.get<
@@ -135,4 +122,5 @@ export async function getRiskObjectTrend(
 }
 
 export type * from './types';
+export { normalizeRiskObjectQuery, RISK_API_PATHS } from './contract';
 export { RISK_DECISION_SUPPORT_NOTICE } from './types';

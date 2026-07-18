@@ -35,6 +35,7 @@ function snapshot(
   overrides: Partial<RiskSnapshot> &
     Pick<RiskSnapshot, 'horizon' | 'object'>,
 ): RiskSnapshot {
+  const { horizon, object, ...rest } = overrides;
   return {
     aScore: 48,
     cScore: 63,
@@ -45,11 +46,11 @@ function snapshot(
       evidence('C', 'C2', 66, 0.31),
       evidence('A', 'A2', 51, -12.4),
     ],
-    horizon: overrides.horizon,
+    horizon,
     level: 'warning',
     mScore: 1.05,
     modelVersion: 'risk-v1.0-shadow',
-    object: overrides.object,
+    object,
     riskConfidence: 0.86,
     riskDisclaimer: RISK_DECISION_SUPPORT_NOTICE,
     sScore: 58,
@@ -58,7 +59,7 @@ function snapshot(
     totalScore: 62.4,
     tradeDate: '2026-07-18',
     vScore: 72,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -96,16 +97,28 @@ export const mockRiskSnapshots: RiskSnapshot[] = [
   snapshot({
     aScore: 56,
     cScore: 70,
-    gateEnforced: false,
-    gateStatus: 'block',
     horizon: '1-5d',
     level: 'critical',
     object: { objectId: '600519.SH', objectType: 'stock' },
-    originalConfidence: 0.78,
-    signalDirection: 'bullish',
     stage: 'stampede',
-    suggestedConfidence: 0.58,
     totalScore: 69.5,
+  }),
+  snapshot({
+    aScore: 47,
+    cScore: 61,
+    horizon: '5-20d',
+    level: 'warning',
+    object: { objectId: '600519.SH', objectType: 'stock' },
+    totalScore: 63.8,
+  }),
+  snapshot({
+    aScore: 36,
+    cScore: 55,
+    horizon: '20-60d',
+    level: 'watch',
+    object: { objectId: '600519.SH', objectType: 'stock' },
+    stage: 'fragile',
+    totalScore: 59.6,
   }),
 ];
 
@@ -160,6 +173,19 @@ export const mockRiskObjects: RiskObjectListItem[] = [
     snapshot: sectorSnapshot,
   },
   {
+    gateDecision: {
+      calculatedAt,
+      enforced: false,
+      horizon: '1-5d',
+      modelVersion: 'risk-v1.0-shadow',
+      object: stockSnapshot.object,
+      originalConfidence: 0.78,
+      reason: '个股完整红色门控，建议拦截看涨信号。',
+      signalDirection: 'bullish',
+      suggestedAction: 'block',
+      suggestedConfidence: 0.58,
+      tradeDate: '2026-07-18',
+    },
     name: '贵州茅台',
     object: stockSnapshot.object,
     parentName: '食品饮料',
