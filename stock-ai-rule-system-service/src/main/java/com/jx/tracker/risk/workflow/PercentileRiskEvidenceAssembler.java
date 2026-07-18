@@ -3,6 +3,7 @@ package com.jx.tracker.risk.workflow;
 import com.jx.tracker.risk.engine.RiskNormalizationResult;
 import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
@@ -83,11 +84,17 @@ public final class PercentileRiskEvidenceAssembler implements RiskEvidenceAssemb
                     RiskDataQualityStatus.INSUFFICIENT_HISTORY,
                     Map.of("normalization", "rolling_percentile", "sampleCount", normalized.sampleCount()));
         }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("normalization", "rolling_percentile");
+        details.put("sampleCount", normalized.sampleCount());
+        details.put("tradeDate", current.tradeDate().toString());
+        details.put("extremeCandidate", current.dimension() == RiskDimension.LOCAL_CONFIRMATION
+                || current.dimension() == RiskDimension.FORCED_SELLING);
         return new RiskEvidence(
                 current.dimension(), current.indicatorCode(), normalized.value(), current.value(),
                 current.observedAt(), current.availableAt(), current.source(),
                 RiskDataQualityStatus.AVAILABLE,
-                Map.of("normalization", "rolling_percentile", "sampleCount", normalized.sampleCount()));
+                details);
     }
 
     private String indicatorKey(String dimensionCode, String indicatorCode) {

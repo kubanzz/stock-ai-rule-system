@@ -1,10 +1,12 @@
 package com.jx.tracker.risk.workflow;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.engine.RiskScoreRequest;
 import com.jx.tracker.risk.engine.RiskScoreResult;
 import com.jx.tracker.risk.engine.RiskLayerScoreRequest;
 import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
+import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventSourceBatch;
 import com.jx.tracker.risk.data.flow.FlowEventSourceRecord;
 import com.jx.tracker.risk.data.market.IndustryExposure;
@@ -28,11 +30,17 @@ import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +48,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class RiskWarningWorkflowTest {
 
@@ -186,6 +196,12 @@ class RiskWarningWorkflowTest {
                 "source-a", RiskDataQualityStatus.AVAILABLE));
         List<RiskObservation> observations = List.of(
                 observation(market, "V1", new BigDecimal("20")),
+                confirmationObservation(
+                        RiskHorizon.SHORT_TERM, DATE,
+                        RiskDimension.LOCAL_CONFIRMATION, "C1", new BigDecimal("99")),
+                confirmationObservation(
+                        RiskHorizon.SHORT_TERM, DATE,
+                        RiskDimension.FORCED_SELLING, "A2", new BigDecimal("99")),
                 observation(sector, "V1", new BigDecimal("40")),
                 observation(STOCK, "V1", new BigDecimal("80")));
         LayerCapturingEvaluator evaluator = new LayerCapturingEvaluator();
@@ -211,6 +227,10 @@ class RiskWarningWorkflowTest {
     @Test
     void pointInTimeEventsDriveWindowModifierAndSameDayExtremeConfirmationOnly() {
         InMemoryRepository repository = new InMemoryRepository();
+        repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, DATE, RiskDimension.LOCAL_CONFIRMATION, "C1", new BigDecimal("99")));
+        repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, DATE, RiskDimension.FORCED_SELLING, "A2", new BigDecimal("99")));
         repository.events.put("current", event(STOCK, DATE, "current", DATE.atTime(19, 0), Map.of(
                 "modifierCandidate", true, "confirmed", true, "mScore", "1.15",
                 "extremePercentile", "99", "priceConfirmed", true, "fundFlowConfirmed", true)));
@@ -229,6 +249,155 @@ class RiskWarningWorkflowTest {
         assertThat(evaluator.request.extremeConfirmation().percentile()).isEqualByComparingTo("99");
         assertThat(evaluator.request.extremeConfirmation().priceConfirmed()).isTrue();
         assertThat(evaluator.request.extremeConfirmation().fundFlowConfirmed()).isTrue();
+    }
+
+    @Test
+    void structuralScoreAndTriggerFlagsCannotCreateExtremeEscalationWithoutPriceFundTradingEvidence() {
+        InMemoryRepository repository = new InMemoryRepository();
+        repository.saveObservation(new RiskObservation(
+                MARKET, RiskHorizon.SHORT_TERM, DATE, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V1", new BigDecimal("100"), "score", DATE.atTime(18, 0), DATE.atTime(19, 0),
+                "valuation-source", RiskDataQualityStatus.AVAILABLE, Map.of()));
+        repository.events.put("false-extreme", event(
+                STOCK, DATE, "false-extreme", DATE.atTime(19, 0), Map.of(
+                        "extremePercentile", "100",
+                        "priceConfirmed", true,
+                        "fundFlowConfirmed", true)));
+        RequestCapturingEvaluator evaluator = new RequestCapturingEvaluator();
+
+        workflow(repository, new CapturingProvider(RiskProviderBatch.validZero("source-a", null, AS_OF)), evaluator)
+                .run(RiskWorkflowRequest.daily(
+                        DATE, AS_OF,
+                        List.of(new RiskCollectionTask(
+                                "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                        List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(evaluator.request.extremeConfirmation()).isEqualTo(
+                com.jx.tracker.risk.engine.ExtremeRiskConfirmation.none());
+        assertThat(evaluator.request.timeCorrectionFactor()).isEqualByComparingTo("1.00");
+    }
+
+    @Test
+    void priceAndFundConfirmationsMustBothBelongToTheEvaluationTradingDate() {
+        InMemoryRepository repository = new InMemoryRepository();
+        repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, DATE,
+                RiskDimension.LOCAL_CONFIRMATION, "C1", new BigDecimal("100")));
+        repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, DATE,
+                RiskDimension.FORCED_SELLING, "A2", new BigDecimal("100")));
+        RiskEvidenceAssembler datedAssembler = (object, horizon, tradeDate, asOf, observations) -> {
+            if (!object.equals(MARKET)) {
+                return List.of();
+            }
+            return List.of(
+                    new RiskEvidence(
+                            RiskDimension.LOCAL_CONFIRMATION, "C1", new BigDecimal("100"),
+                            new BigDecimal("100"), DATE.atTime(18, 0), DATE.atTime(19, 0),
+                            "price-source", RiskDataQualityStatus.AVAILABLE,
+                            Map.of("tradeDate", DATE.minusDays(1).toString(), "extremeCandidate", true)),
+                    new RiskEvidence(
+                            RiskDimension.FORCED_SELLING, "A2", new BigDecimal("100"),
+                            new BigDecimal("100"), DATE.atTime(18, 0), DATE.atTime(19, 0),
+                            "fund-source", RiskDataQualityStatus.AVAILABLE,
+                            Map.of("tradeDate", DATE.toString(), "extremeCandidate", true)));
+        };
+        RequestCapturingEvaluator evaluator = new RequestCapturingEvaluator();
+        RiskWarningWorkflow workflow = new RiskWarningWorkflow(
+                List.of(new CapturingProvider(RiskProviderBatch.validZero("source-a", null, AS_OF))),
+                repository, datedAssembler, evaluator, new ShadowRiskGate());
+
+        workflow.run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(evaluator.request.extremeConfirmation().percentile()).isEqualByComparingTo("100");
+        assertThat(evaluator.request.extremeConfirmation().priceConfirmed()).isFalse();
+        assertThat(evaluator.request.extremeConfirmation().fundFlowConfirmed()).isTrue();
+        assertThat(evaluator.request.extremeConfirmation().permitsImmediateEscalation()).isFalse();
+    }
+
+    @Test
+    void weekendEventRemainsInsideFiveActualTradingDaysAfterLongHoliday() {
+        LocalDate evaluationDate = LocalDate.of(2026, 10, 12);
+        LocalDateTime evaluationAsOf = evaluationDate.atTime(20, 0);
+        InMemoryRepository repository = new InMemoryRepository();
+        List<LocalDate> tradingDates = List.of(
+                LocalDate.of(2026, 9, 28), LocalDate.of(2026, 9, 29),
+                LocalDate.of(2026, 9, 30), LocalDate.of(2026, 10, 9), evaluationDate);
+        tradingDates.forEach(date -> repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION, "C1", new BigDecimal("80"))));
+        repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, evaluationDate,
+                RiskDimension.FORCED_SELLING, "A2", new BigDecimal("80")));
+        LocalDate weekend = LocalDate.of(2026, 10, 3);
+        repository.events.put("weekend", event(
+                STOCK, weekend, "weekend", weekend.atTime(19, 0), Map.of(
+                        "modifierCandidate", true, "confirmed", true, "mScore", "1.15")));
+        RequestCapturingEvaluator evaluator = new RequestCapturingEvaluator();
+
+        workflow(repository,
+                new CapturingProvider(RiskProviderBatch.validZero("source-a", null, evaluationAsOf)), evaluator)
+                .run(RiskWorkflowRequest.daily(
+                        evaluationDate, evaluationAsOf,
+                        List.of(new RiskCollectionTask(
+                                "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                        List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(evaluator.request.timeCorrectionFactor()).isEqualByComparingTo("1.15");
+    }
+
+    @Test
+    void fixedAkToolsHttpJsonFlowsThroughRecordProviderAndWorkflow() {
+        LocalDate evaluationDate = LocalDate.of(2026, 7, 20);
+        LocalDateTime evaluationAsOf = evaluationDate.atTime(20, 0);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_ggcg_em"))
+                .andRespond(withSuccess("""
+                        {
+                          "meta": {"historyComplete": true, "earliestAvailableDate": "2021-07-20"},
+                          "data": [{
+                            "代码": "600519", "持股变动信息-增减": "减持",
+                            "持股变动信息-变动数量": 1000000,
+                            "变动开始日": "2026-07-18", "变动截止日": "2026-07-18",
+                            "公告日": "2026-07-18"
+                          }]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        AkToolsFlowEventSourceClient sourceClient = new AkToolsFlowEventSourceClient(
+                "http://127.0.0.1:8090", builder, new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-07-20T12:00:00Z"), ZoneId.of("Asia/Shanghai")));
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(sourceClient);
+        InMemoryRepository repository = new InMemoryRepository();
+        List<LocalDate> tradingDates = List.of(
+                LocalDate.of(2026, 7, 14), LocalDate.of(2026, 7, 15),
+                LocalDate.of(2026, 7, 16), LocalDate.of(2026, 7, 17), evaluationDate);
+        tradingDates.forEach(date -> repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION, "C1", new BigDecimal("99"))));
+        repository.saveObservation(confirmationObservation(
+                RiskHorizon.SHORT_TERM, evaluationDate,
+                RiskDimension.FORCED_SELLING, "A2", new BigDecimal("99")));
+        RequestCapturingEvaluator evaluator = new RequestCapturingEvaluator();
+
+        workflow(repository, provider, evaluator).run(RiskWorkflowRequest.daily(
+                evaluationDate, evaluationAsOf,
+                List.of(new RiskCollectionTask(
+                        "flow-event", "share_reduction", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        server.verify();
+        assertThat(repository.events.values()).singleElement().satisfies(event -> {
+            assertThat(event.source()).isEqualTo(AkToolsFlowEventSourceClient.SOURCE);
+            assertThat(event.payload())
+                    .containsEntry("sourceRecordId", "share_reduction:600519.SH:2026-07-18:2026-07-18")
+                    .containsEntry("actualReduction", true)
+                    .containsEntry("modifierCandidate", true);
+        });
+        assertThat(evaluator.request.timeCorrectionFactor()).isEqualByComparingTo("1.20");
+        assertThat(evaluator.request.extremeConfirmation().permitsImmediateEscalation()).isTrue();
     }
 
     @Test
@@ -344,9 +513,14 @@ class RiskWarningWorkflowTest {
                         .filter(observation -> observation.horizon() == horizon)
                         .filter(observation -> observation.tradeDate().equals(tradeDate))
                         .map(observation -> new RiskEvidence(
-                                observation.dimension(), observation.indicatorCode(), new BigDecimal("90"),
+                                observation.dimension(), observation.indicatorCode(),
+                                observation.value().min(new BigDecimal("100")),
                                 observation.value(), observation.observedAt(), observation.availableAt(),
-                                observation.source(), observation.qualityStatus(), Map.of()))
+                                observation.source(), observation.qualityStatus(), Map.of(
+                                        "tradeDate", observation.tradeDate().toString(),
+                                        "extremeCandidate",
+                                        observation.dimension() == RiskDimension.LOCAL_CONFIRMATION
+                                                || observation.dimension() == RiskDimension.FORCED_SELLING)))
                         .toList();
         return new RiskWarningWorkflow(
                 List.of(provider), repository, assembler, evaluator, new ShadowRiskGate());

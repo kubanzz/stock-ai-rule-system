@@ -223,18 +223,34 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
     @Override
     public List<IndustryExposure> findIndustryExposures(RiskWorkflowRequest request) {
-        Set<RiskObjectKey> requestedObjects = requestedObjects(request);
-        return jdbcTemplate.query("""
-                SELECT object_type, object_id, parent_object_type, parent_object_id,
-                       valid_from, valid_to, observed_at, available_at, source, quality_status
-                FROM risk_object_exposure
-                WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)
-                  AND available_at <= ?
-                ORDER BY object_id, valid_from, available_at
-                """, this::mapExposure,
-                request.endDate(), request.collectionStartDate(), request.asOf()).stream()
-                .filter(exposure -> requestedObjects.contains(exposure.stock()))
+        List<String> stockIds = requestedObjects(request).stream()
+                .filter(object -> object.objectType() == RiskObjectType.STOCK)
+                .map(RiskObjectKey::objectId)
+                .sorted()
                 .toList();
+        if (stockIds.isEmpty()) {
+            return List.of();
+        }
+        List<IndustryExposure> exposures = new java.util.ArrayList<>();
+        for (int offset = 0; offset < stockIds.size(); offset += OBJECT_SCOPE_CHUNK_SIZE) {
+            int end = Math.min(offset + OBJECT_SCOPE_CHUNK_SIZE, stockIds.size());
+            MapSqlParameterSource parameters = new MapSqlParameterSource()
+                    .addValue("stockObjectType", RiskObjectType.STOCK.getCode())
+                    .addValue("stockObjectIds", stockIds.subList(offset, end))
+                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("endDate", request.endDate())
+                    .addValue("asOf", request.asOf());
+            exposures.addAll(namedJdbcTemplate.query("""
+                    SELECT object_type, object_id, parent_object_type, parent_object_id,
+                           valid_from, valid_to, observed_at, available_at, source, quality_status
+                    FROM risk_object_exposure
+                    WHERE object_type = :stockObjectType AND object_id IN (:stockObjectIds)
+                      AND valid_from <= :endDate AND (valid_to IS NULL OR valid_to >= :startDate)
+                      AND available_at <= :asOf
+                    ORDER BY object_id, valid_from, available_at
+                    """, parameters, this::mapExposure));
+        }
+        return List.copyOf(exposures);
     }
 
     @Override
