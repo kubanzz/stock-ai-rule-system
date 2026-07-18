@@ -73,6 +73,9 @@ class RiskAssessmentQueryServiceImplTest {
         assertThat(detail.snapshot().evidence().getFirst().qualityStatus()).isEqualTo("unavailable");
         assertThat(detail.snapshot().evidence().getFirst().rawValue()).isNull();
         assertThat(detail.snapshot().evidence().getFirst().score()).isNull();
+        assertThat(detail.snapshot().evidence().getFirst().details())
+                .containsEntry("layerObjectType", "market")
+                .containsEntry("layerObjectId", "CN-A");
         assertThat(detail.snapshots()).extracting("horizon")
                 .containsExactly("1-5d", "5-20d", "20-60d");
         assertThat(detail.activeTriggers()).containsExactly("credit_event");
@@ -247,6 +250,8 @@ class RiskAssessmentQueryServiceImplTest {
         RiskScoreEvidenceEntity entity = new RiskScoreEvidenceEntity();
         entity.setId(id);
         entity.setSnapshotId(snapshotId);
+        entity.setLayerObjectType("market");
+        entity.setLayerObjectId("CN-A");
         entity.setDimensionCode(dimension);
         entity.setIndicatorCode(indicatorCode);
         entity.setRawValue(new BigDecimal("12.5"));

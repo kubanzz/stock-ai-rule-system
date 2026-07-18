@@ -141,6 +141,8 @@ CREATE TABLE risk_score_snapshot (
 CREATE TABLE risk_score_evidence (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     snapshot_id BIGINT NOT NULL,
+    layer_object_type VARCHAR(16) NOT NULL COMMENT '证据所属 market/sector/stock 层级',
+    layer_object_id VARCHAR(64) NOT NULL COMMENT '证据所属风险对象标识',
     dimension_code CHAR(1) NOT NULL COMMENT 'V/T/S/C/A',
     indicator_code VARCHAR(64) NOT NULL,
     raw_value DECIMAL(30,10) NULL,
@@ -152,7 +154,9 @@ CREATE TABLE risk_score_evidence (
     quality_status VARCHAR(32) NOT NULL,
     evidence_json JSON NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    UNIQUE KEY uk_risk_score_evidence_snapshot_indicator_source (snapshot_id, indicator_code, source),
+    UNIQUE KEY uk_risk_score_evidence_snapshot_layer_indicator_source (
+        snapshot_id, layer_object_type, layer_object_id, indicator_code, source
+    ),
     KEY idx_risk_score_evidence_snapshot_dimension (snapshot_id, dimension_code),
     KEY idx_risk_score_evidence_available_at (available_at),
     CONSTRAINT fk_risk_score_evidence_snapshot

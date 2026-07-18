@@ -309,6 +309,11 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
 
     private RiskEvidence toEvidence(RiskScoreEvidenceEntity row) {
         boolean unavailable = isUnavailable(row.getQualityStatus());
+        Map<String, Object> details = new LinkedHashMap<>(readJson(row.getEvidenceJson()));
+        if (row.getLayerObjectType() != null && row.getLayerObjectId() != null) {
+            details.put("layerObjectType", row.getLayerObjectType());
+            details.put("layerObjectId", row.getLayerObjectId());
+        }
         return new RiskEvidence(
                 row.getDimensionCode(),
                 row.getIndicatorCode(),
@@ -318,7 +323,7 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 row.getAvailableAt(),
                 row.getSource(),
                 defaultQuality(row.getQualityStatus()),
-                readJson(row.getEvidenceJson())
+                details
         );
     }
 

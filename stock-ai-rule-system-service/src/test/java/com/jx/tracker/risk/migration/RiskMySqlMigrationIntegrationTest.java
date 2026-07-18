@@ -42,6 +42,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(first.migrationsExecuted).isEqualTo(2);
             assertThat(repeated.migrationsExecuted).isZero();
             assertJsonCheckpointRoundTrip(schema);
+            assertLayeredEvidenceDoesNotOverwrite(schema);
         } finally {
             dropSchema(schema);
         }
@@ -68,6 +69,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(upgraded.migrationsExecuted).isEqualTo(1);
             assertThat(currentVersion(schema)).isEqualTo("2");
             assertJsonCheckpointRoundTrip(schema);
+            assertLayeredEvidenceDoesNotOverwrite(schema);
         } finally {
             dropSchema(schema);
         }
@@ -111,6 +113,65 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(result.next()).isTrue();
             assertThat(result.getString(1)).isEqualTo("2026-07-18");
         }
+    }
+
+    private void assertLayeredEvidenceDoesNotOverwrite(String schema) throws Exception {
+        execute(schema, """
+                INSERT INTO risk_score_snapshot (
+                    object_type, object_id, horizon, trade_date,
+                    v_score, t_score, s_score, c_score, a_score, m_score, total_score,
+                    risk_level, risk_stage, completeness, risk_confidence, model_version,
+                    observed_at, available_at, source, quality_status, calculated_at
+                ) VALUES (
+                    'stock', '600519.SH', '1-5d', '2026-07-18',
+                    80, 80, 80, 80, 80, 1.00, 80,
+                    'critical', 'stampede', 1.00, 1.00, 'mysql-smoke',
+                    '2026-07-18 15:00:00.000', '2026-07-18 15:00:00.000',
+                    'integration-test', 'available', '2026-07-18 20:00:00.000'
+                )
+                """);
+        String sql = """
+                INSERT INTO risk_score_evidence (
+                    snapshot_id, layer_object_type, layer_object_id,
+                    dimension_code, indicator_code, raw_value, indicator_score,
+                    weighted_contribution, observed_at, available_at,
+                    source, quality_status, evidence_json
+                )
+                SELECT id, ?, ?, 'V', 'V1', 1, 80, 16,
+                       '2026-07-18 15:00:00.000', '2026-07-18 15:00:00.000',
+                       'aktools', 'available', JSON_OBJECT('layer', ?)
+                FROM risk_score_snapshot
+                WHERE object_type = 'stock' AND object_id = '600519.SH'
+                  AND horizon = '1-5d' AND trade_date = '2026-07-18'
+                  AND model_version = 'mysql-smoke'
+                """;
+        try (Connection connection = connection(schema);
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            insertLayer(statement, "market", "CN-A");
+            insertLayer(statement, "sector", "SW1:801120");
+            insertLayer(statement, "stock", "600519.SH");
+        }
+        try (Connection connection = connection(schema);
+             Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("""
+                     SELECT COUNT(*)
+                     FROM risk_score_evidence evidence
+                     JOIN risk_score_snapshot snapshot ON snapshot.id = evidence.snapshot_id
+                     WHERE snapshot.object_id = '600519.SH'
+                       AND snapshot.model_version = 'mysql-smoke'
+                       AND evidence.indicator_code = 'V1'
+                       AND evidence.source = 'aktools'
+                     """)) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getInt(1)).isEqualTo(3);
+        }
+    }
+
+    private void insertLayer(PreparedStatement statement, String objectType, String objectId) throws Exception {
+        statement.setString(1, objectType);
+        statement.setString(2, objectId);
+        statement.setString(3, objectType + ":" + objectId);
+        assertThat(statement.executeUpdate()).isEqualTo(1);
     }
 
     private String currentVersion(String schema) throws Exception {

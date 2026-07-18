@@ -15,6 +15,8 @@ public class RiskScoreEvidenceEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long snapshotId;
+    private String layerObjectType;
+    private String layerObjectId;
     private String dimensionCode;
     private String indicatorCode;
     private BigDecimal rawValue;
