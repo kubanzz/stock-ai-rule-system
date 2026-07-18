@@ -147,6 +147,53 @@ class RiskContractsTest {
         )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("availableAt");
     }
 
+    @Test
+    void evidenceValueSemanticsFollowQualityStatusWithoutInventingZeros() {
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.UNAVAILABLE, BigDecimal.ZERO, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unavailable")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.UNAVAILABLE, null, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unavailable")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.INSUFFICIENT_HISTORY, BigDecimal.ZERO, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("insufficient_history")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.INSUFFICIENT_HISTORY, null, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("insufficient_history")
+                .hasMessageContaining("null");
+
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.VALID_ZERO, BigDecimal.ZERO, BigDecimal.ONE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valid_zero");
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.VALID_ZERO, BigDecimal.ONE, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valid_zero");
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.VALID_ZERO, null, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valid_zero");
+        assertThat(evidence(RiskDataQualityStatus.VALID_ZERO, BigDecimal.ZERO, BigDecimal.ZERO).score())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.AVAILABLE, null, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("available");
+        assertThatThrownBy(() -> evidence(RiskDataQualityStatus.AVAILABLE, BigDecimal.ZERO, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("available");
+        assertThat(evidence(RiskDataQualityStatus.AVAILABLE, BigDecimal.ONE, BigDecimal.ZERO).rawValue())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+
+        RiskEvidence staleEvidence = evidence(
+                RiskDataQualityStatus.STALE, new BigDecimal("72"), new BigDecimal("12.5")
+        );
+        assertThat(staleEvidence.score()).isEqualByComparingTo("72");
+        assertThat(staleEvidence.rawValue()).isEqualByComparingTo("12.5");
+    }
+
     private RiskSnapshot completeSnapshot(BigDecimal totalScore, BigDecimal completeness, BigDecimal riskConfidence) {
         return new RiskSnapshot(
                 new RiskObjectKey(RiskObjectType.MARKET, "CN-A"),
@@ -167,6 +214,24 @@ class RiskContractsTest {
                 null, null, null, null, null, mScore, null,
                 null, null, new BigDecimal("0.50"), null,
                 List.of(), "risk-v1", AVAILABLE_AT
+        );
+    }
+
+    private RiskEvidence evidence(
+            RiskDataQualityStatus status,
+            BigDecimal score,
+            BigDecimal rawValue
+    ) {
+        return new RiskEvidence(
+                RiskDimension.CONTAGION,
+                "northbound_flow",
+                score,
+                rawValue,
+                OBSERVED_AT,
+                AVAILABLE_AT,
+                "aktools",
+                status,
+                Map.of()
         );
     }
 }
