@@ -1,17 +1,27 @@
 package com.jx.tracker.risk.migration;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.risk.data.market.IndustryExposure;
+import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskObjectKey;
+import com.jx.tracker.risk.model.RiskObjectType;
+import com.jx.tracker.risk.workflow.JdbcRiskWorkflowRepository;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.output.MigrateResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -43,6 +53,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(repeated.migrationsExecuted).isZero();
             assertJsonCheckpointRoundTrip(schema);
             assertLayeredEvidenceDoesNotOverwrite(schema);
+            assertExposureRevisionIsMonotonic(schema);
         } finally {
             dropSchema(schema);
         }
@@ -70,6 +81,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(currentVersion(schema)).isEqualTo("2");
             assertJsonCheckpointRoundTrip(schema);
             assertLayeredEvidenceDoesNotOverwrite(schema);
+            assertExposureRevisionIsMonotonic(schema);
         } finally {
             dropSchema(schema);
         }
@@ -165,6 +177,46 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(result.next()).isTrue();
             assertThat(result.getInt(1)).isEqualTo(3);
         }
+    }
+
+    private void assertExposureRevisionIsMonotonic(String schema) {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                schemaUrl(schema), username, password));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        LocalDate tradeDate = LocalDate.of(2026, 7, 18);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+        RiskObjectKey sector = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
+        IndustryExposure older = new IndustryExposure(
+                stock, sector, tradeDate.minusYears(1), null,
+                tradeDate.minusYears(1).atTime(18, 0), tradeDate.minusYears(1).atTime(19, 0),
+                "aktools", RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure newer = new IndustryExposure(
+                stock, sector, tradeDate.minusYears(1), tradeDate.minusDays(1),
+                tradeDate.atTime(18, 0), tradeDate.atTime(19, 0),
+                "aktools", RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+
+        repository.saveIndustryExposure(older);
+        repository.saveIndustryExposure(newer);
+        Map<String, Object> forward = exposureRevision(jdbc);
+        jdbc.update("DELETE FROM risk_object_exposure");
+        repository.saveIndustryExposure(newer);
+        repository.saveIndustryExposure(older);
+        Map<String, Object> reverse = exposureRevision(jdbc);
+
+        assertThat(reverse).isEqualTo(forward);
+        assertThat(reverse.get("valid_to").toString()).isEqualTo(tradeDate.minusDays(1).toString());
+        assertThat(reverse.get("quality_status")).isEqualTo("insufficient_history");
+        assertThat(reverse.get("observed_at")).isEqualTo(tradeDate.atTime(18, 0));
+        assertThat(reverse.get("available_at")).isEqualTo(tradeDate.atTime(19, 0));
+    }
+
+    private Map<String, Object> exposureRevision(JdbcTemplate jdbc) {
+        return jdbc.queryForMap("""
+                SELECT valid_to, observed_at, available_at, quality_status
+                FROM risk_object_exposure
+                WHERE object_type = 'stock' AND object_id = '600519.SH'
+                  AND parent_object_type = 'sector' AND parent_object_id = 'SW1:801780'
+                """);
     }
 
     private void insertLayer(PreparedStatement statement, String objectType, String objectId) throws Exception {
