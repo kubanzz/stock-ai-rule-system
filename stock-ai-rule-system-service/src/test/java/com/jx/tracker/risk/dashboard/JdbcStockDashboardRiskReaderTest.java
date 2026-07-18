@@ -36,7 +36,8 @@ class JdbcStockDashboardRiskReaderTest {
                 date, date.atTime(18, 0), date.atTime(18, 0), date.atTime(18, 1));
         jdbc.update("""
                 INSERT INTO risk_score_evidence VALUES
-                (1, 2, 'V', 'V1', 12.3, 95, 19, ?, ?, 'source-a', 'available', '{"sampleCount":1250}')
+                (1, 2, 'stock', '000004.SZ', 'V', 'V1', 12.3, 95, 19,
+                 ?, ?, 'source-a', 'available', '{"sampleCount":1250}')
                 """, date.atTime(17, 50), date.atTime(18, 0));
         String reference = RiskSignalCandidate.stockSignalReference("000004.SZ", date);
         jdbc.update("""
@@ -100,6 +101,47 @@ class JdbcStockDashboardRiskReaderTest {
         assertThat(overlay.gateDecision().signalDirection()).isEqualTo(SignalDirection.BEARISH);
     }
 
+    @Test
+    void gateModelMustMatchLatestFormalStockSnapshotWhileAllowingMarketTriggerObject() {
+        JdbcTemplate jdbc = jdbc();
+        createSchema(jdbc);
+        LocalDate date = LocalDate.of(2026, 7, 10);
+        LocalDateTime asOf = date.atTime(20, 0);
+        jdbc.update("""
+                INSERT INTO risk_score_snapshot VALUES
+                (1, 'stock', '000004.SZ', '1-5d', ?, 70, 70, 70, 70, 70, 1, 70,
+                 'warning', 'repricing', .9, .9, 'risk-v1', ?, ?, 'risk-engine', 'available', ?),
+                (2, 'stock', '000004.SZ', '1-5d', ?, 80, 80, 80, 80, 80, 1, 80,
+                 'critical', 'stampede', .9, .9, 'risk-v2', ?, ?, 'risk-engine', 'available', ?),
+                (3, 'market', 'CN-A', '1-5d', ?, 70, 70, 70, 70, 70, 1, 70,
+                 'warning', 'repricing', .9, .9, 'risk-v1', ?, ?, 'risk-engine', 'available', ?),
+                (4, 'market', 'CN-A', '1-5d', ?, 80, 80, 80, 80, 80, 1, 80,
+                 'critical', 'stampede', .9, .9, 'risk-v2', ?, ?, 'risk-engine', 'available', ?)
+                """,
+                date, date.atTime(17, 0), date.atTime(17, 0), date.atTime(17, 0),
+                date, date.atTime(18, 0), date.atTime(18, 0), date.atTime(18, 0),
+                date, date.atTime(17, 0), date.atTime(17, 0), date.atTime(17, 0),
+                date, date.atTime(18, 0), date.atTime(18, 0), date.atTime(18, 0));
+        String reference = RiskSignalCandidate.stockSignalReference("000004.SZ", date);
+        jdbc.update("""
+                INSERT INTO risk_gate_result VALUES
+                (1, 3, ?, 'market', 'CN-A', '1-5d', ?, 'bullish', .8, .65,
+                 'downgrade', 0, '旧模型较晚写入', 'risk-v1', ?, ?, 'risk-gate', 'available', ?),
+                (2, 4, ?, 'market', 'CN-A', '1-5d', ?, 'bullish', .8, 0,
+                 'block', 0, '当前模型建议', 'risk-v2', ?, ?, 'risk-gate', 'available', ?)
+                """,
+                reference, date, date.atTime(19, 30), date.atTime(19, 30), date.atTime(19, 30),
+                reference, date, date.atTime(19, 0), date.atTime(19, 0), date.atTime(19, 0));
+
+        StockDashboardRiskOverlay overlay = new JdbcStockDashboardRiskReader(jdbc, new ObjectMapper())
+                .findBySymbols(date, RiskHorizon.SHORT_TERM, List.of("000004.SZ"), asOf)
+                .get("000004.SZ");
+
+        assertThat(overlay.snapshot().modelVersion()).isEqualTo("risk-v2");
+        assertThat(overlay.gateDecision().modelVersion()).isEqualTo("risk-v2");
+        assertThat(overlay.gateDecision().object().objectType()).isEqualTo(com.jx.tracker.risk.model.RiskObjectType.MARKET);
+    }
+
     private JdbcTemplate jdbc() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:dashboard_risk_reader;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
@@ -120,7 +162,9 @@ class JdbcStockDashboardRiskReaderTest {
                 """);
         jdbc.execute("""
                 CREATE TABLE risk_score_evidence (
-                    id BIGINT PRIMARY KEY, snapshot_id BIGINT, dimension_code CHAR(1), indicator_code VARCHAR(64),
+                    id BIGINT PRIMARY KEY, snapshot_id BIGINT,
+                    layer_object_type VARCHAR(16), layer_object_id VARCHAR(64),
+                    dimension_code CHAR(1), indicator_code VARCHAR(64),
                     raw_value DECIMAL, indicator_score DECIMAL, weighted_contribution DECIMAL,
                     observed_at TIMESTAMP, available_at TIMESTAMP, source VARCHAR(64),
                     quality_status VARCHAR(32), evidence_json VARCHAR(1024))

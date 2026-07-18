@@ -3,6 +3,10 @@ package com.jx.tracker.risk.workflow;
 import com.jx.tracker.risk.engine.RiskScoreRequest;
 import com.jx.tracker.risk.engine.RiskScoreResult;
 import com.jx.tracker.risk.engine.RiskLayerScoreRequest;
+import com.jx.tracker.risk.engine.RiskNormalizer;
+import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
+import com.jx.tracker.risk.data.flow.FlowEventSourceBatch;
+import com.jx.tracker.risk.data.flow.FlowEventSourceRecord;
 import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.gate.ShadowGateResult;
@@ -228,6 +232,59 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void productionReductionRecordUsesPointInTimeCrossLayerEvidenceForEveryHorizon() {
+        InMemoryRepository repository = new InMemoryRepository();
+        addExposure(repository);
+        for (RiskHorizon horizon : RiskHorizon.values()) {
+            for (int day = 59; day >= 0; day--) {
+                LocalDate historyDate = DATE.minusDays(day);
+                BigDecimal value = BigDecimal.valueOf(60L - day);
+                repository.saveObservation(confirmationObservation(
+                        horizon, historyDate, RiskDimension.LOCAL_CONFIRMATION, "C1", value));
+                repository.saveObservation(confirmationObservation(
+                        horizon, historyDate, RiskDimension.FORCED_SELLING, "A2", value));
+            }
+        }
+        FlowEventSourceRecord reduction = new FlowEventSourceRecord(
+                "reduction-prod-1", "cursor-prod-1", STOCK, DATE,
+                DATE.atTime(17, 0), DATE.atTime(18, 0), DATE.atTime(19, 0),
+                new BigDecimal("100"), "score", "share_reduction", "实际减持",
+                Map.of("actualReduction", true, "adverse", true));
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(request -> new FlowEventSourceBatch(
+                "aktools", List.of(reduction), RiskDataQualityStatus.AVAILABLE, null,
+                "cursor-prod-1", DATE.minusYears(5), true, DATE.atTime(19, 5), null));
+        ProductionPathCapturingEvaluator evaluator = new ProductionPathCapturingEvaluator();
+        RiskWarningWorkflow workflow = new RiskWarningWorkflow(
+                List.of(provider), repository,
+                new PercentileRiskEvidenceAssembler(new RiskNormalizer()),
+                evaluator, new ShadowRiskGate());
+
+        workflow.run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "flow-event", "share_reduction", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.values()), List.of(), "risk-v1"));
+
+        assertThat(evaluator.layerRequests).hasSize(3);
+        assertThat(evaluator.layerRequests).allSatisfy(layerRequest -> {
+            assertThat(layerRequest.composition().mScore()).isEqualByComparingTo("1.20");
+            assertThat(layerRequest.extremeConfirmation().permitsImmediateEscalation()).isTrue();
+            assertThat(layerRequest.composition().evidence())
+                    .extracting(RiskEvidence::dimension)
+                    .contains(RiskDimension.LOCAL_CONFIRMATION, RiskDimension.FORCED_SELLING);
+        });
+        assertThat(repository.events.values()).singleElement().satisfies(event -> {
+            assertThat(event.availableAt()).isBeforeOrEqualTo(AS_OF);
+            assertThat(event.payload())
+                    .containsEntry("confirmed", false)
+                    .containsEntry("confirmationContract", "pit-price-fund-evidence-v1")
+                    .doesNotContainKeys("probability", "crashProbability");
+            assertThat((BigDecimal) event.payload().get("modifierSeverity"))
+                    .isEqualByComparingTo("100");
+        });
+    }
+
+    @Test
     void recomputationReplacesEvidenceAndRemovesGateWhenSnapshotBecomesIncomplete() {
         InMemoryRepository repository = new InMemoryRepository();
         addExposure(repository);
@@ -367,6 +424,19 @@ class RiskWarningWorkflowTest {
                 "source-a", RiskDataQualityStatus.AVAILABLE, Map.of());
     }
 
+    private RiskObservation confirmationObservation(
+            RiskHorizon horizon,
+            LocalDate date,
+            RiskDimension dimension,
+            String indicatorCode,
+            BigDecimal value
+    ) {
+        return new RiskObservation(
+                MARKET, horizon, date, dimension, indicatorCode, value, "score",
+                date.atTime(18, 0), date.atTime(19, 0), "market-confirmation",
+                RiskDataQualityStatus.AVAILABLE, Map.of("pointInTime", true));
+    }
+
     private RiskEvent event(String key, LocalDateTime availableAt) {
         return new RiskEvent(
                 STOCK, DATE, RiskDimension.SUBSTANTIVE_TRIGGER, "announcement", key,
@@ -434,6 +504,38 @@ class RiskWarningWorkflowTest {
                     score, score, score, score, score, modifier, score,
                     RiskLevel.WARNING, RiskStage.REPRICING, BigDecimal.ONE, BigDecimal.ONE,
                     request.evidence(), request.modelVersion(), request.asOf());
+            return new RiskScoreResult(snapshot, List.of());
+        }
+    }
+
+    private static final class ProductionPathCapturingEvaluator implements RiskSnapshotEvaluator {
+        private final List<RiskLayerScoreRequest> layerRequests = new ArrayList<>();
+
+        @Override
+        public RiskScoreResult evaluate(RiskScoreRequest request) {
+            BigDecimal score = request.evidence().stream()
+                    .map(RiskEvidence::score)
+                    .filter(java.util.Objects::nonNull)
+                    .max(BigDecimal::compareTo)
+                    .orElse(new BigDecimal("80"));
+            RiskSnapshot snapshot = new RiskSnapshot(
+                    request.object(), request.horizon(), request.tradeDate(),
+                    score, score, score, score, score, request.timeCorrectionFactor(), score,
+                    RiskLevel.WARNING, RiskStage.REPRICING, BigDecimal.ONE, BigDecimal.ONE,
+                    request.evidence(), request.modelVersion(), request.asOf());
+            return new RiskScoreResult(snapshot, List.of());
+        }
+
+        @Override
+        public RiskScoreResult evaluateLayers(RiskLayerScoreRequest request) {
+            layerRequests.add(request);
+            RiskSnapshot snapshot = new RiskSnapshot(
+                    request.object(), request.horizon(), request.tradeDate(),
+                    request.composition().vScore(), request.composition().tScore(), request.composition().sScore(),
+                    request.composition().cScore(), request.composition().aScore(), request.composition().mScore(),
+                    new BigDecimal("90"), RiskLevel.CRITICAL, RiskStage.STAMPEDE,
+                    request.composition().coverage(), request.composition().riskConfidence(),
+                    request.composition().evidence(), request.modelVersion(), request.asOf());
             return new RiskScoreResult(snapshot, List.of());
         }
     }
@@ -556,7 +658,7 @@ class RiskWarningWorkflowTest {
         }
 
         @Override
-        public void replaceEvidence(long snapshotId, List<RiskEvidence> items) {
+        public void replaceEvidence(long snapshotId, RiskObjectKey snapshotObject, List<RiskEvidence> items) {
             evidence.keySet().removeIf(key -> key.startsWith(snapshotId + ":"));
             items.forEach(item -> evidence.put(
                     snapshotId + ":" + item.indicatorCode() + ":" + item.source(), item));

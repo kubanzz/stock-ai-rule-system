@@ -127,13 +127,24 @@ public final class FlowEventTranslator {
         }
         boolean confirmed = actualReduction && (booleanAttribute(record.attributes(), "fundFlowConfirmed")
                 || booleanAttribute(record.attributes(), "priceConfirmed"));
+        boolean priceConfirmed = booleanAttribute(record.attributes(), "priceConfirmed");
+        boolean fundFlowConfirmed = booleanAttribute(record.attributes(), "fundFlowConfirmed");
         Map<String, Object> payload = new HashMap<>(attributes);
         payload.put("modifierCandidate", true);
         payload.put("dimensionScoreEligible", false);
         payload.put("confirmed", confirmed);
+        payload.put("priceConfirmed", priceConfirmed);
+        payload.put("fundFlowConfirmed", fundFlowConfirmed);
         payload.put("scheduled", booleanAttribute(record.attributes(), "scheduled"));
-        BigDecimal severity = confirmed && record.value() != null
-                ? FlowEventMetrics.normalizeSeverity(record.value().abs())
+        payload.put("confirmationContract", "pit-price-fund-evidence-v1");
+        BigDecimal modifierSeverity = record.value() == null
+                ? null
+                : FlowEventMetrics.normalizeSeverity(record.value().abs());
+        if (modifierSeverity != null) {
+            payload.put("modifierSeverity", modifierSeverity);
+        }
+        BigDecimal severity = confirmed
+                ? modifierSeverity
                 : null;
         RiskEvent event = new RiskEvent(
                 record.object(), record.tradeDate(), RiskDimension.FORCED_SELLING,
