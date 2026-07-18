@@ -12,6 +12,7 @@ import com.jx.tracker.risk.gate.ShadowRiskGate;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskEvidence;
+import com.jx.tracker.risk.model.RiskEvidenceProvenance;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
@@ -268,7 +269,7 @@ public final class RiskWarningWorkflow {
 
     /**
      * S 描述外部价格发现链。行业继承市场 S，个股优先继承所属行业 S、再回退市场 S；
-     * 继承只补缺失指标，不改变 25%/35%/40% 层权重，也保留来源对象供审计。
+     * 继承只在本层完全没有可用 S 时提供评分资格，不改变 25%/35%/40% 层权重，也保留来源对象供审计。
      */
     private Map<RiskObjectKey, List<RiskEvidence>> inheritExternalTransmission(
             List<RiskObjectKey> orderedObjects,
@@ -301,24 +302,30 @@ public final class RiskWarningWorkflow {
             List<RiskEvidence> inherited,
             RiskObjectKey inheritedFrom
     ) {
-        Set<String> ownCodes = own.stream()
-                .filter(item -> item.dimension() == com.jx.tracker.risk.model.RiskDimension.EXTERNAL_TRANSMISSION)
-                .map(RiskEvidence::indicatorCode)
-                .collect(java.util.stream.Collectors.toSet());
-        List<RiskEvidence> merged = new ArrayList<>(own);
+        boolean hasUsableOwnTransmission = own.stream()
+                .filter(item -> item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .anyMatch(this::usableEvidence);
+        if (hasUsableOwnTransmission) {
+            return own;
+        }
+        List<RiskEvidence> merged = own.stream()
+                .filter(item -> item.dimension() != RiskDimension.EXTERNAL_TRANSMISSION)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         inherited.stream()
-                .filter(item -> item.dimension() == com.jx.tracker.risk.model.RiskDimension.EXTERNAL_TRANSMISSION)
-                .filter(item -> !ownCodes.contains(item.indicatorCode()))
+                .filter(item -> item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
                 .map(item -> inheritedEvidence(item, inheritedFrom))
                 .forEach(merged::add);
         return List.copyOf(merged);
     }
 
     private RiskEvidence inheritedEvidence(RiskEvidence evidence, RiskObjectKey inheritedFrom) {
+        RiskObjectKey origin = RiskEvidenceProvenance.layerObject(evidence, inheritedFrom);
         Map<String, Object> details = new LinkedHashMap<>(evidence.details());
         details.put("inherited", true);
-        details.put("inheritedFromObjectType", inheritedFrom.objectType().getCode());
-        details.put("inheritedFromObjectId", inheritedFrom.objectId());
+        details.putIfAbsent("inheritedFromObjectType", origin.objectType().getCode());
+        details.putIfAbsent("inheritedFromObjectId", origin.objectId());
+        details.putIfAbsent(RiskEvidenceProvenance.LAYER_OBJECT_TYPE, origin.objectType().getCode());
+        details.putIfAbsent(RiskEvidenceProvenance.LAYER_OBJECT_ID, origin.objectId());
         return new RiskEvidence(
                 evidence.dimension(), evidence.indicatorCode(), evidence.score(), evidence.rawValue(),
                 evidence.observedAt(), evidence.availableAt(), evidence.source(),

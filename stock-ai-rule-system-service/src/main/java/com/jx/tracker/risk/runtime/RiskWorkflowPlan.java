@@ -36,7 +36,7 @@ public record RiskWorkflowPlan(
         return new RiskWorkflowRequest(
                 collectionTasks,
                 horizons,
-                tradeDate.minusYears(5),
+                RiskWorkflowRequest.baselineCollectionStart(tradeDate),
                 tradeDate,
                 tradeDate,
                 asOf,
@@ -53,12 +53,12 @@ public record RiskWorkflowPlan(
             String modelVersion,
             LocalTime afterCloseCutoff
     ) {
-        LocalDate startDate = endDate.minusYears(5);
+        LocalDate scoreStartDate = endDate.minusYears(RiskWorkflowRequest.BACKFILL_SCORE_YEARS);
         return new RiskWorkflowRequest(
                 collectionTasks,
                 horizons,
-                startDate,
-                startDate,
+                RiskWorkflowRequest.baselineCollectionStart(scoreStartDate),
+                scoreStartDate,
                 endDate,
                 asOf,
                 signals,

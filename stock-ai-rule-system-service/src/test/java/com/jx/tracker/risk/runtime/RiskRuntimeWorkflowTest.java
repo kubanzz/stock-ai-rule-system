@@ -92,7 +92,7 @@ class RiskRuntimeWorkflowTest {
         ArgumentCaptor<RiskWorkflowRequest> requestCaptor = ArgumentCaptor.forClass(RiskWorkflowRequest.class);
         verify(coreWorkflow).run(requestCaptor.capture());
         assertThat(requestCaptor.getValue()).satisfies(request -> {
-            assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(5));
+            assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(11));
             assertThat(request.scoreStartDate()).isEqualTo(DATE.minusYears(5));
             assertThat(request.endDate()).isEqualTo(DATE);
             assertThat(request.asOf()).isEqualTo(DATE.atTime(19, 0));

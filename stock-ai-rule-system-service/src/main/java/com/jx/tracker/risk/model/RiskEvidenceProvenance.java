@@ -17,8 +17,8 @@ public final class RiskEvidenceProvenance {
             throw new IllegalArgumentException("evidence and layerObject are required");
         }
         Map<String, Object> details = new HashMap<>(evidence.details());
-        details.put(LAYER_OBJECT_TYPE, layerObject.objectType().getCode());
-        details.put(LAYER_OBJECT_ID, layerObject.objectId());
+        details.putIfAbsent(LAYER_OBJECT_TYPE, layerObject.objectType().getCode());
+        details.putIfAbsent(LAYER_OBJECT_ID, layerObject.objectId());
         return new RiskEvidence(
                 evidence.dimension(), evidence.indicatorCode(), evidence.score(), evidence.rawValue(),
                 evidence.observedAt(), evidence.availableAt(), evidence.source(), evidence.qualityStatus(), details);
