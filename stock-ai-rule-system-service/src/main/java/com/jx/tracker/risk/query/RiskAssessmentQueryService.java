@@ -19,6 +19,8 @@ public interface RiskAssessmentQueryService {
             String horizon,
             LocalDate tradeDate,
             String keyword,
+            String parentObjectType,
+            String parentObjectId,
             int pageNum,
             int pageSize
     );

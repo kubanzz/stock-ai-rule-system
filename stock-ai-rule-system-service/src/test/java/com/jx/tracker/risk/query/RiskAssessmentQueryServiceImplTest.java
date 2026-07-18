@@ -133,14 +133,18 @@ class RiskAssessmentQueryServiceImplTest {
         );
         medium.setObjectName("贵州茅台");
         when(snapshotMapper.selectLatestTradeDate("5-20d")).thenReturn(TRADE_DATE);
-        when(snapshotMapper.countObjectPage("stock", "warning", "5-20d", TRADE_DATE, "茅台"))
+        when(snapshotMapper.countObjectPage(
+                "stock", "warning", "5-20d", TRADE_DATE, "茅台", "sector", "SW1:801120"
+        ))
                 .thenReturn(2L);
         when(snapshotMapper.selectObjectPage(
-                "stock", "warning", "5-20d", TRADE_DATE, "茅台", 1L, 1
+                "stock", "warning", "5-20d", TRADE_DATE, "茅台",
+                "sector", "SW1:801120", 1L, 1
         )).thenReturn(List.of(medium));
 
         PageResult<RiskObjectListItem> page = service.listObjects(
-                "stock", "warning", "5-20d", null, " 茅台 ", 2, 1
+                "stock", "warning", "5-20d", null, " 茅台 ",
+                "sector", " SW1:801120 ", 2, 1
         );
 
         assertThat(page.getCode()).isEqualTo(200);
@@ -152,18 +156,32 @@ class RiskAssessmentQueryServiceImplTest {
             assertThat(item.snapshot().level()).isEqualTo("warning");
         });
         verify(snapshotMapper).selectObjectPage(
-                "stock", "warning", "5-20d", TRADE_DATE, "茅台", 1L, 1
+                "stock", "warning", "5-20d", TRADE_DATE, "茅台",
+                "sector", "SW1:801120", 1L, 1
         );
 
         long distantOffset = (long) (Integer.MAX_VALUE - 1) * 100;
         when(snapshotMapper.selectObjectPage(
-                "stock", "warning", "5-20d", TRADE_DATE, null, distantOffset, 100
+                "stock", "warning", "5-20d", TRADE_DATE, null,
+                null, null, distantOffset, 100
         )).thenReturn(List.of());
-        when(snapshotMapper.countObjectPage("stock", "warning", "5-20d", TRADE_DATE, null))
+        when(snapshotMapper.countObjectPage(
+                "stock", "warning", "5-20d", TRADE_DATE, null, null, null
+        ))
                 .thenReturn(2L);
         assertThat(service.listObjects(
-                "stock", "warning", "5-20d", TRADE_DATE, null, Integer.MAX_VALUE, 100
+                "stock", "warning", "5-20d", TRADE_DATE, null,
+                null, null, Integer.MAX_VALUE, 100
         ).getRows()).isEmpty();
+    }
+
+    @Test
+    void parentFilterRequiresBothStableTypeAndId() {
+        assertThatThrownBy(() -> service.listObjects(
+                "stock", null, "1-5d", TRADE_DATE, null,
+                null, "SW1:801120", 1, 20
+        )).isInstanceOf(ServiceException.class)
+                .hasMessageContaining("parentObjectType");
     }
 
     @Test

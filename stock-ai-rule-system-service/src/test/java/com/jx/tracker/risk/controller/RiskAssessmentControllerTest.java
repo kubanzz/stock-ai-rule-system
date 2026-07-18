@@ -71,7 +71,8 @@ class RiskAssessmentControllerTest {
         );
         when(queryService.overview("5-20d", TRADE_DATE)).thenReturn(overview);
         when(queryService.listObjects(
-                "stock", "warning", "5-20d", TRADE_DATE, "茅台", 2, 10
+                "stock", "warning", "5-20d", TRADE_DATE, "茅台",
+                "sector", "SW1:801120", 2, 10
         )).thenReturn(PageResult.getDataTable(List.of(item), 1L));
         when(queryService.objectDetail("stock", "600519.SH", "5-20d", TRADE_DATE))
                 .thenReturn(detail);
@@ -97,6 +98,8 @@ class RiskAssessmentControllerTest {
                         .param("horizon", "5-20d")
                         .param("tradeDate", "2026-07-18")
                         .param("keyword", "茅台")
+                        .param("parentObjectType", "sector")
+                        .param("parentObjectId", "SW1:801120")
                         .param("pageNum", "2")
                         .param("pageSize", "10"))
                 .andExpect(status().isOk())
@@ -128,7 +131,10 @@ class RiskAssessmentControllerTest {
                 .andExpect(jsonPath("$.data.points").doesNotExist());
 
         verify(queryService).overview("5-20d", TRADE_DATE);
-        verify(queryService).listObjects("stock", "warning", "5-20d", TRADE_DATE, "茅台", 2, 10);
+        verify(queryService).listObjects(
+                "stock", "warning", "5-20d", TRADE_DATE, "茅台",
+                "sector", "SW1:801120", 2, 10
+        );
         verify(queryService).objectDetail("stock", "600519.SH", "5-20d", TRADE_DATE);
         verify(queryService).trend(
                 "stock", "600519.SH", "5-20d", LocalDate.of(2026, 7, 1), TRADE_DATE
@@ -141,6 +147,14 @@ class RiskAssessmentControllerTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(400));
         mockMvc.perform(get("/api/risks/objects").param("pageSize", "101"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void rejectsIncompleteParentObjectFilter() throws Exception {
+        mockMvc.perform(get("/api/risks/objects")
+                        .param("parentObjectId", "SW1:801120"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
     }
 
     @Test

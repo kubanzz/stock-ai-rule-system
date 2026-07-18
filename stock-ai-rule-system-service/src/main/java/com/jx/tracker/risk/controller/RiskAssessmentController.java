@@ -46,12 +46,16 @@ public class RiskAssessmentController {
             @RequestParam(value = "tradeDate", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate tradeDate,
             @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "parentObjectType", required = false) String parentObjectType,
+            @RequestParam(value = "parentObjectId", required = false) String parentObjectId,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize
     ) {
         validatePage(pageNum, pageSize);
+        validateParentFilter(parentObjectType, parentObjectId);
         return queryService.listObjects(
-                objectType, level, horizon, tradeDate, keyword, pageNum, pageSize
+                objectType, level, horizon, tradeDate, keyword,
+                parentObjectType, parentObjectId, pageNum, pageSize
         );
     }
 
@@ -92,6 +96,17 @@ public class RiskAssessmentController {
         }
         if (pageSize < 1 || pageSize > 100) {
             throw new ServiceException("pageSize 必须在 1 到 100 之间", 400);
+        }
+    }
+
+    private void validateParentFilter(String parentObjectType, String parentObjectId) {
+        boolean missingType = parentObjectType == null || parentObjectType.isBlank();
+        boolean missingId = parentObjectId == null || parentObjectId.isBlank();
+        if (missingType != missingId) {
+            throw new ServiceException(
+                    "parentObjectType 与 parentObjectId 必须同时提供",
+                    400
+            );
         }
     }
 }

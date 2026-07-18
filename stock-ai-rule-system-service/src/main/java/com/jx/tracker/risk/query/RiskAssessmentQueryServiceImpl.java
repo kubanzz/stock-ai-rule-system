@@ -112,6 +112,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
             String horizon,
             LocalDate tradeDate,
             String keyword,
+            String parentObjectType,
+            String parentObjectId,
             int pageNum,
             int pageSize
     ) {
@@ -120,6 +122,7 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
         String normalizedLevel = normalizeLevel(level);
         String normalizedHorizon = normalizeHorizon(horizon, false);
         String normalizedKeyword = normalizeKeyword(keyword);
+        ParentFilter parentFilter = normalizeParentFilter(parentObjectType, parentObjectId);
         LocalDate resolvedDate = tradeDate != null
                 ? tradeDate
                 : snapshotMapper.selectLatestTradeDate(normalizedHorizon);
@@ -127,7 +130,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
             return PageResult.getDataTable(List.of(), 0L);
         }
         long total = snapshotMapper.countObjectPage(
-                normalizedType, normalizedLevel, normalizedHorizon, resolvedDate, normalizedKeyword
+                normalizedType, normalizedLevel, normalizedHorizon, resolvedDate, normalizedKeyword,
+                parentFilter.objectType(), parentFilter.objectId()
         );
         long offset = (long) (pageNum - 1) * pageSize;
         List<RiskScoreSnapshotEntity> rows = safeList(snapshotMapper.selectObjectPage(
@@ -136,6 +140,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 normalizedHorizon,
                 resolvedDate,
                 normalizedKeyword,
+                parentFilter.objectType(),
+                parentFilter.objectId(),
                 offset,
                 pageSize
         ));
@@ -409,6 +415,24 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
         return objectId.trim();
     }
 
+    private ParentFilter normalizeParentFilter(String objectType, String objectId) {
+        boolean missingType = objectType == null || objectType.isBlank();
+        boolean missingId = objectId == null || objectId.isBlank();
+        if (missingType && missingId) {
+            return new ParentFilter(null, null);
+        }
+        if (missingType || missingId) {
+            throw new ServiceException(
+                    "parentObjectType 与 parentObjectId 必须同时提供",
+                    400
+            );
+        }
+        return new ParentFilter(
+                normalizeObjectType(objectType, false),
+                normalizeObjectId(objectId)
+        );
+    }
+
     private void validatePage(int pageNum, int pageSize) {
         if (pageNum < 1) {
             throw new ServiceException("pageNum 必须大于等于 1", 400);
@@ -433,5 +457,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
 
     private <T> List<T> safeList(List<T> rows) {
         return rows == null ? List.of() : rows;
+    }
+
+    private record ParentFilter(String objectType, String objectId) {
     }
 }

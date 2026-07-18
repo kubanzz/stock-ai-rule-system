@@ -62,6 +62,19 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
                 AND (s.object_id LIKE CONCAT('%', #{keyword}, '%')
                   OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%'))
               </if>
+              <if test="parentObjectType != null and parentObjectId != null">
+                AND EXISTS (
+                  SELECT 1 FROM risk_object_exposure exposure
+                  WHERE exposure.object_type = s.object_type
+                    AND exposure.object_id = s.object_id
+                    AND exposure.parent_object_type = #{parentObjectType}
+                    AND exposure.parent_object_id = #{parentObjectId}
+                    AND exposure.valid_from &lt;= s.trade_date
+                    AND (exposure.valid_to IS NULL OR exposure.valid_to &gt;= s.trade_date)
+                    AND exposure.available_at &lt;= s.calculated_at
+                    AND exposure.quality_status IN ('available', 'valid_zero')
+                )
+              </if>
               AND NOT EXISTS (
                   SELECT 1 FROM risk_score_snapshot newer
                   WHERE newer.object_type = s.object_type
@@ -78,7 +91,9 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             @Param("level") String level,
             @Param("horizon") String horizon,
             @Param("tradeDate") LocalDate tradeDate,
-            @Param("keyword") String keyword
+            @Param("keyword") String keyword,
+            @Param("parentObjectType") String parentObjectType,
+            @Param("parentObjectId") String parentObjectId
     );
 
     @Select("""
@@ -93,6 +108,19 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
               <if test="keyword != null">
                 AND (s.object_id LIKE CONCAT('%', #{keyword}, '%')
                   OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%'))
+              </if>
+              <if test="parentObjectType != null and parentObjectId != null">
+                AND EXISTS (
+                  SELECT 1 FROM risk_object_exposure exposure
+                  WHERE exposure.object_type = s.object_type
+                    AND exposure.object_id = s.object_id
+                    AND exposure.parent_object_type = #{parentObjectType}
+                    AND exposure.parent_object_id = #{parentObjectId}
+                    AND exposure.valid_from &lt;= s.trade_date
+                    AND (exposure.valid_to IS NULL OR exposure.valid_to &gt;= s.trade_date)
+                    AND exposure.available_at &lt;= s.calculated_at
+                    AND exposure.quality_status IN ('available', 'valid_zero')
+                )
               </if>
               AND NOT EXISTS (
                   SELECT 1 FROM risk_score_snapshot newer
@@ -116,6 +144,8 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             @Param("horizon") String horizon,
             @Param("tradeDate") LocalDate tradeDate,
             @Param("keyword") String keyword,
+            @Param("parentObjectType") String parentObjectType,
+            @Param("parentObjectId") String parentObjectId,
             @Param("offset") long offset,
             @Param("pageSize") int pageSize
     );
