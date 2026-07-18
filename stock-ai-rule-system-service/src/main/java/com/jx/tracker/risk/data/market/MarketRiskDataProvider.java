@@ -91,24 +91,50 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         MarketDatasetCode dataset = MarketDatasetCode.fromCode(datasetCode);
         try {
             MarketSourceBatch sourceBatch = sourceClient.fetch(dataset, request);
+            boolean partialHistory = sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
+                    && !sourceBatch.records().isEmpty();
+            if (sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
+                    && !partialHistory) {
+                return new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), List.of(), sourceBatch.nextCheckpoint(),
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY, sourceBatch.failureReason(), sourceBatch.fetchedAt());
+            }
+            if (sourceBatch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE) {
+                return RiskProviderBatch.unavailable(
+                        sourceBatch.source(), sourceBatch.failureReason(), sourceBatch.fetchedAt());
+            }
+            if (sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
+                return new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), List.of(), sourceBatch.nextCheckpoint(),
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                        "market datasets cannot use valid_zero as formal source quality",
+                        sourceBatch.fetchedAt());
+            }
             List<MarketSourceRecord> eligible = prepareSourceRecords(dataset, sourceBatch.records().stream()
                     .filter(record -> eligible(record, dataset, request))
                     .toList());
             if (eligible.isEmpty()) {
-                return RiskProviderBatch.validZero(
-                        sourceBatch.source(), sourceBatch.nextCheckpoint(), sourceBatch.fetchedAt()
-                );
+                return new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), List.of(), sourceBatch.nextCheckpoint(),
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                        "market source returned no eligible records", sourceBatch.fetchedAt());
             }
             List<IndustryExposure> industryExposures = typedIndustryExposures(dataset, eligible);
             List<RiskObservation> observations = transform(dataset, eligible, request);
+            if (partialHistory) {
+                observations = auditOnly(observations, sourceBatch.failureReason());
+            }
             if (observations.isEmpty() && industryExposures.isEmpty()) {
-                return RiskProviderBatch.validZero(
-                        sourceBatch.source(), sourceBatch.nextCheckpoint(), sourceBatch.fetchedAt()
-                );
+                return new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), List.of(), sourceBatch.nextCheckpoint(),
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                        "market source produced no observations", sourceBatch.fetchedAt());
             }
             return new RiskProviderBatch(
                     sourceBatch.source(), observations, List.of(), industryExposures, sourceBatch.nextCheckpoint(),
-                    RiskDataQualityStatus.AVAILABLE, null, sourceBatch.fetchedAt()
+                    partialHistory ? RiskDataQualityStatus.INSUFFICIENT_HISTORY : RiskDataQualityStatus.AVAILABLE,
+                    partialHistory ? sourceBatch.failureReason() : null,
+                    sourceBatch.fetchedAt()
             );
         } catch (RuntimeException exception) {
             String message = exception.getMessage();
@@ -122,6 +148,25 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
 
     public Set<String> supportedIndicatorCodes() {
         return MarketRiskIndicator.codes();
+    }
+
+    private List<RiskObservation> auditOnly(
+            List<RiskObservation> observations,
+            String partialHistoryReason
+    ) {
+        return observations.stream().map(observation -> {
+            Map<String, Object> attributes = new LinkedHashMap<>(observation.attributes());
+            attributes.put("sourceQuality", observation.qualityStatus().getCode());
+            if (observation.value() != null) {
+                attributes.put("auditValue", observation.value());
+            }
+            attributes.put("partialHistoryReason", partialHistoryReason);
+            return new RiskObservation(
+                    observation.object(), observation.horizon(), observation.tradeDate(),
+                    observation.dimension(), observation.indicatorCode(), null, observation.unit(),
+                    observation.observedAt(), observation.availableAt(), observation.source(),
+                    RiskDataQualityStatus.INSUFFICIENT_HISTORY, attributes);
+        }).toList();
     }
 
     public MarketRiskCoverageReport coverageReport(
@@ -687,9 +732,12 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             RiskDataQualityStatus batchQuality
     ) {
         if (observations.isEmpty()) {
-            return batchQuality == RiskDataQualityStatus.VALID_ZERO
-                    ? RiskDataQualityStatus.VALID_ZERO
-                    : RiskDataQualityStatus.UNAVAILABLE;
+            return switch (batchQuality) {
+                case VALID_ZERO -> RiskDataQualityStatus.VALID_ZERO;
+                case INSUFFICIENT_HISTORY -> RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+                case STALE -> RiskDataQualityStatus.STALE;
+                case AVAILABLE, UNAVAILABLE -> RiskDataQualityStatus.UNAVAILABLE;
+            };
         }
         if (observations.stream().anyMatch(item -> item.qualityStatus() == RiskDataQualityStatus.AVAILABLE)) {
             return RiskDataQualityStatus.AVAILABLE;

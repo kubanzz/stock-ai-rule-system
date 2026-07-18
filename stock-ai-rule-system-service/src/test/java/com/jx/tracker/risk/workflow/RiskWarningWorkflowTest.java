@@ -153,6 +153,52 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void partialInsufficientHistoryBatchPersistsCurrentRecordsAndFailureStatusWithoutCheckpoint() {
+        InMemoryRepository repository = new InMemoryRepository();
+        IndustryExposure currentExposure = new IndustryExposure(
+                STOCK, SECTOR, DATE.minusYears(2), null,
+                AS_OF.minusMinutes(1), AS_OF.minusMinutes(1), "aktools",
+                RiskDataQualityStatus.AVAILABLE);
+        RiskIngestionCheckpoint proposedCheckpoint = new RiskIngestionCheckpoint(
+                "sw1_membership", "stock:600519.SH", "cursor-current", AS_OF);
+        RiskObservation auditObservation = new RiskObservation(
+                STOCK, RiskHorizon.SHORT_TERM, DATE, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V1", null, "score", AS_OF.minusMinutes(2), AS_OF.minusMinutes(1),
+                "aktools", RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                Map.of("auditValue", new BigDecimal("90"), "sourceQuality", "available"));
+        RiskEvent availableEvent = event("recent-reduction", AS_OF.minusMinutes(1));
+        RiskEvent currentEvent = new RiskEvent(
+                availableEvent.object(), availableEvent.tradeDate(), availableEvent.dimension(),
+                availableEvent.eventType(), availableEvent.eventKey(), availableEvent.severityScore(),
+                availableEvent.occurredAt(), availableEvent.observedAt(), availableEvent.availableAt(),
+                availableEvent.source(), RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                Map.of("sourceQuality", "available", "auditOnly", true));
+        RiskProviderBatch partial = new RiskProviderBatch(
+                "aktools", List.of(auditObservation), List.of(currentEvent),
+                List.of(currentExposure), proposedCheckpoint,
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                "current snapshot available; historical SW1 membership is insufficient", AS_OF);
+
+        RequestCapturingEvaluator evaluator = new RequestCapturingEvaluator();
+        workflow(repository, new CapturingProvider(partial), evaluator).run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(repository.exposures).containsExactly(currentExposure);
+        assertThat(repository.observations).containsValue(auditObservation);
+        assertThat(repository.events).containsValue(currentEvent);
+        assertThat(evaluator.request.evidence()).isEmpty();
+        assertThat(evaluator.request.timeCorrectionFactor()).isEqualByComparingTo("1.00");
+        assertThat(repository.ingestionStatuses).singleElement().satisfies(batch -> {
+            assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(batch.errorMessage()).contains("historical SW1 membership");
+        });
+        assertThat(repository.checkpoints).isEmpty();
+    }
+
+    @Test
     void futureAvailableProviderRowsDoNotAdvanceCheckpoint() {
         InMemoryRepository repository = new InMemoryRepository();
         RiskObservation future = observation("V2", DATE, AS_OF.plusHours(1));
@@ -537,6 +583,7 @@ class RiskWarningWorkflowTest {
                           "data": [{
                             "代码": "600519", "持股变动信息-增减": "减持",
                             "持股变动信息-变动数量": 1000000,
+                            "持股变动信息-占流通股比例": 100,
                             "变动开始日": "2026-07-18", "变动截止日": "2026-07-18",
                             "公告日": "2026-07-18"
                           }]
@@ -567,7 +614,10 @@ class RiskWarningWorkflowTest {
         assertThat(repository.events.values()).singleElement().satisfies(event -> {
             assertThat(event.source()).isEqualTo(AkToolsFlowEventSourceClient.SOURCE);
             assertThat(event.payload())
-                    .containsEntry("sourceRecordId", "share_reduction:600519.SH:2026-07-18:2026-07-18")
+                    .containsEntry(
+                            "sourceRecordId",
+                            "share_reduction:600519.SH:未披露股东:2026-07-18:"
+                                    + "2026-07-18:2026-07-18:减持:1E+6")
                     .containsEntry("actualReduction", true)
                     .containsEntry("modifierCandidate", true);
         });
@@ -593,7 +643,10 @@ class RiskWarningWorkflowTest {
                 "reduction-prod-1", "cursor-prod-1", STOCK, DATE,
                 DATE.atTime(17, 0), DATE.atTime(18, 0), DATE.atTime(19, 0),
                 new BigDecimal("100"), "score", "share_reduction", "实际减持",
-                Map.of("actualReduction", true, "adverse", true));
+                Map.of(
+                        "actualReduction", true,
+                        "adverse", true,
+                        "modifierRatio", new BigDecimal("100")));
         FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(request -> new FlowEventSourceBatch(
                 "aktools", List.of(reduction), RiskDataQualityStatus.AVAILABLE, null,
                 "cursor-prod-1", DATE.minusYears(5), true, DATE.atTime(19, 5), null));

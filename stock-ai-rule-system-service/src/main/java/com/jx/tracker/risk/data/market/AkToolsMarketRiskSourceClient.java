@@ -4,44 +4,59 @@ import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
+import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * AKTools 风险市场数据适配器。运输层可替换，便于使用固定响应测试或接入受控网关。
- * 对多序列指标，网关应按本文档字段先完成基准、龙头或跨市场序列对齐。
- */
+/** AKTools 原生元数据与规范化风险衍生网关的严格契约适配器。 */
 public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClient {
 
     public static final String SOURCE = "aktools";
+    public static final String DERIVED_SOURCE = "risk-derived-gateway";
     private static final DateTimeFormatter COMPACT_DATE = DateTimeFormatter.BASIC_ISO_DATE;
-    private static final Map<MarketDatasetCode, String> ENDPOINTS = Map.of(
-            MarketDatasetCode.CN_A_STOCK_MASTER, "/api/public/stock_info_a_code_name",
-            MarketDatasetCode.SW1_MEMBERSHIP, "/api/public/index_component_sw",
-            MarketDatasetCode.MARKET_DAILY, "/api/public/stock_zh_index_daily",
-            MarketDatasetCode.VALUATION, "/api/public/sw_index_first_info",
-            MarketDatasetCode.BREADTH, "/api/public/stock_zh_a_spot_em",
-            MarketDatasetCode.CROSS_MARKET, "/api/public/index_global_spot_em"
+    private static final String STOCK_MASTER_ENDPOINT = "/api/public/stock_info_a_code_name";
+    private static final String SW1_CATALOG_ENDPOINT = "/api/public/sw_index_first_info";
+    private static final String SW1_COMPONENT_ENDPOINT = "/api/public/index_component_sw";
+    private static final Map<MarketDatasetCode, String> DERIVED_ENDPOINTS = Map.of(
+            MarketDatasetCode.SW1_MEMBERSHIP, "/api/risk/sw1-membership",
+            MarketDatasetCode.MARKET_DAILY, "/api/risk/market-daily",
+            MarketDatasetCode.VALUATION, "/api/risk/valuation",
+            MarketDatasetCode.BREADTH, "/api/risk/breadth",
+            MarketDatasetCode.CROSS_MARKET, "/api/risk/cross-market"
     );
+    private static final int MAX_CACHE_ENTRIES = 256;
 
-    private final MarketRiskHttpTransport transport;
+    private final MarketRiskHttpTransport nativeTransport;
+    private final MarketRiskHttpTransport derivedTransport;
     private final Clock clock;
     private final AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+    private final Map<String, CachedRows> cache = new LinkedHashMap<>();
 
-    public AkToolsMarketRiskSourceClient(MarketRiskHttpTransport transport, Clock clock) {
-        if (transport == null || clock == null) {
-            throw new IllegalArgumentException("transport and clock are required");
+    public AkToolsMarketRiskSourceClient(MarketRiskHttpTransport nativeTransport, Clock clock) {
+        this(nativeTransport, null, clock);
+    }
+
+    public AkToolsMarketRiskSourceClient(
+            MarketRiskHttpTransport nativeTransport,
+            MarketRiskHttpTransport derivedTransport,
+            Clock clock
+    ) {
+        if (nativeTransport == null || clock == null) {
+            throw new IllegalArgumentException("nativeTransport and clock are required");
         }
-        this.transport = transport;
+        this.nativeTransport = nativeTransport;
+        this.derivedTransport = derivedTransport;
         this.clock = clock;
     }
 
@@ -50,150 +65,298 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         if (dataset == null || request == null) {
             throw new IllegalArgumentException("dataset and request are required");
         }
+        LocalDateTime fetchedAt = LocalDateTime.now(clock);
+        return switch (dataset) {
+            case CN_A_STOCK_MASTER -> stockMaster(request, fetchedAt);
+            case SW1_MEMBERSHIP -> membership(request, fetchedAt);
+            case MARKET_DAILY, VALUATION, BREADTH, CROSS_MARKET -> derived(dataset, request, fetchedAt);
+        };
+    }
+
+    private MarketSourceBatch stockMaster(RiskProviderRequest request, LocalDateTime fetchedAt) {
+        if (!request.endDate().equals(fetchedAt.toLocalDate())) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE, "stock master is a current snapshot and cannot be backdated", fetchedAt);
+        }
+        List<Map<String, Object>> rows = cached(
+                "stock-master:" + fetchedAt.toLocalDate(), nativeTransport,
+                STOCK_MASTER_ENDPOINT, Map.of(), fetchedAt);
+        List<MarketSourceRecord> records = rows.stream().<MarketSourceRecord>map(row ->
+                nativeStockMaster(row, fetchedAt))
+                .toList();
+        return new MarketSourceBatch(SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private MarketSourceBatch membership(RiskProviderRequest request, LocalDateTime fetchedAt) {
+        LocalDate currentDate = fetchedAt.toLocalDate();
+        if (!request.endDate().equals(currentDate)) {
+            if (derivedTransport == null) {
+                return MarketSourceBatch.insufficientHistory(
+                        SOURCE, "historical SW1 membership requires the derived gateway", fetchedAt);
+            }
+            return derived(MarketDatasetCode.SW1_MEMBERSHIP, request, fetchedAt);
+        }
+        boolean currentOnly = request.startDate().equals(currentDate);
+        if (!currentOnly && derivedTransport != null) {
+            return derived(MarketDatasetCode.SW1_MEMBERSHIP, request, fetchedAt);
+        }
+        List<Map<String, Object>> sectors = cached(
+                "sw1-catalog:" + fetchedAt.toLocalDate(), nativeTransport,
+                SW1_CATALOG_ENDPOINT, Map.of(), fetchedAt);
+        List<String> sectorCodes = sectors.stream()
+                .map(row -> text(row, "行业代码"))
+                .map(this::normalizeSectorCode)
+                .distinct()
+                .sorted()
+                .toList();
+        List<MarketSourceRecord> records = new ArrayList<>();
+        for (String sectorCode : sectorCodes) {
+            List<Map<String, Object>> components = cached(
+                    "sw1-components:" + fetchedAt.toLocalDate() + ":" + sectorCode,
+                    nativeTransport, SW1_COMPONENT_ENDPOINT, Map.of("symbol", sectorCode), fetchedAt);
+            components.stream()
+                    .map(row -> nativeMembership(row, sectorCode, fetchedAt))
+                    .filter(exposure -> request.objects().contains(exposure.stock()))
+                    .forEach(records::add);
+        }
+        if (!currentOnly) {
+            return MarketSourceBatch.partialHistory(
+                    SOURCE, records, request.checkpoint(),
+                    "current snapshot available; historical SW1 membership requires the derived gateway",
+                    fetchedAt);
+        }
+        return new MarketSourceBatch(SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private MarketSourceBatch derived(
+            MarketDatasetCode dataset,
+            RiskProviderRequest request,
+            LocalDateTime fetchedAt
+    ) {
+        if (derivedTransport == null) {
+            return MarketSourceBatch.insufficientHistory(
+                    DERIVED_SOURCE, dataset.code() + " requires the normalized derived gateway", fetchedAt);
+        }
+        Map<String, String> query = derivedQuery(request);
+        MarketRiskHttpResponse response = derivedTransport.getResponse(DERIVED_ENDPOINTS.get(dataset), query);
+        List<MarketSourceRecord> records = response.rows().stream()
+                .map(row -> parseDerived(dataset, row))
+                .toList();
+        boolean missingEarliestDate = response.earliestAvailableDate() == null;
+        boolean startsAfterRequest = response.earliestAvailableDate() != null
+                && response.earliestAvailableDate().isAfter(request.startDate());
+        boolean incomplete = response.insufficientHistory()
+                || !response.historyComplete()
+                || missingEarliestDate
+                || startsAfterRequest;
+        if (incomplete) {
+            String reason = historyGapReason(
+                    response, request, missingEarliestDate, startsAfterRequest);
+            if (records.isEmpty()) {
+                return MarketSourceBatch.insufficientHistory(DERIVED_SOURCE, reason, fetchedAt);
+            }
+            return MarketSourceBatch.partialHistory(
+                    DERIVED_SOURCE, records, null, reason, fetchedAt);
+        }
+        return new MarketSourceBatch(
+                DERIVED_SOURCE, records,
+                nextCheckpoint(dataset, request, response.nextCursor(), fetchedAt), fetchedAt);
+    }
+
+    private String historyGapReason(
+            MarketRiskHttpResponse response,
+            RiskProviderRequest request,
+            boolean missingEarliestDate,
+            boolean startsAfterRequest
+    ) {
+        if (response.historyGapReason() != null && !response.historyGapReason().isBlank()) {
+            return response.historyGapReason();
+        }
+        if (missingEarliestDate) {
+            return "derived gateway did not provide earliestAvailableDate";
+        }
+        if (startsAfterRequest) {
+            return "derived history starts at " + response.earliestAvailableDate()
+                    + " after requested " + request.startDate();
+        }
+        return "derived gateway did not confirm complete history";
+    }
+
+    private RiskIngestionCheckpoint nextCheckpoint(
+            MarketDatasetCode dataset,
+            RiskProviderRequest request,
+            String nextCursor,
+            LocalDateTime fetchedAt
+    ) {
+        if (nextCursor == null || nextCursor.isBlank()) {
+            return request.checkpoint();
+        }
+        if (request.checkpoint() != null
+                && nextCursor.compareTo(request.checkpoint().cursor()) <= 0) {
+            return request.checkpoint();
+        }
+        return new RiskIngestionCheckpoint(
+                dataset.code(), sourceScope(request), nextCursor, fetchedAt);
+    }
+
+    private String sourceScope(RiskProviderRequest request) {
+        return request.objects().stream()
+                .map(object -> object.objectType().getCode() + ":" + object.objectId())
+                .sorted()
+                .reduce((left, right) -> left + "," + right)
+                .orElse("none");
+    }
+
+    private Map<String, String> derivedQuery(RiskProviderRequest request) {
         Map<String, String> query = new LinkedHashMap<>();
         query.put("start_date", request.startDate().format(COMPACT_DATE));
         query.put("end_date", request.endDate().format(COMPACT_DATE));
-        query.put("objects", request.objects().stream().map(RiskObjectKey::objectId)
+        query.put("objects", request.objects().stream()
+                .map(object -> object.objectType().getCode() + ":" + object.objectId())
                 .sorted().reduce((left, right) -> left + "," + right).orElse(""));
         if (request.checkpoint() != null) {
             query.put("cursor", request.checkpoint().cursor());
         }
-        List<Map<String, Object>> rows = transport.get(ENDPOINTS.get(dataset), Map.copyOf(query));
-        List<MarketSourceRecord> records = new ArrayList<>();
-        for (Map<String, Object> row : rows == null ? List.<Map<String, Object>>of() : rows) {
-            records.add(parse(dataset, row, request));
-        }
-        return new MarketSourceBatch(
-                SOURCE, records, request.checkpoint(), LocalDateTime.now(clock)
-        );
+        return Map.copyOf(query);
     }
 
-    private MarketSourceRecord parse(
-            MarketDatasetCode dataset,
+    private StockMasterPoint nativeStockMaster(Map<String, Object> row, LocalDateTime fetchedAt) {
+        return new StockMasterPoint(
+                catalog.stock(text(row, "code", "代码")), fetchedAt.toLocalDate(),
+                text(row, "name", "名称"), optionalDate(row, "listDate", "上市日期"),
+                fetchedAt, fetchedAt, SOURCE, quality(row));
+    }
+
+    private IndustryExposure nativeMembership(
             Map<String, Object> row,
-            RiskProviderRequest request
+            String sectorCode,
+            LocalDateTime fetchedAt
     ) {
+        return new IndustryExposure(
+                catalog.stock(text(row, "证券代码")), catalog.sector(sectorCode),
+                date(row, "计入日期"), null, fetchedAt, fetchedAt, SOURCE, quality(row));
+    }
+
+    private MarketSourceRecord parseDerived(MarketDatasetCode dataset, Map<String, Object> row) {
         return switch (dataset) {
-            case CN_A_STOCK_MASTER -> stockMaster(row, request);
-            case SW1_MEMBERSHIP -> membership(row);
-            case MARKET_DAILY -> daily(row, request);
-            case VALUATION -> valuation(row, request);
-            case BREADTH -> breadth(row, request);
-            case CROSS_MARKET -> crossMarket(row, request);
+            case SW1_MEMBERSHIP -> derivedMembership(row);
+            case MARKET_DAILY -> daily(row);
+            case VALUATION -> valuation(row);
+            case BREADTH -> breadth(row);
+            case CROSS_MARKET -> crossMarket(row);
+            case CN_A_STOCK_MASTER -> throw new IllegalArgumentException("stock master is not a derived dataset");
         };
     }
 
-    private StockMasterPoint stockMaster(Map<String, Object> row, RiskProviderRequest request) {
-        RiskObjectKey object = catalog.stock(text(row, "objectId", "symbol", "code", "代码"));
-        LocalDate date = optionalDate(row, "tradeDate", "date", "日期");
-        if (date == null) {
-            date = request.endDate();
+    private IndustryExposure derivedMembership(Map<String, Object> row) {
+        RiskObjectKey stock = derivedObject(row);
+        if (stock.objectType() != RiskObjectType.STOCK) {
+            throw new IllegalArgumentException("derived SW1 membership requires objectType=stock");
         }
-        return new StockMasterPoint(
-                object, date, text(row, "name", "名称"), optionalDate(row, "listDate", "上市日期"),
-                observedAt(row, date), availableAt(row, date), SOURCE, quality(row)
-        );
-    }
-
-    private IndustryExposure membership(Map<String, Object> row) {
-        RiskObjectKey stock = catalog.stock(text(row, "objectId", "symbol", "code", "证券代码"));
-        String rawSector = text(row, "sectorCode", "indexCode", "行业代码")
-                .toUpperCase(Locale.ROOT).replace(".SI", "").replace("SW1:", "");
-        LocalDate validFrom = date(row, "validFrom", "tradeDate", "纳入日期", "日期");
-        LocalDate validTo = optionalDate(row, "validTo", "移除日期");
+        String rawSector = text(row, "sectorCode", "indexCode", "行业代码");
+        LocalDate validFrom = date(row, "validFrom", "计入日期");
         return new IndustryExposure(
-                stock, catalog.sector(rawSector), validFrom, validTo,
-                observedAt(row, validFrom), availableAt(row, validFrom), SOURCE, quality(row)
-        );
+                stock, catalog.sector(normalizeSectorCode(rawSector)), validFrom,
+                optionalDate(row, "validTo", "移除日期"),
+                requiredDateTime(row, "observedAt", "observed_at"),
+                requiredDateTime(row, "availableAt", "available_at"),
+                DERIVED_SOURCE, quality(row));
     }
 
-    private MarketDailyPoint daily(Map<String, Object> row, RiskProviderRequest request) {
-        RiskObjectKey object = object(row, request);
+    private MarketDailyPoint daily(Map<String, Object> row) {
+        RiskObjectKey object = derivedObject(row);
         LocalDate date = date(row, "tradeDate", "date", "日期");
         return new MarketDailyPoint(
-                object, date,
-                decimal(row, "open", "开盘"), decimal(row, "close", "收盘"),
+                object, date, decimal(row, "open", "开盘"), decimal(row, "close", "收盘"),
                 decimal(row, "volume", "成交量"),
                 decimal(row, "benchmarkClose", "benchmark_close"),
                 decimal(row, "leaderClose", "leader_close"),
-                observedAt(row, date), availableAt(row, date), SOURCE, quality(row)
-        );
+                requiredDateTime(row, "observedAt", "observed_at"),
+                requiredDateTime(row, "availableAt", "available_at"),
+                DERIVED_SOURCE, quality(row));
     }
 
-    private ValuationPoint valuation(Map<String, Object> row, RiskProviderRequest request) {
-        RiskObjectKey object = object(row, request);
+    private ValuationPoint valuation(Map<String, Object> row) {
+        RiskObjectKey object = derivedObject(row);
         LocalDate date = date(row, "tradeDate", "date", "日期");
-        BigDecimal peTtm = decimal(row, "peTtm", "pe_ttm", "市盈率", "市盈率TTM", "静态市盈率", "非静态市盈率");
+        BigDecimal peTtm = decimal(row, "peTtm", "pe_ttm", "TTM(滚动)市盈率", "市盈率TTM");
         BigDecimal earningsYield = optionalDecimal(row, "earningsYield", "earnings_yield");
         if (earningsYield == null) {
             earningsYield = BigDecimal.ONE.divide(peTtm, 10, java.math.RoundingMode.HALF_UP);
         }
         return new ValuationPoint(
-                object, date,
-                peTtm,
-                earningsYield,
+                object, date, peTtm, earningsYield,
                 optionalDecimal(row, "riskFreeYield", "risk_free_yield"),
-                observedAt(row, date), availableAt(row, date), SOURCE, quality(row)
-        );
+                requiredDateTime(row, "observedAt", "observed_at"),
+                requiredDateTime(row, "availableAt", "available_at"),
+                DERIVED_SOURCE, quality(row));
     }
 
-    private BreadthPoint breadth(Map<String, Object> row, RiskProviderRequest request) {
-        RiskObjectKey object = object(row, request);
+    private BreadthPoint breadth(Map<String, Object> row) {
+        RiskObjectKey object = derivedObject(row);
         LocalDate date = date(row, "tradeDate", "date", "日期");
         return new BreadthPoint(
-                object, date,
-                integer(row, "advancingCount", "上涨家数"), integer(row, "decliningCount", "下跌家数"),
+                object, date, integer(row, "advancingCount", "上涨家数"),
+                integer(row, "decliningCount", "下跌家数"),
                 integer(row, "newHighCount", "新高家数"), integer(row, "newLowCount", "新低家数"),
-                integer(row, "aboveMovingAverageCount", "均线上方家数"), integer(row, "totalCount", "总家数"),
-                observedAt(row, date), availableAt(row, date), SOURCE, quality(row)
-        );
+                integer(row, "aboveMovingAverageCount", "均线上方家数"),
+                integer(row, "totalCount", "总家数"),
+                requiredDateTime(row, "observedAt", "observed_at"),
+                requiredDateTime(row, "availableAt", "available_at"),
+                DERIVED_SOURCE, quality(row));
     }
 
-    private CrossMarketPoint crossMarket(Map<String, Object> row, RiskProviderRequest request) {
-        RiskObjectKey object = object(row, request);
+    private CrossMarketPoint crossMarket(Map<String, Object> row) {
+        RiskObjectKey object = derivedObject(row);
         LocalDate date = date(row, "tradeDate", "date", "日期");
         return new CrossMarketPoint(
-                object, date,
-                decimal(row, "leadingAssetReturn", "leading_asset_return"),
+                object, date, decimal(row, "leadingAssetReturn", "leading_asset_return"),
                 decimal(row, "dynamicCorrelation", "dynamic_correlation"),
                 integer(row, "confirmedDownMarketCount", "confirmed_down_market_count"),
                 integer(row, "observedMarketCount", "observed_market_count"),
-                observedAt(row, date), availableAt(row, date), SOURCE, quality(row)
-        );
+                requiredDateTime(row, "observedAt", "observed_at"),
+                requiredDateTime(row, "availableAt", "available_at"),
+                DERIVED_SOURCE, quality(row));
     }
 
-    private RiskObjectKey object(Map<String, Object> row, RiskProviderRequest request) {
-        Object rawId = first(row, "objectId", "object_id");
-        if (rawId == null) {
-            return request.objects().getFirst();
-        }
-        String id = rawId.toString();
-        String rawType = optionalText(row, "objectType", "object_type");
-        if (rawType == null) {
-            return request.objects().stream().filter(candidate -> candidate.objectId().equals(id))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException("objectType is required for " + id));
-        }
-        return switch (rawType.toLowerCase(Locale.ROOT)) {
+    private RiskObjectKey derivedObject(Map<String, Object> row) {
+        String id = text(row, "objectId", "object_id");
+        String type = text(row, "objectType", "object_type").toLowerCase(Locale.ROOT);
+        return switch (type) {
             case "market" -> new RiskObjectKey(RiskObjectType.MARKET, id);
             case "sector" -> new RiskObjectKey(RiskObjectType.SECTOR, id);
             case "stock" -> catalog.stock(id);
-            default -> throw new IllegalArgumentException("unsupported risk objectType: " + rawType);
+            default -> throw new IllegalArgumentException("unsupported derived objectType: " + type);
         };
+    }
+
+    private synchronized List<Map<String, Object>> cached(
+            String cacheKey,
+            MarketRiskHttpTransport transport,
+            String endpoint,
+            Map<String, String> query,
+            LocalDateTime now
+    ) {
+        CachedRows cached = cache.get(cacheKey);
+        if (cached != null && !cached.cachedAt().plusMinutes(5).isBefore(now)) {
+            return cached.rows();
+        }
+        List<Map<String, Object>> rows = transport.get(endpoint, query);
+        List<Map<String, Object>> immutable = rows == null ? List.of() : List.copyOf(rows);
+        if (cache.size() >= MAX_CACHE_ENTRIES) {
+            cache.remove(cache.keySet().iterator().next());
+        }
+        cache.put(cacheKey, new CachedRows(immutable, now));
+        return immutable;
+    }
+
+    private String normalizeSectorCode(String raw) {
+        return raw.toUpperCase(Locale.ROOT).replace(".SI", "").replace("SW1:", "");
     }
 
     private RiskDataQualityStatus quality(Map<String, Object> row) {
         String raw = optionalText(row, "qualityStatus", "quality_status");
         return raw == null ? RiskDataQualityStatus.AVAILABLE : RiskDataQualityStatus.fromCode(raw);
-    }
-
-    private LocalDateTime observedAt(Map<String, Object> row, LocalDate date) {
-        String raw = optionalText(row, "observedAt", "observed_at");
-        return raw == null ? date.atTime(15, 0) : LocalDateTime.parse(raw);
-    }
-
-    private LocalDateTime availableAt(Map<String, Object> row, LocalDate date) {
-        String raw = optionalText(row, "availableAt", "available_at");
-        return raw == null ? date.atTime(16, 0) : LocalDateTime.parse(raw);
     }
 
     private LocalDate date(Map<String, Object> row, String... keys) {
@@ -209,22 +372,33 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        return raw.matches("^\\d{8}$") ? LocalDate.parse(raw, COMPACT_DATE) : LocalDate.parse(raw);
+        return raw.matches("^\\d{8}$") ? LocalDate.parse(raw, COMPACT_DATE)
+                : LocalDate.parse(raw.length() > 10 ? raw.substring(0, 10) : raw);
+    }
+
+    private LocalDateTime requiredDateTime(Map<String, Object> row, String... keys) {
+        String normalized = text(row, keys).replace(' ', 'T');
+        try {
+            return OffsetDateTime.parse(normalized)
+                    .atZoneSameInstant(clock.getZone())
+                    .toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            return LocalDateTime.parse(normalized);
+        }
     }
 
     private BigDecimal decimal(Map<String, Object> row, String... keys) {
-        Object value = first(row, keys);
-        if (value == null || value.toString().isBlank()) {
+        BigDecimal value = optionalDecimal(row, keys);
+        if (value == null) {
             throw new IllegalArgumentException("missing decimal field: " + String.join("/", keys));
         }
-        return new BigDecimal(value.toString().replace(",", ""));
+        return value;
     }
 
     private BigDecimal optionalDecimal(Map<String, Object> row, String... keys) {
         Object value = first(row, keys);
         return value == null || value.toString().isBlank()
-                ? null
-                : new BigDecimal(value.toString().replace(",", ""));
+                ? null : new BigDecimal(value.toString().replace(",", ""));
     }
 
     private int integer(Map<String, Object> row, String... keys) {
@@ -251,5 +425,8 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
             }
         }
         return null;
+    }
+
+    private record CachedRows(List<Map<String, Object>> rows, LocalDateTime cachedAt) {
     }
 }

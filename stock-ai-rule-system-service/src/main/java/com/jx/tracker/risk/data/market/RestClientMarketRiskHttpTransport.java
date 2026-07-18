@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.web.client.RestClient;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -36,6 +37,11 @@ public final class RestClientMarketRiskHttpTransport implements MarketRiskHttpTr
 
     @Override
     public List<Map<String, Object>> get(String endpoint, Map<String, String> query) {
+        return getResponse(endpoint, query).rows();
+    }
+
+    @Override
+    public MarketRiskHttpResponse getResponse(String endpoint, Map<String, String> query) {
         if (endpoint == null || endpoint.isBlank()) {
             throw new IllegalArgumentException("endpoint must not be blank");
         }
@@ -49,8 +55,9 @@ public final class RestClientMarketRiskHttpTransport implements MarketRiskHttpTr
         try {
             JsonNode root = objectMapper.readTree(response);
             JsonNode rows = root != null && root.isArray() ? root : root == null ? null : root.path("data");
+            JsonNode meta = root != null && root.isObject() ? root.path("meta") : objectMapper.nullNode();
             if (rows == null || rows.isMissingNode() || rows.isNull()) {
-                return List.of();
+                return MarketRiskHttpResponse.legacyIncomplete(List.of());
             }
             if (!rows.isArray()) {
                 throw new IllegalArgumentException("AKTools response data must be an array");
@@ -59,11 +66,26 @@ public final class RestClientMarketRiskHttpTransport implements MarketRiskHttpTr
             rows.forEach(row -> result.add(Collections.unmodifiableMap(
                     new LinkedHashMap<>(objectMapper.convertValue(row, MAP_TYPE))
             )));
-            return List.copyOf(result);
+            String nextCursor = text(meta, "nextCursor");
+            String earliest = text(meta, "earliestAvailableDate");
+            boolean historyComplete = meta.has("historyComplete")
+                    && meta.path("historyComplete").asBoolean(false);
+            boolean insufficientHistory = meta.path("insufficientHistory").asBoolean(false);
+            return new MarketRiskHttpResponse(
+                    result, nextCursor, earliest == null ? null : LocalDate.parse(earliest),
+                    historyComplete, insufficientHistory, text(meta, "historyGapReason"));
         } catch (RuntimeException exception) {
             throw exception;
         } catch (Exception exception) {
             throw new IllegalStateException("failed to parse AKTools risk response: " + endpoint, exception);
         }
+    }
+
+    private String text(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.path(field);
+        if (value == null || value.isMissingNode() || value.isNull() || value.asText().isBlank()) {
+            return null;
+        }
+        return value.asText().trim();
     }
 }

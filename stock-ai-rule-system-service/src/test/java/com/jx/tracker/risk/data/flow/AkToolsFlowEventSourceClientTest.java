@@ -1,6 +1,9 @@
 package com.jx.tracker.risk.data.flow;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.risk.data.event.EventEconomicMeaningDictionary;
+import com.jx.tracker.risk.data.event.FlowEventTranslation;
+import com.jx.tracker.risk.data.event.FlowEventTranslator;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
@@ -117,6 +120,7 @@ class AkToolsFlowEventSourceClientTest {
                 FlowEventDataset.ETF_FUND_FLOW, List.of(MARKET),
                 LocalDate.of(2026, 7, 17), LocalDate.of(2026, 7, 18)));
 
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
         assertThat(batch.records()).singleElement().satisfies(record -> {
             assertThat(record.object()).isEqualTo(MARKET);
             assertThat(record.value()).isEqualByComparingTo("-2000000");
@@ -363,6 +367,24 @@ class AkToolsFlowEventSourceClientTest {
     }
 
     @Test
+    void emptyRecentOnlyUnlockResponseIsInsufficientAndHasNoCursor() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_restricted_release_queue_sina")))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.SHARE_UNLOCK, List.of(STOCK),
+                LocalDate.of(2021, 7, 18), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(batch.failureReason()).contains("history");
+        assertThat(batch.nextCursor()).isNull();
+        server.verify();
+    }
+
+    @Test
     void earningsForecastBackfillQueriesEveryCompletedQuarterInRange() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -450,6 +472,292 @@ class AkToolsFlowEventSourceClientTest {
             assertThat(record.availableAt()).isEqualTo(LocalDateTime.of(2026, 2, 11, 0, 0));
         });
         server.verify();
+    }
+
+    @Test
+    void etfSpotIsAnExplicitCurrentOrderFlowProxyAndCannotSatisfyFiveYearHistory() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/fund_etf_spot_em"))
+                .andRespond(withSuccess("""
+                        [{"代码":"510300","主力净流入-净额":-2000000,"流通市值":100000000,
+                          "数据日期":"2026-07-18","更新时间":"2026-07-18T15:01:00+08:00"}]
+                        """, MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.ETF_FUND_FLOW, List.of(MARKET),
+                LocalDate.of(2021, 7, 18), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.historyComplete()).isFalse();
+        assertThat(batch.failureReason()).contains("current order-flow proxy");
+        server.verify();
+    }
+
+    @Test
+    void currentEtfSpotRecordIsMarkedAsProxyAndNeverAsRedemptionFact() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/fund_etf_spot_em"))
+                .andRespond(withSuccess("""
+                        [{"代码":"510300","主力净流入-净额":-2000000,"流通市值":100000000,
+                          "数据日期":"2026-07-18","更新时间":"2026-07-18T15:01:00+08:00"}]
+                        """, MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.ETF_FUND_FLOW, List.of(MARKET),
+                LocalDate.of(2026, 7, 18), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.historyComplete()).isFalse();
+        assertThat(batch.records()).singleElement().satisfies(record -> {
+            assertThat(record.eventCode()).isEqualTo("etf_order_flow_proxy");
+            assertThat(record.title()).contains("代理");
+            assertThat(record.attributes())
+                    .containsEntry("proxy", true)
+                    .containsEntry("proxyType", "secondaryMarketOrderFlow")
+                    .doesNotContainKey("redemptionFact");
+        });
+        server.verify();
+    }
+
+    @Test
+    void collidingAnnouncementTitleHashesStillProduceDistinctSourceIds() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_zh_a_disclosure_report_cninfo")))
+                .andRespond(withSuccess("""
+                        [
+                          {"代码":"600519","公告标题":"Aa风险提示","公告时间":"2026-07-17 18:30:00"},
+                          {"代码":"600519","公告标题":"BB风险提示","公告时间":"2026-07-17 18:30:00"}
+                        ]
+                        """, MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.STOCK_ANNOUNCEMENT, List.of(STOCK),
+                LocalDate.of(2026, 7, 17), LocalDate.of(2026, 7, 18)));
+
+        assertThat("Aa风险提示".hashCode()).isEqualTo("BB风险提示".hashCode());
+        assertThat(batch.records()).extracting(FlowEventSourceRecord::recordId)
+                .hasSize(2)
+                .doesNotHaveDuplicates()
+                .allMatch(id -> id.matches("stock_announcement:600519\\.SH:sha256:[0-9a-f]{64}"));
+        server.verify();
+    }
+
+    @Test
+    void historicalEtfFlowUsesDerivedGatewayAndPreservesPointInTimeMetadata() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:18090/api/risk/etf-redemption")))
+                .andExpect(queryParam("start_date", "20210718"))
+                .andExpect(queryParam("end_date", "20260718"))
+                .andExpect(queryParam("objects", "market:CN-A"))
+                .andRespond(withSuccess("""
+                        {"data":[
+                          {"tradeDate":"2026-07-17","netFlow":-3000000,
+                           "referenceAssets":150000000,
+                           "observedAt":"2026-07-17T15:10:00+08:00",
+                           "availableAt":"2026-07-17T16:00:00+08:00"}
+                        ],"meta":{"historyComplete":true,"earliestAvailableDate":"2021-07-18"}}
+                        """, MediaType.APPLICATION_JSON));
+        AkToolsFlowEventSourceClient client = new AkToolsFlowEventSourceClient(
+                "http://127.0.0.1:8090",
+                "http://127.0.0.1:18090",
+                builder,
+                new ObjectMapper(),
+                fixedClock());
+
+        FlowEventSourceBatch batch = client.fetch(sourceRequest(
+                FlowEventDataset.ETF_FUND_FLOW, List.of(MARKET),
+                LocalDate.of(2021, 7, 18), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.historyComplete()).isTrue();
+        assertThat(batch.earliestAvailableDate()).isEqualTo(LocalDate.of(2021, 7, 18));
+        assertThat(batch.records()).singleElement().satisfies(record -> {
+            assertThat(record.eventCode()).isEqualTo("etf_redemption_flow");
+            assertThat(record.attributes())
+                    .containsEntry("referenceAssets", new java.math.BigDecimal("150000000"))
+                    .doesNotContainKey("proxy");
+            assertThat(record.observedAt()).isEqualTo(LocalDateTime.of(2026, 7, 17, 15, 10));
+            assertThat(record.availableAt()).isEqualTo(LocalDateTime.of(2026, 7, 17, 16, 0));
+        });
+        server.verify();
+    }
+
+    @Test
+    void rejectsDerivedEtfHistoryWhenEarliestDateIsMissingOrLaterThanRequestedStart() {
+        for (String meta : List.of(
+                "{\"historyComplete\":true}",
+                "{\"historyComplete\":true,\"earliestAvailableDate\":\"2022-07-18\"}"
+        )) {
+            RestClient.Builder builder = RestClient.builder();
+            MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                            "http://127.0.0.1:18090/api/risk/etf-redemption")))
+                    .andRespond(withSuccess("""
+                            {"data":[
+                              {"tradeDate":"2026-07-17","netFlow":-3000000,
+                               "referenceAssets":150000000,
+                               "observedAt":"2026-07-17T15:10:00+08:00",
+                               "availableAt":"2026-07-17T16:00:00+08:00"}
+                            ],"meta":%s}
+                            """.formatted(meta), MediaType.APPLICATION_JSON));
+            AkToolsFlowEventSourceClient client = new AkToolsFlowEventSourceClient(
+                    "http://127.0.0.1:8090",
+                    "http://127.0.0.1:18090",
+                    builder,
+                    new ObjectMapper(),
+                    fixedClock());
+
+            FlowEventSourceBatch batch = client.fetch(sourceRequest(
+                    FlowEventDataset.ETF_FUND_FLOW, List.of(MARKET),
+                    LocalDate.of(2021, 7, 18), LocalDate.of(2026, 7, 18)));
+
+            assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(batch.historyComplete()).isFalse();
+            assertThat(batch.records()).hasSize(1);
+            assertThat(batch.nextCursor()).isNull();
+            assertThat(batch.failureReason()).contains("earliestAvailableDate");
+            server.verify();
+        }
+    }
+
+    @Test
+    void unlockKeepsTenThousandShareUnitAndDistinctListingBatchesWithoutInventingSeverity() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_restricted_release_queue_sina")))
+                .andRespond(withSuccess("""
+                        [
+                          {"代码":"600519","解禁日期":"2026-08-01","解禁数量":1000,
+                           "解禁股流通市值":50000,"上市批次":1,"公告日期":"2026-07-17"},
+                          {"代码":"600519","解禁日期":"2026-08-01","解禁数量":2000,
+                           "解禁股流通市值":90000,"上市批次":2,"公告日期":"2026-07-17"}
+                        ]
+                        """, MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.SHARE_UNLOCK, List.of(STOCK),
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 2)));
+
+        assertThat(batch.records()).hasSize(2);
+        assertThat(batch.records()).extracting(FlowEventSourceRecord::recordId)
+                .doesNotHaveDuplicates();
+        assertThat(batch.records()).allSatisfy(record ->
+                assertThat(record.unit()).isEqualTo("tenThousandShares"));
+        FlowEventTranslation translation = translator().translate(
+                FlowEventDataset.SHARE_UNLOCK, batch.records().getFirst(),
+                RiskHorizon.SHORT_TERM, batch.source(), null);
+        assertThat(translation.events()).singleElement().satisfies(event -> {
+            assertThat(event.severityScore()).isNull();
+            assertThat(event.payload()).doesNotContainKey("modifierSeverity");
+        });
+        server.verify();
+    }
+
+    @Test
+    void reductionUsesPublishedRatioForModifierStrengthAndKeepsDistinctShareholders() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_ggcg_em"))
+                .andRespond(withSuccess("""
+                        [
+                          {"代码":"600519","股东名称":"股东甲","持股变动信息-增减":"减持",
+                           "持股变动信息-变动数量":20000,"持股变动信息-占流通股比例":0.12,
+                           "变动开始日":"2026-07-10","变动截止日":"2026-07-16","公告日":"2026-07-17"},
+                          {"代码":"600519","股东名称":"股东乙","持股变动信息-增减":"减持",
+                           "持股变动信息-变动数量":30000,"持股变动信息-占流通股比例":0.18,
+                           "变动开始日":"2026-07-11","变动截止日":"2026-07-16","公告日":"2026-07-17"}
+                        ]
+                        """, MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.SHARE_REDUCTION, List.of(STOCK),
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.records()).hasSize(2);
+        assertThat(batch.records()).extracting(FlowEventSourceRecord::recordId)
+                .doesNotHaveDuplicates();
+        assertThat(batch.records()).allSatisfy(record ->
+                assertThat(record.unit()).isEqualTo("tenThousandShares"));
+        FlowEventTranslation translation = translator().translate(
+                FlowEventDataset.SHARE_REDUCTION, batch.records().getFirst(),
+                RiskHorizon.SHORT_TERM, batch.source(), null);
+        assertThat(translation.events()).singleElement().satisfies(event -> {
+            assertThat(event.severityScore()).isNull();
+            assertThat(event.payload()).containsEntry("modifierSeverity", new java.math.BigDecimal("0.12"));
+        });
+        server.verify();
+    }
+
+    @Test
+    void forecastIdentityIncludesPredictionMetricForSameDayRows() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_yjyg_em")))
+                .andExpect(queryParam("date", "20260630"))
+                .andRespond(withSuccess("""
+                        [
+                          {"股票代码":"600519","预测指标":"净利润","业绩变动幅度":-12,
+                           "预告类型":"预减","公告日期":"2026-07-12"},
+                          {"股票代码":"600519","预测指标":"扣非净利润","业绩变动幅度":-18,
+                           "预告类型":"预减","公告日期":"2026-07-12"}
+                        ]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_yjyg_em")))
+                .andExpect(queryParam("date", "20260930"))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.EARNINGS_FORECAST, List.of(STOCK),
+                LocalDate.of(2026, 7, 10), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.records()).hasSize(2);
+        assertThat(batch.records()).extracting(FlowEventSourceRecord::recordId)
+                .doesNotHaveDuplicates();
+        assertThat(batch.records()).extracting(record -> record.attributes().get("predictionMetric"))
+                .containsExactlyInAnyOrder("净利润", "扣非净利润");
+        server.verify();
+    }
+
+    @Test
+    void fullMarketReductionResponseIsSharedAcrossStockChunks() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://127.0.0.1:8090/api/public/stock_ggcg_em"))
+                .andRespond(withSuccess("""
+                        [
+                          {"代码":"600519","股东名称":"股东甲","持股变动信息-增减":"减持",
+                           "持股变动信息-变动数量":200,"持股变动信息-占流通股比例":0.12,
+                           "变动截止日":"2026-07-16","公告日":"2026-07-17"},
+                          {"代码":"000001","股东名称":"股东乙","持股变动信息-增减":"减持",
+                           "持股变动信息-变动数量":300,"持股变动信息-占流通股比例":0.18,
+                           "变动截止日":"2026-07-16","公告日":"2026-07-17"}
+                        ]
+                        """, MediaType.APPLICATION_JSON));
+        AkToolsFlowEventSourceClient client = client(builder);
+
+        FlowEventSourceBatch first = client.fetch(sourceRequest(
+                FlowEventDataset.SHARE_REDUCTION, List.of(STOCK),
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 18)));
+        FlowEventSourceBatch second = client.fetch(sourceRequest(
+                FlowEventDataset.SHARE_REDUCTION, List.of(OTHER_STOCK),
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 18)));
+
+        assertThat(first.records()).extracting(FlowEventSourceRecord::object).containsExactly(STOCK);
+        assertThat(second.records()).extracting(FlowEventSourceRecord::object).containsExactly(OTHER_STOCK);
+        server.verify();
+    }
+
+    private FlowEventTranslator translator() {
+        return new FlowEventTranslator(EventEconomicMeaningDictionary.defaultDictionary());
     }
 
     private AkToolsFlowEventSourceClient client(RestClient.Builder builder) {
