@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
+import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriBuilder;
@@ -15,6 +16,8 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -67,6 +70,11 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             if (request.dataset() == FlowEventDataset.EARNINGS_FORECAST) {
                 return fetchEarningsForecasts(request, fetchedAt);
             }
+            if ((request.dataset() == FlowEventDataset.STOCK_ANNOUNCEMENT
+                    || request.dataset() == FlowEventDataset.SHARE_UNLOCK)
+                    && request.objects().size() > 1) {
+                return fetchPerStock(request, fetchedAt);
+            }
             return parseResponse(request, get(request, null), fetchedAt);
         } catch (RuntimeException exception) {
             return FlowEventSourceBatch.unavailable(
@@ -78,7 +86,8 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             FlowEventSourceRequest request,
             LocalDateTime fetchedAt
     ) {
-        List<LocalDate> reportDates = completedQuarterEnds(request.startDate(), request.endDate());
+        List<LocalDate> reportDates = reportQuarterEndsForAvailabilityWindow(
+                request.startDate(), request.endDate());
         if (reportDates.isEmpty()) {
             return FlowEventSourceBatch.validZero(
                     SOURCE, boundaryCursor(request.endDate()), fetchedAt);
@@ -103,6 +112,43 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
                 true, fetchedAt, null);
     }
 
+    private FlowEventSourceBatch fetchPerStock(
+            FlowEventSourceRequest request,
+            LocalDateTime fetchedAt
+    ) {
+        List<RiskObjectKey> objects = request.objects().stream()
+                .sorted(Comparator.comparing(RiskObjectKey::objectId))
+                .toList();
+        List<FlowEventSourceRecord> records = new ArrayList<>();
+        LocalDate earliest = null;
+        boolean historyComplete = true;
+        for (RiskObjectKey object : objects) {
+            FlowEventSourceRequest singleRequest = new FlowEventSourceRequest(
+                    request.dataset(),
+                    new RiskProviderRequest(
+                            List.of(object), request.horizons(), request.startDate(), request.endDate(),
+                            request.checkpoint()));
+            FlowEventSourceBatch batch = parseResponse(singleRequest, get(singleRequest, null), fetchedAt);
+            if (batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE
+                    || batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
+                return batch;
+            }
+            records.addAll(batch.records());
+            earliest = earlier(earliest, batch.earliestAvailableDate());
+            historyComplete = historyComplete && batch.historyComplete();
+        }
+        List<FlowEventSourceRecord> uniqueRecords = deduplicate(records);
+        if (uniqueRecords.isEmpty()) {
+            return new FlowEventSourceBatch(
+                    SOURCE, List.of(), RiskDataQualityStatus.VALID_ZERO, null,
+                    boundaryCursor(request.endDate()), earliest, historyComplete, fetchedAt, null);
+        }
+        return new FlowEventSourceBatch(
+                SOURCE, uniqueRecords, RiskDataQualityStatus.AVAILABLE, null,
+                maxRecordCursor(uniqueRecords), earlier(earliest, earliestTradeDate(uniqueRecords)),
+                historyComplete, fetchedAt, null);
+    }
+
     private String get(FlowEventSourceRequest request, LocalDate reportDate) {
         return restClient.get().uri(builder -> sourceUri(builder, request, reportDate))
                 .retrieve().body(String.class);
@@ -125,23 +171,27 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         return builder.build();
     }
 
-    private List<LocalDate> completedQuarterEnds(LocalDate startDate, LocalDate endDate) {
+    private List<LocalDate> reportQuarterEndsForAvailabilityWindow(LocalDate startDate, LocalDate endDate) {
         List<LocalDate> dates = new ArrayList<>();
-        for (int year = startDate.getYear(); year <= endDate.getYear(); year++) {
-            for (int month : List.of(3, 6, 9, 12)) {
-                LocalDate quarterEnd = LocalDate.of(year, month, 1)
-                        .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
-                if (!quarterEnd.isBefore(startDate) && !quarterEnd.isAfter(endDate)) {
-                    dates.add(quarterEnd);
-                }
-            }
+        int currentQuarterEndMonth = ((startDate.getMonthValue() - 1) / 3 + 1) * 3;
+        LocalDate firstReportEnd = LocalDate.of(startDate.getYear(), currentQuarterEndMonth, 1)
+                .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+        if (firstReportEnd.isAfter(startDate)) {
+            firstReportEnd = firstReportEnd.minusMonths(3)
+                    .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+        }
+        for (LocalDate reportEnd = firstReportEnd;
+             !reportEnd.isAfter(endDate);
+             reportEnd = reportEnd.plusMonths(3)
+                     .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth())) {
+            dates.add(reportEnd);
         }
         return dates;
     }
 
     private String sourceSymbol(FlowEventSourceRequest request) {
         if (request.objects().size() != 1) {
-            return "";
+            throw new IllegalArgumentException("single-symbol endpoint requires exactly one stock object");
         }
         return request.objects().getFirst().objectId().replaceFirst("\\.(SH|SZ|BJ)$", "");
     }
@@ -257,18 +307,21 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             }
             BigDecimal netFlow = requiredDecimal(row, "主力净流入-净额", "净流入", "value");
             BigDecimal referenceAssets = requiredDecimal(row, "流通市值", "总市值", "referenceAssets");
-            LocalTime updateTime = optionalTime(firstText(row, "更新时间", "updateTime"), "更新时间");
+            LocalDateTime updateTime = requiredUpdateDateTime(
+                    firstText(row, "更新时间", "updateTime"), date, "更新时间");
             EtfAggregate aggregate = byDate.computeIfAbsent(date, ignored -> new EtfAggregate());
             aggregate.netFlow = aggregate.netFlow.add(netFlow);
             aggregate.referenceAssets = aggregate.referenceAssets.add(referenceAssets);
-            aggregate.observedAt = later(aggregate.observedAt, date.atTime(updateTime));
+            aggregate.observedAt = later(aggregate.observedAt, updateTime);
         }
         List<FlowEventSourceRecord> records = new ArrayList<>();
         byDate.forEach((date, aggregate) -> {
             Map<String, Object> attributes = Map.of("referenceAssets", aggregate.referenceAssets);
             String id = "etf_fund_flow:CN-A:" + date;
+            LocalDateTime conservativeAvailability = later(
+                    date.plusDays(1).atStartOfDay(), aggregate.observedAt);
             records.add(record(id, CN_A, date, aggregate.observedAt, aggregate.observedAt,
-                    date.plusDays(1).atStartOfDay(), aggregate.netFlow, "net_flow",
+                    conservativeAvailability, aggregate.netFlow, "net_flow",
                     "ETF 主力净流入", attributes));
         });
         return records;
@@ -497,13 +550,33 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         }
     }
 
-    private LocalTime optionalTime(String value, String field) {
+    private LocalDateTime requiredUpdateDateTime(String value, LocalDate dataDate, String field) {
         if (!StringUtils.hasText(value)) {
             throw new PointInTimeException(field + " missing");
         }
+        String normalized = value.trim().replace(' ', 'T');
         try {
-            return LocalTime.parse(value.trim());
-        } catch (RuntimeException exception) {
+            return dataDate.atTime(LocalTime.parse(normalized));
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // 继续尝试官方完整 datetime 格式。
+        }
+        try {
+            return OffsetDateTime.parse(normalized)
+                    .atZoneSameInstant(clock.getZone())
+                    .toLocalDateTime();
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // 继续尝试带区域或无偏移的 ISO datetime。
+        }
+        try {
+            return ZonedDateTime.parse(normalized)
+                    .withZoneSameInstant(clock.getZone())
+                    .toLocalDateTime();
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // 继续尝试本地 datetime。
+        }
+        try {
+            return LocalDateTime.parse(normalized);
+        } catch (java.time.format.DateTimeParseException exception) {
             throw new PointInTimeException(field + " invalid time: " + value);
         }
     }
