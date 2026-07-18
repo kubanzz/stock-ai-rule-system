@@ -216,22 +216,23 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
-    void levelFilteredPageDoesNotExposeAFormalConclusionForStaleRows() {
+    void unfilteredAuditPageReturnsStaleRowsWithoutAFormalConclusion() {
         RiskScoreSnapshotEntity staleCritical = snapshot(
                 21L, "1-5d", "0.95", "stale", "critical", "stock", "600519.SH");
         when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
         when(snapshotMapper.countObjectPage(
-                "stock", "critical", "1-5d", TRADE_DATE, null, null, null
+                "stock", null, "1-5d", TRADE_DATE, null, null, null
         )).thenReturn(1L);
         when(snapshotMapper.selectObjectPage(
-                "stock", "critical", "1-5d", TRADE_DATE, null,
+                "stock", null, "1-5d", TRADE_DATE, null,
                 null, null, 0L, 20
         )).thenReturn(List.of(staleCritical));
 
         PageResult<RiskObjectListItem> page = service.listObjects(
-                "stock", "critical", "1-5d", null, null,
+                "stock", null, "1-5d", null, null,
                 null, null, 1, 20);
 
+        assertThat(page.getTotal()).isEqualTo(1);
         assertThat(page.getRows()).singleElement().satisfies(item -> {
             assertThat(item.snapshot().totalScore()).isNull();
             assertThat(item.snapshot().level()).isNull();
