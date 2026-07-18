@@ -61,14 +61,14 @@ public final class JdbcRiskSignalCandidateReader implements RiskSignalCandidateR
                 .addValue("asOf", asOf);
         Map<String, StoredSignal> signals = new LinkedHashMap<>();
         jdbcTemplate.query("""
-                SELECT id, symbol, signal_direction, confidence, created_at
-                FROM stock_signal_daily
+                SELECT id, symbol, signal_direction, confidence, available_at
+                FROM stock_signal_daily_history
                 WHERE signal_date = :tradeDate
                   AND symbol IN (:symbols)
-                  AND created_at <= :asOf
+                  AND available_at <= :asOf
                   AND signal_direction IS NOT NULL
                   AND confidence IS NOT NULL
-                ORDER BY symbol, created_at DESC, id DESC
+                ORDER BY symbol, available_at DESC, id DESC
                 """, parameters, this::mapSignal).forEach(signal -> signals.putIfAbsent(signal.symbol(), signal));
 
         Map<String, List<IndustryExposure>> exposures = new LinkedHashMap<>();

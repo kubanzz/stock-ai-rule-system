@@ -16,9 +16,11 @@ import com.jx.tracker.rule.engine.RuleEngineExecutor;
 import com.jx.tracker.rule.engine.RuleExecutionRequest;
 import com.jx.tracker.rule.engine.RuleExecutionResult;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +47,7 @@ public class StockSignalService {
         this.signalScoringService = signalScoringService;
     }
 
+    @Transactional
     public StockSignalDaily generateDailySignal(String symbol, LocalDate signalDate, Map<String, Object> factors) {
         List<RuleDefinition> activeRules = ruleDefinitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>()
                 .eq(RuleDefinition::getStatus, RuleLifecycleStatus.ACTIVE.getCode())
@@ -82,11 +85,12 @@ public class StockSignalService {
                 .eq(StockSignalDaily::getSignalDate, signalDate));
         if (existing == null) {
             stockSignalDailyMapper.insert(signal);
-            return signal;
+        } else {
+            signal.setId(existing.getId());
+            stockSignalDailyMapper.updateById(signal);
         }
 
-        signal.setId(existing.getId());
-        stockSignalDailyMapper.updateById(signal);
+        stockSignalDailyMapper.insertSignalHistory(signal, LocalDateTime.now());
         return signal;
     }
 
@@ -108,6 +112,7 @@ public class StockSignalService {
                 .last(signalDate == null, "LIMIT 1"));
     }
 
+    @Transactional
     public List<StockSignalDaily> generateDailySignalsFromFactors(LocalDate signalDate, List<String> symbols) {
         LambdaQueryWrapper<StockFactorDaily> wrapper = new LambdaQueryWrapper<StockFactorDaily>()
                 .eq(signalDate != null, StockFactorDaily::getTradeDate, signalDate)

@@ -229,6 +229,9 @@ class StockSignalServiceTest {
                         insertedSignal.set((StockSignalDaily) args[0]);
                         return 1;
                     }
+                    if ("insertSignalHistory".equals(method.getName())) {
+                        return 1;
+                    }
                     throw new UnsupportedOperationException(method.getName());
                 }
         );

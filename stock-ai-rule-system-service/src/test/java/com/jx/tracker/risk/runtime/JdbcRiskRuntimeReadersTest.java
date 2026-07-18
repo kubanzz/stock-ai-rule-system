@@ -44,6 +44,13 @@ class JdbcRiskRuntimeReadersTest {
                 )
                 """);
         jdbc.execute("""
+                CREATE TABLE stock_signal_daily_history (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, signal_id BIGINT,
+                    symbol VARCHAR(32), signal_date DATE, signal_direction VARCHAR(16),
+                    confidence DECIMAL(8, 5), available_at TIMESTAMP
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE risk_object_exposure (
                     object_type VARCHAR(16), object_id VARCHAR(64),
                     parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
@@ -72,13 +79,22 @@ class JdbcRiskRuntimeReadersTest {
     void candidateReaderUsesPersistedDirectionConfidenceAndPointInTimeExposure() {
         jdbc.update("""
                 INSERT INTO stock_signal_daily VALUES
-                (1, '600519.SH', ?, 'bullish', 0.82, ?),
-                (2, '000001.SZ', ?, 'watch', 0.55, ?),
-                (3, '600519.SH', ?, 'bearish', 0.91, ?)
+                (1, '600519.SH', ?, 'bearish', 0.91, ?),
+                (2, '000001.SZ', ?, 'watch', 0.55, ?)
                 """,
                 DATE, DATE.atTime(18, 0),
-                DATE, DATE.atTime(18, 5),
-                DATE, DATE.atTime(20, 1));
+                DATE, DATE.atTime(18, 5));
+        jdbc.update("""
+                INSERT INTO stock_signal_daily_history
+                    (signal_id, symbol, signal_date, signal_direction, confidence, available_at)
+                VALUES
+                    (1, '600519.SH', ?, 'bullish', 0.82, ?),
+                    (1, '600519.SH', ?, 'bearish', 0.91, ?),
+                    (2, '000001.SZ', ?, 'watch', 0.55, ?)
+                """,
+                DATE, DATE.atTime(18, 0),
+                DATE, DATE.atTime(20, 1),
+                DATE, DATE.atTime(18, 5));
         jdbc.update("""
                 INSERT INTO risk_object_exposure VALUES
                 ('stock', '600519.SH', 'sector', 'SW1:801110', ?, ?, ?, ?, 'source-a', 'available'),
@@ -117,6 +133,46 @@ class JdbcRiskRuntimeReadersTest {
                 });
         assertThat(candidates).extracting(RiskSignalCandidate::horizon)
                 .containsOnly(RiskHorizon.values());
+    }
+
+    @Test
+    void candidateReaderReturnsTheVersionThatWasAvailableAtTheRequestedCutoff() {
+        jdbc.update("""
+                INSERT INTO stock_signal_daily VALUES
+                    (1, '600519.SH', ?, 'bearish', 0.91, ?)
+                """, DATE, DATE.atTime(18, 0));
+        jdbc.update("""
+                INSERT INTO stock_signal_daily_history
+                    (signal_id, symbol, signal_date, signal_direction, confidence, available_at)
+                VALUES
+                    (1, '600519.SH', ?, 'bullish', 0.82, ?),
+                    (1, '600519.SH', ?, 'bearish', 0.91, ?)
+                """,
+                DATE, DATE.atTime(18, 0),
+                DATE, DATE.atTime(20, 1));
+
+        JdbcRiskSignalCandidateReader reader = new JdbcRiskSignalCandidateReader(jdbc);
+        List<RiskSignalCandidate> beforeUpdate = reader.read(
+                DATE,
+                List.of(stock("600519.SH")),
+                List.of(RiskHorizon.SHORT_TERM),
+                AS_OF
+        );
+        List<RiskSignalCandidate> afterUpdate = reader.read(
+                DATE,
+                List.of(stock("600519.SH")),
+                List.of(RiskHorizon.SHORT_TERM),
+                DATE.atTime(20, 2)
+        );
+
+        assertThat(beforeUpdate).singleElement().satisfies(candidate -> {
+            assertThat(candidate.direction()).isEqualTo(SignalDirection.BULLISH);
+            assertThat(candidate.originalConfidence()).isEqualByComparingTo("0.82");
+        });
+        assertThat(afterUpdate).singleElement().satisfies(candidate -> {
+            assertThat(candidate.direction()).isEqualTo(SignalDirection.BEARISH);
+            assertThat(candidate.originalConfidence()).isEqualByComparingTo("0.91");
+        });
     }
 
     private RiskObjectKey market() {
