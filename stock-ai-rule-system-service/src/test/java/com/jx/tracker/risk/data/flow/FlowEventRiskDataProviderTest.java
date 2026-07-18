@@ -62,8 +62,16 @@ class FlowEventRiskDataProviderTest {
         FlowEventRiskDataProvider failedProvider = new FlowEventRiskDataProvider(
                 request -> FlowEventSourceBatch.unavailable("aktools", "source timeout", AVAILABLE_AT));
 
-        assertThat(emptyProvider.fetch("stock_announcement", request(List.of(RiskHorizon.SHORT_TERM), null))
-                .qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        RiskProviderBatch empty = emptyProvider.fetch(
+                "stock_announcement", request(List.of(RiskHorizon.SHORT_TERM), null));
+        assertThat(empty.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        assertThat(empty.observations()).hasSize(4).allSatisfy(observation -> {
+            assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+            assertThat(observation.value()).isZero();
+            assertThat(observation.attributes())
+                    .containsEntry("validZeroAudit", true)
+                    .containsEntry("datasetCode", "stock_announcement");
+        });
         RiskProviderBatch failed = failedProvider.fetch(
                 "stock_announcement", request(List.of(RiskHorizon.SHORT_TERM), null));
         assertThat(failed.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
@@ -167,7 +175,8 @@ class FlowEventRiskDataProviderTest {
                 "earnings_forecast", request(List.of(RiskHorizon.SHORT_TERM), null));
 
         assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
-        assertThat(batch.observations()).isEmpty();
+        assertThat(batch.observations()).singleElement()
+                .satisfies(item -> assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO));
         assertThat(batch.events()).isEmpty();
     }
 
@@ -187,7 +196,8 @@ class FlowEventRiskDataProviderTest {
                 "earnings_forecast", request(List.of(RiskHorizon.SHORT_TERM), null));
 
         assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
-        assertThat(batch.observations()).isEmpty();
+        assertThat(batch.observations()).singleElement()
+                .satisfies(item -> assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO));
         assertThat(batch.events()).isEmpty();
     }
 

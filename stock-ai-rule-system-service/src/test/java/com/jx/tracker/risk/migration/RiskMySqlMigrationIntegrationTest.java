@@ -52,6 +52,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(first.migrationsExecuted).isEqualTo(2);
             assertThat(repeated.migrationsExecuted).isZero();
             assertJsonCheckpointRoundTrip(schema);
+            assertCompositeObservationComponentsDoNotOverwrite(schema);
             assertLayeredEvidenceDoesNotOverwrite(schema);
             assertExposureRevisionIsMonotonic(schema);
         } finally {
@@ -80,6 +81,7 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(upgraded.migrationsExecuted).isEqualTo(1);
             assertThat(currentVersion(schema)).isEqualTo("2");
             assertJsonCheckpointRoundTrip(schema);
+            assertCompositeObservationComponentsDoNotOverwrite(schema);
             assertLayeredEvidenceDoesNotOverwrite(schema);
             assertExposureRevisionIsMonotonic(schema);
         } finally {
@@ -124,6 +126,33 @@ class RiskMySqlMigrationIntegrationTest {
                      """)) {
             assertThat(result.next()).isTrue();
             assertThat(result.getString(1)).isEqualTo("2026-07-18");
+        }
+    }
+
+    private void assertCompositeObservationComponentsDoNotOverwrite(String schema) throws Exception {
+        execute(schema, """
+                INSERT INTO risk_indicator_observation (
+                    object_type, object_id, horizon, trade_date, dimension_code,
+                    indicator_code, component_code, indicator_value, unit,
+                    observed_at, available_at, source, quality_status, payload_json
+                ) VALUES
+                    ('market', 'CN-A', '1-5d', '2026-07-18', 'V', 'V1', 'peTtm',
+                     30, 'multiple', '2026-07-18 15:00:00.000', '2026-07-18 16:00:00.000',
+                     'aktools', 'available', JSON_OBJECT('metric', 'peTtm')),
+                    ('market', 'CN-A', '1-5d', '2026-07-18', 'V', 'V1', 'riskPremium',
+                     0.02, 'ratio', '2026-07-18 15:00:00.000', '2026-07-18 16:00:00.000',
+                     'aktools', 'available', JSON_OBJECT('metric', 'riskPremium'))
+                """);
+        try (Connection connection = connection(schema);
+             Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("""
+                     SELECT COUNT(DISTINCT component_code)
+                     FROM risk_indicator_observation
+                     WHERE object_type = 'market' AND object_id = 'CN-A'
+                       AND indicator_code = 'V1' AND trade_date = '2026-07-18'
+                     """)) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getInt(1)).isEqualTo(2);
         }
     }
 

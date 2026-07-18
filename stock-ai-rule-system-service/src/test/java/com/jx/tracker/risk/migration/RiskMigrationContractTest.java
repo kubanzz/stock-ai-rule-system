@@ -27,6 +27,7 @@ class RiskMigrationContractTest {
         assertThat(migration).contains(
                 "CREATE TABLE risk_object_exposure",
                 "CREATE TABLE risk_indicator_observation",
+                "component_code VARCHAR(64) NOT NULL",
                 "CREATE TABLE risk_event_fact",
                 "CREATE TABLE risk_score_snapshot",
                 "CREATE TABLE risk_score_evidence",
@@ -40,6 +41,7 @@ class RiskMigrationContractTest {
                 "layer_object_id VARCHAR(64) NOT NULL",
                 "UNIQUE KEY uk_risk_score_snapshot_object_horizon_date_model",
                 "UNIQUE KEY uk_risk_score_evidence_snapshot_layer_indicator_source",
+                "object_type, object_id, horizon, trade_date, indicator_code, component_code, source",
                 "CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100))",
                 "CHECK (m_score IS NULL OR (m_score >= 0.90 AND m_score <= 1.20))",
                 "CHECK (risk_confidence IS NULL OR (risk_confidence >= 0 AND risk_confidence <= 1))",

@@ -79,14 +79,15 @@ public final class RiskLayerComposer {
             SnapshotScore score
     ) {
         BigDecimal weighted = BigDecimal.ZERO;
+        boolean present = false;
         for (WeightedLayer layer : layers) {
             BigDecimal layerScore = score.get(layer.snapshot());
-            if (layerScore == null) {
-                return null;
+            if (layerScore != null) {
+                present = true;
+                weighted = weighted.add(layerScore.multiply(layer.weight()));
             }
-            weighted = weighted.add(layerScore.multiply(layer.weight()));
         }
-        return weighted.setScale(4, RoundingMode.HALF_UP);
+        return present ? weighted.setScale(4, RoundingMode.HALF_UP) : null;
     }
 
     private boolean isConfirmed(RiskSnapshot snapshot) {

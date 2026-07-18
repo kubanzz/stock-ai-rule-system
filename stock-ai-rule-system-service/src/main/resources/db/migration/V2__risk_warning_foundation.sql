@@ -85,6 +85,7 @@ CREATE TABLE risk_indicator_observation (
     trade_date DATE NOT NULL,
     dimension_code CHAR(1) NOT NULL COMMENT 'V/T/S/C/A',
     indicator_code VARCHAR(64) NOT NULL,
+    component_code VARCHAR(64) NOT NULL COMMENT '复合指标子项；单项默认与指标代码一致',
     indicator_value DECIMAL(30,10) NULL COMMENT '不可用时保持 NULL，不以 0 代替',
     unit VARCHAR(32) NOT NULL,
     observed_at DATETIME(3) NOT NULL,
@@ -94,7 +95,7 @@ CREATE TABLE risk_indicator_observation (
     payload_json JSON NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY uk_risk_indicator_object_code_date_source (
-        object_type, object_id, horizon, trade_date, indicator_code, source
+        object_type, object_id, horizon, trade_date, indicator_code, component_code, source
     ),
     KEY idx_risk_indicator_object_date (object_type, object_id, trade_date),
     KEY idx_risk_indicator_dimension_date (dimension_code, trade_date),

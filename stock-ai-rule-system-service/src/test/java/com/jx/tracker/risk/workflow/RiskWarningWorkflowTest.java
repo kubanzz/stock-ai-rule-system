@@ -5,6 +5,9 @@ import com.jx.tracker.risk.engine.RiskScoreRequest;
 import com.jx.tracker.risk.engine.RiskScoreResult;
 import com.jx.tracker.risk.engine.RiskLayerScoreRequest;
 import com.jx.tracker.risk.engine.RiskNormalizer;
+import com.jx.tracker.risk.engine.RiskScoringEngine;
+import com.jx.tracker.risk.engine.RiskIndicatorCatalog;
+import com.jx.tracker.risk.engine.RiskIndicatorComponentCatalog;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventSourceBatch;
@@ -31,6 +34,8 @@ import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
+import com.jx.tracker.risk.runtime.RiskWorkflowPlan;
+import com.jx.tracker.risk.runtime.RiskWorkflowPlanner;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -580,13 +585,14 @@ class RiskWarningWorkflowTest {
         InMemoryRepository repository = new InMemoryRepository();
         addExposure(repository);
         for (RiskHorizon horizon : RiskHorizon.values()) {
-            for (int day = 59; day >= 0; day--) {
-                LocalDate historyDate = DATE.minusDays(day);
-                BigDecimal value = BigDecimal.valueOf(60L - day);
+            for (int index = 0; index < 1_250; index++) {
+                LocalDate historyDate = DATE.minusDays(1_249L - index);
                 repository.saveObservation(confirmationObservation(
-                        horizon, historyDate, RiskDimension.LOCAL_CONFIRMATION, "C1", value));
+                        horizon, historyDate, RiskDimension.LOCAL_CONFIRMATION, "C1",
+                        BigDecimal.valueOf(1_250L - index)));
                 repository.saveObservation(confirmationObservation(
-                        horizon, historyDate, RiskDimension.FORCED_SELLING, "A2", value));
+                        horizon, historyDate, RiskDimension.FORCED_SELLING, "A2",
+                        BigDecimal.valueOf(index + 1L)));
             }
         }
         FlowEventSourceRecord reduction = new FlowEventSourceRecord(
@@ -626,6 +632,97 @@ class RiskWarningWorkflowTest {
             assertThat((BigDecimal) event.payload().get("modifierSeverity"))
                     .isEqualByComparingTo("100");
         });
+    }
+
+    @Test
+    void realPlannerEngineAndComposerCloseWithInheritedTransmissionAndFiveYearBaseline() {
+        RiskWorkflowPlan plan = new RiskWorkflowPlanner(() -> List.of(STOCK.objectId())).plan(List.of());
+        InMemoryRepository repository = new InMemoryRepository();
+        PlannerMarketFixtureProvider marketProvider = new PlannerMarketFixtureProvider(fullBaselineObservations());
+        RiskDataProvider emptyFlowProvider = new RiskDataProvider() {
+            @Override
+            public String providerCode() {
+                return "flow-event";
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return true;
+            }
+
+            @Override
+            public RiskProviderBatch fetch(String datasetCode, RiskProviderRequest request) {
+                return RiskProviderBatch.validZero("fixture-flow", null, AS_OF);
+            }
+        };
+        RiskWarningWorkflow workflow = new RiskWarningWorkflow(
+                List.of(marketProvider, emptyFlowProvider), repository,
+                new PercentileRiskEvidenceAssembler(new RiskNormalizer()),
+                new DefaultRiskSnapshotEvaluator(new RiskScoringEngine()), new ShadowRiskGate());
+
+        workflow.run(RiskWorkflowRequest.daily(
+                DATE, AS_OF, plan.collectionTasks(), List.of(RiskHorizon.SHORT_TERM),
+                List.of(), "risk-engine-closure-v1"));
+
+        assertThat(plan.collectionTasks()).hasSize(12);
+        RiskSnapshot market = storedSnapshot(repository, MARKET);
+        RiskSnapshot sector = storedSnapshot(repository, SECTOR);
+        RiskSnapshot stock = storedSnapshot(repository, STOCK);
+        assertThat(List.of(market, sector, stock)).allSatisfy(snapshot -> {
+            assertThat(snapshot.totalScore()).isNotNull();
+            assertThat(snapshot.completeness()).isGreaterThanOrEqualTo(new BigDecimal("0.80"));
+            assertThat(snapshot.sScore()).isNotNull();
+        });
+        assertThat(sector.evidence()).filteredOn(item -> item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
+                .allSatisfy(item -> assertThat(item.details())
+                        .containsEntry("inherited", true)
+                        .containsEntry("inheritedFromObjectId", "CN-A"));
+        assertThat(stock.sScore()).isEqualByComparingTo(market.sScore());
+        assertThat(stock.evidence()).filteredOn(item ->
+                        item.dimension() == RiskDimension.EXTERNAL_TRANSMISSION
+                                && STOCK.objectId().equals(item.details().get("layerObjectId")))
+                .allSatisfy(item -> assertThat(item.details()).containsEntry("inherited", true));
+    }
+
+    private RiskSnapshot storedSnapshot(InMemoryRepository repository, RiskObjectKey object) {
+        return repository.snapshots.values().stream()
+                .map(StoredRiskSnapshot::snapshot)
+                .filter(snapshot -> snapshot.object().equals(object))
+                .filter(snapshot -> snapshot.tradeDate().equals(DATE))
+                .findFirst().orElseThrow();
+    }
+
+    private List<RiskObservation> fullBaselineObservations() {
+        List<RiskObservation> observations = new ArrayList<>();
+        List<RiskObjectKey> localObjects = List.of(MARKET, SECTOR, STOCK);
+        for (int index = 0; index < 1_250; index++) {
+            LocalDate date = DATE.minusDays(1_249L - index);
+            BigDecimal value = BigDecimal.valueOf(index % 100 + 1L);
+            for (var definition : RiskIndicatorCatalog.definitions()) {
+                if (definition.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER) {
+                    continue;
+                }
+                List<RiskObjectKey> objects = definition.dimension() == RiskDimension.EXTERNAL_TRANSMISSION
+                        ? List.of(MARKET) : localObjects;
+                List<String> components = RiskIndicatorComponentCatalog.components(definition.code()).stream()
+                        .map(RiskIndicatorComponentCatalog.ComponentDefinition::code).toList();
+                if (components.isEmpty()) {
+                    components = List.of(definition.code());
+                }
+                for (RiskObjectKey object : objects) {
+                    for (String component : components) {
+                        observations.add(new RiskObservation(
+                                object, RiskHorizon.SHORT_TERM, date, definition.dimension(),
+                                definition.code(), component, value, "score",
+                                date.atTime(18, 0), date.atTime(19, 0), "fixture-market",
+                                RiskDataQualityStatus.AVAILABLE,
+                                Map.of("metric", component, "datasetCode", "market_daily",
+                                        "tradingDay", true, "marketPrice", true)));
+                    }
+                }
+            }
+        }
+        return List.copyOf(observations);
     }
 
     @Test
@@ -849,6 +946,7 @@ class RiskWarningWorkflowTest {
     private Map<String, Object> confirmationAttributes(String indicatorCode) {
         if ("C1".equals(indicatorCode)) {
             return Map.of(
+                    "metric", "leaderRelativeReturn",
                     "pointInTime", true,
                     "datasetCode", "market_daily",
                     "tradingDay", true,
@@ -1087,7 +1185,8 @@ class RiskWarningWorkflowTest {
         @Override
         public void saveObservation(RiskObservation observation) {
             observations.put(observation.object() + ":" + observation.horizon() + ":"
-                    + observation.tradeDate() + ":" + observation.indicatorCode() + ":" + observation.source(), observation);
+                    + observation.tradeDate() + ":" + observation.indicatorCode() + ":"
+                    + observation.componentCode() + ":" + observation.source(), observation);
         }
 
         @Override
@@ -1170,6 +1269,43 @@ class RiskWarningWorkflowTest {
                              LocalDateTime observedAt, LocalDateTime availableAt) {
             gates.put(result.signalReference() + ":" + result.decision().horizon() + ":"
                     + result.decision().modelVersion(), result);
+        }
+    }
+
+    private static final class PlannerMarketFixtureProvider implements RiskDataProvider {
+        private final List<RiskObservation> observations;
+
+        private PlannerMarketFixtureProvider(List<RiskObservation> observations) {
+            this.observations = observations;
+        }
+
+        @Override
+        public String providerCode() {
+            return MarketRiskDataProvider.PROVIDER_CODE;
+        }
+
+        @Override
+        public boolean supports(String datasetCode) {
+            return true;
+        }
+
+        @Override
+        public RiskProviderBatch fetch(String datasetCode, RiskProviderRequest request) {
+            if (MarketDatasetCode.CN_A_STOCK_MASTER.code().equals(datasetCode)) {
+                return new RiskProviderBatch(
+                        "fixture-market", observations, List.of(), List.of(), null,
+                        RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+            }
+            if (MarketDatasetCode.SW1_MEMBERSHIP.code().equals(datasetCode)) {
+                IndustryExposure exposure = new IndustryExposure(
+                        STOCK, SECTOR, DATE.minusYears(5), null,
+                        AS_OF.minusHours(2), AS_OF.minusHours(1), "fixture-market",
+                        RiskDataQualityStatus.AVAILABLE);
+                return new RiskProviderBatch(
+                        "fixture-market", List.of(), List.of(), List.of(exposure), null,
+                        RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+            }
+            return RiskProviderBatch.validZero("fixture-market", null, AS_OF);
         }
     }
 

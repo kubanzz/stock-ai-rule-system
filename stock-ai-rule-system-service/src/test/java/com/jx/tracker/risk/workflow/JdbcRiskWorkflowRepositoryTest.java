@@ -147,7 +147,8 @@ class JdbcRiskWorkflowRepositoryTest {
         jdbc.execute("""
                 CREATE TABLE risk_indicator_observation (
                     object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
-                    dimension_code CHAR(1), indicator_code VARCHAR(64), indicator_value DECIMAL,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL,
                     unit VARCHAR(32), observed_at TIMESTAMP, available_at TIMESTAMP,
                     source VARCHAR(64), quality_status VARCHAR(32), payload_json VARCHAR(1024))
                 """);
@@ -155,10 +156,10 @@ class JdbcRiskWorkflowRepositoryTest {
         LocalDateTime at = date.atTime(18, 0);
         jdbc.update("""
                 INSERT INTO risk_indicator_observation VALUES
-                ('market', 'CN-A', '1-5d', ?, 'V', 'V1', 10, 'ratio', ?, ?, 'source-a', 'available', '{}'),
-                ('sector', 'SW1:801780', '1-5d', ?, 'V', 'V2', 20, 'ratio', ?, ?, 'source-a', 'available', '{}'),
-                ('stock', '600519.SH', '1-5d', ?, 'V', 'V3', 30, 'ratio', ?, ?, 'source-a', 'available', '{}'),
-                ('stock', '000001.SZ', '1-5d', ?, 'V', 'V4', 40, 'ratio', ?, ?, 'source-a', 'available', '{}')
+                ('market', 'CN-A', '1-5d', ?, 'V', 'V1', 'V1', 10, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('sector', 'SW1:801780', '1-5d', ?, 'V', 'V2', 'V2', 20, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('stock', '600519.SH', '1-5d', ?, 'V', 'V3', 'V3', 30, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('stock', '000001.SZ', '1-5d', ?, 'V', 'V4', 'V4', 40, 'ratio', ?, ?, 'source-a', 'available', '{}')
                 """, date, at, at, date, at, at, date, at, at, date, at, at);
         RiskWorkflowRequest request = RiskWorkflowRequest.daily(
                 date, date.atTime(20, 0),
