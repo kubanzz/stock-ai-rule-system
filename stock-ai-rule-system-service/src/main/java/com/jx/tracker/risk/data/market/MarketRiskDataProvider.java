@@ -200,6 +200,10 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
         if (record.availableAt().isAfter(evaluationCutoff)) {
             return false;
         }
+        if ((dataset == MarketDatasetCode.CN_A_STOCK_MASTER || dataset == MarketDatasetCode.SW1_MEMBERSHIP)
+                && !request.objects().contains(record.object())) {
+            return false;
+        }
         validateCanonicalObject(record.object());
         if (record instanceof IndustryExposure exposure) {
             validateCanonicalObject(exposure.sector());
