@@ -150,4 +150,23 @@ describe('risk center interactions', () => {
     app.unmount();
     container.remove();
   });
+
+  it('clears the selected object when its detail request fails', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const app = createApp(RiskCenter);
+    app.mount(container);
+    await flushAsyncWork();
+    expect(container.querySelector('.object-row.selected')).not.toBeNull();
+
+    riskApi.getRiskObjectDetail.mockRejectedValueOnce(
+      new Error('detail unavailable'),
+    );
+    container.querySelector<HTMLButtonElement>('.sector-cell')?.click();
+    await flushAsyncWork();
+
+    expect(container.querySelector('.object-row.selected')).toBeNull();
+    app.unmount();
+    container.remove();
+  });
 });

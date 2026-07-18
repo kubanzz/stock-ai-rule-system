@@ -131,6 +131,7 @@ async function loadDetail(item: RiskObjectListItem) {
     trend.value = trendResult;
   } catch (error) {
     if (!detailRequests.isCurrent(requestId)) return;
+    selected.value = undefined;
     detail.value = undefined;
     trend.value = [];
     message.error(error instanceof Error ? error.message : '风险详情加载失败');

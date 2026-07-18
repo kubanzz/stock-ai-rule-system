@@ -179,7 +179,7 @@ describe('risk api contract', () => {
       stocks.every(
         (item) =>
           item.parentObject?.objectId === sector?.object.objectId &&
-          item.parentObject.objectType === 'sector',
+          item.parentObject?.objectType === 'sector',
       ),
     ).toBe(true);
   });
