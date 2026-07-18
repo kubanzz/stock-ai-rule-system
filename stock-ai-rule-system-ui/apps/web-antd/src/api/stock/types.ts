@@ -1,3 +1,5 @@
+import type { RiskGateDecision, RiskHorizon, RiskSnapshot } from './risk/types';
+
 export type SignalType = 'bearish' | 'bullish' | 'high_risk' | 'watch';
 export type DashboardSignalFilter = 'pending' | SignalType;
 
@@ -105,6 +107,8 @@ export interface SignalDashboardRow {
   name?: string;
   price?: number;
   quoteStatus: 'pending' | 'ready';
+  riskGateDecision?: RiskGateDecision;
+  riskSnapshot: null | RiskSnapshot;
   riskScore: null | number;
   signal: null | SignalType;
   signalStatus: 'pending' | 'ready';
@@ -154,6 +158,7 @@ export interface SignalDashboardOverview {
   pageNum: number;
   pageSize: number;
   riskDisclaimer: string;
+  riskHorizon: RiskHorizon;
   signals: SignalDashboardRow[];
   total: number;
   tradeDate?: string;
@@ -168,6 +173,7 @@ export interface SignalDashboardQuery {
   pageNum?: number;
   pageSize?: number;
   poolCode?: string;
+  riskHorizon?: RiskHorizon;
   signal?: DashboardSignalFilter;
   sortField?: string;
   sortOrder?: 'asc' | 'desc';
