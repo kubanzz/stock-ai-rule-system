@@ -94,6 +94,22 @@ class RiskContractsTest {
     }
 
     @Test
+    void formalRiskConclusionFieldsMustBeAllPresentOrAllAbsent() {
+        assertThatThrownBy(() -> snapshotWithConclusion(
+                new BigDecimal("85"), RiskLevel.WARNING, null, new BigDecimal("0.90")
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("formal risk tuple")
+                .hasMessageContaining("all present or all absent");
+
+        assertThatThrownBy(() -> snapshotWithConclusion(
+                null, RiskLevel.WARNING, RiskStage.REPRICING, new BigDecimal("0.90")
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("formal risk tuple");
+
+        assertThat(snapshotWithConclusion(null, null, null, null).level()).isNull();
+    }
+
+    @Test
     void validatesTimeCorrectionFactorInsteadOfTreatingMAsAZeroToHundredScore() {
         assertThatThrownBy(() -> snapshotWithM(new BigDecimal("0.89")))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -130,6 +146,17 @@ class RiskContractsTest {
                 decision.originalConfidence(), decision.suggestedConfidence(), decision.suggestedAction(),
                 true, decision.reason(), decision.modelVersion(), decision.calculatedAt()
         )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("shadow");
+
+        assertThatThrownBy(() -> new GateDecision(
+                decision.object(), decision.horizon(), decision.tradeDate(), decision.signalDirection(),
+                null, decision.suggestedConfidence(), decision.suggestedAction(),
+                false, decision.reason(), decision.modelVersion(), decision.calculatedAt()
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("originalConfidence");
+        assertThatThrownBy(() -> new GateDecision(
+                decision.object(), decision.horizon(), decision.tradeDate(), decision.signalDirection(),
+                decision.originalConfidence(), null, decision.suggestedAction(),
+                false, decision.reason(), decision.modelVersion(), decision.calculatedAt()
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("suggestedConfidence");
     }
 
     @Test
@@ -213,6 +240,23 @@ class RiskContractsTest {
                 LocalDate.of(2026, 7, 18),
                 null, null, null, null, null, mScore, null,
                 null, null, new BigDecimal("0.50"), null,
+                List.of(), "risk-v1", AVAILABLE_AT
+        );
+    }
+
+    private RiskSnapshot snapshotWithConclusion(
+            BigDecimal totalScore,
+            RiskLevel level,
+            RiskStage stage,
+            BigDecimal riskConfidence
+    ) {
+        return new RiskSnapshot(
+                new RiskObjectKey(RiskObjectType.MARKET, "CN-A"),
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                new BigDecimal("85"), new BigDecimal("85"), new BigDecimal("85"),
+                new BigDecimal("85"), new BigDecimal("85"), new BigDecimal("1.05"), totalScore,
+                level, stage, new BigDecimal("0.80"), riskConfidence,
                 List.of(), "risk-v1", AVAILABLE_AT
         );
     }

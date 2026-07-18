@@ -42,10 +42,17 @@ public record RiskProviderBatch(
         if (qualityStatus == RiskDataQualityStatus.AVAILABLE && errorMessage != null) {
             throw new IllegalArgumentException("available batch must not include errorMessage");
         }
+        if (qualityStatus == RiskDataQualityStatus.AVAILABLE
+                && observations.isEmpty() && events.isEmpty()) {
+            throw new IllegalArgumentException("available batch must contain at least one record");
+        }
     }
 
-    public static RiskProviderBatch validZero(String source, RiskIngestionCheckpoint nextCheckpoint) {
-        LocalDateTime fetchedAt = nextCheckpoint == null ? LocalDateTime.now() : nextCheckpoint.checkpointAt();
+    public static RiskProviderBatch validZero(
+            String source,
+            RiskIngestionCheckpoint nextCheckpoint,
+            LocalDateTime fetchedAt
+    ) {
         return new RiskProviderBatch(
                 source, List.of(), List.of(), nextCheckpoint, RiskDataQualityStatus.VALID_ZERO, null, fetchedAt
         );

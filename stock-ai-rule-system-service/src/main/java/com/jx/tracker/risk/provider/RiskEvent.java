@@ -9,6 +9,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+/**
+ * 风险事件事实。occurredAt 表示事件实际或计划生效时间，允许晚于首次观测时间；
+ * observedAt 表示数据源首次观测时间，availableAt 表示系统可用于计算的时间。
+ */
 public record RiskEvent(
         RiskObjectKey object,
         LocalDate tradeDate,
@@ -37,8 +41,8 @@ public record RiskEvent(
                 && (severityScore.signum() < 0 || severityScore.compareTo(new BigDecimal("100")) > 0)) {
             throw new IllegalArgumentException("severityScore must be between 0 and 100");
         }
-        if (observedAt.isBefore(occurredAt) || availableAt.isBefore(observedAt)) {
-            throw new IllegalArgumentException("event timestamps must satisfy occurredAt <= observedAt <= availableAt");
+        if (availableAt.isBefore(observedAt)) {
+            throw new IllegalArgumentException("event timestamps must satisfy observedAt <= availableAt");
         }
         payload = payload == null ? Map.of() : Map.copyOf(payload);
     }

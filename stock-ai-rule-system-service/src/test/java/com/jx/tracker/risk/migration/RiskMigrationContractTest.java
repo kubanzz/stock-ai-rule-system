@@ -40,8 +40,30 @@ class RiskMigrationContractTest {
                 "CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100))",
                 "CHECK (m_score IS NULL OR (m_score >= 0.90 AND m_score <= 1.20))",
                 "CHECK (risk_confidence IS NULL OR (risk_confidence >= 0 AND risk_confidence <= 1))",
-                "CHECK (original_confidence IS NULL OR (original_confidence >= 0 AND original_confidence <= 1))"
+                "original_confidence DECIMAL(6,5) NOT NULL",
+                "suggested_confidence DECIMAL(6,5) NOT NULL",
+                "CHECK (original_confidence >= 0 AND original_confidence <= 1)",
+                "CHECK (suggested_confidence >= 0 AND suggested_confidence <= 1)"
         );
+    }
+
+    @Test
+    void scheduledEventsMayBecomeEffectiveAfterTheyAreObserved() throws IOException {
+        String migration = resource("/db/migration/V2__risk_warning_foundation.sql");
+        String eventTable = between(
+                migration,
+                "CREATE TABLE risk_event_fact",
+                "CREATE TABLE risk_score_snapshot"
+        );
+
+        assertThat(eventTable)
+                .contains(
+                        "occurred_at DATETIME(3) NOT NULL COMMENT '事件实际或计划生效时间，可晚于首次观测时间'",
+                        "observed_at DATETIME(3) NOT NULL COMMENT '数据源首次观测时间'",
+                        "available_at DATETIME(3) NOT NULL COMMENT '系统可用时间'",
+                        "CHECK (available_at >= observed_at)"
+                )
+                .doesNotContain("CHECK (observed_at >= occurred_at)");
     }
 
     @Test

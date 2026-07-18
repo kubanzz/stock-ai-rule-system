@@ -39,8 +39,15 @@ public record RiskSnapshot(
         RiskContractValidation.required(completeness, "completeness");
         RiskContractValidation.ratio(completeness, "completeness");
         RiskContractValidation.ratio(riskConfidence, "riskConfidence");
+        boolean hasAnyFormalConclusion = totalScore != null || level != null || stage != null || riskConfidence != null;
+        boolean hasCompleteFormalConclusion = totalScore != null && level != null && stage != null && riskConfidence != null;
+        if (hasAnyFormalConclusion != hasCompleteFormalConclusion) {
+            throw new IllegalArgumentException(
+                    "The formal risk tuple totalScore/level/stage/riskConfidence must be all present or all absent"
+            );
+        }
         if (completeness.compareTo(new BigDecimal("0.80")) < 0
-                && (totalScore != null || level != null || stage != null || riskConfidence != null)) {
+                && hasCompleteFormalConclusion) {
             throw new IllegalArgumentException(
                     "A snapshot below 80% completeness must not publish a formal risk conclusion"
             );

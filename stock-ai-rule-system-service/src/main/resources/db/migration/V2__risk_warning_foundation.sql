@@ -80,9 +80,9 @@ CREATE TABLE risk_event_fact (
     event_type VARCHAR(64) NOT NULL,
     event_key VARCHAR(128) NOT NULL,
     severity_score DECIMAL(7,4) NULL COMMENT '0-100 综合严重度分数，不代表概率',
-    occurred_at DATETIME(3) NOT NULL,
-    observed_at DATETIME(3) NOT NULL,
-    available_at DATETIME(3) NOT NULL,
+    occurred_at DATETIME(3) NOT NULL COMMENT '事件实际或计划生效时间，可晚于首次观测时间',
+    observed_at DATETIME(3) NOT NULL COMMENT '数据源首次观测时间',
+    available_at DATETIME(3) NOT NULL COMMENT '系统可用时间',
     source VARCHAR(64) NOT NULL,
     quality_status VARCHAR(32) NOT NULL,
     event_payload JSON NULL,
@@ -92,7 +92,6 @@ CREATE TABLE risk_event_fact (
     KEY idx_risk_event_type_date (event_type, trade_date),
     KEY idx_risk_event_available_at (available_at),
     CHECK (severity_score IS NULL OR (severity_score >= 0 AND severity_score <= 100)),
-    CHECK (observed_at >= occurred_at),
     CHECK (available_at >= observed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='风险事件事实';
 
@@ -170,8 +169,8 @@ CREATE TABLE risk_gate_result (
     horizon VARCHAR(16) NOT NULL COMMENT '1-5d/5-20d/20-60d',
     trade_date DATE NOT NULL,
     signal_direction VARCHAR(16) NOT NULL COMMENT 'bullish/bearish/watch',
-    original_confidence DECIMAL(6,5) NULL,
-    suggested_confidence DECIMAL(6,5) NULL,
+    original_confidence DECIMAL(6,5) NOT NULL,
+    suggested_confidence DECIMAL(6,5) NOT NULL,
     suggested_action VARCHAR(16) NULL COMMENT 'normal/notice/downgrade/block',
     enforced TINYINT(1) NOT NULL DEFAULT 0 COMMENT '首轮必须为影子模式',
     reason VARCHAR(512) NOT NULL,
@@ -189,8 +188,8 @@ CREATE TABLE risk_gate_result (
     KEY idx_risk_gate_available_at (available_at),
     CONSTRAINT fk_risk_gate_snapshot
         FOREIGN KEY (snapshot_id) REFERENCES risk_score_snapshot(id),
-    CHECK (original_confidence IS NULL OR (original_confidence >= 0 AND original_confidence <= 1)),
-    CHECK (suggested_confidence IS NULL OR (suggested_confidence >= 0 AND suggested_confidence <= 1)),
+    CHECK (original_confidence >= 0 AND original_confidence <= 1),
+    CHECK (suggested_confidence >= 0 AND suggested_confidence <= 1),
     CHECK (available_at >= observed_at),
     CHECK (enforced = 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='风险影子闸门建议结果';

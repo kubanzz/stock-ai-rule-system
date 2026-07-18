@@ -23,6 +23,8 @@ public record GateDecision(
         RiskContractValidation.required(horizon, "horizon");
         RiskContractValidation.required(tradeDate, "tradeDate");
         RiskContractValidation.required(signalDirection, "signalDirection");
+        RiskContractValidation.required(originalConfidence, "originalConfidence");
+        RiskContractValidation.required(suggestedConfidence, "suggestedConfidence");
         RiskContractValidation.ratio(originalConfidence, "originalConfidence");
         RiskContractValidation.ratio(suggestedConfidence, "suggestedConfidence");
         RiskContractValidation.required(suggestedAction, "suggestedAction");

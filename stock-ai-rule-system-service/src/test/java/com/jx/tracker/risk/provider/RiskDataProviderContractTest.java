@@ -24,9 +24,11 @@ class RiskDataProviderContractTest {
 
     @Test
     void distinguishesAValidEmptyEventBatchFromProviderFailure() {
+        LocalDateTime fetchedAt = AVAILABLE_AT.plusMinutes(30);
         RiskProviderBatch validZero = RiskProviderBatch.validZero(
                 "aktools",
-                new RiskIngestionCheckpoint("announcements", "CN-A", "cursor-18", AVAILABLE_AT)
+                new RiskIngestionCheckpoint("announcements", "CN-A", "cursor-18", AVAILABLE_AT),
+                fetchedAt
         );
         RiskProviderBatch failed = RiskProviderBatch.unavailable("aktools", "source timeout", AVAILABLE_AT);
 
@@ -34,6 +36,7 @@ class RiskDataProviderContractTest {
         assertThat(validZero.observations()).isEmpty();
         assertThat(validZero.events()).isEmpty();
         assertThat(validZero.errorMessage()).isNull();
+        assertThat(validZero.fetchedAt()).isEqualTo(fetchedAt);
 
         assertThat(failed.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
         assertThat(failed.errorMessage()).isEqualTo("source timeout");
@@ -102,6 +105,41 @@ class RiskDataProviderContractTest {
                 "aktools", List.of(), List.of(), null,
                 RiskDataQualityStatus.AVAILABLE, "unexpected error", AVAILABLE_AT
         )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("available");
+
+        assertThatThrownBy(() -> new RiskProviderBatch(
+                "aktools", List.of(), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("available")
+                .hasMessageContaining("record");
+
+        RiskProviderBatch available = new RiskProviderBatch(
+                "aktools", List.of(observation), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
+        );
+        assertThat(available.observations()).containsExactly(observation);
+    }
+
+    @Test
+    void scheduledEventMayBeKnownBeforeItsEffectiveTime() {
+        LocalDateTime effectiveAt = AVAILABLE_AT.plusDays(30);
+        RiskEvent event = new RiskEvent(
+                MARKET,
+                LocalDate.of(2026, 8, 17),
+                RiskDimension.ATTENTION,
+                "share_unlock",
+                "unlock:600519.SH:2026-08-17",
+                new BigDecimal("75"),
+                effectiveAt,
+                OBSERVED_AT,
+                AVAILABLE_AT,
+                "exchange-announcement",
+                RiskDataQualityStatus.AVAILABLE,
+                Map.of("scheduled", true)
+        );
+
+        assertThat(event.occurredAt()).isAfter(event.observedAt());
+        assertThat(event.availableAt()).isAfterOrEqualTo(event.observedAt());
     }
 
     @Test
