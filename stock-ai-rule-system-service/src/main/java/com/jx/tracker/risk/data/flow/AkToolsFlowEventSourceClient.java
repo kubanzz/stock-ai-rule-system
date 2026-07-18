@@ -180,8 +180,11 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             firstReportEnd = firstReportEnd.minusMonths(3)
                     .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
         }
+        int endQuarterEndMonth = ((endDate.getMonthValue() - 1) / 3 + 1) * 3;
+        LocalDate lastReportEnd = LocalDate.of(endDate.getYear(), endQuarterEndMonth, 1)
+                .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
         for (LocalDate reportEnd = firstReportEnd;
-             !reportEnd.isAfter(endDate);
+             !reportEnd.isAfter(lastReportEnd);
              reportEnd = reportEnd.plusMonths(3)
                      .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth())) {
             dates.add(reportEnd);
