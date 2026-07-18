@@ -286,7 +286,13 @@ export function selectMockRiskObjects(
         (!query.horizon || candidate.horizon === query.horizon) &&
         (!query.tradeDate || candidate.tradeDate === query.tradeDate),
     );
-    return matchingSnapshot ? [{ ...item, snapshot: matchingSnapshot }] : [];
+    if (!matchingSnapshot) return [];
+    const gateDecision =
+      item.gateDecision?.horizon === matchingSnapshot.horizon &&
+      item.gateDecision.tradeDate === matchingSnapshot.tradeDate
+        ? item.gateDecision
+        : undefined;
+    return [{ ...item, gateDecision, snapshot: matchingSnapshot }];
   });
 }
 

@@ -130,6 +130,11 @@ describe('risk api contract', () => {
     expect(longOverview.horizon).toBe('20-60d');
     expect(longOverview.marketSnapshot?.horizon).toBe('20-60d');
     expect(selectMockRiskObjects({ horizon: '20-60d' })).toHaveLength(2);
+    expect(
+      selectMockRiskObjects({ horizon: '20-60d' }).find(
+        (item) => item.object.objectId === '600519.SH',
+      )?.gateDecision,
+    ).toBeUndefined();
 
     const marketTrend = selectMockRiskTrend('market', 'CN-A', {
       endDate: '2026-07-17',

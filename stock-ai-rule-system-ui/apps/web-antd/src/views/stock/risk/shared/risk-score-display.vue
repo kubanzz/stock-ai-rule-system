@@ -22,10 +22,30 @@ const display = computed(() => formatRiskScore(props.score));
 </template>
 
 <style scoped>
-.risk-score { font-variant-numeric: tabular-nums; font-weight: 600; }
-.risk-score small { margin-left: 2px; color: rgb(100 116 139); font-weight: 400; }
-.risk-score--high { color: #cf1322; }
-.risk-score--medium { color: #d46b08; }
-.risk-score--low { color: #389e0d; }
-.risk-score--unavailable { color: #8c8c8c; }
+.risk-score {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-score small {
+  margin-left: 2px;
+  font-weight: 400;
+  color: rgb(100 116 139);
+}
+
+.risk-score--high {
+  color: #cf1322;
+}
+
+.risk-score--medium {
+  color: #d46b08;
+}
+
+.risk-score--low {
+  color: #389e0d;
+}
+
+.risk-score--unavailable {
+  color: #8c8c8c;
+}
 </style>
