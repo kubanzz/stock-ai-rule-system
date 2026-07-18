@@ -56,6 +56,8 @@ class RiskAssessmentQueryServiceImplTest {
 
         RiskScoreEvidenceEntity unavailable = evidence(11L, 1L, "C", "price_confirmation", "unavailable");
         RiskScoreEvidenceEntity activeTrigger = evidence(12L, 1L, "T", "credit_event", "available");
+        activeTrigger.setEvidenceJson("{\"components\":{\"cashFlow\":{\"score\":80}},"
+                + "\"componentDirections\":{\"cashFlow\":\"INCREASE_IS_RISK\"}}");
         when(evidenceMapper.selectBySnapshotIds(List.of(1L, 2L, 3L)))
                 .thenReturn(List.of(unavailable, activeTrigger));
         when(exposureMapper.selectActiveParents("stock", "600519.SH", TRADE_DATE, CALCULATED_AT))
@@ -76,6 +78,8 @@ class RiskAssessmentQueryServiceImplTest {
         assertThat(detail.snapshot().evidence().getFirst().details())
                 .containsEntry("layerObjectType", "market")
                 .containsEntry("layerObjectId", "CN-A");
+        assertThat(detail.snapshot().evidence().get(1).details())
+                .containsKeys("components", "componentDirections");
         assertThat(detail.snapshots()).extracting("horizon")
                 .containsExactly("1-5d", "5-20d", "20-60d");
         assertThat(detail.activeTriggers()).containsExactly("credit_event");

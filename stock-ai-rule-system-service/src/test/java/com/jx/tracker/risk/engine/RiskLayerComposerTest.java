@@ -82,6 +82,48 @@ class RiskLayerComposerTest {
         assertThat(composition.mScore()).isEqualByComparingTo("1.05");
     }
 
+    @Test
+    void keepsMissingSubstituteDimensionAtZeroContributionAcrossFixedLayers() {
+        RiskSnapshot market = snapshotWithDimensions(
+                RiskObjectType.MARKET, "CN-A", "80", null, "80", "80", "60");
+        RiskSnapshot sector = snapshotWithDimensions(
+                RiskObjectType.SECTOR, "SW1:801780", "60", "70", null, "60", "50");
+        RiskSnapshot stock = snapshotWithDimensions(
+                RiskObjectType.STOCK, "600000.SH", "40", "50", null, "40", "40");
+
+        RiskLayerComposition composition = composer.compose(market, sector, stock);
+
+        assertThat(composition.tScore()).isEqualByComparingTo("44.5000");
+        assertThat(composition.sScore()).isEqualByComparingTo("20.0000");
+        RiskScoreResult scored = new RiskScoringEngine().scoreLayers(new RiskLayerScoreRequest(
+                stock.object(), stock.horizon(), stock.tradeDate(), stock.tradeDate().minusDays(1),
+                stock.calculatedAt(), composition, List.of(),
+                new ExtremeRiskConfirmation(new BigDecimal("99"), true, true), "risk-engine-test-v1"));
+        assertThat(scored.missingReasons()).isEmpty();
+        assertThat(scored.snapshot().totalScore()).isNotNull();
+    }
+
+    private RiskSnapshot snapshotWithDimensions(
+            RiskObjectType objectType,
+            String objectId,
+            String v,
+            String t,
+            String s,
+            String c,
+            String a
+    ) {
+        return new RiskSnapshot(
+                new RiskObjectKey(objectType, objectId), RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18), decimal(v), decimal(t), decimal(s), decimal(c), decimal(a),
+                BigDecimal.ONE, new BigDecimal("60"), RiskLevel.WATCH, RiskStage.FRAGILE,
+                BigDecimal.ONE, BigDecimal.ONE, List.of(), "risk-engine-test-v1",
+                LocalDateTime.of(2026, 7, 18, 16, 0));
+    }
+
+    private BigDecimal decimal(String value) {
+        return value == null ? null : new BigDecimal(value);
+    }
+
     private RiskSnapshot snapshot(
             RiskObjectType objectType,
             String objectId,

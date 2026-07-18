@@ -94,7 +94,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         RiskIngestionCheckpoint nextCheckpoint = checkpoint(dataset, request, sourceBatch);
         if (sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
             return new FlowEventFetchResult(
-                    RiskProviderBatch.validZero(sourceBatch.source(), nextCheckpoint, sourceBatch.fetchedAt()),
+                    auditedValidZeroBatch(dataset, request, sourceBatch, nextCheckpoint),
                     coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
         }
 
@@ -115,8 +115,8 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                         coverage(dataset, request, emptyBatch, List.of(), List.of(), 0));
             }
             return new FlowEventFetchResult(
-                    RiskProviderBatch.validZero(sourceBatch.source(), safeCheckpoint(dataset, request, sourceBatch),
-                            sourceBatch.fetchedAt()),
+                    auditedValidZeroBatch(dataset, request, emptyBatch,
+                            safeCheckpoint(dataset, request, sourceBatch)),
                     coverage(dataset, request, emptyBatch, List.of(), List.of(), 0));
         }
 
@@ -144,7 +144,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         List<RiskEvent> translatedEvents = new ArrayList<>(events.values());
         if (translatedObservations.isEmpty() && translatedEvents.isEmpty()) {
             return new FlowEventFetchResult(
-                    RiskProviderBatch.validZero(sourceBatch.source(), nextCheckpoint, sourceBatch.fetchedAt()),
+                    auditedValidZeroBatch(dataset, request, sourceBatch, nextCheckpoint),
                     coverage(dataset, request, sourceBatch, translatedObservations, translatedEvents, rejected));
         }
         RiskProviderBatch batch = new RiskProviderBatch(
@@ -153,6 +153,35 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         return new FlowEventFetchResult(
                 batch, coverage(dataset, request, sourceBatch,
                 translatedObservations, translatedEvents, rejected));
+    }
+
+    private RiskProviderBatch auditedValidZeroBatch(
+            FlowEventDataset dataset,
+            RiskProviderRequest request,
+            FlowEventSourceBatch sourceBatch,
+            RiskIngestionCheckpoint checkpoint
+    ) {
+        if (!dataset.eventDataset()) {
+            return RiskProviderBatch.validZero(sourceBatch.source(), checkpoint, sourceBatch.fetchedAt());
+        }
+        List<RiskObservation> zeroObservations = dataset.indicatorCodes().stream()
+                .filter(code -> !"M".equals(code))
+                .flatMap(code -> request.objects().stream().flatMap(object ->
+                        request.horizons().stream().map(horizon -> new RiskObservation(
+                                object, horizon, request.endDate(),
+                                com.jx.tracker.risk.model.RiskDimension.SUBSTANTIVE_TRIGGER,
+                                code, code, BigDecimal.ZERO, "score",
+                                sourceBatch.fetchedAt(), sourceBatch.fetchedAt(), sourceBatch.source(),
+                                RiskDataQualityStatus.VALID_ZERO,
+                                Map.of("validZeroAudit", true, "noEvent", true,
+                                        "datasetCode", dataset.code())))))
+                .toList();
+        if (zeroObservations.isEmpty()) {
+            return RiskProviderBatch.validZero(sourceBatch.source(), checkpoint, sourceBatch.fetchedAt());
+        }
+        return new RiskProviderBatch(
+                sourceBatch.source(), zeroObservations, List.of(), checkpoint,
+                RiskDataQualityStatus.VALID_ZERO, null, sourceBatch.fetchedAt());
     }
 
     private void validateCheckpoint(FlowEventDataset dataset, RiskProviderRequest request) {

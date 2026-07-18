@@ -26,7 +26,7 @@ class RiskNormalizerTest {
 
     @Test
     void calculatesRollingPercentileWithoutFutureInformation() {
-        List<RiskObservation> history = observations(1, 2, 3, 4, 5);
+        List<RiskObservation> history = repeatingObservations(RiskHorizon.SHORT_TERM, 1, 2, 3, 4, 5);
         history.add(observation(new BigDecimal("999"), AS_OF.plusMinutes(1), 99));
 
         RiskNormalizationResult result = normalizer.rollingPercentile(
@@ -34,19 +34,20 @@ class RiskNormalizerTest {
         );
 
         assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
-        assertThat(result.sampleCount()).isEqualTo(5);
+        assertThat(result.sampleCount()).isEqualTo(1250);
         assertThat(result.value()).isEqualByComparingTo("80.0000");
     }
 
     @Test
     void calculatesMedianMadRobustZAndVolatilityAdjustedValue() {
-        List<RiskObservation> history = observations(1, 2, 3, 4, 5);
+        List<RiskObservation> history = repeatingObservations(RiskHorizon.SHORT_TERM, 1, 2, 3, 4, 5);
 
         RiskNormalizationResult robustZ = normalizer.robustZ(
                 new BigDecimal("5"), history, RiskHorizon.SHORT_TERM, AS_OF
         );
         RiskNormalizationResult volatilityAdjusted = normalizer.volatilityAdjusted(
-                new BigDecimal("2"), observations(-2, -1, 0, 1, 2), RiskHorizon.SHORT_TERM, AS_OF
+                new BigDecimal("2"), repeatingObservations(RiskHorizon.SHORT_TERM, -2, -1, 0, 1, 2),
+                RiskHorizon.SHORT_TERM, AS_OF
         );
 
         assertThat(robustZ.value()).isEqualByComparingTo("1.3490");
@@ -65,6 +66,26 @@ class RiskNormalizerTest {
         assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.value()).isNull();
         assertThat(result.sampleCount()).isEqualTo(4);
+    }
+
+    @Test
+    void rejectsPrimaryWindowSizedHistoryUntilFiveYearTradingBaselineExists() {
+        for (RiskHorizon horizon : RiskHorizon.values()) {
+            int primaryWindow = RiskHorizonProfile.forHorizon(horizon).primaryWindow();
+            List<RiskObservation> history = new ArrayList<>();
+            for (int index = 0; index < primaryWindow; index++) {
+                LocalDate date = AS_OF.toLocalDate().minusDays(primaryWindow - index - 1L);
+                history.add(observationForDate(
+                        BigDecimal.valueOf(index), date, date.atTime(15, 0), horizon));
+            }
+
+            RiskNormalizationResult result = normalizer.rollingPercentile(
+                    BigDecimal.TEN, history, horizon, AS_OF);
+
+            assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(result.sampleCount()).isEqualTo(primaryWindow);
+            assertThat(result.value()).isNull();
+        }
     }
 
     @Test
@@ -89,7 +110,7 @@ class RiskNormalizerTest {
 
     @Test
     void isolatesTheRequestedHorizonAndDoesNotMixOtherHorizonHistory() {
-        List<RiskObservation> history = observations(1, 2, 3, 4, 5);
+        List<RiskObservation> history = repeatingObservations(RiskHorizon.SHORT_TERM, 1, 2, 3, 4, 5);
         for (int index = 0; index < 60; index++) {
             history.add(observation(
                     new BigDecimal("999"),
@@ -103,7 +124,7 @@ class RiskNormalizerTest {
                 new BigDecimal("4"), history, RiskHorizon.SHORT_TERM, AS_OF
         );
 
-        assertThat(result.sampleCount()).isEqualTo(5);
+        assertThat(result.sampleCount()).isEqualTo(1250);
         assertThat(result.value()).isEqualByComparingTo("80.0000");
     }
 
@@ -230,6 +251,16 @@ class RiskNormalizerTest {
                     index,
                     RiskHorizon.SHORT_TERM
             ));
+        }
+        return observations;
+    }
+
+    private List<RiskObservation> repeatingObservations(RiskHorizon horizon, int... values) {
+        List<RiskObservation> observations = new ArrayList<>();
+        for (int index = 0; index < 1_250; index++) {
+            LocalDate date = AS_OF.toLocalDate().minusDays(1_249L - index);
+            observations.add(observationForDate(
+                    BigDecimal.valueOf(values[index % values.length]), date, date.atTime(15, 0), horizon));
         }
         return observations;
     }
