@@ -38,8 +38,28 @@ class RiskMigrationContractTest {
                 "evidence_json JSON",
                 "UNIQUE KEY uk_risk_score_snapshot_object_horizon_date_model",
                 "CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100))",
+                "CHECK (m_score IS NULL OR (m_score >= 0.90 AND m_score <= 1.20))",
                 "CHECK (risk_confidence IS NULL OR (risk_confidence >= 0 AND risk_confidence <= 1))",
                 "CHECK (original_confidence IS NULL OR (original_confidence >= 0 AND original_confidence <= 1))"
+        );
+    }
+
+    @Test
+    void gateResultRetainsAvailabilityMetadataAndFutureInformationGuard() throws IOException {
+        String migration = resource("/db/migration/V2__risk_warning_foundation.sql");
+        String gateTable = between(
+                migration,
+                "CREATE TABLE risk_gate_result",
+                "CREATE TABLE risk_ingestion_checkpoint"
+        );
+
+        assertThat(gateTable).contains(
+                "observed_at DATETIME(3)",
+                "available_at DATETIME(3)",
+                "source VARCHAR(64)",
+                "quality_status VARCHAR(32)",
+                "KEY idx_risk_gate_available_at (available_at)",
+                "CHECK (available_at >= observed_at)"
         );
     }
 
@@ -62,5 +82,9 @@ class RiskMigrationContractTest {
             assertThat(input).as(path).isNotNull();
             return new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
+    }
+
+    private String between(String text, String start, String end) {
+        return text.substring(text.indexOf(start), text.indexOf(end));
     }
 }

@@ -65,6 +65,46 @@ class RiskDataProviderContractTest {
     }
 
     @Test
+    void observationEnforcesValueSemanticsForEveryQualityStatus() {
+        assertThatThrownBy(() -> observation(BigDecimal.ONE, RiskDataQualityStatus.VALID_ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valid_zero")
+                .hasMessageContaining("zero");
+
+        assertThatThrownBy(() -> observation(BigDecimal.ZERO, RiskDataQualityStatus.UNAVAILABLE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unavailable")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> observation(BigDecimal.ZERO, RiskDataQualityStatus.STALE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stale")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> observation(BigDecimal.ZERO, RiskDataQualityStatus.INSUFFICIENT_HISTORY))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("insufficient_history")
+                .hasMessageContaining("null");
+
+        assertThat(observation(BigDecimal.ZERO, RiskDataQualityStatus.VALID_ZERO).value())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(observation(null, RiskDataQualityStatus.UNAVAILABLE).value()).isNull();
+    }
+
+    @Test
+    void directBatchConstructionRejectsContradictoryRecordsAndErrors() {
+        RiskObservation observation = observation(BigDecimal.ONE, RiskDataQualityStatus.AVAILABLE);
+
+        assertThatThrownBy(() -> new RiskProviderBatch(
+                "aktools", List.of(observation), List.of(), null,
+                RiskDataQualityStatus.UNAVAILABLE, "source timeout", AVAILABLE_AT
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unavailable");
+
+        assertThatThrownBy(() -> new RiskProviderBatch(
+                "aktools", List.of(), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, "unexpected error", AVAILABLE_AT
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("available");
+    }
+
+    @Test
     void requestSupportsBatchObjectsAndResumeCheckpoint() {
         RiskIngestionCheckpoint checkpoint = new RiskIngestionCheckpoint(
                 "valuation", "CN-A", "2026-07-17", OBSERVED_AT
@@ -79,5 +119,22 @@ class RiskDataProviderContractTest {
 
         assertThat(request.objects()).hasSize(2);
         assertThat(request.checkpoint()).isEqualTo(checkpoint);
+    }
+
+    private RiskObservation observation(BigDecimal value, RiskDataQualityStatus status) {
+        return new RiskObservation(
+                MARKET,
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                RiskDimension.VALUATION,
+                "market_pe_percentile",
+                value,
+                "ratio",
+                OBSERVED_AT,
+                AVAILABLE_AT,
+                "aktools",
+                status,
+                Map.of()
+        );
     }
 }

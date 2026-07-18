@@ -31,9 +31,16 @@ public record RiskProviderBatch(
                 && (!observations.isEmpty() || !events.isEmpty() || errorMessage != null)) {
             throw new IllegalArgumentException("valid_zero batch must be empty and successful");
         }
-        if (qualityStatus == RiskDataQualityStatus.UNAVAILABLE
-                && (errorMessage == null || errorMessage.isBlank())) {
-            throw new IllegalArgumentException("unavailable batch must include errorMessage");
+        if (qualityStatus == RiskDataQualityStatus.UNAVAILABLE) {
+            if (!observations.isEmpty() || !events.isEmpty()) {
+                throw new IllegalArgumentException("unavailable batch must not contain records");
+            }
+            if (errorMessage == null || errorMessage.isBlank()) {
+                throw new IllegalArgumentException("unavailable batch must include errorMessage");
+            }
+        }
+        if (qualityStatus == RiskDataQualityStatus.AVAILABLE && errorMessage != null) {
+            throw new IllegalArgumentException("available batch must not include errorMessage");
         }
     }
 

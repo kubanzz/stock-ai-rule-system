@@ -34,10 +34,17 @@ public record RiskSnapshot(
         RiskContractValidation.score(sScore, "sScore");
         RiskContractValidation.score(cScore, "cScore");
         RiskContractValidation.score(aScore, "aScore");
-        RiskContractValidation.score(mScore, "mScore");
+        RiskContractValidation.timeCorrectionFactor(mScore, "mScore");
         RiskContractValidation.score(totalScore, "totalScore");
+        RiskContractValidation.required(completeness, "completeness");
         RiskContractValidation.ratio(completeness, "completeness");
         RiskContractValidation.ratio(riskConfidence, "riskConfidence");
+        if (completeness.compareTo(new BigDecimal("0.80")) < 0
+                && (totalScore != null || level != null || stage != null || riskConfidence != null)) {
+            throw new IllegalArgumentException(
+                    "A snapshot below 80% completeness must not publish a formal risk conclusion"
+            );
+        }
         evidence = evidence == null ? List.of() : List.copyOf(evidence);
         RiskContractValidation.notBlank(modelVersion, "modelVersion");
         RiskContractValidation.required(calculatedAt, "calculatedAt");

@@ -31,15 +31,34 @@ public record RiskObservation(
         required(tradeDate, "tradeDate");
         required(dimension, "dimension");
         notBlank(indicatorCode, "indicatorCode");
-        if ((qualityStatus == RiskDataQualityStatus.AVAILABLE || qualityStatus == RiskDataQualityStatus.VALID_ZERO)
-                && value == null) {
-            throw new IllegalArgumentException("value must be present for available data");
-        }
+        required(qualityStatus, "qualityStatus");
+        validateValue(value, qualityStatus);
         notBlank(unit, "unit");
         availabilityOrder(observedAt, availableAt);
         notBlank(source, "source");
-        required(qualityStatus, "qualityStatus");
         attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+    }
+
+    private static void validateValue(BigDecimal value, RiskDataQualityStatus qualityStatus) {
+        switch (qualityStatus) {
+            case AVAILABLE -> {
+                if (value == null) {
+                    throw new IllegalArgumentException("value must be present for available data");
+                }
+            }
+            case VALID_ZERO -> {
+                if (value == null || value.signum() != 0) {
+                    throw new IllegalArgumentException("valid_zero value must be exactly zero");
+                }
+            }
+            case UNAVAILABLE, STALE, INSUFFICIENT_HISTORY -> {
+                if (value != null) {
+                    throw new IllegalArgumentException(
+                            qualityStatus.getCode() + " value must be null"
+                    );
+                }
+            }
+        }
     }
 
     private static <T> void required(T value, String field) {

@@ -39,12 +39,12 @@ class RiskContractsTest {
                 null,
                 null,
                 new BigDecimal("80.00"),
-                new BigDecimal("80.00"),
+                new BigDecimal("1.05"),
                 null,
                 null,
                 null,
                 new BigDecimal("0.58"),
-                new BigDecimal("0.64"),
+                null,
                 List.of(unavailableEvidence),
                 "risk-v1",
                 AVAILABLE_AT
@@ -62,7 +62,7 @@ class RiskContractsTest {
         assertThat(json).contains(
                         "\"objectType\":\"stock\"",
                         "\"horizon\":\"1-5d\"",
-                        "\"riskConfidence\":0.64",
+                        "\"riskConfidence\":null",
                         "\"calculatedAt\""
                 )
                 .doesNotContain("risk_probability", "riskProbability");
@@ -79,6 +79,33 @@ class RiskContractsTest {
         assertThatThrownBy(() -> completeSnapshot(new BigDecimal("85"), new BigDecimal("0.80"), new BigDecimal("-0.01")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("riskConfidence");
+        assertThatThrownBy(() -> completeSnapshot(new BigDecimal("85"), null, new BigDecimal("0.90")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("completeness");
+    }
+
+    @Test
+    void incompleteSnapshotCannotPublishAFormalRiskConclusion() {
+        assertThatThrownBy(() -> completeSnapshot(
+                new BigDecimal("85"), new BigDecimal("0.79"), new BigDecimal("0.90")
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("80%")
+                .hasMessageContaining("risk conclusion");
+    }
+
+    @Test
+    void validatesTimeCorrectionFactorInsteadOfTreatingMAsAZeroToHundredScore() {
+        assertThatThrownBy(() -> snapshotWithM(new BigDecimal("0.89")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mScore")
+                .hasMessageContaining("0.90")
+                .hasMessageContaining("1.20");
+        assertThatThrownBy(() -> snapshotWithM(new BigDecimal("1.21")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mScore");
+
+        assertThat(snapshotWithM(new BigDecimal("0.90")).mScore()).isEqualByComparingTo("0.90");
+        assertThat(snapshotWithM(new BigDecimal("1.20")).mScore()).isEqualByComparingTo("1.20");
     }
 
     @Test
@@ -126,8 +153,19 @@ class RiskContractsTest {
                 RiskHorizon.MEDIUM_TERM,
                 LocalDate.of(2026, 7, 18),
                 new BigDecimal("85"), new BigDecimal("85"), new BigDecimal("85"),
-                new BigDecimal("85"), new BigDecimal("85"), new BigDecimal("85"), totalScore,
+                new BigDecimal("85"), new BigDecimal("85"), new BigDecimal("1.05"), totalScore,
                 RiskLevel.WARNING, RiskStage.REPRICING, completeness, riskConfidence,
+                List.of(), "risk-v1", AVAILABLE_AT
+        );
+    }
+
+    private RiskSnapshot snapshotWithM(BigDecimal mScore) {
+        return new RiskSnapshot(
+                new RiskObjectKey(RiskObjectType.MARKET, "CN-A"),
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                null, null, null, null, null, mScore, null,
+                null, null, new BigDecimal("0.50"), null,
                 List.of(), "risk-v1", AVAILABLE_AT
         );
     }

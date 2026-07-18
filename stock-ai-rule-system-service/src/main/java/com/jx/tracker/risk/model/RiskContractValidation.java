@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 final class RiskContractValidation {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final BigDecimal MIN_TIME_CORRECTION_FACTOR = new BigDecimal("0.90");
+    private static final BigDecimal MAX_TIME_CORRECTION_FACTOR = new BigDecimal("1.20");
 
     private RiskContractValidation() {
     }
@@ -34,6 +36,14 @@ final class RiskContractValidation {
     static BigDecimal ratio(BigDecimal value, String field) {
         if (value != null && (value.signum() < 0 || value.compareTo(BigDecimal.ONE) > 0)) {
             throw new IllegalArgumentException(field + " must be between 0 and 1");
+        }
+        return value;
+    }
+
+    static BigDecimal timeCorrectionFactor(BigDecimal value, String field) {
+        if (value != null && (value.compareTo(MIN_TIME_CORRECTION_FACTOR) < 0
+                || value.compareTo(MAX_TIME_CORRECTION_FACTOR) > 0)) {
+            throw new IllegalArgumentException(field + " must be between 0.90 and 1.20");
         }
         return value;
     }
