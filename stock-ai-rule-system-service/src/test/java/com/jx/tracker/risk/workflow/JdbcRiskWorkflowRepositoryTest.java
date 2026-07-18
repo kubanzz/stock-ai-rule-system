@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.workflow;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.gate.ShadowGateResult;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
@@ -353,6 +354,50 @@ class JdbcRiskWorkflowRepositoryTest {
             assertThat(exposure.stock().objectId()).isEqualTo("600519.SH");
             assertThat(exposure.sector().objectId()).isEqualTo("SW1:801780");
             assertThat(exposure.availableAt()).isBeforeOrEqualTo(asOf);
+        });
+    }
+
+    @Test
+    void exposureUpsertPersistsPointInTimeRevisionWithoutDuplicatingTheUniquePeriod() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_exposure_upsert;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_object_exposure (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64),
+                    parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                    exposure_weight DECIMAL(8, 6), valid_from DATE, valid_to DATE,
+                    observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), metadata_json VARCHAR(1024),
+                    UNIQUE(object_type, object_id, parent_object_type, parent_object_id, valid_from, source))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+        RiskObjectKey sector = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
+        IndustryExposure original = new IndustryExposure(
+                stock, sector, date.minusYears(1), null,
+                date.minusYears(1).atTime(18, 0), date.minusYears(1).atTime(19, 0),
+                "aktools", RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure revised = new IndustryExposure(
+                stock, sector, date.minusYears(1), date.minusDays(1),
+                date.atTime(18, 0), date.atTime(19, 0),
+                "aktools", RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.saveIndustryExposure(original);
+        repository.saveIndustryExposure(revised);
+        repository.saveIndustryExposure(revised);
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_object_exposure", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForMap("SELECT * FROM risk_object_exposure")).satisfies(row -> {
+            assertThat(row.get("exposure_weight").toString()).startsWith("1");
+            assertThat(row.get("valid_to").toString()).isEqualTo(date.minusDays(1).toString());
+            assertThat(((java.sql.Timestamp) row.get("observed_at")).toLocalDateTime())
+                    .isEqualTo(date.atTime(18, 0));
+            assertThat(((java.sql.Timestamp) row.get("available_at")).toLocalDateTime())
+                    .isEqualTo(date.atTime(19, 0));
+            assertThat(row.get("quality_status")).isEqualTo("insufficient_history");
         });
     }
 

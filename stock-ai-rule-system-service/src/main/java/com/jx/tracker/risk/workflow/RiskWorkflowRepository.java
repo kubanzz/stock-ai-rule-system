@@ -26,6 +26,8 @@ public interface RiskWorkflowRepository {
 
     void saveEvent(RiskEvent event);
 
+    void saveIndustryExposure(IndustryExposure exposure);
+
     void saveCheckpoint(String providerCode, String datasetCode, String scopeKey,
                         RiskIngestionCheckpoint checkpoint, RiskProviderBatch batch);
 

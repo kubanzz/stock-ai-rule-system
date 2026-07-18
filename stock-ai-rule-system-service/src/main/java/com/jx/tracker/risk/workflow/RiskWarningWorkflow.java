@@ -17,6 +17,7 @@ import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.model.RiskSnapshot;
 import com.jx.tracker.risk.data.market.IndustryExposure;
+import com.jx.tracker.risk.data.market.MarketDatasetCode;
 import com.jx.tracker.risk.provider.RiskDataProvider;
 import com.jx.tracker.risk.provider.RiskEvent;
 import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
@@ -75,16 +76,25 @@ public final class RiskWarningWorkflow {
         int eventsSaved = 0;
         int checkpointsSaved = 0;
         int unavailableDatasets = 0;
-        for (RiskCollectionTask task : request.collectionTasks()) {
+        Map<ExposureIdentity, IndustryExposure> exposuresByIdentity = new LinkedHashMap<>();
+        repository.findIndustryExposures(request).stream()
+                .filter(exposure -> eligible(exposure, request))
+                .forEach(exposure -> exposuresByIdentity.put(ExposureIdentity.of(exposure), exposure));
+        for (RiskCollectionTask plannedTask : request.collectionTasks()) {
+            RiskCollectionTask task = expandSectorObjects(
+                    plannedTask, List.copyOf(exposuresByIdentity.values()), request);
             RiskDataProvider provider = provider(task);
-            RiskIngestionCheckpoint checkpoint = repository.findCheckpoint(
+            RiskIngestionCheckpoint repositoryCheckpoint = repository.findCheckpoint(
                     task.providerCode(), task.datasetCode(), task.scopeKey()).orElse(null);
+            RiskIngestionCheckpoint providerCheckpoint = checkpointForProvider(
+                    repositoryCheckpoint, task.objects());
             RiskProviderBatch batch = provider.fetch(task.datasetCode(), new RiskProviderRequest(
-                    task.objects(), request.horizons(), request.collectionStartDate(), request.endDate(), checkpoint));
+                    task.objects(), request.horizons(), request.collectionStartDate(), request.endDate(),
+                    providerCheckpoint));
             if (batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE) {
                 unavailableDatasets++;
                 repository.saveIngestionStatus(
-                        task.providerCode(), task.datasetCode(), task.scopeKey(), checkpoint, batch);
+                        task.providerCode(), task.datasetCode(), task.scopeKey(), repositoryCheckpoint, batch);
                 continue;
             }
             for (RiskObservation observation : batch.observations()) {
@@ -99,17 +109,25 @@ public final class RiskWarningWorkflow {
                     eventsSaved++;
                 }
             }
-            boolean checkpointSaved = batch.nextCheckpoint() != null
+            for (IndustryExposure exposure : batch.industryExposures()) {
+                if (eligible(exposure, request)) {
+                    repository.saveIndustryExposure(exposure);
+                    exposuresByIdentity.put(ExposureIdentity.of(exposure), exposure);
+                }
+            }
+            RiskIngestionCheckpoint nextCheckpoint = checkpointForRepository(
+                    batch.nextCheckpoint(), task.scopeKey());
+            boolean checkpointSaved = nextCheckpoint != null
                     && !containsDeferredRecords(batch, request)
                     && (batch.qualityStatus() == RiskDataQualityStatus.AVAILABLE
                     || batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO);
             if (checkpointSaved) {
                 repository.saveCheckpoint(
-                        task.providerCode(), task.datasetCode(), task.scopeKey(), batch.nextCheckpoint(), batch);
+                        task.providerCode(), task.datasetCode(), task.scopeKey(), nextCheckpoint, batch);
                 checkpointsSaved++;
             } else if (batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
                 repository.saveIngestionStatus(
-                        task.providerCode(), task.datasetCode(), task.scopeKey(), checkpoint, batch);
+                        task.providerCode(), task.datasetCode(), task.scopeKey(), repositoryCheckpoint, batch);
             }
         }
 
@@ -119,9 +137,7 @@ public final class RiskWarningWorkflow {
         List<RiskEvent> events = repository.findEvents(request).stream()
                 .filter(event -> eligible(event.tradeDate(), event.availableAt(), request))
                 .toList();
-        List<IndustryExposure> exposures = repository.findIndustryExposures(request).stream()
-                .filter(exposure -> !exposure.availableAt().isAfter(request.asOf()))
-                .toList();
+        List<IndustryExposure> exposures = List.copyOf(exposuresByIdentity.values());
         List<RiskSnapshot> history = repository.findSnapshotHistory(request);
         List<StoredRiskSnapshot> storedSnapshots = score(request, observations, events, exposures, history);
         int evidenceCount = storedSnapshots.stream().mapToInt(stored -> stored.snapshot().evidence().size()).sum();
@@ -272,7 +288,80 @@ public final class RiskWarningWorkflow {
                         || observation.availableAt().isAfter(request.asOf()))
                 || batch.events().stream().anyMatch(event ->
                 event.tradeDate().isAfter(request.endDate())
-                        || event.availableAt().isAfter(request.asOf()));
+                        || event.availableAt().isAfter(request.asOf()))
+                || batch.industryExposures().stream().anyMatch(exposure ->
+                exposure.validFrom().isAfter(request.endDate())
+                        || exposure.availableAt().isAfter(request.asOf()));
+    }
+
+    private boolean eligible(IndustryExposure exposure, RiskWorkflowRequest request) {
+        return !exposure.validFrom().isAfter(request.endDate())
+                && (exposure.validTo() == null
+                || !exposure.validTo().isBefore(request.collectionStartDate()))
+                && !exposure.availableAt().isAfter(request.asOf());
+    }
+
+    private RiskCollectionTask expandSectorObjects(
+            RiskCollectionTask task,
+            List<IndustryExposure> exposures,
+            RiskWorkflowRequest request
+    ) {
+        if (!task.datasetCode().equals(MarketDatasetCode.MARKET_DAILY.code())
+                && !task.datasetCode().equals(MarketDatasetCode.VALUATION.code())) {
+            return normalizedTask(task, task.objects());
+        }
+        List<RiskObjectKey> stocks = task.objects().stream()
+                .filter(object -> object.objectType() == RiskObjectType.STOCK)
+                .toList();
+        if (stocks.isEmpty()) {
+            return normalizedTask(task, task.objects());
+        }
+        RiskIndustryExposureIndex exposureIndex = new RiskIndustryExposureIndex(exposures);
+        Set<RiskObjectKey> expanded = new LinkedHashSet<>(task.objects());
+        stocks.stream()
+                .map(stock -> exposureIndex.effectiveSector(stock, request.endDate(), request.asOf()).orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .filter(this::canonicalSector)
+                .sorted(Comparator.comparing(RiskObjectKey::objectId))
+                .forEach(expanded::add);
+        List<RiskObjectKey> objects = List.copyOf(expanded);
+        return normalizedTask(task, objects);
+    }
+
+    private RiskCollectionTask normalizedTask(
+            RiskCollectionTask task,
+            List<RiskObjectKey> objects
+    ) {
+        return new RiskCollectionTask(
+                task.providerCode(), task.datasetCode(), RiskCollectionScope.key(objects), objects);
+    }
+
+    private boolean canonicalSector(RiskObjectKey object) {
+        return object.objectType() == RiskObjectType.SECTOR
+                && object.objectId().matches("^SW1:\\d{6}$");
+    }
+
+    private RiskIngestionCheckpoint checkpointForProvider(
+            RiskIngestionCheckpoint checkpoint,
+            List<RiskObjectKey> objects
+    ) {
+        if (checkpoint == null) {
+            return null;
+        }
+        return new RiskIngestionCheckpoint(
+                checkpoint.datasetCode(), RiskCollectionScope.providerKey(objects),
+                checkpoint.cursor(), checkpoint.checkpointAt());
+    }
+
+    private RiskIngestionCheckpoint checkpointForRepository(
+            RiskIngestionCheckpoint checkpoint,
+            String scopeKey
+    ) {
+        if (checkpoint == null) {
+            return null;
+        }
+        return new RiskIngestionCheckpoint(
+                checkpoint.datasetCode(), scopeKey, checkpoint.cursor(), checkpoint.checkpointAt());
     }
 
     private LocalDateTime evaluationAsOf(LocalDate tradeDate, RiskWorkflowRequest request) {
@@ -618,6 +707,18 @@ public final class RiskWarningWorkflow {
     }
 
     private record ObjectHorizon(RiskObjectKey object, RiskHorizon horizon) {
+    }
+
+    private record ExposureIdentity(
+            RiskObjectKey stock,
+            RiskObjectKey sector,
+            LocalDate validFrom,
+            String source
+    ) {
+        private static ExposureIdentity of(IndustryExposure exposure) {
+            return new ExposureIdentity(
+                    exposure.stock(), exposure.sector(), exposure.validFrom(), exposure.source());
+        }
     }
 
     record LayerObjectExpansionMetrics(

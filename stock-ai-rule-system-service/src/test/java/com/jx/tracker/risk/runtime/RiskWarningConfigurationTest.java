@@ -38,6 +38,7 @@ class RiskWarningConfigurationTest {
             assertThat(context.getBean(RiskWarningProperties.class)).satisfies(properties -> {
                 assertThat(properties.isEnabled()).isFalse();
                 assertThat(properties.isBackfillEnabled()).isFalse();
+                assertThat(properties.getCollectionChunkSize()).isEqualTo(200);
             });
             assertThat(context).doesNotHaveBean(Clock.class);
             assertThat(context).doesNotHaveBean(RiskDataProvider.class);
@@ -82,6 +83,30 @@ class RiskWarningConfigurationTest {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure()).hasRootCauseMessage(
                     "risk warning modelVersion must be configured when enabled");
+        });
+
+        contextRunner.withPropertyValues(
+                "stock-ai-rule.risk-warning.enabled=true",
+                "stock-ai-rule.risk-warning.model-version=risk-runtime-v1",
+                "stock-ai-rule.risk-warning.after-close-cutoff=19:00",
+                "stock-ai-rule.risk-warning.ak-tools-base-url=http://127.0.0.1:8090",
+                "stock-ai-rule.risk-warning.collection-chunk-size=0"
+        ).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasRootCauseMessage(
+                    "risk warning collectionChunkSize must be between 1 and 500");
+        });
+
+        contextRunner.withPropertyValues(
+                "stock-ai-rule.risk-warning.enabled=true",
+                "stock-ai-rule.risk-warning.model-version=risk-runtime-v1",
+                "stock-ai-rule.risk-warning.after-close-cutoff=19:00",
+                "stock-ai-rule.risk-warning.ak-tools-base-url=http://127.0.0.1:8090",
+                "stock-ai-rule.risk-warning.collection-chunk-size=501"
+        ).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasRootCauseMessage(
+                    "risk warning collectionChunkSize must be between 1 and 500");
         });
 
         contextRunner.withPropertyValues(

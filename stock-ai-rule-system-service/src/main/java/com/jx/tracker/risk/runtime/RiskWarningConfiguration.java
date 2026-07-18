@@ -148,8 +148,11 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
-        RiskWorkflowPlanner riskWorkflowPlanner(JdbcRiskUniverseReader universeReader) {
-            return new RiskWorkflowPlanner(universeReader);
+        RiskWorkflowPlanner riskWorkflowPlanner(
+                JdbcRiskUniverseReader universeReader,
+                RiskWarningProperties properties
+        ) {
+            return new RiskWorkflowPlanner(universeReader, properties.requiredCollectionChunkSize());
         }
 
         @Bean

@@ -10,6 +10,8 @@ import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventSourceBatch;
 import com.jx.tracker.risk.data.flow.FlowEventSourceRecord;
 import com.jx.tracker.risk.data.market.IndustryExposure;
+import com.jx.tracker.risk.data.market.MarketDatasetCode;
+import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.gate.ShadowGateResult;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
@@ -30,6 +32,8 @@ import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -89,6 +93,13 @@ class RiskWarningWorkflowTest {
         assertThat(repository.evidence).hasSize(5);
         assertThat(repository.gates).hasSize(1);
         assertThat(repository.checkpoints).hasSize(1);
+        assertThat(repository.checkpoints.values()).allSatisfy(checkpoint ->
+                assertThat(checkpoint.scopeKey())
+                        .startsWith("scope:v1:n=")
+                        .contains(":sha256=")
+                        .hasSizeLessThanOrEqualTo(128));
+        assertThat(provider.requests().get(1).checkpoint().scopeKey())
+                .isEqualTo(RiskCollectionScope.providerKey(List.of(MARKET, SECTOR, STOCK)));
         assertThat(repository.observations.values()).allMatch(observation -> !observation.availableAt().isAfter(AS_OF));
         assertThat(repository.events.values()).allMatch(event -> !event.availableAt().isAfter(AS_OF));
         assertThat(repository.gates.values()).allMatch(result -> !result.decision().enforced());
@@ -224,6 +235,73 @@ class RiskWarningWorkflowTest {
         assertThat(evaluator.layerRequest.composition().coverage()).isEqualByComparingTo("1.0000");
         assertThat(evaluator.layerRequest.composition().mScore()).isEqualByComparingTo("1.10");
         assertThat(evaluator.layerRequest.extremeConfirmation().permitsImmediateEscalation()).isTrue();
+    }
+
+    @Test
+    void firstRunPersistsTypedMembershipAndUsesItsSectorForLaterCollectionAndStockLayer() {
+        ExposureJdbcRepository exposureJdbcRepository = new ExposureJdbcRepository();
+        InMemoryRepository repository = exposureJdbcRepository;
+        IndustryExposure current = exposure(
+                SECTOR, DATE.minusYears(1), null, AS_OF.minusHours(2), AS_OF.minusHours(1),
+                RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure future = exposure(
+                new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801790"),
+                DATE.minusYears(1), null, AS_OF.minusHours(1), AS_OF.plusMinutes(1),
+                RiskDataQualityStatus.AVAILABLE);
+        TwoStageMarketProvider provider = new TwoStageMarketProvider(List.of(current, future), false);
+        LayerCapturingEvaluator evaluator = new LayerCapturingEvaluator();
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(
+                        task(MarketDatasetCode.SW1_MEMBERSHIP, List.of(STOCK)),
+                        task(MarketDatasetCode.MARKET_DAILY, List.of(MARKET)),
+                        task(MarketDatasetCode.MARKET_DAILY, List.of(STOCK)),
+                        task(MarketDatasetCode.VALUATION, List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        assertThat(repository.exposures).isEmpty();
+        assertThat(exposureJdbcRepository.persistedExposureCount()).isZero();
+        workflow(repository, provider, evaluator).run(request);
+
+        assertThat(repository.exposures).containsExactly(current);
+        assertThat(exposureJdbcRepository.persistedExposureCount()).isEqualTo(1);
+        assertThat(provider.stockRequest(MarketDatasetCode.MARKET_DAILY)).satisfies(actual ->
+                assertThat(actual.objects()).containsExactly(STOCK, SECTOR));
+        assertThat(provider.stockRequest(MarketDatasetCode.VALUATION)).satisfies(actual ->
+                assertThat(actual.objects()).containsExactly(STOCK, SECTOR));
+        assertThat(repository.observations.values()).extracting(RiskObservation::object)
+                .contains(MARKET, SECTOR, STOCK);
+        assertThat(repository.snapshots.values()).extracting(StoredRiskSnapshot::snapshot)
+                .extracting(RiskSnapshot::object).contains(MARKET, SECTOR, STOCK);
+        assertThat(evaluator.layerRequest).isNotNull();
+        assertThat(evaluator.layerRequest.composition().vScore()).isEqualByComparingTo("51.00");
+    }
+
+    @Test
+    void unavailableMembershipFallsBackToExistingPointInTimeExposureWithoutUsingFutureRevision() {
+        InMemoryRepository repository = new InMemoryRepository();
+        IndustryExposure current = exposure(
+                SECTOR, DATE.minusYears(1), null, AS_OF.minusHours(2), AS_OF.minusHours(1),
+                RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure future = exposure(
+                new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801790"),
+                DATE.minusYears(1), null, AS_OF.minusHours(1), AS_OF.plusMinutes(1),
+                RiskDataQualityStatus.AVAILABLE);
+        repository.exposures.add(current);
+        repository.exposures.add(future);
+        TwoStageMarketProvider provider = new TwoStageMarketProvider(List.of(), true);
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(
+                        task(MarketDatasetCode.SW1_MEMBERSHIP, List.of(STOCK)),
+                        task(MarketDatasetCode.MARKET_DAILY, List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        workflow(repository, provider).run(request);
+
+        assertThat(provider.stockRequest(MarketDatasetCode.MARKET_DAILY).objects())
+                .containsExactly(STOCK, SECTOR)
+                .doesNotContain(future.sector());
     }
 
     @Test
@@ -605,6 +683,26 @@ class RiskWarningWorkflowTest {
                 "source-a", RiskDataQualityStatus.AVAILABLE));
     }
 
+    private IndustryExposure exposure(
+            RiskObjectKey sector,
+            LocalDate validFrom,
+            LocalDate validTo,
+            LocalDateTime observedAt,
+            LocalDateTime availableAt,
+            RiskDataQualityStatus qualityStatus
+    ) {
+        return new IndustryExposure(
+                STOCK, sector, validFrom, validTo, observedAt, availableAt, "aktools", qualityStatus);
+    }
+
+    private RiskCollectionTask task(MarketDatasetCode dataset, List<RiskObjectKey> objects) {
+        return new RiskCollectionTask(
+                MarketRiskDataProvider.PROVIDER_CODE,
+                dataset.code(),
+                "test:" + dataset.code() + ":" + objects.getFirst().objectId(),
+                objects);
+    }
+
     private RiskObservation observation(String code, LocalDate date, LocalDateTime availableAt) {
         return new RiskObservation(
                 STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
@@ -795,7 +893,70 @@ class RiskWarningWorkflowTest {
         }
     }
 
-    private static final class InMemoryRepository implements RiskWorkflowRepository {
+    private static final class TwoStageMarketProvider implements RiskDataProvider {
+        private final List<IndustryExposure> memberships;
+        private final boolean membershipUnavailable;
+        private final Map<MarketDatasetCode, List<RiskProviderRequest>> requests = new LinkedHashMap<>();
+
+        private TwoStageMarketProvider(
+                List<IndustryExposure> memberships,
+                boolean membershipUnavailable
+        ) {
+            this.memberships = List.copyOf(memberships);
+            this.membershipUnavailable = membershipUnavailable;
+        }
+
+        @Override
+        public String providerCode() {
+            return MarketRiskDataProvider.PROVIDER_CODE;
+        }
+
+        @Override
+        public boolean supports(String datasetCode) {
+            return datasetCode.equals(MarketDatasetCode.SW1_MEMBERSHIP.code())
+                    || datasetCode.equals(MarketDatasetCode.MARKET_DAILY.code())
+                    || datasetCode.equals(MarketDatasetCode.VALUATION.code());
+        }
+
+        @Override
+        public RiskProviderBatch fetch(String datasetCode, RiskProviderRequest request) {
+            MarketDatasetCode dataset = MarketDatasetCode.fromCode(datasetCode);
+            requests.computeIfAbsent(dataset, ignored -> new ArrayList<>()).add(request);
+            if (dataset == MarketDatasetCode.SW1_MEMBERSHIP) {
+                if (membershipUnavailable) {
+                    return RiskProviderBatch.unavailable("aktools", "membership unavailable", AS_OF);
+                }
+                return new RiskProviderBatch(
+                        "aktools", List.of(), List.of(), memberships, null,
+                        RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+            }
+            List<RiskObservation> observations = request.objects().stream()
+                    .map(object -> new RiskObservation(
+                            object, RiskHorizon.SHORT_TERM, DATE,
+                            RiskDimension.STRUCTURAL_FRAGILITY,
+                            dataset.code() + ":" + object.objectType().getCode(),
+                            switch (object.objectType()) {
+                                case MARKET -> new BigDecimal("20");
+                                case SECTOR -> new BigDecimal("40");
+                                case STOCK -> new BigDecimal("80");
+                            },
+                            "score", AS_OF.minusHours(2), AS_OF.minusHours(1),
+                            "aktools", RiskDataQualityStatus.AVAILABLE, Map.of()))
+                    .toList();
+            return new RiskProviderBatch(
+                    "aktools", observations, List.of(), List.of(), null,
+                    RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+        }
+
+        private RiskProviderRequest stockRequest(MarketDatasetCode dataset) {
+            return requests.getOrDefault(dataset, List.of()).stream()
+                    .filter(request -> request.objects().stream()
+                            .anyMatch(object -> object.objectType() == RiskObjectType.STOCK))
+                    .findFirst().orElseThrow();
+        }
+    }
+
+    private static class InMemoryRepository implements RiskWorkflowRepository {
         private final Map<String, RiskObservation> observations = new LinkedHashMap<>();
         private final Map<String, RiskEvent> events = new LinkedHashMap<>();
         private final Map<String, StoredRiskSnapshot> snapshots = new LinkedHashMap<>();
@@ -824,6 +985,15 @@ class RiskWarningWorkflowTest {
         @Override
         public void saveEvent(RiskEvent event) {
             events.put(event.source() + ":" + event.eventType() + ":" + event.eventKey() + ":" + event.object(), event);
+        }
+
+        @Override
+        public void saveIndustryExposure(IndustryExposure exposure) {
+            String key = exposure.stock() + ":" + exposure.sector() + ":"
+                    + exposure.validFrom() + ":" + exposure.source();
+            exposures.removeIf(existing -> (existing.stock() + ":" + existing.sector() + ":"
+                    + existing.validFrom() + ":" + existing.source()).equals(key));
+            exposures.add(exposure);
         }
 
         @Override
@@ -892,6 +1062,38 @@ class RiskWarningWorkflowTest {
                              LocalDateTime observedAt, LocalDateTime availableAt) {
             gates.put(result.signalReference() + ":" + result.decision().horizon() + ":"
                     + result.decision().modelVersion(), result);
+        }
+    }
+
+    private static final class ExposureJdbcRepository extends InMemoryRepository {
+        private final JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_first_run_exposure;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        private final JdbcRiskWorkflowRepository exposureRepository;
+
+        private ExposureJdbcRepository() {
+            jdbc.execute("DROP ALL OBJECTS");
+            jdbc.execute("""
+                    CREATE TABLE risk_object_exposure (
+                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                        object_type VARCHAR(16), object_id VARCHAR(64),
+                        parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                        exposure_weight DECIMAL(8, 6), valid_from DATE, valid_to DATE,
+                        observed_at TIMESTAMP, available_at TIMESTAMP,
+                        source VARCHAR(64), quality_status VARCHAR(32), metadata_json VARCHAR(1024),
+                        UNIQUE(object_type, object_id, parent_object_type, parent_object_id, valid_from, source))
+                    """);
+            exposureRepository = new JdbcRiskWorkflowRepository(jdbc, new com.fasterxml.jackson.databind.ObjectMapper());
+        }
+
+        @Override
+        public void saveIndustryExposure(IndustryExposure exposure) {
+            super.saveIndustryExposure(exposure);
+            exposureRepository.saveIndustryExposure(exposure);
+        }
+
+        private int persistedExposureCount() {
+            return jdbc.queryForObject("SELECT COUNT(*) FROM risk_object_exposure", Integer.class);
         }
     }
 }
