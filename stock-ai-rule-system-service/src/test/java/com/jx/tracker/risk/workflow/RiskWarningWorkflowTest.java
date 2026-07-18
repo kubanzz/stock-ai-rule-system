@@ -520,11 +520,13 @@ class RiskWarningWorkflowTest {
                         "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
                 List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
 
+        Set<RiskObjectKey> requestedStocks = Set.copyOf(objects);
         RiskWarningWorkflow.LayerObjectExpansionMetrics metrics =
-                workflow.addLayerObjects(objects, exposures, request);
+                workflow.addLayerObjectsFromStockSet(objects, requestedStocks, exposures, request);
 
         assertThat(metrics.requestedStockCount()).isEqualTo(size);
         assertThat(metrics.exposureRowsVisited()).isEqualTo(size);
+        assertThat(metrics.membershipChecks()).isEqualTo(size);
         assertThat(metrics.matchedExposureRows()).isEqualTo(size);
         assertThat(objects).contains(MARKET, SECTOR);
     }
@@ -639,10 +641,18 @@ class RiskWarningWorkflowTest {
         return new RiskObservation(
                 MARKET, horizon, date, dimension, indicatorCode, value, "score",
                 date.atTime(18, 0), date.atTime(19, 0), "market-confirmation",
-                RiskDataQualityStatus.AVAILABLE, Map.of(
-                        "pointInTime", true,
-                        "tradingDay", true,
-                        "marketPrice", true));
+                RiskDataQualityStatus.AVAILABLE, confirmationAttributes(indicatorCode));
+    }
+
+    private Map<String, Object> confirmationAttributes(String indicatorCode) {
+        if ("C1".equals(indicatorCode)) {
+            return Map.of(
+                    "pointInTime", true,
+                    "datasetCode", "market_daily",
+                    "tradingDay", true,
+                    "marketPrice", true);
+        }
+        return Map.of("pointInTime", true, "datasetCode", "etf_fund_flow");
     }
 
     private RiskEvent event(String key, LocalDateTime availableAt) {

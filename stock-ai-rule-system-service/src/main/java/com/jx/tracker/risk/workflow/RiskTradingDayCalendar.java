@@ -68,9 +68,9 @@ final class RiskTradingDayCalendar {
                 && observation.qualityStatus() != RiskDataQualityStatus.VALID_ZERO) {
             return false;
         }
-        return booleanAttribute(observation, "tradingDay")
-                || booleanAttribute(observation, "marketPrice")
-                || isMarketDailyPriceProvenance(observation);
+        return isMarketDailyPriceProvenance(observation)
+                && consistentFlag(observation, "tradingDay")
+                && consistentFlag(observation, "marketPrice");
     }
 
     private boolean isMarketDailyPriceProvenance(RiskObservation observation) {
@@ -78,8 +78,9 @@ final class RiskTradingDayCalendar {
                 && MARKET_DAILY_PRICE_INDICATORS.contains(observation.indicatorCode());
     }
 
-    private boolean booleanAttribute(RiskObservation observation, String key) {
+    private boolean consistentFlag(RiskObservation observation, String key) {
         Object value = observation.attributes().get(key);
-        return value instanceof Boolean flag ? flag : value != null && Boolean.parseBoolean(value.toString());
+        return value == null || (value instanceof Boolean flag
+                ? flag : Boolean.parseBoolean(value.toString()));
     }
 }

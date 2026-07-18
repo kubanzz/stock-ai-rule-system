@@ -337,7 +337,7 @@ public final class RiskWarningWorkflow {
         return result;
     }
 
-    LayerObjectExpansionMetrics addLayerObjects(
+    private void addLayerObjects(
             Set<RiskObjectKey> objects,
             List<IndustryExposure> exposures,
             RiskWorkflowRequest request
@@ -346,14 +346,25 @@ public final class RiskWarningWorkflow {
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (stocks.isEmpty()) {
-            return new LayerObjectExpansionMetrics(0, 0, 0);
+            return;
         }
+        addLayerObjectsFromStockSet(objects, stocks, exposures, request);
+    }
+
+    LayerObjectExpansionMetrics addLayerObjectsFromStockSet(
+            Set<RiskObjectKey> objects,
+            Set<RiskObjectKey> requestedStocks,
+            List<IndustryExposure> exposures,
+            RiskWorkflowRequest request
+    ) {
         objects.add(CN_A);
         int exposureRowsVisited = 0;
+        int membershipChecks = 0;
         int matchedExposureRows = 0;
         for (IndustryExposure exposure : exposures) {
             exposureRowsVisited++;
-            if (!stocks.contains(exposure.stock())
+            membershipChecks++;
+            if (!requestedStocks.contains(exposure.stock())
                     || (exposure.validTo() != null
                     && exposure.validTo().isBefore(request.scoreStartDate()))
                     || exposure.validFrom().isAfter(request.endDate())
@@ -366,7 +377,7 @@ public final class RiskWarningWorkflow {
             objects.add(exposure.sector());
         }
         return new LayerObjectExpansionMetrics(
-                stocks.size(), exposureRowsVisited, matchedExposureRows);
+                requestedStocks.size(), exposureRowsVisited, membershipChecks, matchedExposureRows);
     }
 
     private Set<RiskObjectKey> withLayerDependencies(
@@ -612,6 +623,7 @@ public final class RiskWarningWorkflow {
     record LayerObjectExpansionMetrics(
             int requestedStockCount,
             int exposureRowsVisited,
+            int membershipChecks,
             int matchedExposureRows
     ) {
     }

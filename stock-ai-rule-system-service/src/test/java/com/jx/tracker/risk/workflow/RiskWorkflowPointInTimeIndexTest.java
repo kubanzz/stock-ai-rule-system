@@ -93,12 +93,20 @@ class RiskWorkflowPointInTimeIndexTest {
                 "DATA_SW1_MEMBERSHIP", BigDecimal.ONE, "boolean",
                 date.atTime(18, 0), date.atTime(19, 0),
                 "membership-source", RiskDataQualityStatus.AVAILABLE,
-                Map.of("metric", "industryMembership"));
+                Map.of(
+                        "metric", "industryMembership",
+                        "datasetCode", "sw1_membership",
+                        "tradingDay", true,
+                        "marketPrice", true));
         RiskObservation nonPriceConfirmation = new RiskObservation(
                 STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION,
                 "C2", BigDecimal.TEN, "ratio", date.atTime(18, 0), date.atTime(19, 0),
                 "breadth-source", RiskDataQualityStatus.AVAILABLE,
-                Map.of("metric", "advanceRatio"));
+                Map.of(
+                        "metric", "advanceRatio",
+                        "datasetCode", "market_daily",
+                        "tradingDay", true,
+                        "marketPrice", true));
 
         RiskTradingDayCalendar calendar = new RiskTradingDayCalendar(
                 List.of(structural, membership, nonPriceConfirmation));
@@ -146,7 +154,10 @@ class RiskWorkflowPointInTimeIndexTest {
                 STOCK, RiskHorizon.SHORT_TERM, date, RiskDimension.LOCAL_CONFIRMATION,
                 "C1", BigDecimal.TEN, "score", date.atTime(18, 0), date.atTime(19, 0),
                 "price-source", RiskDataQualityStatus.AVAILABLE,
-                Map.of("tradingDay", true));
+                Map.of(
+                        "datasetCode", "market_daily",
+                        "tradingDay", true,
+                        "marketPrice", true));
     }
 
     private RiskEvent event(RiskObjectKey object, LocalDate date, String key) {
