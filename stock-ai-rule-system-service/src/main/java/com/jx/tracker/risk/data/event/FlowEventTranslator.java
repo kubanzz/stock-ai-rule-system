@@ -39,9 +39,9 @@ public final class FlowEventTranslator {
             case MARGIN_FINANCING -> margin(record, horizon, source, attributes);
             case ETF_FUND_FLOW -> etfFlow(record, horizon, source, attributes);
             case EARNINGS_FORECAST -> substantiveEvent(
-                    record, horizon, source, attributes, EconomicMeaning.CASH_FLOW);
+                    dataset, record, horizon, source, attributes, EconomicMeaning.CASH_FLOW);
             case STOCK_ANNOUNCEMENT -> dictionary.resolve(record)
-                    .map(meaning -> substantiveEvent(record, horizon, source, attributes, meaning))
+                    .map(meaning -> substantiveEvent(dataset, record, horizon, source, attributes, meaning))
                     .orElseGet(() -> FlowEventTranslation.rejected("公告经济含义未映射，不生成风险事件"));
             case SHARE_UNLOCK, SHARE_REDUCTION -> modifierEvent(dataset, record, source, attributes);
         };
@@ -53,15 +53,15 @@ public final class FlowEventTranslator {
             String source,
             Map<String, Object> attributes
     ) {
-        BigDecimal balance = nullToZero(record.value());
-        BigDecimal previous = decimalAttribute(record.attributes(), "previousBalance", balance);
-        BigDecimal reference = decimalAttribute(record.attributes(), "referenceBalance", previous);
-        RiskObservation leverage = observation(
-                record, horizon, RiskDimension.STRUCTURAL_FRAGILITY, "V5",
-                FlowEventMetrics.balanceLevel(balance, reference), "ratio", source, attributes);
-        RiskObservation deleveraging = observation(
-                record, horizon, RiskDimension.FORCED_SELLING, "A1",
-                FlowEventMetrics.deleveragingProxy(balance, previous), "ratio", source, attributes);
+        BigDecimal balance = record.value();
+        BigDecimal previous = decimalAttribute(record.attributes(), "previousBalance", null);
+        BigDecimal reference = decimalAttribute(record.attributes(), "referenceBalance", null);
+        RiskObservation leverage = ratioObservation(
+                record, horizon, RiskDimension.STRUCTURAL_FRAGILITY, "V5", source, attributes,
+                () -> FlowEventMetrics.balanceLevel(balance, reference));
+        RiskObservation deleveraging = ratioObservation(
+                record, horizon, RiskDimension.FORCED_SELLING, "A1", source, attributes,
+                () -> FlowEventMetrics.deleveragingProxy(balance, previous));
         return new FlowEventTranslation(List.of(leverage, deleveraging), List.of(), null);
     }
 
@@ -71,16 +71,15 @@ public final class FlowEventTranslator {
             String source,
             Map<String, Object> attributes
     ) {
-        BigDecimal referenceAssets = decimalAttribute(
-                record.attributes(), "referenceAssets", nullToZero(record.value()).abs().max(BigDecimal.ONE));
-        RiskObservation redemption = observation(
-                record, horizon, RiskDimension.FORCED_SELLING, "A2",
-                FlowEventMetrics.redemptionProxy(nullToZero(record.value()), referenceAssets),
-                "ratio", source, attributes);
+        BigDecimal referenceAssets = decimalAttribute(record.attributes(), "referenceAssets", null);
+        RiskObservation redemption = ratioObservation(
+                record, horizon, RiskDimension.FORCED_SELLING, "A2", source, attributes,
+                () -> FlowEventMetrics.redemptionProxy(record.value(), referenceAssets));
         return new FlowEventTranslation(List.of(redemption), List.of(), null);
     }
 
     private FlowEventTranslation substantiveEvent(
+            FlowEventDataset dataset,
             FlowEventSourceRecord record,
             RiskHorizon horizon,
             String source,
@@ -91,12 +90,23 @@ public final class FlowEventTranslator {
         if (indicatorCode.isEmpty()) {
             return FlowEventTranslation.rejected("经济含义未映射到指标，不生成风险事件");
         }
-        BigDecimal severity = FlowEventMetrics.normalizeSeverity(nullToZero(record.value()).abs());
         Map<String, Object> eventPayload = new HashMap<>(attributes);
         eventPayload.put("economicMeaning", meaning.code());
+        boolean adverse = adverse(dataset, record);
+        if (!adverse || (record.value() != null && record.value().signum() == 0)) {
+            RiskObservation zero = observation(
+                    record, horizon, RiskDimension.SUBSTANTIVE_TRIGGER, indicatorCode.get(), BigDecimal.ZERO,
+                    "score", source, RiskDataQualityStatus.VALID_ZERO, eventPayload);
+            return new FlowEventTranslation(List.of(zero), List.of(), null);
+        }
+        BigDecimal severity = record.value() == null
+                ? null
+                : FlowEventMetrics.normalizeSeverity(record.value().abs());
         RiskObservation observation = observation(
                 record, horizon, RiskDimension.SUBSTANTIVE_TRIGGER, indicatorCode.get(), severity,
-                "score", source, eventPayload);
+                "score", source, severity == null
+                ? RiskDataQualityStatus.INSUFFICIENT_HISTORY
+                : RiskDataQualityStatus.AVAILABLE, eventPayload);
         RiskEvent event = new RiskEvent(
                 record.object(), record.tradeDate(), RiskDimension.SUBSTANTIVE_TRIGGER,
                 meaning.code(), stableEventKey(record, meaning.code()), severity,
@@ -112,6 +122,9 @@ public final class FlowEventTranslator {
             Map<String, Object> attributes
     ) {
         boolean actualReduction = booleanAttribute(record.attributes(), "actualReduction");
+        if (dataset == FlowEventDataset.SHARE_REDUCTION && !actualReduction) {
+            return new FlowEventTranslation(List.of(), List.of(), null);
+        }
         boolean confirmed = actualReduction && (booleanAttribute(record.attributes(), "fundFlowConfirmed")
                 || booleanAttribute(record.attributes(), "priceConfirmed"));
         Map<String, Object> payload = new HashMap<>(attributes);
@@ -119,8 +132,8 @@ public final class FlowEventTranslator {
         payload.put("dimensionScoreEligible", false);
         payload.put("confirmed", confirmed);
         payload.put("scheduled", booleanAttribute(record.attributes(), "scheduled"));
-        BigDecimal severity = confirmed
-                ? FlowEventMetrics.normalizeSeverity(nullToZero(record.value()).abs())
+        BigDecimal severity = confirmed && record.value() != null
+                ? FlowEventMetrics.normalizeSeverity(record.value().abs())
                 : null;
         RiskEvent event = new RiskEvent(
                 record.object(), record.tradeDate(), RiskDimension.FORCED_SELLING,
@@ -138,6 +151,7 @@ public final class FlowEventTranslator {
             BigDecimal value,
             String unit,
             String source,
+            RiskDataQualityStatus qualityStatus,
             Map<String, Object> attributes
     ) {
         Map<String, Object> horizonAttributes = new HashMap<>(attributes);
@@ -145,7 +159,30 @@ public final class FlowEventTranslator {
         return new RiskObservation(
                 record.object(), horizon, record.tradeDate(), dimension, indicatorCode, value, unit,
                 record.observedAt(), record.availableAt(), source,
-                RiskDataQualityStatus.AVAILABLE, horizonAttributes);
+                qualityStatus, horizonAttributes);
+    }
+
+    private RiskObservation ratioObservation(
+            FlowEventSourceRecord record,
+            RiskHorizon horizon,
+            RiskDimension dimension,
+            String indicatorCode,
+            String source,
+            Map<String, Object> attributes,
+            MetricCalculation calculation
+    ) {
+        try {
+            BigDecimal value = calculation.calculate();
+            RiskDataQualityStatus status = value.signum() == 0
+                    ? RiskDataQualityStatus.VALID_ZERO
+                    : RiskDataQualityStatus.AVAILABLE;
+            return observation(record, horizon, dimension, indicatorCode, value, "ratio", source, status, attributes);
+        } catch (FlowEventMetrics.InsufficientHistoryException exception) {
+            Map<String, Object> insufficientAttributes = new HashMap<>(attributes);
+            insufficientAttributes.put("qualityReason", exception.getMessage());
+            return observation(record, horizon, dimension, indicatorCode, null, "ratio", source,
+                    RiskDataQualityStatus.INSUFFICIENT_HISTORY, insufficientAttributes);
+        }
     }
 
     private Map<String, Object> auditedAttributes(FlowEventSourceRecord record, String fallbackReason) {
@@ -176,8 +213,14 @@ public final class FlowEventTranslator {
         return value instanceof Boolean bool ? bool : value != null && Boolean.parseBoolean(value.toString());
     }
 
-    private BigDecimal nullToZero(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
+    private boolean adverse(FlowEventDataset dataset, FlowEventSourceRecord record) {
+        if (record.attributes().containsKey("adverse")) {
+            return booleanAttribute(record.attributes(), "adverse");
+        }
+        if (dataset == FlowEventDataset.EARNINGS_FORECAST) {
+            return record.value() != null && record.value().signum() < 0;
+        }
+        return true;
     }
 
     private int windowDays(RiskHorizon horizon) {
@@ -186,5 +229,10 @@ public final class FlowEventTranslator {
             case MEDIUM_TERM -> 20;
             case LONG_TERM -> 60;
         };
+    }
+
+    @FunctionalInterface
+    private interface MetricCalculation {
+        BigDecimal calculate();
     }
 }

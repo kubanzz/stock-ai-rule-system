@@ -12,6 +12,7 @@ import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -19,18 +20,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** 融资、ETF 资金流与公司事件域的统一风险 Provider。 */
 public final class FlowEventRiskDataProvider implements RiskDataProvider {
 
+    /** 26 项目录中本域指标的原始权重，覆盖率只在当前数据集支持的指标内归一化。 */
     private static final Map<String, BigDecimal> INDICATOR_WEIGHTS = Map.of(
-            "V5", new BigDecimal("0.20"),
-            "A1", new BigDecimal("0.20"),
-            "A2", new BigDecimal("0.15"),
-            "T1", new BigDecimal("0.15"),
-            "T2", new BigDecimal("0.10"),
-            "T3", new BigDecimal("0.10"),
-            "T4", new BigDecimal("0.10"),
+            "V5", new BigDecimal("15"),
+            "A1", new BigDecimal("25"),
+            "A2", new BigDecimal("20"),
+            "T1", new BigDecimal("30"),
+            "T2", new BigDecimal("25"),
+            "T3", new BigDecimal("20"),
+            "T4", new BigDecimal("25"),
             "M", BigDecimal.ZERO);
 
     private final FlowEventSourceClient sourceClient;
@@ -62,6 +65,9 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
 
     public FlowEventFetchResult fetchWithCoverage(String datasetCode, RiskProviderRequest request) {
         FlowEventDataset dataset = FlowEventDataset.fromCode(datasetCode);
+        dataset.validateObjects(request.objects());
+        validateCheckpoint(dataset, request);
+
         FlowEventSourceBatch sourceBatch;
         try {
             sourceBatch = sourceClient.fetch(new FlowEventSourceRequest(dataset, request));
@@ -74,62 +80,109 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         if (sourceBatch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE) {
             RiskProviderBatch unavailable = RiskProviderBatch.unavailable(
                     sourceBatch.source(), sourceBatch.failureReason(), sourceBatch.fetchedAt());
-            return new FlowEventFetchResult(unavailable, coverage(dataset, request, sourceBatch, 0, 0));
+            return new FlowEventFetchResult(unavailable,
+                    coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
         }
         if (sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
             RiskProviderBatch insufficient = new RiskProviderBatch(
                     sourceBatch.source(), List.of(), List.of(), null,
                     RiskDataQualityStatus.INSUFFICIENT_HISTORY, sourceBatch.failureReason(), sourceBatch.fetchedAt());
-            return new FlowEventFetchResult(insufficient, coverage(dataset, request, sourceBatch, 0, 0));
+            return new FlowEventFetchResult(insufficient,
+                    coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
         }
 
         RiskIngestionCheckpoint nextCheckpoint = checkpoint(dataset, request, sourceBatch);
         if (sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
             return new FlowEventFetchResult(
                     RiskProviderBatch.validZero(sourceBatch.source(), nextCheckpoint, sourceBatch.fetchedAt()),
-                    coverage(dataset, request, sourceBatch, 0, 0));
+                    coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
         }
 
-        LocalDateTime asOf = request.endDate().atTime(LocalTime.MAX);
         Map<String, FlowEventSourceRecord> uniqueRecords = new LinkedHashMap<>();
         sourceBatch.records().stream()
-                .filter(record -> !record.availableAt().isAfter(asOf))
-                .filter(record -> !record.availableAt().toLocalDate().isBefore(request.startDate()))
+                .filter(record -> request.objects().contains(record.object()))
+                .filter(record -> inRequestedPointInTime(dataset, record, request))
                 .filter(record -> isAfterCheckpointBoundary(record, request))
                 .forEach(record -> uniqueRecords.putIfAbsent(recordKey(dataset, record), record));
         if (uniqueRecords.isEmpty()) {
+            FlowEventSourceBatch emptyBatch = emptyFilteredBatch(dataset, request, sourceBatch);
+            if (!dataset.eventDataset()) {
+                RiskProviderBatch insufficient = new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), null,
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY, emptyBatch.failureReason(),
+                        sourceBatch.fetchedAt());
+                return new FlowEventFetchResult(insufficient,
+                        coverage(dataset, request, emptyBatch, List.of(), List.of(), 0));
+            }
             return new FlowEventFetchResult(
                     RiskProviderBatch.validZero(sourceBatch.source(), safeCheckpoint(dataset, request, sourceBatch),
                             sourceBatch.fetchedAt()),
-                    coverage(dataset, request, sourceBatch, 0, 1));
+                    coverage(dataset, request, emptyBatch, List.of(), List.of(), 0));
         }
 
         Map<String, RiskObservation> observations = new LinkedHashMap<>();
         Map<String, RiskEvent> events = new LinkedHashMap<>();
         int rejected = 0;
         for (FlowEventSourceRecord record : uniqueRecords.values()) {
+            boolean recordRejected = false;
             for (var horizon : request.horizons()) {
                 FlowEventTranslation translation = translator.translate(
                         dataset, record, horizon, sourceBatch.source(), sourceBatch.fallbackReason());
                 if (translation.rejectionReason() != null) {
-                    rejected++;
+                    recordRejected = true;
                 }
                 translation.observations().forEach(observation -> observations.putIfAbsent(
                         observationKey(observation, record), observation));
                 translation.events().forEach(event -> events.putIfAbsent(event.eventKey(), event));
             }
+            if (recordRejected) {
+                rejected++;
+            }
         }
 
-        if (observations.isEmpty() && events.isEmpty()) {
+        List<RiskObservation> translatedObservations = new ArrayList<>(observations.values());
+        List<RiskEvent> translatedEvents = new ArrayList<>(events.values());
+        if (translatedObservations.isEmpty() && translatedEvents.isEmpty()) {
             return new FlowEventFetchResult(
                     RiskProviderBatch.validZero(sourceBatch.source(), nextCheckpoint, sourceBatch.fetchedAt()),
-                    coverage(dataset, request, sourceBatch, 0, rejected));
+                    coverage(dataset, request, sourceBatch, translatedObservations, translatedEvents, rejected));
         }
         RiskProviderBatch batch = new RiskProviderBatch(
-                sourceBatch.source(), new ArrayList<>(observations.values()), new ArrayList<>(events.values()),
+                sourceBatch.source(), translatedObservations, translatedEvents,
                 nextCheckpoint, RiskDataQualityStatus.AVAILABLE, null, sourceBatch.fetchedAt());
         return new FlowEventFetchResult(
-                batch, coverage(dataset, request, sourceBatch, observations.size() + events.size(), rejected));
+                batch, coverage(dataset, request, sourceBatch,
+                translatedObservations, translatedEvents, rejected));
+    }
+
+    private void validateCheckpoint(FlowEventDataset dataset, RiskProviderRequest request) {
+        RiskIngestionCheckpoint checkpoint = request.checkpoint();
+        if (checkpoint == null) {
+            return;
+        }
+        if (!dataset.code().equals(checkpoint.datasetCode())) {
+            throw new IllegalArgumentException("checkpoint dataset does not match " + dataset.code());
+        }
+        String expectedScope = scopeKey(request);
+        if (!expectedScope.equals(checkpoint.scopeKey())) {
+            throw new IllegalArgumentException("checkpoint scope does not match " + expectedScope);
+        }
+    }
+
+    private boolean inRequestedPointInTime(
+            FlowEventDataset dataset,
+            FlowEventSourceRecord record,
+            RiskProviderRequest request
+    ) {
+        if (record.availableAt().toLocalDate().isBefore(request.startDate())
+                || record.availableAt().toLocalDate().isAfter(request.endDate())) {
+            return false;
+        }
+        if (dataset == FlowEventDataset.SHARE_UNLOCK) {
+            return true;
+        }
+        return !record.tradeDate().isBefore(request.startDate())
+                && !record.tradeDate().isAfter(request.endDate());
     }
 
     private RiskIngestionCheckpoint checkpoint(
@@ -144,6 +197,9 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                     .max(String::compareTo)
                     .orElse(dataset.code() + ":" + request.endDate());
         }
+        if (request.checkpoint() != null && cursor.compareTo(request.checkpoint().cursor()) <= 0) {
+            return request.checkpoint();
+        }
         return new RiskIngestionCheckpoint(
                 dataset.code(), scopeKey(request), cursor, sourceBatch.fetchedAt());
     }
@@ -157,8 +213,25 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             return request.checkpoint();
         }
         return new RiskIngestionCheckpoint(
-                dataset.code(), scopeKey(request), dataset.code() + ":as-of:" + request.endDate(),
+                dataset.code(), scopeKey(request), request.endDate().atTime(LocalTime.MAX) + "|~",
                 sourceBatch.fetchedAt());
+    }
+
+    private FlowEventSourceBatch emptyFilteredBatch(
+            FlowEventDataset dataset,
+            RiskProviderRequest request,
+            FlowEventSourceBatch sourceBatch
+    ) {
+        if (dataset.eventDataset()) {
+            return new FlowEventSourceBatch(
+                    sourceBatch.source(), List.of(), RiskDataQualityStatus.VALID_ZERO, null,
+                    request.endDate().atTime(LocalTime.MAX) + "|~", sourceBatch.earliestAvailableDate(),
+                    sourceBatch.historyComplete(), sourceBatch.fetchedAt(), sourceBatch.fallbackReason());
+        }
+        return new FlowEventSourceBatch(
+                sourceBatch.source(), List.of(), RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                dataset.code() + " has no observations in requested point-in-time window", null,
+                sourceBatch.earliestAvailableDate(), false, sourceBatch.fetchedAt(), sourceBatch.fallbackReason());
     }
 
     private String scopeKey(RiskProviderRequest request) {
@@ -174,12 +247,9 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                 + record.object().objectId() + ":" + record.recordId() + ":" + record.availableAt();
     }
 
-    private boolean isAfterCheckpointBoundary(
-            FlowEventSourceRecord record,
-            RiskProviderRequest request
-    ) {
+    private boolean isAfterCheckpointBoundary(FlowEventSourceRecord record, RiskProviderRequest request) {
         return request.checkpoint() == null
-                || !record.cursor().equals(request.checkpoint().cursor());
+                || record.cursor().compareTo(request.checkpoint().cursor()) > 0;
     }
 
     private String observationKey(RiskObservation observation, FlowEventSourceRecord record) {
@@ -191,22 +261,32 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             FlowEventDataset dataset,
             RiskProviderRequest request,
             FlowEventSourceBatch sourceBatch,
-            int validCount,
+            List<RiskObservation> observations,
+            List<RiskEvent> events,
             int rejectedCount
     ) {
-        boolean validZero = sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
-                || (sourceBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE && validCount == 0);
-        boolean unavailable = sourceBatch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE;
-        boolean insufficient = sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
+        Map<String, Map<String, RiskDataQualityStatus>> actualByIndicator = new LinkedHashMap<>();
+        for (RiskObservation observation : observations) {
+            String sourceRecordId = Objects.toString(
+                    observation.attributes().get("sourceRecordId"), observation.availableAt().toString());
+            actualByIndicator.computeIfAbsent(observation.indicatorCode(), ignored -> new LinkedHashMap<>())
+                    .merge(sourceRecordId, observation.qualityStatus(), this::strongerQuality);
+        }
+        if (dataset.indicatorCodes().equals(List.of("M"))) {
+            for (RiskEvent event : events) {
+                actualByIndicator.computeIfAbsent("M", ignored -> new LinkedHashMap<>())
+                        .putIfAbsent(event.eventKey(), event.qualityStatus());
+            }
+        }
+
+        boolean sourceZero = sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO;
+        boolean sourceUnavailable = sourceBatch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE;
+        boolean sourceInsufficient = sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
                 || !sourceBatch.historyComplete();
         List<IndicatorCoverage> indicators = dataset.indicatorCodes().stream()
-                .map(code -> new IndicatorCoverage(
-                        code,
-                        INDICATOR_WEIGHTS.getOrDefault(code, BigDecimal.ZERO),
-                        validCount > 0 ? validCount : 0,
-                        validZero ? 1 : 0,
-                        unavailable ? 1 : rejectedCount,
-                        insufficient ? 1 : 0))
+                .map(code -> indicatorCoverage(
+                        code, actualByIndicator.getOrDefault(code, Map.of()).values(),
+                        sourceZero, sourceUnavailable, sourceInsufficient, rejectedCount))
                 .toList();
         BigDecimal denominator = indicators.stream()
                 .map(IndicatorCoverage::weight)
@@ -216,20 +296,76 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                 .map(IndicatorCoverage::weight)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal weightedCoverage = denominator.signum() == 0
-                ? (unavailable || insufficient ? BigDecimal.ZERO : BigDecimal.ONE)
-                : numerator.divide(denominator, 4, java.math.RoundingMode.HALF_UP);
+                ? (indicators.stream().anyMatch(item -> item.validCount() > 0 || item.validZeroCount() > 0)
+                ? BigDecimal.ONE : BigDecimal.ZERO)
+                : numerator.divide(denominator, 4, RoundingMode.HALF_UP);
         List<String> gaps = new ArrayList<>();
         if (sourceBatch.earliestAvailableDate() != null
                 && sourceBatch.earliestAvailableDate().isAfter(request.startDate())) {
             gaps.add(request.startDate() + " 至 " + sourceBatch.earliestAvailableDate().minusDays(1)
                     + " 无历史覆盖");
         }
-        if (insufficient && gaps.isEmpty()) {
+        if (sourceInsufficient && gaps.isEmpty()) {
             gaps.add(sourceBatch.failureReason() == null ? "数据源历史覆盖不足" : sourceBatch.failureReason());
         }
         return new FlowEventCoverageReport(
                 dataset.code(), sourceBatch.source(), dataset.indicatorCodes(), indicators,
                 weightedCoverage, request.startDate(), sourceBatch.earliestAvailableDate(),
                 gaps, sourceBatch.fallbackReason());
+    }
+
+    private IndicatorCoverage indicatorCoverage(
+            String code,
+            java.util.Collection<RiskDataQualityStatus> actual,
+            boolean sourceZero,
+            boolean sourceUnavailable,
+            boolean sourceInsufficient,
+            int rejectedCount
+    ) {
+        int valid = count(actual, Set.of(RiskDataQualityStatus.AVAILABLE));
+        int zero = count(actual, Set.of(RiskDataQualityStatus.VALID_ZERO));
+        int failed = count(actual, Set.of(RiskDataQualityStatus.UNAVAILABLE));
+        int insufficient = count(actual,
+                Set.of(RiskDataQualityStatus.INSUFFICIENT_HISTORY, RiskDataQualityStatus.STALE));
+        if (actual.isEmpty()) {
+            if (sourceZero) {
+                zero = 1;
+            }
+            if (sourceUnavailable) {
+                failed = 1;
+            } else if (rejectedCount > 0) {
+                failed = rejectedCount;
+            }
+        }
+        if (sourceInsufficient) {
+            insufficient = Math.max(insufficient, 1);
+        }
+        return new IndicatorCoverage(
+                code, INDICATOR_WEIGHTS.getOrDefault(code, BigDecimal.ZERO),
+                valid, zero, failed, insufficient);
+    }
+
+    private int count(
+            java.util.Collection<RiskDataQualityStatus> statuses,
+            Set<RiskDataQualityStatus> accepted
+    ) {
+        return (int) statuses.stream().filter(accepted::contains).count();
+    }
+
+    private RiskDataQualityStatus strongerQuality(
+            RiskDataQualityStatus left,
+            RiskDataQualityStatus right
+    ) {
+        return qualityPriority(left) >= qualityPriority(right) ? left : right;
+    }
+
+    private int qualityPriority(RiskDataQualityStatus status) {
+        return switch (status) {
+            case AVAILABLE -> 5;
+            case VALID_ZERO -> 4;
+            case STALE -> 3;
+            case INSUFFICIENT_HISTORY -> 2;
+            case UNAVAILABLE -> 1;
+        };
     }
 }

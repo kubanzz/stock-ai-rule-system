@@ -5,6 +5,8 @@ import com.jx.tracker.risk.data.flow.FlowEventMetrics;
 import com.jx.tracker.risk.data.flow.FlowEventSourceRecord;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
+import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskHorizon;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class FlowEventTranslatorAndMetricsTest {
 
@@ -59,15 +62,117 @@ class FlowEventTranslatorAndMetricsTest {
                 .isEqualByComparingTo("100");
         assertThat(FlowEventMetrics.normalizeSeverity(new BigDecimal("-1")))
                 .isEqualByComparingTo("0");
+        assertThatThrownBy(() -> FlowEventMetrics.normalizeSeverity(null))
+                .isInstanceOf(FlowEventMetrics.InsufficientHistoryException.class);
         assertThat(FlowEventMetrics.netFlowSeries(List.of(
                 new BigDecimal("100"), new BigDecimal("-20"), new BigDecimal("-30"))))
                 .containsExactly(new BigDecimal("100"), new BigDecimal("-20"), new BigDecimal("-30"));
     }
 
+    @Test
+    void zeroOrMissingDenominatorIsInsufficientInsteadOfSyntheticZero() {
+        assertThatThrownBy(() -> FlowEventMetrics.balanceLevel(BigDecimal.TEN, BigDecimal.ZERO))
+                .isInstanceOf(FlowEventMetrics.InsufficientHistoryException.class);
+        assertThatThrownBy(() -> FlowEventMetrics.redemptionProxy(BigDecimal.TEN, null))
+                .isInstanceOf(FlowEventMetrics.InsufficientHistoryException.class);
+
+        FlowEventTranslator translator = new FlowEventTranslator(EventEconomicMeaningDictionary.defaultDictionary());
+        FlowEventSourceRecord firstMarginPoint = sourceRecord(
+                "margin-first", new BigDecimal("100"), "balance",
+                Map.of("referenceBalance", "100"));
+
+        FlowEventTranslation translation = translator.translate(
+                FlowEventDataset.MARGIN_FINANCING, firstMarginPoint,
+                RiskHorizon.SHORT_TERM, "aktools", null);
+
+        assertThat(translation.observations()).hasSize(2);
+        assertThat(translation.observations()).filteredOn(observation -> observation.indicatorCode().equals("V5"))
+                .singleElement().satisfies(observation -> {
+                    assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+                    assertThat(observation.value()).isEqualByComparingTo("1");
+                });
+        assertThat(translation.observations()).filteredOn(observation -> observation.indicatorCode().equals("A1"))
+                .singleElement().satisfies(observation -> {
+                    assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+                    assertThat(observation.value()).isNull();
+                });
+    }
+
+    @Test
+    void explicitZeroAndImprovementAreValidZeroWithoutAdverseEvent() {
+        FlowEventTranslator translator = new FlowEventTranslator(EventEconomicMeaningDictionary.defaultDictionary());
+        FlowEventSourceRecord improvement = sourceRecord(
+                "forecast-improvement", new BigDecimal("18.5"), "forecast_change",
+                Map.of("economicMeaning", "cash_flow", "adverse", false));
+
+        FlowEventTranslation result = translator.translate(
+                FlowEventDataset.EARNINGS_FORECAST, improvement,
+                RiskHorizon.SHORT_TERM, "aktools", null);
+
+        assertThat(result.events()).isEmpty();
+        assertThat(result.observations()).singleElement().satisfies(observation -> {
+            assertThat(observation.indicatorCode()).isEqualTo("T1");
+            assertThat(observation.value()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        });
+
+        FlowEventTranslation explicitZero = translator.translate(
+                FlowEventDataset.EARNINGS_FORECAST,
+                sourceRecord("forecast-zero", BigDecimal.ZERO, "forecast_change",
+                        Map.of("economicMeaning", "cash_flow", "adverse", true)),
+                RiskHorizon.SHORT_TERM, "aktools", null);
+        assertThat(explicitZero.events()).isEmpty();
+        assertThat(explicitZero.observations()).singleElement()
+                .satisfies(observation -> assertThat(observation.qualityStatus())
+                        .isEqualTo(RiskDataQualityStatus.VALID_ZERO));
+    }
+
+    @Test
+    void missingAdverseSeverityRemainsInsufficientHistory() {
+        FlowEventTranslator translator = new FlowEventTranslator(EventEconomicMeaningDictionary.defaultDictionary());
+        FlowEventSourceRecord adverseWithoutValue = sourceRecord(
+                "notice-missing", null, "notice",
+                Map.of("economicMeaning", "market_trust", "adverse", true));
+
+        FlowEventTranslation result = translator.translate(
+                FlowEventDataset.STOCK_ANNOUNCEMENT, adverseWithoutValue,
+                RiskHorizon.SHORT_TERM, "aktools", null);
+
+        assertThat(result.events()).singleElement()
+                .satisfies(event -> assertThat(event.severityScore()).isNull());
+        assertThat(result.observations()).singleElement().satisfies(observation -> {
+            assertThat(observation.indicatorCode()).isEqualTo("T4");
+            assertThat(observation.value()).isNull();
+            assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        });
+    }
+
+    @Test
+    void shareholdingIncreaseDoesNotCreateForcedSellingModifier() {
+        FlowEventTranslator translator = new FlowEventTranslator(EventEconomicMeaningDictionary.defaultDictionary());
+        FlowEventTranslation result = translator.translate(
+                FlowEventDataset.SHARE_REDUCTION,
+                sourceRecord("increase", new BigDecimal("200000"), "share_reduction",
+                        Map.of("actualReduction", false, "adverse", false)),
+                RiskHorizon.SHORT_TERM, "aktools", null);
+
+        assertThat(result.events()).isEmpty();
+        assertThat(result.observations()).isEmpty();
+    }
+
     private FlowEventSourceRecord record(Map<String, Object> attributes) {
+        return sourceRecord("announcement-1", new BigDecimal("99"), "notice", attributes);
+    }
+
+    private FlowEventSourceRecord sourceRecord(
+            String id,
+            BigDecimal value,
+            String eventCode,
+            Map<String, Object> attributes
+    ) {
         return new FlowEventSourceRecord(
-                "announcement-1", "cursor-1", STOCK, LocalDate.of(2026, 7, 18),
+                id, "cursor-1", STOCK, LocalDate.of(2026, 7, 18),
                 LocalDateTime.of(2026, 7, 18, 12, 0), LocalDateTime.of(2026, 7, 18, 15, 0),
-                AVAILABLE_AT, new BigDecimal("99"), "score", "notice", "普通公告", attributes);
+                AVAILABLE_AT, value, "score", eventCode, "普通公告", attributes);
     }
 }
