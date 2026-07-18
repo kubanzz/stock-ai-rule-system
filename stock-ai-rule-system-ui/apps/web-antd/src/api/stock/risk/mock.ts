@@ -1,6 +1,7 @@
 import type {
   RiskEvidence,
   RiskObjectDetail,
+  RiskObjectDetailQuery,
   RiskObjectListItem,
   RiskObjectQuery,
   RiskOverview,
@@ -292,6 +293,7 @@ export function selectMockRiskObjects(
 export function selectMockRiskObjectDetail(
   objectType: RiskObjectListItem['object']['objectType'],
   objectId: string,
+  query: RiskObjectDetailQuery = {},
 ): RiskObjectDetail {
   const item = mockRiskObjects.find(
     (candidate) =>
@@ -310,17 +312,34 @@ export function selectMockRiskObjectDetail(
             { objectId: 'CN-A', objectType: 'market' as const },
             { objectId: 'SW1:801120', objectType: 'sector' as const },
           ];
+  const objectSnapshots = mockRiskSnapshots.filter(
+    (candidate) =>
+      candidate.object.objectType === objectType &&
+      candidate.object.objectId === objectId,
+  );
+  const snapshots = objectSnapshots.filter(
+    (candidate) =>
+      (!query.horizon || candidate.horizon === query.horizon) &&
+      (!query.tradeDate || candidate.tradeDate === query.tradeDate),
+  );
+  if ((query.horizon || query.tradeDate) && snapshots.length === 0) {
+    throw new Error(`未找到风险对象快照 ${objectType}/${objectId}`);
+  }
+  const selectedSnapshot = snapshots[0] ?? item.snapshot;
+  const gateDecision =
+    item.gateDecision?.horizon === selectedSnapshot.horizon &&
+    item.gateDecision.tradeDate === selectedSnapshot.tradeDate
+      ? item.gateDecision
+      : undefined;
   return {
     ...item,
-    activeTriggers: item.snapshot.evidence.map(
+    gateDecision,
+    snapshot: selectedSnapshot,
+    activeTriggers: selectedSnapshot.evidence.map(
       (evidenceItem) => evidenceItem.indicatorCode,
     ),
     parentObjects,
-    snapshots: mockRiskSnapshots.filter(
-      (candidate) =>
-        candidate.object.objectType === objectType &&
-        candidate.object.objectId === objectId,
-    ),
+    snapshots: query.horizon || query.tradeDate ? snapshots : objectSnapshots,
   };
 }
 

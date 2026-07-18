@@ -111,6 +111,20 @@ describe('risk api contract', () => {
     );
   });
 
+  it('honors horizon and trade date in mock object details', () => {
+    const detail = selectMockRiskObjectDetail('stock', '600519.SH', {
+      horizon: '20-60d',
+      tradeDate: '2026-07-18',
+    });
+    expect(detail.snapshot.horizon).toBe('20-60d');
+    expect(detail.gateDecision).toBeUndefined();
+    expect(detail.snapshots).toHaveLength(1);
+    expect(detail.snapshots[0]).toMatchObject({
+      horizon: '20-60d',
+      tradeDate: '2026-07-18',
+    });
+  });
+
   it('honors horizon, object identity and date range in mock selectors', () => {
     const longOverview = selectMockRiskOverview({ horizon: '20-60d' });
     expect(longOverview.horizon).toBe('20-60d');

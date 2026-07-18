@@ -83,7 +83,7 @@ export async function getRiskObjectDetail(
   params: RiskObjectDetailQuery = {},
 ): Promise<RiskObjectDetail> {
   if (USE_STOCK_MOCK) {
-    return selectMockRiskObjectDetail(objectType, objectId);
+    return selectMockRiskObjectDetail(objectType, objectId, params);
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskObjectDetail>>
