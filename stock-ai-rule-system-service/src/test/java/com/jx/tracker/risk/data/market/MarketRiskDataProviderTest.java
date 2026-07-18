@@ -521,6 +521,143 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void membershipRevisionIgnoresValidToAndChoosesLatestRegardlessOfSourceOrder() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        RiskObjectKey stock = catalog.stock("000001.SZ");
+        LocalDate validFrom = LocalDate.of(2025, 1, 1);
+        IndustryExposure openRevision = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, null,
+                END_DATE.minusDays(2).atTime(15, 0), END_DATE.minusDays(2).atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure closedRevision = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, LocalDate.of(2026, 6, 30),
+                END_DATE.minusDays(1).atTime(15, 0), END_DATE.minusDays(1).atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch forward = provider(List.of(openRevision, closedRevision), null)
+                .fetch("sw1_membership", request(null));
+        RiskProviderBatch reversed = provider(List.of(closedRevision, openRevision), null)
+                .fetch("sw1_membership", request(null));
+
+        assertThat(forward.industryExposures()).containsExactly(closedRevision);
+        assertThat(reversed.industryExposures()).containsExactly(closedRevision);
+        assertThat(forward.observations()).hasSize(3).allSatisfy(observation -> {
+            assertThat(observation.indicatorCode()).isEqualTo("DATA_SW1_MEMBERSHIP");
+            assertThat(observation.attributes())
+                    .containsEntry("sectorId", "SW1:801780")
+                    .containsEntry("validFrom", validFrom)
+                    .containsEntry("validTo", LocalDate.of(2026, 6, 30));
+            assertThat(observation.availableAt()).isEqualTo(closedRevision.availableAt());
+        });
+        assertThat(forward.observations())
+                .extracting(observation -> observation.attributes().get("observationKey"))
+                .doesNotHaveDuplicates();
+        assertThat(reversed.observations()).containsExactlyElementsOf(forward.observations());
+    }
+
+    @Test
+    void membershipRevisionUsesOnlyVersionsAvailableByRequestCutoff() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        RiskObjectKey stock = catalog.stock("000001.SZ");
+        LocalDate validFrom = LocalDate.of(2025, 1, 1);
+        IndustryExposure openRevision = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, null,
+                END_DATE.minusDays(2).atTime(15, 0), END_DATE.minusDays(2).atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure closedRevision = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, LocalDate.of(2026, 6, 30),
+                END_DATE.atTime(15, 0), END_DATE.atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        MarketRiskDataProvider provider = provider(List.of(openRevision, closedRevision), null);
+
+        RiskProviderBatch beforeRevision = provider.fetch(
+                "sw1_membership", request(null, END_DATE.minusDays(1))
+        );
+        RiskProviderBatch afterRevision = provider.fetch("sw1_membership", request(null, END_DATE));
+
+        assertThat(beforeRevision.industryExposures()).containsExactly(openRevision);
+        assertThat(afterRevision.industryExposures()).containsExactly(closedRevision);
+        assertThat(beforeRevision.observations()).allSatisfy(observation ->
+                assertThat(observation.attributes()).doesNotContainKey("validTo"));
+        assertThat(afterRevision.observations()).allSatisfy(observation ->
+                assertThat(observation.attributes())
+                        .containsEntry("validTo", LocalDate.of(2026, 6, 30)));
+    }
+
+    @Test
+    void membershipRevisionIdentityKeepsIndependentSourcesSeparate() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        RiskObjectKey stock = catalog.stock("000001.SZ");
+        LocalDate validFrom = LocalDate.of(2025, 1, 1);
+        LocalDateTime observedAt = END_DATE.minusDays(1).atTime(15, 0);
+        LocalDateTime availableAt = END_DATE.minusDays(1).atTime(16, 0);
+        IndustryExposure primary = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, null,
+                observedAt, availableAt, "primary", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure supplemental = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, null,
+                observedAt, availableAt, "supplemental", RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch batch = provider(List.of(primary, supplemental), null)
+                .fetch("sw1_membership", request(null));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.industryExposures()).containsExactly(primary, supplemental);
+        assertThat(batch.observations()).extracting(RiskObservation::source)
+                .containsExactly("primary", "primary", "primary", "supplemental", "supplemental", "supplemental");
+    }
+
+    @Test
+    void membershipConflictingRevisionAtSameTimestampsIsUnavailable() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        RiskObjectKey stock = catalog.stock("000001.SZ");
+        LocalDate validFrom = LocalDate.of(2025, 1, 1);
+        LocalDateTime observedAt = END_DATE.minusDays(1).atTime(15, 0);
+        LocalDateTime availableAt = END_DATE.minusDays(1).atTime(16, 0);
+        IndustryExposure openRevision = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, null,
+                observedAt, availableAt, "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure closedRevision = new IndustryExposure(
+                stock, catalog.sector("801780"), validFrom, LocalDate.of(2026, 6, 30),
+                observedAt, availableAt, "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch batch = provider(List.of(openRevision, closedRevision), null)
+                .fetch("sw1_membership", request(null));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(batch.errorMessage()).contains("ambiguous source revisions");
+        assertThat(batch.industryExposures()).isEmpty();
+        assertThat(batch.observations()).isEmpty();
+    }
+
+    @Test
+    void membershipRejectsNonCanonicalSectorBeforePublishingTypedOrAuditRecords() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        IndustryExposure invalid = new IndustryExposure(
+                catalog.stock("000001.SZ"), new RiskObjectKey(RiskObjectType.SECTOR, "INVALID"),
+                LocalDate.of(2025, 1, 1), null,
+                END_DATE.minusDays(1).atTime(15, 0), END_DATE.minusDays(1).atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch batch = provider(List.of(invalid), null)
+                .fetch("sw1_membership", request(null));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(batch.errorMessage()).contains("non-canonical A-share risk object");
+        assertThat(batch.industryExposures()).isEmpty();
+        assertThat(batch.observations()).isEmpty();
+    }
+
+    @Test
     void coverageUsesExactObjectHorizonTradeDateAndAsOfTuple() {
         MarketRiskDataProvider provider = provider(dailyPoints(65), null);
         RiskProviderBatch batch = provider.fetch("market_daily", request(null));
@@ -576,11 +713,15 @@ class MarketRiskDataProviderTest {
     }
 
     private RiskProviderRequest request(RiskIngestionCheckpoint checkpoint) {
+        return request(checkpoint, END_DATE);
+    }
+
+    private RiskProviderRequest request(RiskIngestionCheckpoint checkpoint, LocalDate endDate) {
         return new RiskProviderRequest(
                 List.of(MARKET),
                 List.of(RiskHorizon.SHORT_TERM, RiskHorizon.MEDIUM_TERM, RiskHorizon.LONG_TERM),
                 LocalDate.of(2021, 7, 18),
-                END_DATE,
+                endDate,
                 checkpoint
         );
     }

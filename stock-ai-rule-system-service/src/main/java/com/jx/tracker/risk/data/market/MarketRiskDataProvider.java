@@ -201,6 +201,9 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             return false;
         }
         validateCanonicalObject(record.object());
+        if (record instanceof IndustryExposure exposure) {
+            validateCanonicalObject(exposure.sector());
+        }
         if (dataset == MarketDatasetCode.CN_A_STOCK_MASTER || dataset == MarketDatasetCode.SW1_MEMBERSHIP) {
             return true;
         }
@@ -249,11 +252,13 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
     }
 
     private String sourceRecordKey(MarketSourceRecord record) {
-        String suffix = record instanceof IndustryExposure exposure
-                ? ":" + exposure.sector().objectId() + ":" + exposure.validFrom() + ":" + exposure.validTo()
-                : "";
+        if (record instanceof IndustryExposure exposure) {
+            return record.getClass().getName() + ":" + exposure.stock().objectType().getCode() + ":"
+                    + exposure.stock().objectId() + ":" + exposure.sector().objectId() + ":"
+                    + exposure.validFrom() + ":" + exposure.source();
+        }
         return record.getClass().getName() + ":" + record.object().objectType().getCode() + ":"
-                + record.object().objectId() + ":" + record.tradeDate() + suffix;
+                + record.object().objectId() + ":" + record.tradeDate();
     }
 
     private void validateCanonicalObject(RiskObjectKey object) {
