@@ -93,7 +93,7 @@ export const mockRiskSnapshots: RiskSnapshot[] = [
   snapshot({
     horizon: '1-5d',
     level: 'warning',
-    object: { objectId: 'SW1:801010', objectType: 'sector' },
+    object: { objectId: 'SW1:801120', objectType: 'sector' },
     totalScore: 64.1,
   }),
   snapshot({
@@ -160,7 +160,8 @@ function requireMockSnapshot(index: number): RiskSnapshot {
 export const mockIncompleteRiskObject: RiskObjectListItem = {
   name: '历史不足示例',
   object: incompleteSnapshot.object,
-  parentName: '申万一级行业待补齐',
+  parentName: '食品饮料',
+  parentObject: { objectId: 'SW1:801120', objectType: 'sector' },
   snapshot: incompleteSnapshot,
 };
 
@@ -175,9 +176,10 @@ export const mockRiskObjects: RiskObjectListItem[] = [
     snapshot: marketSnapshot,
   },
   {
-    name: '农林牧渔',
+    name: '食品饮料',
     object: sectorSnapshot.object,
     parentName: 'A 股全市场',
+    parentObject: { objectId: 'CN-A', objectType: 'market' },
     snapshot: sectorSnapshot,
   },
   {
@@ -197,6 +199,7 @@ export const mockRiskObjects: RiskObjectListItem[] = [
     name: '贵州茅台',
     object: stockSnapshot.object,
     parentName: '食品饮料',
+    parentObject: { objectId: 'SW1:801120', objectType: 'sector' },
     snapshot: stockSnapshot,
   },
   mockIncompleteRiskObject,
@@ -271,24 +274,46 @@ export function selectMockRiskOverview(
 }
 
 export function selectMockRiskObjects(
-  query: Pick<RiskObjectQuery, 'horizon' | 'tradeDate'> = {},
+  query: RiskObjectQuery = {},
 ): RiskObjectListItem[] {
-  if (!query.horizon && !query.tradeDate) return mockRiskObjects;
-  return mockRiskObjects.flatMap((item) => {
-    const matchingSnapshot = mockRiskSnapshots.find(
-      (candidate) =>
-        candidate.object.objectType === item.object.objectType &&
-        candidate.object.objectId === item.object.objectId &&
-        (!query.horizon || candidate.horizon === query.horizon) &&
-        (!query.tradeDate || candidate.tradeDate === query.tradeDate),
-    );
-    if (!matchingSnapshot) return [];
-    const gateDecision =
-      item.gateDecision?.horizon === matchingSnapshot.horizon &&
-      item.gateDecision.tradeDate === matchingSnapshot.tradeDate
-        ? item.gateDecision
-        : undefined;
-    return [{ ...item, gateDecision, snapshot: matchingSnapshot }];
+  const rows =
+    query.horizon || query.tradeDate
+      ? mockRiskObjects.flatMap((item) => {
+          const matchingSnapshot = mockRiskSnapshots.find(
+            (candidate) =>
+              candidate.object.objectType === item.object.objectType &&
+              candidate.object.objectId === item.object.objectId &&
+              (!query.horizon || candidate.horizon === query.horizon) &&
+              (!query.tradeDate || candidate.tradeDate === query.tradeDate),
+          );
+          if (!matchingSnapshot) return [];
+          const gateDecision =
+            item.gateDecision?.horizon === matchingSnapshot.horizon &&
+            item.gateDecision.tradeDate === matchingSnapshot.tradeDate
+              ? item.gateDecision
+              : undefined;
+          return [{ ...item, gateDecision, snapshot: matchingSnapshot }];
+        })
+      : mockRiskObjects;
+
+  return rows.filter((item) => {
+    const objectMatched = query.objectType
+      ? item.object.objectType === query.objectType
+      : true;
+    const parentMatched =
+      query.parentObjectType && query.parentObjectId
+        ? item.parentObject?.objectType === query.parentObjectType &&
+          item.parentObject.objectId === query.parentObjectId
+        : true;
+    const levelMatched = query.level
+      ? item.snapshot.level === query.level
+      : true;
+    const keywordMatched = query.keyword
+      ? `${item.name}${item.object.objectId}`
+          .toLowerCase()
+          .includes(query.keyword.toLowerCase())
+      : true;
+    return objectMatched && parentMatched && levelMatched && keywordMatched;
   });
 }
 

@@ -51,20 +51,7 @@ export async function getRiskObjects(
 ): Promise<StockPageData<RiskObjectListItem>> {
   const params = normalizeRiskObjectQuery(query);
   if (USE_STOCK_MOCK) {
-    const filtered = selectMockRiskObjects(params).filter((item) => {
-      const objectMatched = params.objectType
-        ? item.object.objectType === params.objectType
-        : true;
-      const levelMatched = params.level
-        ? item.snapshot.level === params.level
-        : true;
-      const keywordMatched = params.keyword
-        ? `${item.name}${item.object.objectId}`
-            .toLowerCase()
-            .includes(params.keyword.toLowerCase())
-        : true;
-      return objectMatched && levelMatched && keywordMatched;
-    });
+    const filtered = selectMockRiskObjects(params);
     const start = ((params.pageNum ?? 1) - 1) * (params.pageSize ?? 20);
     return {
       rows: filtered.slice(start, start + (params.pageSize ?? 20)),

@@ -85,6 +85,7 @@ export interface RiskObjectListItem {
   name: string;
   object: RiskObjectRef;
   parentName?: string;
+  parentObject?: RiskObjectRef;
   snapshot: RiskSnapshot;
 }
 
@@ -117,6 +118,8 @@ export interface RiskObjectQuery extends RiskOverviewQuery {
   objectType?: RiskObjectType;
   pageNum?: number;
   pageSize?: number;
+  parentObjectId?: string;
+  parentObjectType?: RiskObjectType;
 }
 
 export interface RiskObjectDetailQuery {
