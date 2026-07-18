@@ -341,18 +341,25 @@ onMounted(loadCenter);
             </template>
 
             <Alert
-              v-if="selectedDataState === 'insufficient'"
+              v-if="selectedDataState === 'unavailable'"
               class="detail-alert"
-              message="数据完整度不足，当前不形成正式风险等级与闸门建议。"
+              message="风险数据源不可用，当前不形成正式风险等级与闸门建议。"
               show-icon
-              type="info"
+              type="error"
             />
             <Alert
               v-else-if="selectedDataState === 'stale'"
               class="detail-alert"
-              message="证据包含过期或不可用数据，请勿将当前结果视为正式风险态。"
+              message="证据包含过期数据，请勿将当前结果视为正式风险态。"
               show-icon
               type="warning"
+            />
+            <Alert
+              v-else-if="selectedDataState === 'insufficient'"
+              class="detail-alert"
+              message="数据完整度不足，当前不形成正式风险等级与闸门建议。"
+              show-icon
+              type="info"
             />
 
             <Descriptions bordered :column="2" size="small">

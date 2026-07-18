@@ -3,7 +3,7 @@ import type { RiskEvidence } from '#/api/stock/risk/types';
 
 import { Tag } from 'ant-design-vue';
 
-import { formatRiskScore } from './presentation';
+import { formatRiskScore, riskEvidenceKey } from './presentation';
 
 defineProps<{ evidence: RiskEvidence[] }>();
 </script>
@@ -12,7 +12,7 @@ defineProps<{ evidence: RiskEvidence[] }>();
   <div v-if="evidence.length" class="space-y-2">
     <div
       v-for="item in evidence"
-      :key="`${item.indicatorCode}-${item.source}-${item.availableAt}`"
+      :key="riskEvidenceKey(item)"
       class="rounded border border-gray-200 p-3"
     >
       <div class="flex items-center justify-between gap-3">

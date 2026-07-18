@@ -1,4 +1,8 @@
-import type { RiskGateStatus, RiskLevel } from '#/api/stock/risk/types';
+import type {
+  RiskEvidence,
+  RiskGateStatus,
+  RiskLevel,
+} from '#/api/stock/risk/types';
 
 export interface RiskPresentation {
   color: string;
@@ -48,4 +52,25 @@ export function getRiskScoreTone(
 
 export function formatRiskScore(score: null | number | undefined) {
   return score === null || score === undefined ? '--' : score.toFixed(1);
+}
+
+function evidenceDetail(
+  evidence: RiskEvidence,
+  key: 'componentCode' | 'layerObjectId' | 'layerObjectType',
+) {
+  const value = evidence.details[key];
+  return typeof value === 'string' && value.length > 0 ? value : 'unknown';
+}
+
+export function riskEvidenceKey(evidence: RiskEvidence) {
+  return [
+    evidenceDetail(evidence, 'layerObjectType'),
+    evidenceDetail(evidence, 'layerObjectId'),
+    evidence.dimension,
+    evidence.indicatorCode,
+    evidenceDetail(evidence, 'componentCode'),
+    evidence.source,
+    evidence.observedAt,
+    evidence.availableAt,
+  ].join(':');
 }

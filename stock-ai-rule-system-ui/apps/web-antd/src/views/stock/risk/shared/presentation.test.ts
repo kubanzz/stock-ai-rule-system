@@ -4,6 +4,7 @@ import {
   getGatePresentation,
   getRiskLevelPresentation,
   getRiskScoreTone,
+  riskEvidenceKey,
 } from './presentation';
 
 describe('risk presentation', () => {
@@ -33,5 +34,35 @@ describe('risk presentation', () => {
     expect(getRiskScoreTone(null)).toBe('unavailable');
     expect(getRiskScoreTone(20)).toBe('low');
     expect(getRiskScoreTone(66)).toBe('high');
+  });
+
+  it('keeps evidence from different hierarchy layers distinct', () => {
+    const evidence = {
+      availableAt: '2026-07-18T16:00:00+08:00',
+      details: { layerObjectId: 'CN-A', layerObjectType: 'market' },
+      dimension: 'V' as const,
+      indicatorCode: 'V1',
+      observedAt: '2026-07-18T15:00:00+08:00',
+      qualityStatus: 'available' as const,
+      rawValue: 20,
+      score: 70,
+      source: 'aktools',
+    };
+
+    expect(riskEvidenceKey(evidence)).not.toBe(
+      riskEvidenceKey({
+        ...evidence,
+        details: {
+          layerObjectId: 'SW1:801780',
+          layerObjectType: 'sector',
+        },
+      }),
+    );
+    expect(riskEvidenceKey(evidence)).not.toBe(
+      riskEvidenceKey({
+        ...evidence,
+        details: { ...evidence.details, componentCode: 'marketPercentile' },
+      }),
+    );
   });
 });

@@ -4,7 +4,12 @@ import type {
   SignalDirection,
 } from '#/api/stock/risk';
 
-export type RiskSnapshotState = 'empty' | 'insufficient' | 'ready' | 'stale';
+export type RiskSnapshotState =
+  | 'empty'
+  | 'insufficient'
+  | 'ready'
+  | 'stale'
+  | 'unavailable';
 
 export const RISK_HORIZON_OPTIONS: Array<{
   label: string;
@@ -27,12 +32,16 @@ export const RISK_SNAPSHOT_STATE_LABELS: Record<RiskSnapshotState, string> = {
   insufficient: '风险数据不足',
   ready: '风险数据有效',
   stale: '风险数据已过期',
+  unavailable: '风险数据不可用',
 };
 
 export function getRiskSnapshotState(
   snapshot: null | RiskSnapshot | undefined,
 ): RiskSnapshotState {
   if (!snapshot) return 'empty';
+  if (snapshot.evidence.some((item) => item.qualityStatus === 'unavailable')) {
+    return 'unavailable';
+  }
   if (snapshot.evidence.some((item) => item.qualityStatus === 'stale')) {
     return 'stale';
   }

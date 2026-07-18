@@ -37,7 +37,7 @@ describe('signal dashboard risk presentation state', () => {
     ]);
   });
 
-  it('distinguishes ready, insufficient, stale and empty snapshots', () => {
+  it('distinguishes ready, insufficient, stale, unavailable and empty snapshots', () => {
     expect(getRiskSnapshotState(baseSnapshot)).toBe('ready');
     expect(
       getRiskSnapshotState({
@@ -65,6 +65,24 @@ describe('signal dashboard risk presentation state', () => {
         ],
       }),
     ).toBe('stale');
+    expect(
+      getRiskSnapshotState({
+        ...baseSnapshot,
+        evidence: [
+          {
+            availableAt: '2026-07-18T16:30:00+08:00',
+            details: {},
+            dimension: 'V',
+            indicatorCode: 'V1',
+            observedAt: '2026-07-18T15:00:00+08:00',
+            qualityStatus: 'unavailable',
+            rawValue: null,
+            score: null,
+            source: 'aktools',
+          },
+        ],
+      }),
+    ).toBe('unavailable');
     expect(getRiskSnapshotState(null)).toBe('empty');
   });
 

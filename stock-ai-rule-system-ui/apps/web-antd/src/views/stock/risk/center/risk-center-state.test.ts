@@ -165,13 +165,30 @@ describe('risk center state', () => {
             },
             {
               availableAt: '2026-07-18T15:40:00+08:00',
-              details: {},
+              details: {
+                layerObjectId: 'CN-A',
+                layerObjectType: 'market',
+              },
               dimension: 'C',
               indicatorCode: 'C2',
               observedAt: '2026-07-18T15:00:00+08:00',
               qualityStatus: 'available',
               rawValue: 0.28,
               score: 68,
+              source: 'aktools',
+            },
+            {
+              availableAt: '2026-07-18T15:40:00+08:00',
+              details: {
+                layerObjectId: 'SW1:801120',
+                layerObjectType: 'sector',
+              },
+              dimension: 'C',
+              indicatorCode: 'C2',
+              observedAt: '2026-07-18T15:00:00+08:00',
+              qualityStatus: 'available',
+              rawValue: 0.31,
+              score: 66,
               source: 'aktools',
             },
             {
@@ -193,7 +210,12 @@ describe('risk center state', () => {
 
     const timeline = buildRiskTriggerTimeline(detail);
 
-    expect(timeline.map((item) => item.indicatorCode)).toEqual(['C2', 'A2']);
+    expect(timeline.map((item) => item.indicatorCode)).toEqual([
+      'C2',
+      'C2',
+      'A2',
+    ]);
+    expect(new Set(timeline.map((item) => item.key)).size).toBe(3);
     expect(timeline[0]).toMatchObject({
       availableAt: '2026-07-18T15:40:00+08:00',
       observedAt: '2026-07-18T15:00:00+08:00',

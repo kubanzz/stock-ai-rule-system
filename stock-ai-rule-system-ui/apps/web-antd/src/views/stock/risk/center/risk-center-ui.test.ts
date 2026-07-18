@@ -67,5 +67,8 @@ describe('risk center UI safety contract', () => {
     expect(state).toContain('数据不足');
     expect(state).toContain('数据过期');
     expect(state).toContain('数据不可用');
+    expect(centerFile('index.vue')).toContain(
+      "selectedDataState === 'unavailable'",
+    );
   });
 });

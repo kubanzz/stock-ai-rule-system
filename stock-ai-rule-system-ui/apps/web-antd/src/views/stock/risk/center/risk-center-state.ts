@@ -9,6 +9,8 @@ import type {
   RiskTrendQuery,
 } from '#/api/stock/risk/types';
 
+import { riskEvidenceKey } from '../shared/presentation';
+
 export type RiskDataState = 'insufficient' | 'ready' | 'stale' | 'unavailable';
 
 export const RISK_DATA_STATE_LABELS: Record<RiskDataState, string> = {
@@ -154,12 +156,7 @@ export function buildRiskTriggerTimeline(
       if (!activeTriggers.has(evidence.indicatorCode)) {
         continue;
       }
-      const key = [
-        snapshot.horizon,
-        evidence.indicatorCode,
-        evidence.availableAt,
-        evidence.source,
-      ].join(':');
+      const key = `${snapshot.horizon}:${riskEvidenceKey(evidence)}`;
       uniqueEvidence.set(key, { ...evidence, horizon: snapshot.horizon, key });
     }
   }
