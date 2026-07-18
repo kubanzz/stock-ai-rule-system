@@ -80,17 +80,15 @@ public class StockSignalService {
                 .riskDisclaimer(StockRiskConstants.SIGNAL_RISK_DISCLAIMER)
                 .build();
 
-        StockSignalDaily existing = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
+        stockSignalDailyMapper.upsertSignal(signal);
+        StockSignalDaily persisted = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                 .eq(StockSignalDaily::getSymbol, symbol)
                 .eq(StockSignalDaily::getSignalDate, signalDate));
-        if (existing == null) {
-            stockSignalDailyMapper.insert(signal);
-        } else {
-            signal.setId(existing.getId());
-            stockSignalDailyMapper.updateById(signal);
+        if (persisted == null || persisted.getId() == null) {
+            throw new IllegalStateException("signal upsert did not return a persisted row");
         }
-
-        stockSignalDailyMapper.insertSignalHistory(signal, LocalDateTime.now());
+        signal.setId(persisted.getId());
+        stockSignalDailyMapper.insertSignalHistoryIfChanged(signal.getId(), LocalDateTime.now());
         return signal;
     }
 

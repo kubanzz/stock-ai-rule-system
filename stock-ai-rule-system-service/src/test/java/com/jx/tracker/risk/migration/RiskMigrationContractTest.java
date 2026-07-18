@@ -113,11 +113,14 @@ class RiskMigrationContractTest {
                 "signal_id BIGINT NOT NULL",
                 "signal_direction VARCHAR(16) NOT NULL",
                 "available_at DATETIME(3) NOT NULL",
+                "content_fingerprint CHAR(64) CHARACTER SET ascii NOT NULL",
+                "UNIQUE KEY uk_stock_signal_daily_history_version (signal_id, version_no)",
                 "KEY idx_stock_signal_daily_history_pit (signal_date, symbol, available_at, id)",
                 "INSERT INTO stock_signal_daily_history",
-                "SELECT id, symbol, signal_date, `signal`, signal_direction",
-                "COALESCE(created_at, CURRENT_TIMESTAMP(3))"
+                "SELECT id, 1, symbol, signal_date, `signal`, signal_direction",
+                "CURRENT_TIMESTAMP(3)"
         );
+        assertThat(migration).doesNotContain("COALESCE(created_at, CURRENT_TIMESTAMP(3))");
     }
 
     private String resource(String path) throws IOException {
