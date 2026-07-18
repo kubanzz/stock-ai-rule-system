@@ -453,6 +453,7 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
 
     private boolean isUnavailable(String qualityStatus) {
         return RiskDataQualityStatus.UNAVAILABLE.getCode().equals(qualityStatus)
+                || RiskDataQualityStatus.STALE.getCode().equals(qualityStatus)
                 || RiskDataQualityStatus.INSUFFICIENT_HISTORY.getCode().equals(qualityStatus);
     }
 
