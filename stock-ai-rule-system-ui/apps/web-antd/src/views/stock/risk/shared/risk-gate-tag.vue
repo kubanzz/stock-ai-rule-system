@@ -7,12 +7,9 @@ import { Tag } from 'ant-design-vue';
 
 import { getGatePresentation } from './presentation';
 
-const props = withDefaults(
-  defineProps<{ enforced?: boolean; status: RiskGateStatus }>(),
-  { enforced: false },
-);
+const props = defineProps<{ status: RiskGateStatus }>();
 const presentation = computed(() =>
-  getGatePresentation(props.status, props.enforced),
+  getGatePresentation(props.status, false),
 );
 </script>
 

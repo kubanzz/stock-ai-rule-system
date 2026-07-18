@@ -44,7 +44,6 @@ export interface RiskSnapshot {
   modelVersion: string;
   object: RiskObjectRef;
   riskConfidence: null | number;
-  riskDisclaimer: string;
   sScore: null | number;
   stage: null | RiskStage;
   tScore: null | number;

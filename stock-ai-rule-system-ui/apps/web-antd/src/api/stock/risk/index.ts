@@ -16,11 +16,10 @@ import { baseRequestClient } from '#/api/request';
 import { unwrapAjaxResult, unwrapStockPageResult } from '../ajax-result';
 import { normalizeRiskObjectQuery, RISK_API_PATHS } from './contract';
 import {
-  mockRiskObjectDetail,
-  mockRiskObjects,
-  mockRiskOverview,
-  mockRiskSnapshots,
-  mockRiskTrend,
+  selectMockRiskObjectDetail,
+  selectMockRiskObjects,
+  selectMockRiskOverview,
+  selectMockRiskTrend,
 } from './mock';
 
 interface RawResponse<T> {
@@ -39,7 +38,7 @@ export async function getRiskOverview(
   params: RiskOverviewQuery = {},
 ): Promise<RiskOverview> {
   if (USE_STOCK_MOCK) {
-    return mockRiskOverview;
+    return selectMockRiskOverview(params);
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskOverview>>
@@ -52,7 +51,7 @@ export async function getRiskObjects(
 ): Promise<StockPageData<RiskObjectListItem>> {
   const params = normalizeRiskObjectQuery(query);
   if (USE_STOCK_MOCK) {
-    const filtered = mockRiskObjects.filter((item) => {
+    const filtered = selectMockRiskObjects(params).filter((item) => {
       const objectMatched = params.objectType
         ? item.object.objectType === params.objectType
         : true;
@@ -84,22 +83,7 @@ export async function getRiskObjectDetail(
   params: RiskObjectDetailQuery = {},
 ): Promise<RiskObjectDetail> {
   if (USE_STOCK_MOCK) {
-    const item = mockRiskObjects.find(
-      (candidate) =>
-        candidate.object.objectType === objectType &&
-        candidate.object.objectId === objectId,
-    );
-    return item
-      ? {
-          ...mockRiskObjectDetail,
-          ...item,
-          snapshots: mockRiskSnapshots.filter(
-            (candidate) =>
-              candidate.object.objectType === objectType &&
-              candidate.object.objectId === objectId,
-          ),
-        }
-      : mockRiskObjectDetail;
+    return selectMockRiskObjectDetail(objectType, objectId);
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskObjectDetail>>
@@ -113,7 +97,7 @@ export async function getRiskObjectTrend(
   params: RiskTrendQuery = {},
 ): Promise<RiskTrendPoint[]> {
   if (USE_STOCK_MOCK) {
-    return mockRiskTrend;
+    return selectMockRiskTrend(objectType, objectId, params);
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskTrendPoint[]>>

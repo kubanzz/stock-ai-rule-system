@@ -8,6 +8,10 @@ import {
   mockIncompleteRiskObject,
   mockRiskOverview,
   mockRiskSnapshots,
+  selectMockRiskObjectDetail,
+  selectMockRiskObjects,
+  selectMockRiskOverview,
+  selectMockRiskTrend,
 } from './mock';
 import { RISK_DECISION_SUPPORT_NOTICE } from './types';
 
@@ -39,6 +43,15 @@ describe('risk api contract', () => {
     });
   });
 
+  it('normalizes non-finite and fractional pagination safely', () => {
+    expect(
+      normalizeRiskObjectQuery({ pageNum: Number.NaN, pageSize: Infinity }),
+    ).toMatchObject({ pageNum: 1, pageSize: 20 });
+    expect(normalizeRiskObjectQuery({ pageNum: 2.9, pageSize: 10.8 })).toMatchObject(
+      { pageNum: 2, pageSize: 10 },
+    );
+  });
+
   it('keeps directions, risk levels and gates independent', () => {
     const item = mockRiskOverview.highRiskObjects.find(
       (candidate) => candidate.object.objectId === '600519.SH',
@@ -55,6 +68,11 @@ describe('risk api contract', () => {
     expect(mockIncompleteRiskObject.snapshot.level).toBeNull();
     expect(mockIncompleteRiskObject.snapshot.stage).toBeNull();
     expect(mockIncompleteRiskObject.snapshot.riskConfidence).toBeNull();
+  });
+
+  it('keeps the fixed notice outside individual snapshots', () => {
+    expect('riskDisclaimer' in mockRiskSnapshots[0]!).toBe(false);
+    expect(mockRiskOverview.riskDisclaimer).toBe(RISK_DECISION_SUPPORT_NOTICE);
   });
 
   it('carries three horizons, evidence lineage and the fixed notice', () => {
@@ -81,5 +99,35 @@ describe('risk api contract', () => {
           .map((item) => item.horizon),
       ),
     ).toEqual(new Set(['1-5d', '5-20d', '20-60d']));
+  });
+
+  it('builds identity-safe details and rejects unknown mock objects', () => {
+    const market = selectMockRiskObjectDetail('market', 'CN-A');
+    expect(market.object).toEqual({ objectId: 'CN-A', objectType: 'market' });
+    expect(market.parentObjects).toEqual([]);
+    expect(market.gateDecision).toBeUndefined();
+    expect(() => selectMockRiskObjectDetail('sector', 'SW1:UNKNOWN')).toThrow(
+      '未找到风险对象',
+    );
+  });
+
+  it('honors horizon, object identity and date range in mock selectors', () => {
+    const longOverview = selectMockRiskOverview({ horizon: '20-60d' });
+    expect(longOverview.horizon).toBe('20-60d');
+    expect(longOverview.marketSnapshot?.horizon).toBe('20-60d');
+    expect(selectMockRiskObjects({ horizon: '20-60d' })).toHaveLength(2);
+
+    const marketTrend = selectMockRiskTrend('market', 'CN-A', {
+      endDate: '2026-07-17',
+      horizon: '20-60d',
+      startDate: '2026-07-16',
+    });
+    const stockTrend = selectMockRiskTrend('stock', '600519.SH', {
+      endDate: '2026-07-17',
+      horizon: '1-5d',
+      startDate: '2026-07-16',
+    });
+    expect(marketTrend).toHaveLength(2);
+    expect(marketTrend[0]?.totalScore).not.toBe(stockTrend[0]?.totalScore);
   });
 });

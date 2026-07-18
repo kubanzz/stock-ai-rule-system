@@ -2,8 +2,11 @@ import type {
   RiskEvidence,
   RiskObjectDetail,
   RiskObjectListItem,
+  RiskObjectQuery,
   RiskOverview,
+  RiskOverviewQuery,
   RiskSnapshot,
+  RiskTrendQuery,
   RiskTrendPoint,
 } from './types';
 
@@ -52,7 +55,6 @@ function snapshot(
     modelVersion: 'risk-v1.0-shadow',
     object,
     riskConfidence: 0.86,
-    riskDisclaimer: RISK_DECISION_SUPPORT_NOTICE,
     sScore: 58,
     stage: 'repricing',
     tScore: 55,
@@ -239,3 +241,128 @@ export const mockRiskTrend: RiskTrendPoint[] = [
   tradeDate: tradeDate as string,
   vScore: 72,
 }));
+
+export function selectMockRiskOverview(
+  query: RiskOverviewQuery = {},
+): RiskOverview {
+  const horizon = query.horizon ?? '1-5d';
+  const tradeDate = query.tradeDate ?? mockRiskOverview.tradeDate;
+  const snapshots = mockRiskSnapshots.filter(
+    (item) => item.horizon === horizon && item.tradeDate === tradeDate,
+  );
+  const levelCounts = (['normal', 'watch', 'warning', 'critical'] as const).map(
+    (level) => ({
+      count: snapshots.filter((item) => item.level === level).length,
+      level,
+    }),
+  );
+  return {
+    highRiskObjects: selectMockRiskObjects({ horizon, tradeDate }).filter(
+      (item) =>
+        item.snapshot.level === 'critical',
+    ),
+    horizon,
+    levelCounts,
+    marketSnapshot:
+      snapshots.find(
+        (item) =>
+          item.object.objectType === 'market' && item.object.objectId === 'CN-A',
+      ) ?? null,
+    riskDisclaimer: RISK_DECISION_SUPPORT_NOTICE,
+    tradeDate,
+  };
+}
+
+export function selectMockRiskObjects(
+  query: Pick<RiskObjectQuery, 'horizon' | 'tradeDate'> = {},
+): RiskObjectListItem[] {
+  if (!query.horizon && !query.tradeDate) return mockRiskObjects;
+  return mockRiskObjects.flatMap((item) => {
+    const matchingSnapshot = mockRiskSnapshots.find(
+      (candidate) =>
+        candidate.object.objectType === item.object.objectType &&
+        candidate.object.objectId === item.object.objectId &&
+        (!query.horizon || candidate.horizon === query.horizon) &&
+        (!query.tradeDate || candidate.tradeDate === query.tradeDate),
+    );
+    return matchingSnapshot ? [{ ...item, snapshot: matchingSnapshot }] : [];
+  });
+}
+
+export function selectMockRiskObjectDetail(
+  objectType: RiskObjectListItem['object']['objectType'],
+  objectId: string,
+): RiskObjectDetail {
+  const item = mockRiskObjects.find(
+    (candidate) =>
+      candidate.object.objectType === objectType &&
+      candidate.object.objectId === objectId,
+  );
+  if (!item) {
+    throw new Error(`未找到风险对象 ${objectType}/${objectId}`);
+  }
+  const parentObjects =
+    objectType === 'market'
+      ? []
+      : objectType === 'sector'
+        ? [{ objectId: 'CN-A', objectType: 'market' as const }]
+        : [
+            { objectId: 'CN-A', objectType: 'market' as const },
+            { objectId: 'SW1:801120', objectType: 'sector' as const },
+          ];
+  return {
+    ...item,
+    activeTriggers: item.snapshot.evidence.map(
+      (evidenceItem) => evidenceItem.indicatorCode,
+    ),
+    parentObjects,
+    snapshots: mockRiskSnapshots.filter(
+      (candidate) =>
+        candidate.object.objectType === objectType &&
+        candidate.object.objectId === objectId,
+    ),
+  };
+}
+
+export function selectMockRiskTrend(
+  objectType: RiskObjectListItem['object']['objectType'],
+  objectId: string,
+  query: RiskTrendQuery = {},
+): RiskTrendPoint[] {
+  const horizonScale =
+    query.horizon === '20-60d' ? 0.78 : query.horizon === '5-20d' ? 0.9 : 1;
+  const objectScale = objectType === 'market' ? 0.82 : objectType === 'sector' ? 0.92 : 1;
+  const identityOffset = [...objectId].reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
+  ) % 3;
+  return mockRiskTrend
+    .filter(
+      (item) =>
+        (!query.startDate || item.tradeDate >= query.startDate) &&
+        (!query.endDate || item.tradeDate <= query.endDate),
+    )
+    .map((item) => {
+      const totalScore = Math.min(
+        100,
+        Math.round(
+          ((item.totalScore ?? 0) * horizonScale * objectScale + identityOffset) *
+            10,
+        ) / 10,
+      );
+      return {
+        ...item,
+        aScore: item.aScore === null ? null : item.aScore * objectScale,
+        cScore: item.cScore === null ? null : item.cScore * objectScale,
+        level:
+          totalScore >= 65
+            ? 'critical'
+            : totalScore >= 60
+              ? 'warning'
+              : totalScore >= 50
+                ? 'watch'
+                : 'normal',
+        totalScore,
+      };
+    });
+}
