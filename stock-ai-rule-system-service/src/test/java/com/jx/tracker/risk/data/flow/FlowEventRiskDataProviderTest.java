@@ -124,17 +124,30 @@ class FlowEventRiskDataProviderTest {
         FlowEventFetchResult result = provider.fetchWithCoverage(
                 "stock_announcement", request(List.of(RiskHorizon.SHORT_TERM), null));
 
-        assertThat(result.batch().qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.batch().qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.batch().nextCheckpoint()).isNull();
         assertThat(result.batch().observations()).singleElement().satisfies(item -> {
             assertThat(item.indicatorCode()).isEqualTo("T4");
-            assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(item.value()).isNull();
+            assertThat(item.attributes())
+                    .containsEntry("sourceQuality", "available")
+                    .containsEntry("partialHistoryReason", "recent-only");
+            assertThat((BigDecimal) item.attributes().get("auditValue"))
+                    .isEqualByComparingTo("70");
+        });
+        assertThat(result.batch().events()).singleElement().satisfies(item -> {
+            assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(item.payload())
+                    .containsEntry("sourceQuality", "available")
+                    .containsEntry("partialHistoryReason", "recent-only");
         });
         assertThat(result.coverageReport().indicators()).containsExactly(
                 new IndicatorCoverage("T1", new BigDecimal("30"), 0, 0, 0, 1),
                 new IndicatorCoverage("T2", new BigDecimal("25"), 0, 0, 0, 1),
                 new IndicatorCoverage("T3", new BigDecimal("20"), 0, 0, 0, 1),
-                new IndicatorCoverage("T4", new BigDecimal("25"), 1, 0, 0, 1));
-        assertThat(result.coverageReport().weightedCoverage()).isEqualByComparingTo("0.2500");
+                new IndicatorCoverage("T4", new BigDecimal("25"), 0, 0, 0, 1));
+        assertThat(result.coverageReport().weightedCoverage()).isEqualByComparingTo("0.0000");
     }
 
     @Test
@@ -244,6 +257,58 @@ class FlowEventRiskDataProviderTest {
     }
 
     @Test
+    void currentEtfOrderFlowProxyNeverBecomesFormalA2Evidence() {
+        FlowEventSourceRecord proxy = recordFor(
+                MARKET, "etf-proxy", new BigDecimal("-2000000"), "etf_order_flow_proxy",
+                Map.of(
+                        "referenceAssets", new BigDecimal("100000000"),
+                        "proxy", true,
+                        "proxyType", "secondaryMarketOrderFlow"));
+        FlowEventSourceBatch partial = new FlowEventSourceBatch(
+                "aktools", List.of(proxy), RiskDataQualityStatus.AVAILABLE,
+                "current order-flow proxy is not ETF redemption history", null,
+                END, false, AVAILABLE_AT, null);
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(request -> partial);
+
+        RiskProviderBatch batch = provider.fetch(
+                "etf_fund_flow", requestFor(MARKET, List.of(RiskHorizon.SHORT_TERM), null));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(batch.observations()).extracting(observation -> observation.indicatorCode())
+                .doesNotContain("A2");
+        assertThat(batch.nextCheckpoint()).isNull();
+    }
+
+    @Test
+    void recentOnlyReductionPersistsCurrentEventButRemainsInsufficientWithoutCheckpoint() {
+        FlowEventSourceRecord currentReduction = record(
+                "reduction-current", new BigDecimal("20000"), "share_reduction",
+                Map.of(
+                        "actualReduction", true,
+                        "adverse", true,
+                        "modifierRatio", new BigDecimal("0.12")));
+        FlowEventSourceBatch partial = new FlowEventSourceBatch(
+                "aktools", List.of(currentReduction), RiskDataQualityStatus.AVAILABLE,
+                "share reduction endpoint exposes only recent history", null,
+                LocalDate.of(2026, 1, 1), false, AVAILABLE_AT, null);
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(request -> partial);
+
+        RiskProviderBatch batch = provider.fetch(
+                "share_reduction", request(List.of(RiskHorizon.SHORT_TERM), null));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(batch.errorMessage()).contains("only recent history");
+        assertThat(batch.events()).singleElement().satisfies(event -> {
+            assertThat(event.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(event.payload())
+                    .containsEntry("sourceRecordId", "reduction-current")
+                    .containsEntry("sourceQuality", "available")
+                    .containsKey("partialHistoryReason");
+        });
+        assertThat(batch.nextCheckpoint()).isNull();
+    }
+
+    @Test
     void filtersRecordsThatWereNotAvailableByRequestedEndDate() {
         FlowEventSourceRecord future = new FlowEventSourceRecord(
                 "future-1", "cursor-2", STOCK, END.plusDays(1), END.plusDays(1).atStartOfDay(),
@@ -335,16 +400,21 @@ class FlowEventRiskDataProviderTest {
     @Test
     void actualReductionRequiresMoneyOrPriceConfirmation() {
         FlowEventSourceRecord unconfirmed = record(
-                "reduce-1", new BigDecimal("8"), "share_reduction", Map.of("actualReduction", true));
+                "reduce-1", new BigDecimal("8"), "share_reduction",
+                Map.of("actualReduction", true, "modifierRatio", new BigDecimal("8")));
         FlowEventSourceRecord confirmed = record(
                 "reduce-2", new BigDecimal("9"), "share_reduction",
-                Map.of("actualReduction", true, "fundFlowConfirmed", true));
+                Map.of(
+                        "actualReduction", true,
+                        "fundFlowConfirmed", true,
+                        "modifierRatio", new BigDecimal("9")));
         FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(available("aktools", unconfirmed, confirmed));
 
         RiskProviderBatch batch = provider.fetch("share_reduction", request(List.of(RiskHorizon.SHORT_TERM), null));
 
         assertThat(batch.events()).hasSize(2);
-        assertThat(batch.events()).filteredOn(event -> event.eventKey().contains("reduce-1"))
+        assertThat(batch.events()).filteredOn(event ->
+                        "reduce-1".equals(event.payload().get("sourceRecordId")))
                 .singleElement().satisfies(event -> {
                     assertThat(event.payload())
                             .containsEntry("confirmed", false)
@@ -354,7 +424,8 @@ class FlowEventRiskDataProviderTest {
                             .containsEntry("confirmationContract", "pit-price-fund-evidence-v1");
                     assertThat(event.severityScore()).isNull();
                 });
-        assertThat(batch.events()).filteredOn(event -> event.eventKey().contains("reduce-2"))
+        assertThat(batch.events()).filteredOn(event ->
+                        "reduce-2".equals(event.payload().get("sourceRecordId")))
                 .singleElement().satisfies(event -> {
                     assertThat(event.payload())
                             .containsEntry("confirmed", true)

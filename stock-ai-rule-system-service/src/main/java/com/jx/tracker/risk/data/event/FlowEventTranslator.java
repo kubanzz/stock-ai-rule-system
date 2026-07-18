@@ -10,7 +10,11 @@ import com.jx.tracker.risk.provider.RiskEvent;
 import com.jx.tracker.risk.provider.RiskObservation;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,6 +75,11 @@ public final class FlowEventTranslator {
             String source,
             Map<String, Object> attributes
     ) {
+        if ("etf_order_flow_proxy".equals(record.eventCode())
+                || booleanAttribute(record.attributes(), "proxy")) {
+            return FlowEventTranslation.rejected(
+                    "ETF 二级市场订单流代理不生成正式 A2 申赎风险证据");
+        }
         BigDecimal referenceAssets = decimalAttribute(record.attributes(), "referenceAssets", null);
         RiskObservation redemption = ratioObservation(
                 record, horizon, RiskDimension.FORCED_SELLING, "A2", source, attributes,
@@ -109,9 +118,12 @@ public final class FlowEventTranslator {
                 "score", source, severity == null
                 ? RiskDataQualityStatus.INSUFFICIENT_HISTORY
                 : RiskDataQualityStatus.AVAILABLE, eventPayload);
+        String eventType = meaning.code();
+        String canonicalBusinessKey = canonicalBusinessKey(record, eventType);
+        eventPayload.put("canonicalBusinessKey", canonicalBusinessKey);
         RiskEvent event = new RiskEvent(
                 record.object(), record.tradeDate(), RiskDimension.SUBSTANTIVE_TRIGGER,
-                meaning.code(), stableEventKey(record, meaning.code()), severity,
+                eventType, stableEventKey(eventType, canonicalBusinessKey), severity,
                 record.occurredAt(), record.observedAt(), record.availableAt(), source,
                 RiskDataQualityStatus.AVAILABLE, eventPayload);
         return new FlowEventTranslation(List.of(observation), List.of(event), null);
@@ -139,18 +151,22 @@ public final class FlowEventTranslator {
         payload.put("fundFlowConfirmed", fundFlowConfirmed);
         payload.put("scheduled", booleanAttribute(record.attributes(), "scheduled"));
         payload.put("confirmationContract", "pit-price-fund-evidence-v1");
-        BigDecimal modifierSeverity = record.value() == null
+        BigDecimal modifierRatio = decimalAttribute(record.attributes(), "modifierRatio", null);
+        BigDecimal modifierSeverity = modifierRatio == null
                 ? null
-                : FlowEventMetrics.normalizeSeverity(record.value().abs());
+                : FlowEventMetrics.normalizeSeverity(modifierRatio.abs());
         if (modifierSeverity != null) {
             payload.put("modifierSeverity", modifierSeverity);
         }
         BigDecimal severity = confirmed
                 ? modifierSeverity
                 : null;
+        String eventType = dataset.code();
+        String canonicalBusinessKey = canonicalBusinessKey(record, eventType);
+        payload.put("canonicalBusinessKey", canonicalBusinessKey);
         RiskEvent event = new RiskEvent(
                 record.object(), record.tradeDate(), RiskDimension.FORCED_SELLING,
-                dataset.code(), stableEventKey(record, dataset.code()), severity,
+                eventType, stableEventKey(eventType, canonicalBusinessKey), severity,
                 record.occurredAt(), record.observedAt(), record.availableAt(), source,
                 RiskDataQualityStatus.AVAILABLE, payload);
         return new FlowEventTranslation(List.of(), List.of(event), null);
@@ -208,9 +224,19 @@ public final class FlowEventTranslator {
         return attributes;
     }
 
-    private String stableEventKey(FlowEventSourceRecord record, String type) {
+    private String canonicalBusinessKey(FlowEventSourceRecord record, String type) {
         return type + ":" + record.object().objectType().getCode() + ":"
                 + record.object().objectId() + ":" + record.recordId();
+    }
+
+    private String stableEventKey(String type, String canonicalBusinessKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonicalBusinessKey.getBytes(StandardCharsets.UTF_8));
+            return type + ":sha256:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private BigDecimal decimalAttribute(Map<String, Object> attributes, String key, BigDecimal defaultValue) {

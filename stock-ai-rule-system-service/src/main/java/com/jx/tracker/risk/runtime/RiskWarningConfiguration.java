@@ -63,9 +63,17 @@ public class RiskWarningConfiguration {
         @Bean
         AkToolsMarketRiskSourceClient riskMarketSourceClient(
                 RestClientMarketRiskHttpTransport transport,
+                RiskWarningProperties riskProperties,
+                RestClient.Builder restClientBuilder,
+                ObjectMapper objectMapper,
                 Clock clock
         ) {
-            return new AkToolsMarketRiskSourceClient(transport, clock);
+            String derivedBaseUrl = riskProperties.resolvedDerivedGatewayBaseUrl();
+            RestClientMarketRiskHttpTransport derivedTransport = derivedBaseUrl == null
+                    ? null
+                    : new RestClientMarketRiskHttpTransport(
+                            derivedBaseUrl, restClientBuilder.clone(), objectMapper);
+            return new AkToolsMarketRiskSourceClient(transport, derivedTransport, clock);
         }
 
         @Bean
@@ -83,6 +91,7 @@ public class RiskWarningConfiguration {
         ) {
             return new AkToolsFlowEventSourceClient(
                     riskProperties.resolvedAkToolsBaseUrl(marketDataProperties.getAkToolsBaseUrl()),
+                    riskProperties.resolvedDerivedGatewayBaseUrl(),
                     restClientBuilder.clone(),
                     objectMapper,
                     clock

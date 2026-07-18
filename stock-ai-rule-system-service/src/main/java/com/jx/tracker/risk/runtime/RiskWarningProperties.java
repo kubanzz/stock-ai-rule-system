@@ -12,6 +12,7 @@ public class RiskWarningProperties {
     private boolean enabled;
     private boolean backfillEnabled;
     private String akToolsBaseUrl;
+    private String derivedGatewayBaseUrl;
     private String modelVersion;
     private LocalTime afterCloseCutoff;
     private int collectionChunkSize = DEFAULT_COLLECTION_CHUNK_SIZE;
@@ -38,6 +39,14 @@ public class RiskWarningProperties {
 
     public void setAkToolsBaseUrl(String akToolsBaseUrl) {
         this.akToolsBaseUrl = akToolsBaseUrl;
+    }
+
+    public String getDerivedGatewayBaseUrl() {
+        return derivedGatewayBaseUrl;
+    }
+
+    public void setDerivedGatewayBaseUrl(String derivedGatewayBaseUrl) {
+        this.derivedGatewayBaseUrl = derivedGatewayBaseUrl;
     }
 
     public String getModelVersion() {
@@ -93,5 +102,11 @@ public class RiskWarningProperties {
             throw new IllegalStateException("risk warning AKTools baseUrl must be configured when enabled");
         }
         return resolved.trim();
+    }
+
+    public String resolvedDerivedGatewayBaseUrl() {
+        return derivedGatewayBaseUrl == null || derivedGatewayBaseUrl.isBlank()
+                ? null
+                : derivedGatewayBaseUrl.trim();
     }
 }

@@ -32,20 +32,23 @@ class MarketRiskDataProviderTest {
     private static final LocalDateTime FETCHED_AT = LocalDateTime.of(2026, 7, 18, 18, 0);
 
     @Test
-    void supportsSixDatasetsAndReturnsValidZeroForSuccessfulEmptyResponse() {
+    void supportsSixDatasetsAndRejectsFormalValidZeroForMarketObservations() {
         MarketRiskDataProvider provider = new MarketRiskDataProvider((dataset, request) ->
-                new MarketSourceBatch("fixed", List.of(), request.checkpoint(), FETCHED_AT));
+                new MarketSourceBatch(
+                        "fixed", List.of(), request.checkpoint(), FETCHED_AT,
+                        RiskDataQualityStatus.VALID_ZERO, null));
 
         assertThat(EnumSet.allOf(MarketDatasetCode.class))
                 .allMatch(dataset -> provider.supports(dataset.code()));
         RiskProviderBatch emptyBatch = provider.fetch("breadth", request(null));
-        assertThat(emptyBatch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        assertThat(emptyBatch.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(emptyBatch.errorMessage()).contains("valid_zero");
         assertThat(emptyBatch.industryExposures()).isEmpty();
         assertThat(provider.coverageReport(
                 "breadth", emptyBatch, MARKET, RiskHorizon.SHORT_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
         ).items()).hasSize(2)
                 .allSatisfy(item -> assertThat(item.qualityStatus())
-                        .isEqualTo(RiskDataQualityStatus.VALID_ZERO));
+                        .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY));
         assertThat(provider.supportedIndicatorCodes())
                 .containsExactlyInAnyOrder(
                         "V1", "V3", "V4", "S1", "S2", "S4", "C1", "C2", "C3", "C4", "C5",

@@ -160,6 +160,66 @@ class FlowEventTranslatorAndMetricsTest {
         assertThat(result.observations()).isEmpty();
     }
 
+    @Test
+    void longBusinessKeysAreHashedWithinPersistenceLimitWithoutColliding() {
+        FlowEventTranslator translator = new FlowEventTranslator(
+                EventEconomicMeaningDictionary.defaultDictionary());
+        String longMetric = "预测指标".repeat(60);
+        String longBatch = "上市批次".repeat(60);
+        String longShareholder = "股东名称".repeat(60);
+        List<FlowEventSourceRecord> records = List.of(
+                sourceRecord(
+                        "earnings_forecast:000001.SZ:2026-07-18:" + longMetric + "净利润:预减",
+                        new BigDecimal("-10"), "forecast_change",
+                        Map.of("adverse", true)),
+                sourceRecord(
+                        "earnings_forecast:000001.SZ:2026-07-18:" + longMetric + "扣非净利润:预减",
+                        new BigDecimal("-10"), "forecast_change",
+                        Map.of("adverse", true)),
+                sourceRecord(
+                        "share_unlock:000001.SZ:2026-08-01:" + longBatch + "第一批:1000",
+                        new BigDecimal("1000"), "share_unlock",
+                        Map.of("scheduled", true, "modifierRatio", new BigDecimal("1"))),
+                sourceRecord(
+                        "share_unlock:000001.SZ:2026-08-01:" + longBatch + "第二批:1000",
+                        new BigDecimal("1000"), "share_unlock",
+                        Map.of("scheduled", true, "modifierRatio", new BigDecimal("1"))),
+                sourceRecord(
+                        "share_reduction:000001.SZ:" + longShareholder + "甲:2026-07-18:1000",
+                        new BigDecimal("1000"), "share_reduction",
+                        Map.of("actualReduction", true, "modifierRatio", new BigDecimal("1"))),
+                sourceRecord(
+                        "share_reduction:000001.SZ:" + longShareholder + "乙:2026-07-18:1000",
+                        new BigDecimal("1000"), "share_reduction",
+                        Map.of("actualReduction", true, "modifierRatio", new BigDecimal("1")))
+        );
+        List<FlowEventDataset> datasets = List.of(
+                FlowEventDataset.EARNINGS_FORECAST, FlowEventDataset.EARNINGS_FORECAST,
+                FlowEventDataset.SHARE_UNLOCK, FlowEventDataset.SHARE_UNLOCK,
+                FlowEventDataset.SHARE_REDUCTION, FlowEventDataset.SHARE_REDUCTION);
+
+        List<com.jx.tracker.risk.provider.RiskEvent> events = java.util.stream.IntStream
+                .range(0, records.size())
+                .mapToObj(index -> translator.translate(
+                        datasets.get(index), records.get(index),
+                        RiskHorizon.SHORT_TERM, "aktools", null).events().getFirst())
+                .toList();
+
+        assertThat(events).extracting(com.jx.tracker.risk.provider.RiskEvent::eventKey)
+                .doesNotHaveDuplicates()
+                .allSatisfy(key -> {
+                    assertThat(key).hasSizeLessThanOrEqualTo(128);
+                    assertThat(key).matches("[a-z_]+:sha256:[0-9a-f]{64}");
+                });
+        assertThat(events).allSatisfy(event -> {
+            String sourceRecordId = (String) event.payload().get("sourceRecordId");
+            assertThat(sourceRecordId).hasSizeGreaterThan(128);
+            assertThat(event.payload()).containsEntry(
+                    "canonicalBusinessKey",
+                    event.eventType() + ":stock:000001.SZ:" + sourceRecordId);
+        });
+    }
+
     private FlowEventSourceRecord record(Map<String, Object> attributes) {
         return sourceRecord("announcement-1", new BigDecimal("99"), "notice", attributes);
     }

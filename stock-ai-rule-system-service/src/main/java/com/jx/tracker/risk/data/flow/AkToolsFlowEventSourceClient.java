@@ -12,6 +12,9 @@ import org.springframework.web.util.UriBuilder;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,6 +25,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +38,7 @@ import java.util.Set;
 public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient {
 
     public static final String SOURCE = "aktools/akshare";
+    public static final String DERIVED_SOURCE = "risk-derived-gateway";
     private static final DateTimeFormatter BASIC_DATE = DateTimeFormatter.BASIC_ISO_DATE;
     private static final RiskObjectKey CN_A = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
     private static final Map<FlowEventDataset, String> ENDPOINTS = Map.of(
@@ -45,8 +50,11 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             FlowEventDataset.SHARE_REDUCTION, "/api/public/stock_ggcg_em");
 
     private final RestClient restClient;
+    private final RestClient derivedRestClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final Map<SourceCallKey, CachedResponse> responseCache = new LinkedHashMap<>();
+    private static final int MAX_CACHE_ENTRIES = 256;
 
     public AkToolsFlowEventSourceClient(
             String baseUrl,
@@ -54,10 +62,26 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             ObjectMapper objectMapper,
             Clock clock
     ) {
+        this(baseUrl, null, restClientBuilder, objectMapper, clock);
+    }
+
+    public AkToolsFlowEventSourceClient(
+            String baseUrl,
+            String derivedGatewayBaseUrl,
+            RestClient.Builder restClientBuilder,
+            ObjectMapper objectMapper,
+            Clock clock
+    ) {
         if (!StringUtils.hasText(baseUrl)) {
             throw new IllegalArgumentException("AKTools baseUrl must not be blank");
         }
-        this.restClient = restClientBuilder.baseUrl(baseUrl.trim()).build();
+        if (restClientBuilder == null || objectMapper == null || clock == null) {
+            throw new IllegalArgumentException("restClientBuilder, objectMapper and clock are required");
+        }
+        this.restClient = restClientBuilder.clone().baseUrl(baseUrl.trim()).build();
+        this.derivedRestClient = StringUtils.hasText(derivedGatewayBaseUrl)
+                ? restClientBuilder.clone().baseUrl(derivedGatewayBaseUrl.trim()).build()
+                : null;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -67,6 +91,10 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         LocalDateTime fetchedAt = LocalDateTime.now(clock);
         try {
             request.dataset().validateObjects(request.objects());
+            if (request.dataset() == FlowEventDataset.ETF_FUND_FLOW
+                    && derivedRestClient != null) {
+                return fetchDerivedEtf(request, fetchedAt);
+            }
             if (request.dataset() == FlowEventDataset.EARNINGS_FORECAST) {
                 return fetchEarningsForecasts(request, fetchedAt);
             }
@@ -80,6 +108,102 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             return FlowEventSourceBatch.unavailable(
                     SOURCE, "AKTools request failed: " + rootMessage(exception), fetchedAt);
         }
+    }
+
+    private FlowEventSourceBatch fetchDerivedEtf(
+            FlowEventSourceRequest request,
+            LocalDateTime fetchedAt
+    ) {
+        try {
+            String response = derivedRestClient.get()
+                    .uri(builder -> derivedEtfUri(builder, request))
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode rows = root != null && root.isArray() ? root : root == null ? null : root.path("data");
+            JsonNode meta = root != null && root.isObject() ? root.path("meta") : objectMapper.nullNode();
+            if (rows == null || !rows.isArray()) {
+                return FlowEventSourceBatch.unavailable(
+                        DERIVED_SOURCE, "derived ETF response data is not an array", fetchedAt);
+            }
+            LocalDate earliest = optionalDate(meta, "earliestAvailableDate");
+            boolean incompleteHistory = meta.path("insufficientHistory").asBoolean(false)
+                    || !meta.path("historyComplete").asBoolean(false);
+            String historyGapReason = textOrDefault(meta, "historyGapReason",
+                    "derived ETF gateway did not confirm complete history");
+            if (earliest == null) {
+                incompleteHistory = true;
+                historyGapReason = "derived ETF gateway did not provide earliestAvailableDate";
+            } else if (earliest.isAfter(request.startDate())) {
+                incompleteHistory = true;
+                historyGapReason = "derived ETF earliestAvailableDate " + earliest
+                        + " is later than requested startDate " + request.startDate();
+            }
+            List<FlowEventSourceRecord> records = mapDerivedEtf(request, rows);
+            if (records.isEmpty()) {
+                return FlowEventSourceBatch.insufficientHistory(
+                        DERIVED_SOURCE,
+                        incompleteHistory
+                                ? historyGapReason
+                                : "derived ETF gateway returned no numeric observations",
+                        earliest, fetchedAt);
+            }
+            if (incompleteHistory) {
+                return new FlowEventSourceBatch(
+                        DERIVED_SOURCE, records, RiskDataQualityStatus.AVAILABLE, historyGapReason,
+                        null, earliest, false, fetchedAt, null);
+            }
+            String nextCursor = text(meta, "nextCursor");
+            return new FlowEventSourceBatch(
+                    DERIVED_SOURCE, records, RiskDataQualityStatus.AVAILABLE, null,
+                    nextCursor, earliest, true, fetchedAt, null);
+        } catch (PointInTimeException exception) {
+            return FlowEventSourceBatch.insufficientHistory(
+                    DERIVED_SOURCE, "point-in-time unavailable: " + exception.getMessage(), null, fetchedAt);
+        } catch (MappingException exception) {
+            return FlowEventSourceBatch.unavailable(
+                    DERIVED_SOURCE, "derived ETF response parse failed: " + exception.getMessage(), fetchedAt);
+        } catch (Exception exception) {
+            return FlowEventSourceBatch.unavailable(
+                    DERIVED_SOURCE, "derived ETF request failed: " + rootMessage(exception), fetchedAt);
+        }
+    }
+
+    private URI derivedEtfUri(UriBuilder builder, FlowEventSourceRequest request) {
+        builder.path("/api/risk/etf-redemption")
+                .queryParam("start_date", BASIC_DATE.format(request.startDate()))
+                .queryParam("end_date", BASIC_DATE.format(request.endDate()))
+                .queryParam("objects", "market:CN-A");
+        if (request.checkpoint() != null) {
+            builder.queryParam("cursor", request.checkpoint().cursor());
+        }
+        return builder.build();
+    }
+
+    private List<FlowEventSourceRecord> mapDerivedEtf(
+            FlowEventSourceRequest request,
+            JsonNode rows
+    ) {
+        List<FlowEventSourceRecord> records = new ArrayList<>();
+        for (JsonNode row : rows) {
+            LocalDate tradeDate = requiredDate(row, "tradeDate", "date");
+            if (tradeDate.isBefore(request.startDate()) || tradeDate.isAfter(request.endDate())) {
+                continue;
+            }
+            BigDecimal netFlow = requiredDecimal(row, "netFlow", "value");
+            BigDecimal referenceAssets = requiredDecimal(row, "referenceAssets");
+            LocalDateTime observedAt = requiredPointInTime(row, "observedAt");
+            LocalDateTime availableAt = requiredPointInTime(row, "availableAt");
+            if (availableAt.isBefore(observedAt)) {
+                throw new PointInTimeException("availableAt precedes observedAt");
+            }
+            String id = "etf_redemption_flow:CN-A:" + tradeDate;
+            records.add(record(
+                    id, CN_A, tradeDate, observedAt, observedAt, availableAt,
+                    netFlow, "etf_redemption_flow", "ETF 历史申赎资金流",
+                    Map.of("referenceAssets", referenceAssets)));
+        }
+        return records;
     }
 
     private FlowEventSourceBatch fetchEarningsForecasts(
@@ -122,6 +246,7 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         List<FlowEventSourceRecord> records = new ArrayList<>();
         LocalDate earliest = null;
         boolean historyComplete = true;
+        String historyGapReason = null;
         for (RiskObjectKey object : objects) {
             FlowEventSourceRequest singleRequest = new FlowEventSourceRequest(
                     request.dataset(),
@@ -129,29 +254,78 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
                             List.of(object), request.horizons(), request.startDate(), request.endDate(),
                             request.checkpoint()));
             FlowEventSourceBatch batch = parseResponse(singleRequest, get(singleRequest, null), fetchedAt);
-            if (batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE
-                    || batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
+            if (batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE) {
                 return batch;
+            }
+            if (batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
+                if (request.dataset() != FlowEventDataset.SHARE_UNLOCK) {
+                    return batch;
+                }
+                historyComplete = false;
+                historyGapReason = batch.failureReason();
+                earliest = earlier(earliest, batch.earliestAvailableDate());
+                continue;
             }
             records.addAll(batch.records());
             earliest = earlier(earliest, batch.earliestAvailableDate());
             historyComplete = historyComplete && batch.historyComplete();
+            if (!batch.historyComplete() && historyGapReason == null) {
+                historyGapReason = batch.failureReason();
+            }
         }
         List<FlowEventSourceRecord> uniqueRecords = deduplicate(records);
         if (uniqueRecords.isEmpty()) {
+            if (!historyComplete) {
+                return FlowEventSourceBatch.insufficientHistory(
+                        SOURCE, historyGapReason == null
+                                ? sourceHistoryGapReason(request.dataset()) : historyGapReason,
+                        earliest, fetchedAt);
+            }
             return new FlowEventSourceBatch(
                     SOURCE, List.of(), RiskDataQualityStatus.VALID_ZERO, null,
                     boundaryCursor(request.endDate()), earliest, historyComplete, fetchedAt, null);
         }
         return new FlowEventSourceBatch(
-                SOURCE, uniqueRecords, RiskDataQualityStatus.AVAILABLE, null,
+                SOURCE, uniqueRecords, RiskDataQualityStatus.AVAILABLE,
+                historyComplete ? null : (historyGapReason == null
+                        ? sourceHistoryGapReason(request.dataset()) : historyGapReason),
                 maxRecordCursor(uniqueRecords), earlier(earliest, earliestTradeDate(uniqueRecords)),
                 historyComplete, fetchedAt, null);
     }
 
     private String get(FlowEventSourceRequest request, LocalDate reportDate) {
+        if (!shareable(request.dataset())) {
+            return request(request, reportDate);
+        }
+        SourceCallKey key = new SourceCallKey(
+                request.dataset(), reportDate, request.endDate());
+        LocalDateTime now = LocalDateTime.now(clock);
+        synchronized (responseCache) {
+            CachedResponse cached = responseCache.get(key);
+            if (cached != null && !cached.cachedAt().plusMinutes(5).isBefore(now)) {
+                return cached.body();
+            }
+        }
+        String response = request(request, reportDate);
+        synchronized (responseCache) {
+            if (responseCache.size() >= MAX_CACHE_ENTRIES) {
+                responseCache.remove(responseCache.keySet().iterator().next());
+            }
+            responseCache.put(key, new CachedResponse(response, now));
+        }
+        return response;
+    }
+
+    private String request(FlowEventSourceRequest request, LocalDate reportDate) {
         return restClient.get().uri(builder -> sourceUri(builder, request, reportDate))
                 .retrieve().body(String.class);
+    }
+
+    private boolean shareable(FlowEventDataset dataset) {
+        return dataset == FlowEventDataset.MARGIN_FINANCING
+                || dataset == FlowEventDataset.ETF_FUND_FLOW
+                || dataset == FlowEventDataset.EARNINGS_FORECAST
+                || dataset == FlowEventDataset.SHARE_REDUCTION;
     }
 
     private URI sourceUri(UriBuilder builder, FlowEventSourceRequest request, LocalDate reportDate) {
@@ -216,40 +390,38 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             boolean historyComplete = meta.has("historyComplete")
                     ? meta.path("historyComplete").asBoolean()
                     : defaultHistoryComplete(request.dataset());
-            if (meta.path("insufficientHistory").asBoolean(false)) {
-                return FlowEventSourceBatch.insufficientHistory(
-                        SOURCE,
-                        textOrDefault(meta, "historyGapReason", "AKShare endpoint history is insufficient"),
-                        earliestAvailableDate,
-                        fetchedAt);
-            }
+            boolean insufficientHistory = meta.path("insufficientHistory").asBoolean(false);
+            String historyGapReason = textOrDefault(
+                    meta, "historyGapReason", sourceHistoryGapReason(request.dataset()));
             if (rows.isEmpty()) {
                 String cursor = nextCursor == null ? boundaryCursor(request.endDate()) : nextCursor;
-                if (request.dataset().eventDataset()) {
+                if (request.dataset().eventDataset() && historyComplete && !insufficientHistory) {
                     return new FlowEventSourceBatch(
                             SOURCE, List.of(), RiskDataQualityStatus.VALID_ZERO, null, cursor,
                             earliestAvailableDate, historyComplete, fetchedAt, null);
                 }
                 return FlowEventSourceBatch.insufficientHistory(
-                        SOURCE, request.dataset().code() + " returned no numeric observations",
+                        SOURCE, historyGapReason,
                         earliestAvailableDate, fetchedAt);
             }
             List<FlowEventSourceRecord> records = mapRows(request, rows);
             if (records.isEmpty()) {
                 String cursor = nextCursor == null ? boundaryCursor(request.endDate()) : nextCursor;
-                if (request.dataset().eventDataset()) {
+                if (request.dataset().eventDataset() && historyComplete && !insufficientHistory) {
                     return new FlowEventSourceBatch(
                             SOURCE, List.of(), RiskDataQualityStatus.VALID_ZERO, null, cursor,
                             earliestAvailableDate, historyComplete, fetchedAt, null);
                 }
                 return FlowEventSourceBatch.insufficientHistory(
-                        SOURCE, request.dataset().code() + " has no observations in requested range",
+                        SOURCE, historyGapReason,
                         earliestAvailableDate, fetchedAt);
             }
+            boolean incomplete = insufficientHistory || !historyComplete;
             return new FlowEventSourceBatch(
-                    SOURCE, records, RiskDataQualityStatus.AVAILABLE, null,
+                    SOURCE, records, RiskDataQualityStatus.AVAILABLE,
+                    incomplete ? historyGapReason : null,
                     nextCursor, earlier(earliestAvailableDate, earliestTradeDate(records)),
-                    historyComplete, fetchedAt, null);
+                    !incomplete, fetchedAt, null);
         } catch (PointInTimeException exception) {
             return FlowEventSourceBatch.insufficientHistory(
                     SOURCE, "point-in-time unavailable: " + exception.getMessage(), null, fetchedAt);
@@ -319,13 +491,16 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         }
         List<FlowEventSourceRecord> records = new ArrayList<>();
         byDate.forEach((date, aggregate) -> {
-            Map<String, Object> attributes = Map.of("referenceAssets", aggregate.referenceAssets);
+            Map<String, Object> attributes = Map.of(
+                    "referenceAssets", aggregate.referenceAssets,
+                    "proxy", true,
+                    "proxyType", "secondaryMarketOrderFlow");
             String id = "etf_fund_flow:CN-A:" + date;
             LocalDateTime conservativeAvailability = later(
                     date.plusDays(1).atStartOfDay(), aggregate.observedAt);
             records.add(record(id, CN_A, date, aggregate.observedAt, aggregate.observedAt,
-                    conservativeAvailability, aggregate.netFlow, "net_flow",
-                    "ETF 主力净流入", attributes));
+                    conservativeAvailability, aggregate.netFlow, "etf_order_flow_proxy",
+                    "ETF 二级市场主力净流入代理", attributes));
         });
         return records;
     }
@@ -358,14 +533,17 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         LocalDate announcementDate = requiredDate(row, "公告日期", "announcementDate");
         BigDecimal change = requiredDecimal(row, "业绩变动幅度(%)", "业绩变动幅度", "value");
         String forecastType = textOrDefault(row, "预告类型", "");
+        String predictionMetric = textOrDefault(row, "预测指标", "未披露指标");
         boolean adverse = change.signum() < 0 || containsAny(forecastType, "预减", "首亏", "续亏", "略减");
         Map<String, Object> attributes = new HashMap<>();
         attributes.put("economicMeaning", "cash_flow");
         attributes.put("announcementCategory", "earnings_warning");
         attributes.put("forecastType", forecastType);
+        attributes.put("predictionMetric", predictionMetric);
         attributes.put("adverse", adverse);
         LocalDateTime observedAt = announcementDate.atStartOfDay();
-        String id = "earnings_forecast:" + object.objectId() + ":" + announcementDate;
+        String id = "earnings_forecast:" + object.objectId() + ":" + announcementDate
+                + ":" + predictionMetric + ":" + forecastType;
         return record(id, object, announcementDate, observedAt, observedAt,
                 announcementDate.plusDays(1).atStartOfDay(), change, "forecast_change",
                 forecastType, attributes);
@@ -385,8 +563,15 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             attributes.put("adverse", true);
         }
         BigDecimal severity = optionalDecimal(row, "风险分值", "severity", "value");
-        String id = textOrDefault(row, "公告编号",
-                "stock_announcement:" + object.objectId() + ":" + published.observedAt() + ":" + title.hashCode());
+        String disclosedId = firstText(row, "公告编号", "announcementId");
+        String announcementLink = firstText(row, "公告链接", "announcementUrl", "url", "adjunctUrl");
+        String businessIdentity = disclosedId != null
+                ? "disclosed:" + disclosedId
+                : announcementLink != null
+                ? "link:" + announcementLink
+                : "content:" + published.observedAt() + ":" + title;
+        String id = "stock_announcement:" + object.objectId()
+                + ":sha256:" + sha256Hex(businessIdentity);
         return record(id, object, published.observedAt().toLocalDate(), published.observedAt(),
                 published.observedAt(), published.availableAt(), severity, "notice", title, attributes);
     }
@@ -395,9 +580,23 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         LocalDate unlockDate = requiredDate(row, "解禁日期", "occurredAt");
         LocalDate announcementDate = requiredDate(row, "公告日期", "announcementDate");
         BigDecimal quantity = requiredDecimal(row, "解禁数量", "value");
-        Map<String, Object> attributes = Map.of("scheduled", unlockDate.isAfter(announcementDate), "adverse", true);
+        String listingBatch = textOrDefault(row, "上市批次", "未披露批次");
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("scheduled", unlockDate.isAfter(announcementDate));
+        attributes.put("adverse", true);
+        attributes.put("listingBatch", listingBatch);
+        BigDecimal circulatingMarketValue = optionalDecimal(row, "解禁股流通市值");
+        if (circulatingMarketValue != null) {
+            attributes.put("releasedCirculatingMarketValue", circulatingMarketValue);
+        }
+        BigDecimal modifierRatio = optionalDecimal(
+                row, "解禁股占流通股比例", "解禁股占总股本比例", "modifierRatio");
+        if (modifierRatio != null) {
+            attributes.put("modifierRatio", modifierRatio.abs());
+        }
         LocalDateTime observedAt = announcementDate.atStartOfDay();
-        String id = "share_unlock:" + object.objectId() + ":" + unlockDate + ":" + announcementDate;
+        String id = "share_unlock:" + object.objectId() + ":" + unlockDate + ":"
+                + announcementDate + ":" + listingBatch + ":" + quantity.stripTrailingZeros();
         return record(id, object, unlockDate, unlockDate.atTime(9, 30), observedAt,
                 announcementDate.plusDays(1).atStartOfDay(), quantity, "share_unlock",
                 "限售股解禁", attributes);
@@ -407,14 +606,27 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         String direction = requiredText(row, "持股变动信息-增减", "direction");
         LocalDate announcementDate = requiredDate(row, "公告日", "公告日期", "announcementDate");
         LocalDate changeDate = requiredDate(row, "变动截止日", "变动开始日", "occurredAt");
+        LocalDate changeStartDate = optionalDate(row, "变动开始日");
         BigDecimal quantity = requiredDecimal(row, "持股变动信息-变动数量", "变动数量", "value");
+        String shareholder = textOrDefault(row, "股东名称", "未披露股东");
         boolean reduction = direction.contains("减");
         Map<String, Object> attributes = new HashMap<>();
         attributes.put("actualReduction", reduction);
         attributes.put("adverse", reduction);
         attributes.put("direction", direction);
+        attributes.put("shareholder", shareholder);
+        if (changeStartDate != null) {
+            attributes.put("changeStartDate", changeStartDate);
+        }
+        BigDecimal modifierRatio = optionalDecimal(
+                row, "持股变动信息-占流通股比例", "持股变动信息-占总股本比例", "modifierRatio");
+        if (modifierRatio != null) {
+            attributes.put("modifierRatio", modifierRatio.abs());
+        }
         LocalDateTime observedAt = announcementDate.atStartOfDay();
-        String id = "share_reduction:" + object.objectId() + ":" + changeDate + ":" + announcementDate;
+        String id = "share_reduction:" + object.objectId() + ":" + shareholder + ":"
+                + (changeStartDate == null ? "unknown" : changeStartDate) + ":" + changeDate + ":"
+                + announcementDate + ":" + direction + ":" + quantity.stripTrailingZeros();
         return record(id, object, changeDate, changeDate.atTime(15, 0), observedAt,
                 announcementDate.plusDays(1).atStartOfDay(), quantity.abs(), "share_reduction",
                 direction, attributes);
@@ -452,6 +664,18 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         return dataset != FlowEventDataset.ETF_FUND_FLOW
                 && dataset != FlowEventDataset.SHARE_UNLOCK
                 && dataset != FlowEventDataset.SHARE_REDUCTION;
+    }
+
+    private String sourceHistoryGapReason(FlowEventDataset dataset) {
+        return switch (dataset) {
+            case ETF_FUND_FLOW ->
+                    "fund_etf_spot_em is a current order-flow proxy and cannot satisfy redemption history";
+            case SHARE_UNLOCK ->
+                    "stock_restricted_release_queue_sina exposes only recent unlock history";
+            case SHARE_REDUCTION ->
+                    "stock_ggcg_em exposes only recent share reduction history";
+            default -> dataset.code() + " history is incomplete";
+        };
     }
 
     private List<FlowEventSourceRecord> deduplicate(List<FlowEventSourceRecord> records) {
@@ -584,6 +808,33 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         }
     }
 
+    private LocalDateTime requiredPointInTime(JsonNode row, String field) {
+        String value = firstText(row, field);
+        if (!StringUtils.hasText(value)) {
+            throw new PointInTimeException(field + " missing");
+        }
+        String normalized = value.trim().replace(' ', 'T');
+        try {
+            return OffsetDateTime.parse(normalized)
+                    .atZoneSameInstant(clock.getZone())
+                    .toLocalDateTime();
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // 继续尝试带区域或无偏移的 ISO datetime。
+        }
+        try {
+            return ZonedDateTime.parse(normalized)
+                    .withZoneSameInstant(clock.getZone())
+                    .toLocalDateTime();
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // 继续尝试本地 datetime。
+        }
+        try {
+            return LocalDateTime.parse(normalized);
+        } catch (java.time.format.DateTimeParseException exception) {
+            throw new PointInTimeException(field + " invalid datetime: " + value);
+        }
+    }
+
     private String requiredText(JsonNode node, String... fields) {
         String value = firstText(node, fields);
         if (!StringUtils.hasText(value)) {
@@ -623,9 +874,9 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
     private String unit(String eventCode) {
         return switch (eventCode) {
             case "balance" -> "amount";
-            case "net_flow" -> "amount";
+            case "net_flow", "etf_order_flow_proxy", "etf_redemption_flow" -> "amount";
             case "forecast_change" -> "percent";
-            case "share_unlock", "share_reduction" -> "shares";
+            case "share_unlock", "share_reduction" -> "tenThousandShares";
             default -> "score";
         };
     }
@@ -688,6 +939,15 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 
+    private String sha256Hex(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
     private record MarginPoint(LocalDate date, BigDecimal balance) {
     }
 
@@ -698,6 +958,16 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         private BigDecimal netFlow = BigDecimal.ZERO;
         private BigDecimal referenceAssets = BigDecimal.ZERO;
         private LocalDateTime observedAt;
+    }
+
+    private record SourceCallKey(
+            FlowEventDataset dataset,
+            LocalDate reportDate,
+            LocalDate evaluationEndDate
+    ) {
+    }
+
+    private record CachedResponse(String body, LocalDateTime cachedAt) {
     }
 
     @FunctionalInterface

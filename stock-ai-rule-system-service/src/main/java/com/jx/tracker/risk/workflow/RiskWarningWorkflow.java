@@ -145,7 +145,8 @@ public final class RiskWarningWorkflow {
                     repository.saveCheckpoint(
                             task.providerCode(), task.datasetCode(), task.scopeKey(), nextCheckpoint, batch);
                     checkpointsSaved++;
-                } else if (batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
+                } else if (batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
+                        || batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
                     repository.saveIngestionStatus(
                             task.providerCode(), task.datasetCode(), task.scopeKey(), repositoryCheckpoint, batch);
                 }
@@ -154,9 +155,11 @@ public final class RiskWarningWorkflow {
 
         List<RiskObservation> observations = repository.findObservations(request).stream()
                 .filter(observation -> eligible(observation.tradeDate(), observation.availableAt(), request))
+                .filter(observation -> formalScoreQuality(observation.qualityStatus()))
                 .toList();
         List<RiskEvent> events = repository.findEvents(request).stream()
                 .filter(event -> eligible(event.tradeDate(), event.availableAt(), request))
+                .filter(event -> formalScoreQuality(event.qualityStatus()))
                 .toList();
         List<IndustryExposure> exposures = List.copyOf(exposuresByIdentity.values());
         List<RiskSnapshot> history = repository.findSnapshotHistory(request);
@@ -368,6 +371,11 @@ public final class RiskWarningWorkflow {
         return !tradeDate.isBefore(request.collectionStartDate())
                 && !tradeDate.isAfter(request.endDate())
                 && !availableAt.isAfter(request.asOf());
+    }
+
+    private boolean formalScoreQuality(RiskDataQualityStatus qualityStatus) {
+        return qualityStatus == RiskDataQualityStatus.AVAILABLE
+                || qualityStatus == RiskDataQualityStatus.VALID_ZERO;
     }
 
     private boolean containsDeferredRecords(RiskProviderBatch batch, RiskWorkflowRequest request) {

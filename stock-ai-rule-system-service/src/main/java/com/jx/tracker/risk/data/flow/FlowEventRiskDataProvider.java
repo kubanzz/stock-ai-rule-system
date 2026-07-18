@@ -92,8 +92,19 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                     coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
         }
 
-        RiskIngestionCheckpoint nextCheckpoint = checkpoint(dataset, request, sourceBatch);
+        boolean incompleteHistory = !sourceBatch.historyComplete();
+        String incompleteReason = historyFailureReason(dataset, sourceBatch);
+        RiskIngestionCheckpoint nextCheckpoint = incompleteHistory
+                ? null : checkpoint(dataset, request, sourceBatch);
         if (sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
+            if (incompleteHistory) {
+                RiskProviderBatch insufficient = new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), null,
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                        incompleteReason, sourceBatch.fetchedAt());
+                return new FlowEventFetchResult(insufficient,
+                        coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
+            }
             return new FlowEventFetchResult(
                     auditedValidZeroBatch(dataset, request, sourceBatch, nextCheckpoint),
                     coverage(dataset, request, sourceBatch, List.of(), List.of(), 0));
@@ -107,7 +118,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                 .forEach(record -> uniqueRecords.putIfAbsent(recordKey(dataset, record), record));
         if (uniqueRecords.isEmpty()) {
             FlowEventSourceBatch emptyBatch = emptyFilteredBatch(dataset, request, sourceBatch);
-            if (!dataset.eventDataset()) {
+            if (emptyBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
                 RiskProviderBatch insufficient = new RiskProviderBatch(
                         sourceBatch.source(), List.of(), List.of(), null,
                         RiskDataQualityStatus.INSUFFICIENT_HISTORY, emptyBatch.failureReason(),
@@ -144,15 +155,36 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         List<RiskObservation> translatedObservations = new ArrayList<>(observations.values());
         List<RiskEvent> translatedEvents = new ArrayList<>(events.values());
         if (translatedObservations.isEmpty() && translatedEvents.isEmpty()) {
+            if (incompleteHistory) {
+                RiskProviderBatch insufficient = new RiskProviderBatch(
+                        sourceBatch.source(), List.of(), List.of(), null,
+                        RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                        incompleteReason, sourceBatch.fetchedAt());
+                return new FlowEventFetchResult(
+                        insufficient,
+                        coverage(dataset, request, sourceBatch,
+                                translatedObservations, translatedEvents, rejected));
+            }
             return new FlowEventFetchResult(
                     auditedValidZeroBatch(dataset, request, sourceBatch, nextCheckpoint),
                     coverage(dataset, request, sourceBatch, translatedObservations, translatedEvents, rejected));
         }
-        translatedObservations = completeCurrentDateEventZeros(
-                dataset, request, sourceBatch, translatedObservations);
+        if (!incompleteHistory) {
+            translatedObservations = completeCurrentDateEventZeros(
+                    dataset, request, sourceBatch, translatedObservations);
+        }
+        if (incompleteHistory) {
+            translatedObservations = auditOnlyObservations(translatedObservations, incompleteReason);
+            translatedEvents = auditOnlyEvents(translatedEvents, incompleteReason);
+        }
         RiskProviderBatch batch = new RiskProviderBatch(
                 sourceBatch.source(), translatedObservations, translatedEvents,
-                nextCheckpoint, RiskDataQualityStatus.AVAILABLE, null, sourceBatch.fetchedAt());
+                nextCheckpoint,
+                incompleteHistory
+                        ? RiskDataQualityStatus.INSUFFICIENT_HISTORY
+                        : RiskDataQualityStatus.AVAILABLE,
+                incompleteHistory ? incompleteReason : null,
+                sourceBatch.fetchedAt());
         return new FlowEventFetchResult(
                 batch, coverage(dataset, request, sourceBatch,
                 translatedObservations, translatedEvents, rejected));
@@ -252,6 +284,40 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         }
     }
 
+    private List<RiskObservation> auditOnlyObservations(
+            List<RiskObservation> observations,
+            String partialHistoryReason
+    ) {
+        return observations.stream().map(observation -> {
+            Map<String, Object> attributes = new LinkedHashMap<>(observation.attributes());
+            attributes.put("sourceQuality", observation.qualityStatus().getCode());
+            if (observation.value() != null) {
+                attributes.put("auditValue", observation.value());
+            }
+            attributes.put("partialHistoryReason", partialHistoryReason);
+            return new RiskObservation(
+                    observation.object(), observation.horizon(), observation.tradeDate(),
+                    observation.dimension(), observation.indicatorCode(), null, observation.unit(),
+                    observation.observedAt(), observation.availableAt(), observation.source(),
+                    RiskDataQualityStatus.INSUFFICIENT_HISTORY, attributes);
+        }).toList();
+    }
+
+    private List<RiskEvent> auditOnlyEvents(
+            List<RiskEvent> events,
+            String partialHistoryReason
+    ) {
+        return events.stream().map(event -> {
+            Map<String, Object> payload = new LinkedHashMap<>(event.payload());
+            payload.put("sourceQuality", event.qualityStatus().getCode());
+            payload.put("partialHistoryReason", partialHistoryReason);
+            return new RiskEvent(
+                    event.object(), event.tradeDate(), event.dimension(), event.eventType(), event.eventKey(),
+                    event.severityScore(), event.occurredAt(), event.observedAt(), event.availableAt(),
+                    event.source(), RiskDataQualityStatus.INSUFFICIENT_HISTORY, payload);
+        }).toList();
+    }
+
     private boolean inRequestedPointInTime(
             FlowEventDataset dataset,
             FlowEventSourceRecord record,
@@ -305,7 +371,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             RiskProviderRequest request,
             FlowEventSourceBatch sourceBatch
     ) {
-        if (dataset.eventDataset()) {
+        if (dataset.eventDataset() && sourceBatch.historyComplete()) {
             return new FlowEventSourceBatch(
                     sourceBatch.source(), List.of(), RiskDataQualityStatus.VALID_ZERO, null,
                     request.endDate().atTime(LocalTime.MAX) + "|~", sourceBatch.earliestAvailableDate(),
@@ -313,8 +379,21 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         }
         return new FlowEventSourceBatch(
                 sourceBatch.source(), List.of(), RiskDataQualityStatus.INSUFFICIENT_HISTORY,
-                dataset.code() + " has no observations in requested point-in-time window", null,
+                sourceBatch.historyComplete()
+                        ? dataset.code() + " has no observations in requested point-in-time window"
+                        : historyFailureReason(dataset, sourceBatch),
+                null,
                 sourceBatch.earliestAvailableDate(), false, sourceBatch.fetchedAt(), sourceBatch.fallbackReason());
+    }
+
+    private String historyFailureReason(
+            FlowEventDataset dataset,
+            FlowEventSourceBatch sourceBatch
+    ) {
+        if (sourceBatch.failureReason() != null && !sourceBatch.failureReason().isBlank()) {
+            return sourceBatch.failureReason();
+        }
+        return dataset.code() + " source did not confirm complete history";
     }
 
     private String scopeKey(RiskProviderRequest request) {

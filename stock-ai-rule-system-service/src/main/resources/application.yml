@@ -68,6 +68,8 @@ stock-ai-rule:
     backfill-enabled: ${RISK_WARNING_BACKFILL_ENABLED:false}
     # 为空时复用 market-data.provider.ak-tools-base-url。
     ak-tools-base-url: ${RISK_WARNING_AKTOOLS_BASE_URL:}
+    # 可选规范化衍生网关；历史行情、宽度、估值、跨市场与 ETF 申赎数据由该网关提供。
+    derived-gateway-base-url: ${RISK_WARNING_DERIVED_GATEWAY_BASE_URL:}
     model-version: ${RISK_WARNING_MODEL_VERSION:risk-warning-v1}
     after-close-cutoff: ${RISK_WARNING_AFTER_CLOSE_CUTOFF:20:00}
     collection-chunk-size: ${RISK_WARNING_COLLECTION_CHUNK_SIZE:200}

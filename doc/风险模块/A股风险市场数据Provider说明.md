@@ -44,7 +44,7 @@
 - V3、V4、C1、C3、C4、C5、A3、A5 的主窗口、上下文窗口或相邻日窗口必须连续且全部为 `available`；任一依赖为 `stale`、`unavailable` 或 `insufficient_history`，对应派生项一律输出 `insufficient_history` 且 `value=null`。
 - S1 的标准化窗口同样必须全部为 `available`；短、中、长周期分别复用 60、120、250 点基线尾窗。
 - C3 先用最近两个连续可用点判断当日涨跌：非跌日直接输出真实 0；仅在下跌日继续要求完整成交量上下文并输出量比，上下文不足时不得把缺失量比制造为 0。
-- 普通观测为 `available`；历史窗口不足为 `insufficient_history` 且 `value=null`；成功空集合为 `valid_zero`；源调用异常为 `unavailable` 并保留错误摘要。
+- 普通观测为 `available`；历史窗口不足为 `insufficient_history` 且 `value=null`；市场、估值、宽度和行业暴露的成功空集合仍为 `insufficient_history`，不能把“没有取到行情”解释为业务零值；源调用异常为 `unavailable` 并保留错误摘要。`valid_zero` 只允许出现在有真实输入且计算结果确为 0 的指标分量上。
 - `observationKey` 由对象、周期、交易日、指标和原始分量构成；同一源记录重复返回时按稳定键去重，保证回填重跑幂等。`eventKey` 使用同一稳定键规则供事件型补源复用。
 - 同一对象、交易日、`observedAt`、`availableAt` 出现内容不同的修订时，由于缺少可确定排序的版本号，Provider 显式拒绝该批次并返回 `unavailable`；不得依赖上游返回顺序任选一条。
 
@@ -54,16 +54,45 @@
 
 ## AKTools 接入与真实冒烟清单
 
-`AkToolsMarketRiskSourceClient` 只依赖注入的 `MarketRiskHttpTransport`，基础 URL、超时、重试和可能的网关鉴权均由部署侧管理，代码中不保存账号、Token 或密码。固定响应测试不访问网络。
+`AkToolsMarketRiskSourceClient` 区分“AKTools 原生端点”和“规范化衍生网关”。原生基础 URL 使用 `RISK_WARNING_AKTOOLS_BASE_URL`；可选衍生网关使用 `RISK_WARNING_DERIVED_GATEWAY_BASE_URL`。基础 URL、超时、重试和网关鉴权均由部署侧管理，代码中不保存账号、Token 或密码。固定响应测试不访问网络。
+
+原生端点按部署依赖锁定的 AKShare 1.18.64 / AKTools 0.0.91 公开函数签名调用；已对照 AKShare 1.18.64 官方 wheel 源码核验下列函数参数：
+
+| 用途 | 原生端点与参数 | 时间边界 |
+|---|---|---|
+| A 股代码表 | `stock_info_a_code_name()`，无参数 | 当前抓取快照；`observedAt/availableAt` 为真实抓取时点，不允许回填成历史快照 |
+| 申万一级目录 | `sw_index_first_info()`，无参数 | 当前目录与当前估值字段，包括 `TTM(滚动)市盈率` |
+| 申万成分 | `index_component_sw(symbol=<行业代码>)` | 当前成分；`计入日期` 可作为 `validFrom`，但没有移除历史时不能伪造历史有效期 |
+
+原生函数不接受统一的 `start_date/end_date/objects/cursor`。五年历史、对齐序列及 point-in-time 元数据必须由衍生网关提供：
+
+| 数据集 | 衍生网关路径 |
+|---|---|
+| 历史申万有效期 | `/api/risk/sw1-membership` |
+| 对齐后的目标/基准/龙头日线 | `/api/risk/market-daily` |
+| 估值与无风险收益率 | `/api/risk/valuation` |
+| 历史市场宽度 | `/api/risk/breadth` |
+| 跨市场传导 | `/api/risk/cross-market` |
+
+衍生请求使用 `start_date`、`end_date`、带类型的 `objects`（如 `market:CN-A,stock:600519.SH`）及可选 `cursor`。每条响应必须显式返回 `objectType`、`objectId`、`tradeDate`、`observedAt`、`availableAt` 和数据集字段；时间戳支持本地 ISO 时间及带偏移 ISO 时间。响应 `meta` 必须保留 `historyComplete`、`insufficientHistory`、`earliestAvailableDate`、`historyGapReason` 和可选 `nextCursor`。`earliestAvailableDate` 缺失也视为历史不完整；只有 `historyComplete=true` 且最早日期覆盖请求起点时才允许推进 `nextCursor`。部分记录可以审计保存，但对应观测降为 `insufficient_history`，原始值写入 `auditValue`，正式评分只读取 `available/valid_zero`；当前申万 exposure 可继续用于当期对象映射。空数组不代表市场值为 0，而是 `insufficient_history`。
 
 真实 AKTools 冒烟应在集成环境逐项确认以下官方 AKShare 函数对应端点及字段：
 
 1. `stock_info_a_code_name`：A 股代码与名称；还需由交易所或其他可插拔补源补齐可靠上市日期。
 2. `sw_index_first_info`：申万一级行业代码（官方形如 `801010.SI`）、PE、PB、股息率；风险溢价还需要同期无风险收益率补源，不能把股息率当作无风险收益率。
-3. `index_realtime_sw(symbol="一级行业")`：申万一级实时快照，仅用于核对行业对象与最新状态，不替代历史有效期表。
-4. `index_component_sw`：申万行业成分；需检查接口是否只返回当前成分。若缺少历史纳入/移除日期，必须使用带有效期的补源，不能回填为永久有效。
-5. `stock_zh_index_daily`、`stock_zh_index_daily_tx` 或 `stock_zh_index_daily_em`：指数日线。真实接入需对齐复权、交易日、成交量单位，并由受控网关拼接基准和龙头序列。
-6. A 股全市场快照及历史成分：用于计算上涨占比、新高新低和均线上方比例。快照接口不能伪装成历史宽度，历史不足时应明确返回 `insufficient_history`。
-7. 官方 index 文档中的全球/海外指数序列：用于领先资产、动态相关与跨市场同步。仅提供近期或实时数据的接口必须配置可插拔历史补源。
+3. `index_component_sw(symbol="801010")`：申万行业成分；当前适配器不会传入 `start_date/end_date/objects/cursor`。没有衍生网关的日常五年窗口请求仍会保存本次抓取的当前暴露，使用 `计入日期` 作为 `validFrom`、真实抓取时刻作为 `observedAt/availableAt`、`validTo=null`；批次整体保持 `insufficient_history`、记录失败原因且不推进 checkpoint，因此该快照不能反灌历史评分。若要满足历史覆盖，必须使用带完整有效期的衍生网关。
+4. `stock_zh_index_daily(symbol="sh000001")`：原始指数日线只提供单序列。真实接入需对齐复权、交易日、成交量单位，并由受控网关拼接目标、基准和龙头序列。
+5. `stock_zh_a_spot_em()`：仅为 A 股全市场当前快照，不能伪装成历史宽度。
+6. `index_global_spot_em()`：仅为跨市场当前快照，不能代替领先资产、动态相关及独立市场确认的历史对齐序列。
 
 本分支没有声称完成真实网络验证。最终集成验收仍需在可访问 AKTools 的环境运行上述端点，生成字段、时间跨度、空值、限频和历史覆盖报告；任何单一近期接口都不得被视为满足 5 年基线。
+
+仓库提供默认跳过的 12 端点真实契约冒烟测试。连接已部署的 AKTools 后执行：
+
+```bash
+RISK_AKTOOLS_IT=true \
+RISK_AKTOOLS_BASE_URL=http://127.0.0.1:8090 \
+mvn -Dtest=AkToolsContractSmokeTest test
+```
+
+可通过 `RISK_AKTOOLS_STOCK_SYMBOL`、`RISK_AKTOOLS_SW1_SYMBOL`、`RISK_AKTOOLS_INDEX_SYMBOL`、`RISK_AKTOOLS_SMOKE_END_DATE` 和 `RISK_AKTOOLS_REPORT_DATE` 覆盖样本。该测试校验的是原生函数参数和原始字段形状；衍生网关的 point-in-time 契约由固定响应测试覆盖。

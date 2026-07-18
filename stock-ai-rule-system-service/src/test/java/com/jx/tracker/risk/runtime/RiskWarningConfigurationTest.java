@@ -19,6 +19,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
@@ -70,6 +71,21 @@ class RiskWarningConfigurationTest {
             assertThat(context).hasSingleBean(DefaultRiskAfterCloseWorkflow.class);
             assertThat(context).hasSingleBean(RiskAfterCloseWorkflow.class);
             assertThat(context).hasSingleBean(RiskBackfillService.class);
+        });
+    }
+
+    @Test
+    void enabledRuntimeWiresTheOptionalDerivedGatewayIntoBothSourceClients() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.derived-gateway-base-url=http://127.0.0.1:18090"
+        ).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(ReflectionTestUtils.getField(
+                    context.getBean(AkToolsMarketRiskSourceClient.class), "derivedTransport"))
+                    .isNotNull();
+            assertThat(ReflectionTestUtils.getField(
+                    context.getBean(AkToolsFlowEventSourceClient.class), "derivedRestClient"))
+                    .isNotNull();
         });
     }
 
