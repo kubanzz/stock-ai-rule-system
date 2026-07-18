@@ -6,11 +6,11 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.List;
 
 public enum RiskDimension implements RiskWireCode {
-    VALUATION("V"),
-    TREND("T"),
-    SENTIMENT("S"),
-    CONTAGION("C"),
-    ATTENTION("A");
+    STRUCTURAL_FRAGILITY("V"),
+    SUBSTANTIVE_TRIGGER("T"),
+    EXTERNAL_TRANSMISSION("S"),
+    LOCAL_CONFIRMATION("C"),
+    FORCED_SELLING("A");
 
     private final String code;
 

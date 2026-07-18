@@ -20,7 +20,7 @@ class RiskContractsTest {
     @Test
     void snapshotKeepsRiskScoresSeparateFromConfidenceAndAllowsMissingScores() throws Exception {
         RiskEvidence unavailableEvidence = new RiskEvidence(
-                RiskDimension.CONTAGION,
+                RiskDimension.LOCAL_CONFIRMATION,
                 "northbound_flow",
                 null,
                 null,
@@ -162,7 +162,7 @@ class RiskContractsTest {
     @Test
     void rejectsEvidenceThatCouldIntroduceFutureInformation() {
         assertThatThrownBy(() -> new RiskEvidence(
-                RiskDimension.ATTENTION,
+                RiskDimension.FORCED_SELLING,
                 "announcement_count",
                 BigDecimal.ONE,
                 BigDecimal.ZERO,
@@ -267,7 +267,7 @@ class RiskContractsTest {
             BigDecimal rawValue
     ) {
         return new RiskEvidence(
-                RiskDimension.CONTAGION,
+                RiskDimension.LOCAL_CONFIRMATION,
                 "northbound_flow",
                 score,
                 rawValue,

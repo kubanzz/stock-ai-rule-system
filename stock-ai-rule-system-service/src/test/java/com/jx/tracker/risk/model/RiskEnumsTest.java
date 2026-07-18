@@ -24,7 +24,7 @@ class RiskEnumsTest {
     @Test
     void strictlyParsesWireCodesAndRejectsUnknownOrNullValues() {
         assertThat(RiskHorizon.fromCode("1-5d")).isEqualTo(RiskHorizon.SHORT_TERM);
-        assertThat(RiskDimension.fromCode("V")).isEqualTo(RiskDimension.VALUATION);
+        assertThat(RiskDimension.fromCode("V")).isEqualTo(RiskDimension.STRUCTURAL_FRAGILITY);
         assertThat(RiskDataQualityStatus.fromCode("valid_zero")).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
 
         assertThatThrownBy(() -> RiskLevel.fromCode("WARNING"))

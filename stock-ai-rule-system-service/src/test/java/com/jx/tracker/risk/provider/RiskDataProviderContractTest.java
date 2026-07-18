@@ -48,7 +48,7 @@ class RiskDataProviderContractTest {
                 MARKET,
                 RiskHorizon.SHORT_TERM,
                 LocalDate.of(2026, 7, 18),
-                RiskDimension.VALUATION,
+                RiskDimension.STRUCTURAL_FRAGILITY,
                 "market_pe_percentile",
                 BigDecimal.ZERO,
                 "ratio",
@@ -61,7 +61,7 @@ class RiskDataProviderContractTest {
 
         assertThat(observation.value()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThatThrownBy(() -> new RiskObservation(
-                MARKET, RiskHorizon.SHORT_TERM, LocalDate.of(2026, 7, 18), RiskDimension.VALUATION,
+                MARKET, RiskHorizon.SHORT_TERM, LocalDate.of(2026, 7, 18), RiskDimension.STRUCTURAL_FRAGILITY,
                 "market_pe_percentile", null, "ratio", OBSERVED_AT, AVAILABLE_AT,
                 "aktools", RiskDataQualityStatus.AVAILABLE, Map.of()
         )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("value");
@@ -126,7 +126,7 @@ class RiskDataProviderContractTest {
         RiskEvent event = new RiskEvent(
                 MARKET,
                 LocalDate.of(2026, 8, 17),
-                RiskDimension.ATTENTION,
+                RiskDimension.FORCED_SELLING,
                 "share_unlock",
                 "unlock:600519.SH:2026-08-17",
                 new BigDecimal("75"),
@@ -164,7 +164,7 @@ class RiskDataProviderContractTest {
                 MARKET,
                 RiskHorizon.SHORT_TERM,
                 LocalDate.of(2026, 7, 18),
-                RiskDimension.VALUATION,
+                RiskDimension.STRUCTURAL_FRAGILITY,
                 "market_pe_percentile",
                 value,
                 "ratio",
