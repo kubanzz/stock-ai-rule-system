@@ -23,7 +23,6 @@ import type {
   SignalDashboardOverview,
   SignalDashboardQuery,
   SignalDashboardRow,
-  SignalType,
   StockAnalysis,
   StockResearchDetail,
   StockSignalItem,
@@ -101,12 +100,15 @@ export const mockSignals: StockSignalItem[] = [
 type DashboardRiskState = 'empty' | 'insufficient' | 'ready' | 'stale';
 
 interface DashboardRiskSeed {
+  gateMode: 'none' | 'shadow';
   riskState: DashboardRiskState;
   row: Omit<SignalDashboardRow, 'riskGateDecision' | 'riskSnapshot'>;
+  signalDirection: SignalDirection;
 }
 
 const dashboardRiskSeeds: DashboardRiskSeed[] = [
   {
+    gateMode: 'shadow',
     riskState: 'ready',
     row: {
       bearishScore: 18,
@@ -124,8 +126,10 @@ const dashboardRiskSeeds: DashboardRiskSeed[] = [
       triggeredRuleCount: 5,
       updatedAt: '2026-07-18 18:10',
     },
+    signalDirection: 'bullish',
   },
   {
+    gateMode: 'shadow',
     riskState: 'ready',
     row: {
       bearishScore: 68,
@@ -143,8 +147,10 @@ const dashboardRiskSeeds: DashboardRiskSeed[] = [
       triggeredRuleCount: 4,
       updatedAt: '2026-07-18 18:10',
     },
+    signalDirection: 'bearish',
   },
   {
+    gateMode: 'shadow',
     riskState: 'ready',
     row: {
       bearishScore: 42,
@@ -162,8 +168,52 @@ const dashboardRiskSeeds: DashboardRiskSeed[] = [
       triggeredRuleCount: 2,
       updatedAt: '2026-07-18 18:10',
     },
+    signalDirection: 'watch',
   },
   {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 64,
+      bullishScore: 29,
+      changePct: -1.36,
+      confidence: 0.63,
+      name: '浦发银行（历史）',
+      price: 12.42,
+      quoteStatus: 'ready',
+      riskScore: 72,
+      signal: 'high_risk',
+      signalStatus: 'ready',
+      suggestedPeriod: '方向回填后复核',
+      symbol: '600000.SH',
+      triggeredRuleCount: 4,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'bearish',
+  },
+  {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 48,
+      bullishScore: 45,
+      changePct: -0.42,
+      confidence: 0.57,
+      name: '万科A（历史）',
+      price: 6.98,
+      quoteStatus: 'ready',
+      riskScore: 66,
+      signal: 'high_risk',
+      signalStatus: 'ready',
+      suggestedPeriod: '方向回填后复核',
+      symbol: '000002.SZ',
+      triggeredRuleCount: 3,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'watch',
+  },
+  {
+    gateMode: 'none',
     riskState: 'stale',
     row: {
       bearishScore: 36,
@@ -181,8 +231,10 @@ const dashboardRiskSeeds: DashboardRiskSeed[] = [
       triggeredRuleCount: 3,
       updatedAt: '2026-07-18 18:10',
     },
+    signalDirection: 'bullish',
   },
   {
+    gateMode: 'none',
     riskState: 'insufficient',
     row: {
       bearishScore: 33,
@@ -200,8 +252,10 @@ const dashboardRiskSeeds: DashboardRiskSeed[] = [
       triggeredRuleCount: 2,
       updatedAt: '2026-07-18 18:10',
     },
+    signalDirection: 'watch',
   },
   {
+    gateMode: 'none',
     riskState: 'empty',
     row: {
       bearishScore: 21,
@@ -219,6 +273,7 @@ const dashboardRiskSeeds: DashboardRiskSeed[] = [
       triggeredRuleCount: 3,
       updatedAt: '2026-07-18 18:10',
     },
+    signalDirection: 'bullish',
   },
 ];
 
@@ -308,6 +363,7 @@ function buildDashboardGateDecision(
   horizon: RiskHorizon,
 ): RiskGateDecision | undefined {
   if (
+    seed.gateMode === 'none' ||
     !snapshot ||
     snapshot.level === null ||
     snapshot.completeness < 0.8 ||
@@ -316,8 +372,7 @@ function buildDashboardGateDecision(
   ) {
     return undefined;
   }
-  const signalDirection = toSignalDirection(seed.row.signal);
-  if (!signalDirection) return undefined;
+  const signalDirection = seed.signalDirection;
   if (signalDirection === 'bearish' || signalDirection === 'watch') {
     return {
       calculatedAt: snapshot.calculatedAt,
@@ -364,14 +419,6 @@ function buildDashboardGateDecision(
     suggestedConfidence: decisionByHorizon.confidence,
     tradeDate: snapshot.tradeDate,
   };
-}
-
-function toSignalDirection(
-  signal: null | SignalType,
-): SignalDirection | undefined {
-  return signal === 'bearish' || signal === 'bullish' || signal === 'watch'
-    ? signal
-    : undefined;
 }
 
 const mockSignalDashboardBase: Omit<

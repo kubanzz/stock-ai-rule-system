@@ -342,7 +342,10 @@ function openRecord(record: Record<string, unknown>) {
             </small>
             <small>enforced=false · 未执行</small>
             <small
-              v-if="record.signal === 'bearish' || record.signal === 'watch'"
+              v-if="
+                record.riskGateDecision.signalDirection === 'bearish' ||
+                record.riskGateDecision.signalDirection === 'watch'
+              "
             >
               仅风险说明
             </small>

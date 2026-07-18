@@ -24,6 +24,7 @@ import SignalMetricGrid from './components/signal-metric-grid.vue';
 import SignalTable from './components/signal-table.vue';
 import StockPickerDrawer from './components/stock-picker-drawer.vue';
 import WatchlistManagerDrawer from './components/watchlist-manager-drawer.vue';
+import { buildSignalDashboardCsv } from './dashboard-export';
 import {
   applyDashboardFilters,
   applyDashboardPagination,
@@ -141,59 +142,7 @@ function exportRows() {
     message.warning('当前筛选结果为空');
     return;
   }
-  const headers = [
-    '股票代码',
-    '名称',
-    '价格',
-    '涨跌幅',
-    '系统信号',
-    '看涨分',
-    '看跌分',
-    '置信度',
-    '风险周期',
-    '风险强度分',
-    '风险等级',
-    '风险阶段',
-    '风险完整度',
-    '影子闸门原始置信度',
-    '影子闸门建议置信度',
-    '影子闸门建议动作',
-    '影子闸门执行状态',
-    '影子闸门原因',
-    '规则数',
-    '建议周期',
-    '更新时间',
-  ];
-  const values = rows.map((row) => [
-    row.symbol,
-    row.name ?? '',
-    row.price ?? '',
-    row.changePct ?? '',
-    row.signalStatus === 'pending' ? '待生成信号' : row.signal,
-    row.bullishScore ?? '',
-    row.bearishScore ?? '',
-    row.confidence ?? '',
-    row.riskSnapshot?.horizon ?? query.riskHorizon ?? '',
-    row.riskSnapshot?.totalScore ?? '',
-    row.riskSnapshot?.level ?? '',
-    row.riskSnapshot?.stage ?? '',
-    row.riskSnapshot
-      ? Math.round(row.riskSnapshot.completeness * 100) / 100
-      : '',
-    row.riskGateDecision?.originalConfidence ?? '',
-    row.riskGateDecision?.suggestedConfidence ?? '',
-    row.riskGateDecision?.suggestedAction ?? '',
-    row.riskGateDecision ? 'enforced=false' : '',
-    row.riskGateDecision?.reason ?? '',
-    row.triggeredRuleCount,
-    row.suggestedPeriod ?? '',
-    row.updatedAt ?? '',
-  ]);
-  const csv = [headers, ...values]
-    .map((line) =>
-      line.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','),
-    )
-    .join('\n');
+  const csv = buildSignalDashboardCsv(rows, query.riskHorizon ?? '1-5d');
   const url = URL.createObjectURL(
     new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
   );

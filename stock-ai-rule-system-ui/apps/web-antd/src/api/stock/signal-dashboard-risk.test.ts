@@ -49,6 +49,26 @@ describe('signal dashboard risk aggregate mock', () => {
     }
   });
 
+  it('uses backfilled directions for legacy high-risk signals', () => {
+    const dashboard = selectMockSignalDashboard({ riskHorizon: '1-5d' });
+    const legacyRows = dashboard.signals.filter(
+      (row) => row.signal === 'high_risk' && row.riskGateDecision,
+    );
+
+    expect(
+      legacyRows.map((row) => row.riskGateDecision?.signalDirection).toSorted(),
+    ).toEqual(['bearish', 'watch']);
+    for (const row of legacyRows) {
+      expect(row.riskGateDecision).toMatchObject({
+        enforced: false,
+        suggestedAction: 'notice',
+      });
+      expect(row.riskGateDecision?.suggestedConfidence).toBe(
+        row.riskGateDecision?.originalConfidence,
+      );
+    }
+  });
+
   it('covers insufficient, stale and empty risk data', () => {
     const dashboard = selectMockSignalDashboard({ riskHorizon: '1-5d' });
 

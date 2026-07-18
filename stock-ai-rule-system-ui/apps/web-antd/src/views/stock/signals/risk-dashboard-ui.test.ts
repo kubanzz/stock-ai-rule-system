@@ -38,6 +38,10 @@ describe('signal dashboard risk UI contract', () => {
     expect(detail).toContain('建议置信度');
     expect(detail).toContain('不改写方向或置信度');
     expect(detail).toContain('riskGateDecision.reason');
+
+    const table = signalFile('components/signal-table.vue');
+    expect(table).toContain('record.riskGateDecision.signalDirection');
+    expect(table).not.toContain("record.signal === 'bearish'");
   });
 
   it('shows empty, insufficient and stale states with a fixed disclaimer', () => {
