@@ -135,15 +135,28 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     source, quality_status, metadata_json
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
-                    exposure_weight = VALUES(exposure_weight), valid_to = VALUES(valid_to),
-                    observed_at = VALUES(observed_at), available_at = VALUES(available_at),
-                    quality_status = VALUES(quality_status), metadata_json = VALUES(metadata_json)
+                    id = id
                 """,
                 exposure.stock().objectType().getCode(), exposure.stock().objectId(),
                 exposure.sector().objectType().getCode(), exposure.sector().objectId(),
                 BigDecimal.ONE, exposure.validFrom(), exposure.validTo(),
                 exposure.observedAt(), exposure.availableAt(), exposure.source(),
                 exposure.qualityStatus().getCode(), json(Map.of()));
+        jdbcTemplate.update("""
+                UPDATE risk_object_exposure
+                SET exposure_weight = ?, valid_to = ?, observed_at = ?, available_at = ?,
+                    quality_status = ?, metadata_json = ?
+                WHERE object_type = ? AND object_id = ?
+                  AND parent_object_type = ? AND parent_object_id = ?
+                  AND valid_from = ? AND source = ?
+                  AND (available_at < ? OR (available_at = ? AND observed_at < ?))
+                """,
+                BigDecimal.ONE, exposure.validTo(), exposure.observedAt(), exposure.availableAt(),
+                exposure.qualityStatus().getCode(), json(Map.of()),
+                exposure.stock().objectType().getCode(), exposure.stock().objectId(),
+                exposure.sector().objectType().getCode(), exposure.sector().objectId(),
+                exposure.validFrom(), exposure.source(),
+                exposure.availableAt(), exposure.availableAt(), exposure.observedAt());
     }
 
     @Override

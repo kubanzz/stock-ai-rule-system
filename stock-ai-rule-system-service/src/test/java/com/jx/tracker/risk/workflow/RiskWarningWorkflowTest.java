@@ -278,6 +278,37 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void olderMembershipRevisionArrivingLastCannotRollbackCurrentRunExposure() {
+        IndustryExposure older = exposure(
+                SECTOR, DATE.minusYears(1), DATE.minusDays(1),
+                AS_OF.minusHours(4), AS_OF.minusHours(3),
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        IndustryExposure newer = exposure(
+                SECTOR, DATE.minusYears(1), null,
+                AS_OF.minusHours(2), AS_OF.minusHours(1),
+                RiskDataQualityStatus.AVAILABLE);
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(
+                        task(MarketDatasetCode.SW1_MEMBERSHIP, List.of(STOCK)),
+                        task(MarketDatasetCode.MARKET_DAILY, List.of(MARKET, STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+        LayerCapturingEvaluator forwardEvaluator = new LayerCapturingEvaluator();
+        LayerCapturingEvaluator reverseEvaluator = new LayerCapturingEvaluator();
+
+        workflow(new InMemoryRepository(),
+                new TwoStageMarketProvider(List.of(older, newer), false), forwardEvaluator).run(request);
+        workflow(new InMemoryRepository(),
+                new TwoStageMarketProvider(List.of(newer, older), false), reverseEvaluator).run(request);
+
+        assertThat(forwardEvaluator.layerRequest).isNotNull();
+        assertThat(reverseEvaluator.layerRequest).isNotNull();
+        assertThat(reverseEvaluator.layerRequest.composition())
+                .isEqualTo(forwardEvaluator.layerRequest.composition());
+        assertThat(reverseEvaluator.layerRequest.composition().vScore()).isEqualByComparingTo("51.00");
+    }
+
+    @Test
     void expandedProviderRequestsRespectObjectLimitWithoutDroppingStocksOrSectors() {
         int requestLimit = 500;
         List<RiskObjectKey> stocks = java.util.stream.IntStream.range(0, requestLimit)

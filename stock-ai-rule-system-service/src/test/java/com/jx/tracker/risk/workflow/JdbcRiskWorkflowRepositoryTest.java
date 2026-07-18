@@ -358,7 +358,7 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
-    void exposureUpsertPersistsPointInTimeRevisionWithoutDuplicatingTheUniquePeriod() {
+    void exposureUpsertMonotonicallyKeepsNewestRevisionRegardlessOfArrivalOrder() {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:risk_exposure_upsert;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
         jdbc.execute("DROP ALL OBJECTS");
@@ -387,9 +387,20 @@ class JdbcRiskWorkflowRepositoryTest {
 
         repository.saveIndustryExposure(original);
         repository.saveIndustryExposure(revised);
+        Map<String, Object> forward = jdbc.queryForMap("""
+                SELECT valid_to, observed_at, available_at, quality_status
+                FROM risk_object_exposure
+                """);
+        jdbc.update("DELETE FROM risk_object_exposure");
         repository.saveIndustryExposure(revised);
+        repository.saveIndustryExposure(original);
+        Map<String, Object> reverse = jdbc.queryForMap("""
+                SELECT valid_to, observed_at, available_at, quality_status
+                FROM risk_object_exposure
+                """);
 
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_object_exposure", Integer.class)).isEqualTo(1);
+        assertThat(reverse).isEqualTo(forward);
         assertThat(jdbc.queryForMap("SELECT * FROM risk_object_exposure")).satisfies(row -> {
             assertThat(row.get("exposure_weight").toString()).startsWith("1");
             assertThat(row.get("valid_to").toString()).isEqualTo(date.minusDays(1).toString());
@@ -398,6 +409,27 @@ class JdbcRiskWorkflowRepositoryTest {
             assertThat(((java.sql.Timestamp) row.get("available_at")).toLocalDateTime())
                     .isEqualTo(date.atTime(19, 0));
             assertThat(row.get("quality_status")).isEqualTo("insufficient_history");
+        });
+
+        IndustryExposure observedEarlier = new IndustryExposure(
+                stock, sector, date.minusYears(1), null,
+                date.atTime(17, 0), date.atTime(20, 0),
+                "aktools", RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure observedLater = new IndustryExposure(
+                stock, sector, date.minusYears(1), date,
+                date.atTime(18, 0), date.atTime(20, 0),
+                "aktools", RiskDataQualityStatus.UNAVAILABLE);
+        jdbc.update("DELETE FROM risk_object_exposure");
+        repository.saveIndustryExposure(observedLater);
+        repository.saveIndustryExposure(observedEarlier);
+
+        assertThat(jdbc.queryForMap("SELECT * FROM risk_object_exposure")).satisfies(row -> {
+            assertThat(row.get("valid_to").toString()).isEqualTo(date.toString());
+            assertThat(((java.sql.Timestamp) row.get("observed_at")).toLocalDateTime())
+                    .isEqualTo(date.atTime(18, 0));
+            assertThat(((java.sql.Timestamp) row.get("available_at")).toLocalDateTime())
+                    .isEqualTo(date.atTime(20, 0));
+            assertThat(row.get("quality_status")).isEqualTo("unavailable");
         });
     }
 

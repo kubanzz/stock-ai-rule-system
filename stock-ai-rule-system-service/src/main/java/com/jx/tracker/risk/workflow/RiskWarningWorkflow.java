@@ -95,7 +95,8 @@ public final class RiskWarningWorkflow {
         Map<ExposureIdentity, IndustryExposure> exposuresByIdentity = new LinkedHashMap<>();
         repository.findIndustryExposures(request).stream()
                 .filter(exposure -> eligible(exposure, request))
-                .forEach(exposure -> exposuresByIdentity.put(ExposureIdentity.of(exposure), exposure));
+                .forEach(exposure -> exposuresByIdentity.merge(
+                        ExposureIdentity.of(exposure), exposure, this::newestExposure));
         for (RiskCollectionTask plannedTask : request.collectionTasks()) {
             List<RiskCollectionTask> collectionTasks = expandSectorObjects(
                     plannedTask, List.copyOf(exposuresByIdentity.values()), request);
@@ -129,7 +130,8 @@ public final class RiskWarningWorkflow {
                 for (IndustryExposure exposure : batch.industryExposures()) {
                     if (eligible(exposure, request)) {
                         repository.saveIndustryExposure(exposure);
-                        exposuresByIdentity.put(ExposureIdentity.of(exposure), exposure);
+                        exposuresByIdentity.merge(
+                                ExposureIdentity.of(exposure), exposure, this::newestExposure);
                     }
                 }
                 RiskIngestionCheckpoint nextCheckpoint = checkpointForRepository(
@@ -317,6 +319,15 @@ public final class RiskWarningWorkflow {
                 && (exposure.validTo() == null
                 || !exposure.validTo().isBefore(request.collectionStartDate()))
                 && !exposure.availableAt().isAfter(request.asOf());
+    }
+
+    private IndustryExposure newestExposure(IndustryExposure current, IndustryExposure candidate) {
+        int availableOrder = candidate.availableAt().compareTo(current.availableAt());
+        if (availableOrder > 0
+                || (availableOrder == 0 && candidate.observedAt().isAfter(current.observedAt()))) {
+            return candidate;
+        }
+        return current;
     }
 
     private List<RiskCollectionTask> expandSectorObjects(
