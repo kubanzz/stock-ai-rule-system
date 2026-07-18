@@ -126,14 +126,16 @@ public class RiskWarningConfiguration {
                 RiskWorkflowRepository repository,
                 PercentileRiskEvidenceAssembler evidenceAssembler,
                 DefaultRiskSnapshotEvaluator snapshotEvaluator,
-                ShadowRiskGate shadowRiskGate
+                ShadowRiskGate shadowRiskGate,
+                RiskWarningProperties properties
         ) {
             return new RiskWarningWorkflow(
                     List.of(marketProvider, flowEventProvider),
                     repository,
                     evidenceAssembler,
                     snapshotEvaluator,
-                    shadowRiskGate
+                    shadowRiskGate,
+                    properties.requiredCollectionChunkSize()
             );
         }
 

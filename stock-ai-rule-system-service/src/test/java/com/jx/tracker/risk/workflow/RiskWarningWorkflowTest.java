@@ -278,6 +278,70 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void expandedProviderRequestsRespectObjectLimitWithoutDroppingStocksOrSectors() {
+        int requestLimit = 500;
+        List<RiskObjectKey> stocks = java.util.stream.IntStream.range(0, requestLimit)
+                .mapToObj(index -> new RiskObjectKey(
+                        RiskObjectType.STOCK, String.format("%06d.SH", index + 1)))
+                .toList();
+        List<IndustryExposure> memberships = java.util.stream.IntStream.range(0, requestLimit)
+                .mapToObj(index -> new IndustryExposure(
+                        stocks.get(index),
+                        new RiskObjectKey(RiskObjectType.SECTOR,
+                                String.format("SW1:%06d", 800001 + index % 31)),
+                        DATE.minusYears(1), null, AS_OF.minusHours(2), AS_OF.minusHours(1),
+                        "aktools", RiskDataQualityStatus.AVAILABLE))
+                .toList();
+        Set<RiskObjectKey> expectedObjects = new LinkedHashSet<>(stocks);
+        memberships.stream().map(IndustryExposure::sector).forEach(expectedObjects::add);
+        TwoStageMarketProvider provider = new TwoStageMarketProvider(memberships, false);
+        InMemoryRepository repository = new InMemoryRepository();
+
+        workflow(repository, provider, defaultEvaluator(), requestLimit).run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(
+                        task(MarketDatasetCode.SW1_MEMBERSHIP, stocks),
+                        task(MarketDatasetCode.MARKET_DAILY, stocks)),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        List<RiskProviderRequest> requests = provider.requests(MarketDatasetCode.MARKET_DAILY);
+        assertThat(requests).hasSizeGreaterThan(1)
+                .allSatisfy(actual -> assertThat(actual.objects()).hasSizeLessThanOrEqualTo(requestLimit));
+        assertThat(requests.stream().flatMap(actual -> actual.objects().stream()).toList())
+                .containsExactlyInAnyOrderElementsOf(expectedObjects);
+    }
+
+    @Test
+    void fiveYearBackfillCollectsEveryHistoricalSectorOverlappingTheWindow() {
+        RiskObjectKey formerSector = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010");
+        IndustryExposure former = exposure(
+                formerSector, DATE.minusYears(5), DATE.minusYears(1),
+                AS_OF.minusHours(3), AS_OF.minusHours(2), RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure current = exposure(
+                SECTOR, DATE.minusYears(1).plusDays(1), null,
+                AS_OF.minusHours(2), AS_OF.minusHours(1), RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure future = exposure(
+                new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801790"),
+                DATE.minusYears(2), null, AS_OF.minusHours(1), AS_OF.plusMinutes(1),
+                RiskDataQualityStatus.AVAILABLE);
+        TwoStageMarketProvider provider = new TwoStageMarketProvider(
+                List.of(former, current, future), false);
+
+        workflow(new InMemoryRepository(), provider, defaultEvaluator(), 500)
+                .run(RiskWorkflowRequest.fiveYearBackfill(
+                        DATE, AS_OF,
+                        List.of(
+                                task(MarketDatasetCode.SW1_MEMBERSHIP, List.of(STOCK)),
+                                task(MarketDatasetCode.MARKET_DAILY, List.of(STOCK))),
+                        List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(provider.requests(MarketDatasetCode.MARKET_DAILY)
+                .stream().flatMap(actual -> actual.objects().stream()).toList())
+                .contains(STOCK, formerSector, SECTOR)
+                .doesNotContain(future.sector());
+    }
+
+    @Test
     void unavailableMembershipFallsBackToExistingPointInTimeExposureWithoutUsingFutureRevision() {
         InMemoryRepository repository = new InMemoryRepository();
         IndustryExposure current = exposure(
@@ -618,6 +682,15 @@ class RiskWarningWorkflowTest {
             RiskDataProvider provider,
             RiskSnapshotEvaluator evaluator
     ) {
+        return workflow(repository, provider, evaluator, 200);
+    }
+
+    private RiskWarningWorkflow workflow(
+            InMemoryRepository repository,
+            RiskDataProvider provider,
+            RiskSnapshotEvaluator evaluator,
+            int requestObjectLimit
+    ) {
         RiskEvidenceAssembler assembler = (object, horizon, tradeDate, asOf, observations) ->
                 observations.stream()
                         .filter(observation -> observation.object().equals(object))
@@ -634,7 +707,7 @@ class RiskWarningWorkflowTest {
                                                 || observation.dimension() == RiskDimension.FORCED_SELLING)))
                         .toList();
         return new RiskWarningWorkflow(
-                List.of(provider), repository, assembler, evaluator, new ShadowRiskGate());
+                List.of(provider), repository, assembler, evaluator, new ShadowRiskGate(), requestObjectLimit);
     }
 
     private RiskSnapshotEvaluator defaultEvaluator() {
@@ -953,6 +1026,10 @@ class RiskWarningWorkflowTest {
                     .filter(request -> request.objects().stream()
                             .anyMatch(object -> object.objectType() == RiskObjectType.STOCK))
                     .findFirst().orElseThrow();
+        }
+
+        private List<RiskProviderRequest> requests(MarketDatasetCode dataset) {
+            return List.copyOf(requests.getOrDefault(dataset, List.of()));
         }
     }
 
