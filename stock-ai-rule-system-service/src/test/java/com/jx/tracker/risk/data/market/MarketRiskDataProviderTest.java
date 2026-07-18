@@ -40,6 +40,7 @@ class MarketRiskDataProviderTest {
                 .allMatch(dataset -> provider.supports(dataset.code()));
         RiskProviderBatch emptyBatch = provider.fetch("breadth", request(null));
         assertThat(emptyBatch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        assertThat(emptyBatch.industryExposures()).isEmpty();
         assertThat(provider.coverageReport(
                 "breadth", emptyBatch, MARKET, RiskHorizon.SHORT_TERM, END_DATE, END_DATE.atTime(23, 59, 59)
         ).items()).hasSize(2)
@@ -80,6 +81,7 @@ class MarketRiskDataProviderTest {
         assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
         assertThat(batch.errorMessage()).isEqualTo("upstream timeout");
         assertThat(batch.observations()).isEmpty();
+        assertThat(batch.industryExposures()).isEmpty();
     }
 
     @Test
@@ -465,6 +467,57 @@ class MarketRiskDataProviderTest {
                 .containsOnly("DATA_SW1_MEMBERSHIP");
         assertThat(exposureBatch.observations()).allSatisfy(observation ->
                 assertThat(observation.attributes()).containsEntry("sectorId", "SW1:801780"));
+        assertThat(exposureBatch.industryExposures()).singleElement().satisfies(actual -> {
+            assertThat(actual.stock()).isEqualTo(stock);
+            assertThat(actual.sector()).isEqualTo(catalog.sector("801780"));
+            assertThat(actual.validFrom()).isEqualTo(LocalDate.of(2025, 1, 1));
+            assertThat(actual.validTo()).isNull();
+            assertThat(actual.observedAt()).isEqualTo(END_DATE.atTime(15, 0));
+            assertThat(actual.availableAt()).isEqualTo(END_DATE.atTime(16, 0));
+            assertThat(actual.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        });
+    }
+
+    @Test
+    void membershipTypedExposuresArePointInTimeFilteredAndDeduplicatedAcrossRepeatedFetches() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        RiskObjectKey stock = catalog.stock("000001.SZ");
+        IndustryExposure original = new IndustryExposure(
+                stock, catalog.sector("801010"), LocalDate.of(2020, 1, 1), LocalDate.of(2024, 12, 31),
+                END_DATE.minusDays(2).atTime(15, 0), END_DATE.minusDays(2).atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure current = new IndustryExposure(
+                stock, catalog.sector("801780"), LocalDate.of(2025, 1, 1), null,
+                END_DATE.atTime(15, 0), END_DATE.atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure futureKnown = new IndustryExposure(
+                stock, catalog.sector("801790"), LocalDate.of(2026, 1, 1), null,
+                END_DATE.plusDays(1).atTime(8, 0), END_DATE.plusDays(1).atTime(9, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        MarketRiskDataProvider provider = provider(
+                List.of(original, original, current, current, futureKnown), null
+        );
+
+        RiskProviderBatch first = provider.fetch("sw1_membership", request(null));
+        RiskProviderBatch second = provider.fetch("sw1_membership", request(null));
+
+        assertThat(first.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(first.industryExposures()).containsExactly(original, current);
+        assertThat(first.industryExposures().getFirst()).satisfies(actual -> {
+            assertThat(actual.validFrom()).isEqualTo(LocalDate.of(2020, 1, 1));
+            assertThat(actual.validTo()).isEqualTo(LocalDate.of(2024, 12, 31));
+            assertThat(actual.availableAt()).isEqualTo(END_DATE.minusDays(2).atTime(16, 0));
+            assertThat(actual.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        });
+        assertThat(second.industryExposures()).containsExactlyElementsOf(first.industryExposures());
+        assertThat(first.observations()).extracting(observation -> observation.attributes().get("observationKey"))
+                .doesNotHaveDuplicates()
+                .containsExactlyElementsOf(second.observations().stream()
+                        .map(observation -> observation.attributes().get("observationKey"))
+                        .toList());
     }
 
     @Test

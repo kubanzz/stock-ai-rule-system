@@ -99,14 +99,15 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                         sourceBatch.source(), sourceBatch.nextCheckpoint(), sourceBatch.fetchedAt()
                 );
             }
+            List<IndustryExposure> industryExposures = typedIndustryExposures(dataset, eligible);
             List<RiskObservation> observations = transform(dataset, eligible, request);
-            if (observations.isEmpty()) {
+            if (observations.isEmpty() && industryExposures.isEmpty()) {
                 return RiskProviderBatch.validZero(
                         sourceBatch.source(), sourceBatch.nextCheckpoint(), sourceBatch.fetchedAt()
                 );
             }
             return new RiskProviderBatch(
-                    sourceBatch.source(), observations, List.of(), sourceBatch.nextCheckpoint(),
+                    sourceBatch.source(), observations, List.of(), industryExposures, sourceBatch.nextCheckpoint(),
                     RiskDataQualityStatus.AVAILABLE, null, sourceBatch.fetchedAt()
             );
         } catch (RuntimeException exception) {
@@ -279,6 +280,18 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             case BREADTH -> breadth(records, request);
             case CROSS_MARKET -> crossMarket(records, request);
         };
+    }
+
+    private List<IndustryExposure> typedIndustryExposures(
+            MarketDatasetCode dataset,
+            List<MarketSourceRecord> records
+    ) {
+        if (dataset != MarketDatasetCode.SW1_MEMBERSHIP) {
+            return List.of();
+        }
+        return records.stream()
+                .map(record -> cast(record, IndustryExposure.class))
+                .toList();
     }
 
     private List<RiskObservation> stockMaster(
