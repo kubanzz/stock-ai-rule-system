@@ -167,6 +167,12 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         if (!dataset.eventDataset()) {
             return RiskProviderBatch.validZero(sourceBatch.source(), checkpoint, sourceBatch.fetchedAt());
         }
+        if (!sourceBatch.historyComplete()) {
+            return new RiskProviderBatch(
+                    sourceBatch.source(), List.of(), List.of(), null,
+                    RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                    incompleteHistoryReason(dataset, sourceBatch), sourceBatch.fetchedAt());
+        }
         List<RiskObservation> zeroObservations = completeCurrentDateEventZeros(
                 dataset, request, sourceBatch, List.of());
         if (zeroObservations.isEmpty()) {
@@ -183,7 +189,8 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             FlowEventSourceBatch sourceBatch,
             List<RiskObservation> existing
     ) {
-        if (!dataset.eventDataset() || dataset.indicatorCodes().equals(List.of("M"))) {
+        if (!dataset.eventDataset() || !sourceBatch.historyComplete()
+                || dataset.indicatorCodes().equals(List.of("M"))) {
             return List.copyOf(existing);
         }
         Set<String> present = existing.stream()
@@ -210,6 +217,19 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             }
         }
         return List.copyOf(completed);
+    }
+
+    private String incompleteHistoryReason(
+            FlowEventDataset dataset,
+            FlowEventSourceBatch sourceBatch
+    ) {
+        if (sourceBatch.failureReason() != null && !sourceBatch.failureReason().isBlank()) {
+            return sourceBatch.failureReason();
+        }
+        if (sourceBatch.fallbackReason() != null && !sourceBatch.fallbackReason().isBlank()) {
+            return sourceBatch.fallbackReason();
+        }
+        return dataset.code() + " history is incomplete; valid zero cannot be proven";
     }
 
     private String currentDateIdentity(RiskObjectKey object, com.jx.tracker.risk.model.RiskHorizon horizon,
@@ -342,7 +362,8 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
             }
         }
 
-        boolean sourceZero = sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO;
+        boolean sourceZero = sourceBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
+                && sourceBatch.historyComplete();
         boolean sourceUnavailable = sourceBatch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE;
         boolean sourceInsufficient = sourceBatch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
                 || !sourceBatch.historyComplete();

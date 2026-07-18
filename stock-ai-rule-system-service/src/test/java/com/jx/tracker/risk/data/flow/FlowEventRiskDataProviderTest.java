@@ -112,6 +112,53 @@ class FlowEventRiskDataProviderTest {
     }
 
     @Test
+    void incompleteEventHistoryDoesNotSynthesizeZerosOrInflateCoverage() {
+        FlowEventSourceBatch incomplete = new FlowEventSourceBatch(
+                "aktools",
+                List.of(record("notice-trust", new BigDecimal("70"), "notice",
+                        Map.of("economicMeaning", "market_trust", "adverse", true))),
+                RiskDataQualityStatus.AVAILABLE, "recent-only", "cursor-1",
+                LocalDate.of(2025, 1, 1), false, AVAILABLE_AT, null);
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(request -> incomplete);
+
+        FlowEventFetchResult result = provider.fetchWithCoverage(
+                "stock_announcement", request(List.of(RiskHorizon.SHORT_TERM), null));
+
+        assertThat(result.batch().qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.batch().observations()).singleElement().satisfies(item -> {
+            assertThat(item.indicatorCode()).isEqualTo("T4");
+            assertThat(item.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        });
+        assertThat(result.coverageReport().indicators()).containsExactly(
+                new IndicatorCoverage("T1", new BigDecimal("30"), 0, 0, 0, 1),
+                new IndicatorCoverage("T2", new BigDecimal("25"), 0, 0, 0, 1),
+                new IndicatorCoverage("T3", new BigDecimal("20"), 0, 0, 0, 1),
+                new IndicatorCoverage("T4", new BigDecimal("25"), 1, 0, 0, 1));
+        assertThat(result.coverageReport().weightedCoverage()).isEqualByComparingTo("0.2500");
+    }
+
+    @Test
+    void incompleteEmptyEventQueryIsInsufficientInsteadOfValidZero() {
+        FlowEventSourceBatch incompleteEmpty = new FlowEventSourceBatch(
+                "aktools", List.of(), RiskDataQualityStatus.VALID_ZERO,
+                "event history incomplete", "cursor-1", LocalDate.of(2025, 1, 1),
+                false, AVAILABLE_AT, null);
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(request -> incompleteEmpty);
+
+        FlowEventFetchResult result = provider.fetchWithCoverage(
+                "stock_announcement", request(List.of(RiskHorizon.SHORT_TERM), null));
+
+        assertThat(result.batch().qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.batch().observations()).isEmpty();
+        assertThat(result.batch().errorMessage()).contains("event history incomplete");
+        assertThat(result.coverageReport().indicators()).allSatisfy(item -> {
+            assertThat(item.validZeroCount()).isZero();
+            assertThat(item.insufficientHistoryCount()).isEqualTo(1);
+        });
+        assertThat(result.coverageReport().weightedCoverage()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
     void supplementIsUsedOnlyForUnavailableOrInsufficientPrimaryAndAuditsReason() {
         FlowEventSourceClient primary = request -> FlowEventSourceBatch.insufficientHistory(
                 "aktools", "only recent history", LocalDate.of(2025, 1, 1), AVAILABLE_AT);
