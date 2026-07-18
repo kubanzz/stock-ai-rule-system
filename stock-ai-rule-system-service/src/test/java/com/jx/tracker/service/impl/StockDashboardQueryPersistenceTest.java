@@ -68,6 +68,7 @@ class StockDashboardQueryPersistenceTest {
                     symbol VARCHAR(32) NOT NULL,
                     signal_date DATE NOT NULL,
                     `signal` VARCHAR(32),
+                    signal_direction VARCHAR(16),
                     signal_level VARCHAR(32),
                     bullish_score DECIMAL(18,6),
                     bearish_score DECIMAL(18,6),

@@ -32,6 +32,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -95,8 +96,14 @@ class FoundationContractTest {
     }
 
     @Test
+    void signalEntityExposesDirectionSeparatelyFromLegacySignal() {
+        assertThat(Arrays.stream(StockSignalDaily.class.getDeclaredFields()).map(field -> field.getName()))
+                .contains("signal", "signalDirection");
+    }
+
+    @Test
     void mysqlSchemaDoesNotUsePostgresqlOnlyTypes() throws IOException {
-        String ddl = new String(getClass().getResourceAsStream("/db/stock_ai_rule_schema.sql").readAllBytes(), StandardCharsets.UTF_8);
+        String ddl = new String(getClass().getResourceAsStream("/db/migration/V1__baseline.sql").readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(ddl).doesNotContain("BIGSERIAL", "JSONB");
         assertThat(ddl).contains("CREATE TABLE IF NOT EXISTS stock_signal_daily");

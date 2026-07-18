@@ -33,6 +33,8 @@ public class StockSignalDaily {
     @TableField("`signal`")
     private String signal;
 
+    private String signalDirection;
+
     private String signalLevel;
 
     private BigDecimal bullishScore;

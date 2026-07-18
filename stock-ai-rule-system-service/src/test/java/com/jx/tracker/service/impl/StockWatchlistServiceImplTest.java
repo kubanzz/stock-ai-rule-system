@@ -141,7 +141,7 @@ class StockWatchlistServiceImplTest {
 
     @Test
     void declaresWatchlistSchemaConstraints() throws IOException {
-        try (InputStream input = getClass().getResourceAsStream("/db/stock_ai_rule_schema.sql")) {
+        try (InputStream input = getClass().getResourceAsStream("/db/migration/V1__baseline.sql")) {
             assertNotNull(input);
             String ddl = new String(input.readAllBytes(), StandardCharsets.UTF_8);
 
