@@ -36,7 +36,7 @@ describe('signal dashboard risk aggregate mock', () => {
 
     expect(
       explanationRows
-        .map((row) => row.signal)
+        .map((row) => row.signal ?? '')
         .toSorted((left, right) => left.localeCompare(right)),
     ).toEqual(['bearish', 'watch']);
     for (const row of explanationRows) {
