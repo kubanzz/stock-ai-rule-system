@@ -73,6 +73,15 @@ stock-ai-rule:
     model-version: ${RISK_WARNING_MODEL_VERSION:risk-warning-v1}
     after-close-cutoff: ${RISK_WARNING_AFTER_CLOSE_CUTOFF:20:00}
     collection-chunk-size: ${RISK_WARNING_COLLECTION_CHUNK_SIZE:200}
+    backfill-command:
+      # 一次性内部命令默认关闭；普通 Web 启动不会自动执行 Runner。
+      enabled: ${RISK_WARNING_BACKFILL_COMMAND_ENABLED:false}
+      mode: ${RISK_WARNING_BACKFILL_MODE:staged}
+      end-date: ${RISK_WARNING_BACKFILL_END_DATE:}
+      sample-size: ${RISK_WARNING_BACKFILL_SAMPLE_SIZE:50}
+      symbols: ${RISK_WARNING_BACKFILL_SYMBOLS:}
+      confirmation: ${RISK_WARNING_BACKFILL_CONFIRMATION:}
+      report-directory: ${RISK_WARNING_BACKFILL_REPORT_DIRECTORY:target/risk-backfill/reports}
   market-data:
     provider:
       # 可选：mock / csv / tushare。外部 token 缺失时自动降级到 fallback-type。
