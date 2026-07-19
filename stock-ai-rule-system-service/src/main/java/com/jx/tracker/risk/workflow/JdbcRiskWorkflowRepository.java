@@ -73,14 +73,15 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
             String scopeKey
     ) {
         List<RiskIngestionCheckpoint> checkpoints = jdbcTemplate.query("""
-                SELECT JSON_UNQUOTE(JSON_EXTRACT(checkpoint_value, '$.cursor')) AS cursor, checkpoint_at
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(checkpoint_value, '$.cursor')) AS checkpoint_cursor,
+                       checkpoint_at
                 FROM risk_ingestion_checkpoint
                 WHERE provider_code = ? AND dataset_code = ? AND scope_key = ?
                   AND JSON_EXTRACT(checkpoint_value, '$.cursor') IS NOT NULL
                 """, (resultSet, rowNum) -> new RiskIngestionCheckpoint(
                 datasetCode,
                 scopeKey,
-                resultSet.getString("cursor"),
+                resultSet.getString("checkpoint_cursor"),
                 resultSet.getTimestamp("checkpoint_at").toLocalDateTime()
         ), providerCode, datasetCode, scopeKey);
         return checkpoints.stream().findFirst();

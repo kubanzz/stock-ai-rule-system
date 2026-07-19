@@ -1,5 +1,7 @@
 package com.jx.tracker.risk.workflow;
 
+import com.alibaba.druid.DbType;
+import com.alibaba.druid.sql.SQLUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
@@ -42,6 +44,17 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class JdbcRiskWorkflowRepositoryTest {
+
+    @Test
+    void checkpointLookupSqlIsAcceptedByMySqlParser() {
+        QueryRecordingJdbcTemplate jdbc = new QueryRecordingJdbcTemplate();
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.findCheckpoint("provider-a", "dataset-a", "stock:600519.SH");
+
+        assertThat(jdbc.query).isNotBlank();
+        SQLUtils.parseSingleStatement(jdbc.query, DbType.mysql);
+    }
 
     @Test
     void everyWorkflowArtifactUsesStableMySqlUpsertKey() {
@@ -551,6 +564,16 @@ class JdbcRiskWorkflowRepositoryTest {
                 return requiredType.cast(42L);
             }
             return null;
+        }
+    }
+
+    private static final class QueryRecordingJdbcTemplate extends JdbcTemplate {
+        private String query;
+
+        @Override
+        public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
+            query = sql;
+            return List.of();
         }
     }
 }
