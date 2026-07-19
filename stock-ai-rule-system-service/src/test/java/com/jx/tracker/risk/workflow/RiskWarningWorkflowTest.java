@@ -159,6 +159,26 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void availableBatchWithoutCursorPersistsSuccessfulIngestionStatus() {
+        InMemoryRepository repository = new InMemoryRepository();
+        RiskProviderBatch available = new RiskProviderBatch(
+                "derived-gateway", List.of(observation("S1", DATE, AS_OF.minusMinutes(1))),
+                List.of(), null, RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+
+        workflow(repository, new CapturingProvider(available)).run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "market:CN-A", List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(repository.checkpoints).isEmpty();
+        assertThat(repository.ingestionStatuses).singleElement().satisfies(batch -> {
+            assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(batch.errorMessage()).isNull();
+        });
+    }
+
+    @Test
     void partialInsufficientHistoryBatchPersistsCurrentRecordsAndFailureStatusWithoutCheckpoint() {
         InMemoryRepository repository = new InMemoryRepository();
         IndustryExposure currentExposure = new IndustryExposure(
