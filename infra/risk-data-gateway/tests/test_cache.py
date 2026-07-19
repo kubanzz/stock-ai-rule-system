@@ -1,9 +1,15 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
 
-from risk_gateway.cache import CachePartition, InvalidCachePartition, ParquetCache
+from risk_gateway.cache import (
+    CachePartition,
+    DerivedResponseCache,
+    InvalidCachePartition,
+    ParquetCache,
+)
+from risk_gateway.models import GatewayResponse
 
 
 def frame():
@@ -61,3 +67,39 @@ def test_cache_quarantines_hash_mismatch(tmp_path):
 def test_cache_rejects_unsafe_partition(partition):
     with pytest.raises(InvalidCachePartition):
         CachePartition(*partition)
+
+
+def test_derived_response_cache_reuses_payload_until_ttl_expires(tmp_path):
+    now = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
+    cache = DerivedResponseCache(tmp_path)
+    request_hash = "a" * 64
+    result = GatewayResponse.model_validate({
+        "data": [{"tradeDate": "2026-07-17", "totalCount": 5000}],
+        "meta": {
+            "historyComplete": False,
+            "insufficientHistory": True,
+            "earliestAvailableDate": "2026-07-17",
+            "historyGapReason": "one stock is unavailable",
+            "nextCursor": None,
+            "source": "test",
+            "sourceVersion": "test-v1",
+            "calculationVersion": "breadth-v1",
+            "fetchedAt": now.isoformat(),
+        },
+    })
+
+    cache.put("breadth", request_hash, result, stored_at=now, ttl=timedelta(hours=1))
+
+    cached = cache.get("breadth", request_hash, now=now + timedelta(minutes=59))
+    expired = cache.get("breadth", request_hash, now=now + timedelta(hours=1))
+
+    assert cached is not None
+    assert cached.payload() == result.payload()
+    assert expired is None
+
+
+def test_derived_response_cache_rejects_unsafe_key(tmp_path):
+    cache = DerivedResponseCache(tmp_path)
+
+    with pytest.raises(InvalidCachePartition):
+        cache.get("../breadth", "not-a-hash", now=datetime.now(timezone.utc))

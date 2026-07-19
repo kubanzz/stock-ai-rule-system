@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 import os
@@ -11,6 +11,8 @@ from uuid import uuid4
 
 import pandas as pd
 
+from risk_gateway.models import GatewayResponse
+
 
 class InvalidCachePartition(ValueError):
     pass
@@ -18,6 +20,7 @@ class InvalidCachePartition(ValueError):
 
 _DATASET = re.compile(r"^[a-z][a-z0-9_]*$")
 _OBJECT = re.compile(r"^[A-Za-z0-9_.:-]+$")
+_REQUEST_HASH = re.compile(r"^[a-f0-9]{64}$")
 
 
 @dataclass(frozen=True)
@@ -138,9 +141,103 @@ class ParquetCache:
                 os.replace(path, quarantine / f"{token}-{path.name}")
 
 
+class DerivedResponseCache:
+    """短期复用昂贵衍生结果；原始 Parquet 仍是长期可审计事实缓存。"""
+
+    def __init__(self, root: Path | str):
+        self._root = Path(root)
+
+    def path(self, dataset: str, request_hash: str) -> Path:
+        self._validate_key(dataset, request_hash)
+        return self._root / "derived_response" / dataset / f"{request_hash}.json"
+
+    def put(
+        self,
+        dataset: str,
+        request_hash: str,
+        result: GatewayResponse,
+        *,
+        stored_at: datetime,
+        ttl: timedelta,
+    ) -> None:
+        if stored_at.tzinfo is None or ttl.total_seconds() <= 0:
+            raise ValueError("derived cache requires aware stored_at and positive ttl")
+        target = self.path(dataset, request_hash)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = result.payload()
+        payload_bytes = _canonical_json(payload)
+        envelope = {
+            "dataset": dataset,
+            "requestHash": request_hash,
+            "storedAt": stored_at.isoformat(),
+            "expiresAt": (stored_at + ttl).isoformat(),
+            "sha256": hashlib.sha256(payload_bytes).hexdigest(),
+            "payload": payload,
+        }
+        temporary: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                dir=target.parent, prefix="response-", suffix=".json", delete=False
+            ) as file_handle:
+                temporary = Path(file_handle.name)
+                file_handle.write(_canonical_json(envelope))
+                file_handle.flush()
+                os.fsync(file_handle.fileno())
+            os.replace(temporary, target)
+            temporary = None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def get(
+        self,
+        dataset: str,
+        request_hash: str,
+        *,
+        now: datetime,
+    ) -> GatewayResponse | None:
+        if now.tzinfo is None:
+            raise ValueError("derived cache requires aware now")
+        target = self.path(dataset, request_hash)
+        if not target.exists():
+            return None
+        try:
+            envelope = json.loads(target.read_text(encoding="utf-8"))
+            if envelope.get("dataset") != dataset or envelope.get("requestHash") != request_hash:
+                raise ValueError("derived cache key mismatch")
+            expires_at = datetime.fromisoformat(str(envelope["expiresAt"]))
+            if expires_at.tzinfo is None:
+                raise ValueError("derived cache expiry must include timezone")
+            payload = envelope["payload"]
+            if envelope.get("sha256") != hashlib.sha256(_canonical_json(payload)).hexdigest():
+                raise OSError("derived cache content hash mismatch")
+            if now >= expires_at:
+                return None
+            return GatewayResponse.model_validate(payload)
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+            self._quarantine(target)
+            return None
+
+    def _validate_key(self, dataset: str, request_hash: str) -> None:
+        if not _DATASET.fullmatch(dataset or "") or not _REQUEST_HASH.fullmatch(request_hash or ""):
+            raise InvalidCachePartition("derived cache key is invalid")
+
+    def _quarantine(self, target: Path) -> None:
+        quarantine = self._root / "quarantine"
+        quarantine.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            os.replace(target, quarantine / f"{uuid4().hex}-{target.name}")
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as file_handle:
         for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _canonical_json(value: Any) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")

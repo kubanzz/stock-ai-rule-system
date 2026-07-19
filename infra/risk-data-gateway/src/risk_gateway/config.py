@@ -11,6 +11,7 @@ class Settings(BaseModel):
     max_retries: int = Field(default=3, ge=0, le=5)
     max_concurrency: int = Field(default=4, ge=1, le=16)
     page_size: int = Field(default=2000, ge=1, le=5000)
+    derived_cache_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
 
     @field_validator("aktools_base_url")
     @classmethod
@@ -35,4 +36,7 @@ class Settings(BaseModel):
                 os.getenv("RISK_GATEWAY_MAX_CONCURRENCY", "4")
             ),
             page_size=int(os.getenv("RISK_GATEWAY_PAGE_SIZE", "2000")),
+            derived_cache_ttl_seconds=int(
+                os.getenv("RISK_GATEWAY_DERIVED_CACHE_TTL_SECONDS", "3600")
+            ),
         )

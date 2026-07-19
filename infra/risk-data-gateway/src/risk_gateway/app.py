@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Callable, Protocol
@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from risk_gateway.aktools import AkToolsClient, AkToolsSchemaError, AkToolsUnavailable
-from risk_gateway.cache import ParquetCache
+from risk_gateway.cache import DerivedResponseCache, ParquetCache
 from risk_gateway.cached_client import CachedAkToolsClient
 from risk_gateway.config import Settings
 from risk_gateway.datasets import DatasetContext
@@ -67,6 +67,7 @@ def create_app(
         ParquetCache(settings.cache_dir),
         fetched_at=lambda: datetime.now(SHANGHAI),
     )
+    derived_response_cache = DerivedResponseCache(settings.cache_dir)
     provide_calendar = calendar_provider or (lambda query: _calendar(source_client, query))
 
     @application.get("/health")
@@ -125,20 +126,36 @@ def create_app(
         cursor: str | None,
     ) -> JSONResponse:
         query = RiskQuery.from_raw(start_date, end_date, objects, cursor)
-        context = DatasetContext(
-            client=source_client,
-            fetched_at=datetime.now(SHANGHAI),
-            a_share_sessions=provide_calendar(query),
-            source_version="AKTools/AKShare",
+        now = datetime.now(SHANGHAI)
+        request_hash = query.request_hash(dataset_code)
+        result = (
+            derived_response_cache.get(dataset_code, request_hash, now=now)
+            if dataset_code == "breadth"
+            else None
         )
-        dataset_type = dataset_types[dataset_code]
-        if dataset_code == "breadth":
-            dataset = dataset_type(context, max_concurrency=settings.max_concurrency)
-        else:
-            dataset = dataset_type(context)
-        result = dataset.fetch(query)
+        if result is None:
+            context = DatasetContext(
+                client=source_client,
+                fetched_at=now,
+                a_share_sessions=provide_calendar(query),
+                source_version="AKTools/AKShare",
+            )
+            dataset_type = dataset_types[dataset_code]
+            if dataset_code == "breadth":
+                dataset = dataset_type(context, max_concurrency=settings.max_concurrency)
+            else:
+                dataset = dataset_type(context)
+            result = dataset.fetch(query)
+            if dataset_code == "breadth":
+                derived_response_cache.put(
+                    dataset_code,
+                    request_hash,
+                    result,
+                    stored_at=now,
+                    ttl=timedelta(seconds=settings.derived_cache_ttl_seconds),
+                )
         page, next_cursor = paginate(
-            result.data, query.request_hash(dataset_code), query.cursor, settings.page_size,
+            result.data, request_hash, query.cursor, settings.page_size,
         )
         result.meta.next_cursor = next_cursor
         result.data = page

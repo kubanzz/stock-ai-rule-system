@@ -113,7 +113,7 @@ docker build --target test -t stock-risk-data-gateway-test infra/risk-data-gatew
 docker run --rm --security-opt seccomp=unconfined stock-risk-data-gateway-test pytest -q
 ```
 
-缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务；同参数重跑直接复用缓存。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务；成功原始响应由带 SHA-256 的 Parquet 长期复用，聚合响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
 
 网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次采集中消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。
 

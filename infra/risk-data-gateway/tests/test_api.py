@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from risk_gateway.app import create_app
 from risk_gateway.config import Settings
+from risk_gateway.models import GatewayResponse
 
 
 pytestmark = pytest.mark.filterwarnings(
@@ -93,3 +94,51 @@ def test_api_maps_invalid_query_to_400(tmp_path):
 
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_query"
+
+
+def test_breadth_api_reuses_short_lived_derived_result_cache(tmp_path, monkeypatch):
+    class CountingBreadthDataset:
+        calls = 0
+
+        def __init__(self, _context, *, max_concurrency):
+            assert max_concurrency == 4
+
+        def fetch(self, _query):
+            CountingBreadthDataset.calls += 1
+            return GatewayResponse.model_validate({
+                "data": [{"tradeDate": "2026-07-17", "totalCount": 5000}],
+                "meta": {
+                    "historyComplete": True,
+                    "insufficientHistory": False,
+                    "earliestAvailableDate": "2026-07-17",
+                    "historyGapReason": None,
+                    "nextCursor": None,
+                    "source": "test",
+                    "sourceVersion": "test-v1",
+                    "calculationVersion": "breadth-v1",
+                    "fetchedAt": "2026-07-19T10:00:00+08:00",
+                },
+            })
+
+    monkeypatch.setattr("risk_gateway.app.BreadthDataset", CountingBreadthDataset)
+    settings = Settings(
+        aktools_base_url="http://aktools:8090", cache_dir=tmp_path,
+        derived_cache_ttl_seconds=3600,
+    )
+    api = TestClient(create_app(
+        settings,
+        health_probe=HealthyDependencies(),
+        client=FakeClient(),
+        calendar_provider=lambda _query: (date(2026, 7, 17),),
+    ))
+    params = {
+        "start_date": "20260717", "end_date": "20260717", "objects": "market:CN-A",
+    }
+
+    first = api.get("/api/risk/breadth", params=params)
+    second = api.get("/api/risk/breadth", params=params)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    assert CountingBreadthDataset.calls == 1
