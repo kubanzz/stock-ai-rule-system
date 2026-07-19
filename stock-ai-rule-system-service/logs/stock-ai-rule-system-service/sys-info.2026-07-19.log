@@ -1,0 +1,148 @@
+14:03:42.080 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+14:03:42.259 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 37878 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+14:03:42.263 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+14:03:46.635 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+14:03:46.641 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+14:03:46.643 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+14:03:46.773 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+14:03:47.734 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+14:03:47.749 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+14:03:47.751 [Druid-ConnectionPool-Create-109584886] INFO  c.a.d.p.DruidAbstractDataSource - [setFailContinuous,1908] - {dataSource-1} failContinuous is true
+14:06:20.185 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+14:06:20.318 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 38256 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+14:06:20.322 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+14:06:24.063 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+14:06:24.070 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+14:06:24.071 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+14:06:24.253 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+14:06:26.246 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+14:06:27.523 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+14:06:29.134 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@47c64cfe
+14:06:29.731 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-8080"]
+14:06:29.837 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 10.664 seconds (process running for 15.102)
+14:07:34.570 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+10:43:53.356 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+10:43:53.433 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 12553 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+10:43:53.436 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+10:43:56.709 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+10:43:56.714 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+10:43:56.715 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+10:43:56.820 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+10:43:58.190 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+10:43:59.334 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+10:43:59.447 [main] INFO  o.f.c.i.s.JdbcTableSchemaHistory - [info,41] - Schema history table `stock-ai-rule`.`flyway_schema_history` does not exist yet
+10:43:59.452 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 2 migrations (execution time 00:00.053s)
+10:43:59.550 [main] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+10:43:59.565 [main] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
+10:43:59.569 [main] INFO  o.a.c.c.StandardService - [log,168] - Stopping service [Tomcat]
+10:51:45.597 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+10:51:45.679 [main] INFO  o.f.c.i.s.JdbcTableSchemaHistory - [info,41] - Creating Schema History table `stock-ai-rule`.`flyway_schema_history` with baseline ...
+10:51:45.788 [main] INFO  o.f.c.i.c.DbBaseline - [info,41] - Successfully baselined schema with version: 1
+10:52:10.037 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+10:52:10.176 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 3 migrations (execution time 00:00.088s)
+10:52:10.204 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Current version of schema `stock-ai-rule`: 1
+10:52:10.302 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Migrating schema `stock-ai-rule` to version "2 - risk warning foundation"
+10:52:10.690 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Successfully applied 1 migration to schema `stock-ai-rule`, now at version v2 (execution time 00:00.336s)
+10:53:29.634 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+10:53:29.771 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 3 migrations (execution time 00:00.088s)
+10:53:29.803 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Current version of schema `stock-ai-rule`: 2
+10:53:29.812 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Schema `stock-ai-rule` is up to date. No migration necessary.
+10:54:10.899 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+10:54:10.980 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 17287 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+10:54:10.983 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+10:54:13.225 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+10:54:13.231 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+10:54:13.232 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+10:54:13.346 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+10:54:14.473 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+10:54:15.316 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+10:54:15.402 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 3 migrations (execution time 00:00.049s)
+10:54:15.448 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Current version of schema `stock-ai-rule`: 2
+10:54:15.455 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Schema `stock-ai-rule` is up to date. No migration necessary.
+10:54:15.872 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+10:54:16.939 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@41a90fa8
+10:54:17.157 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-8080"]
+10:54:17.204 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 6.837 seconds (process running for 7.659)
+10:54:42.384 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+10:54:43.392 [http-nio-8080-exec-1] INFO  o.s.a.AbstractOpenApiResource - [getOpenApi,421] - Init duration for springdoc-openapi is: 923 ms
+10:54:50.398 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+10:54:50.406 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
+10:56:34.094 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+10:56:34.168 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 17453 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+10:56:34.171 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+10:56:36.422 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+10:56:36.425 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+10:56:36.426 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+10:56:36.516 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+10:56:37.511 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+10:56:38.312 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+10:56:38.396 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 3 migrations (execution time 00:00.050s)
+10:56:38.420 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Current version of schema `stock-ai-rule`: 2
+10:56:38.430 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Schema `stock-ai-rule` is up to date. No migration necessary.
+10:56:38.870 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+10:56:40.011 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@4aac85fa
+10:56:40.355 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-8080"]
+10:56:40.405 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 7.0 seconds (process running for 9.52)
+10:56:48.007 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+11:02:38.221 [main] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+11:04:23.926 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+11:04:24.004 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 23949 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+11:04:24.006 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+11:04:25.883 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-18080"]
+11:04:25.887 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+11:04:25.888 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+11:04:25.982 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+11:04:27.090 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+11:04:27.777 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+11:04:27.869 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 3 migrations (execution time 00:00.053s)
+11:04:27.898 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Current version of schema `stock-ai-rule`: 2
+11:04:27.904 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Schema `stock-ai-rule` is up to date. No migration necessary.
+11:04:28.335 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+11:04:29.304 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@41a90fa8
+11:04:29.517 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-18080"]
+11:04:29.563 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 6.133 seconds (process running for 6.892)
+11:04:51.244 [http-nio-18080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+11:05:00.055 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+11:05:00.062 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
+11:05:56.164 [main] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+11:05:59.779 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+11:06:00.023 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+11:06:00.728 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
+11:06:00.743 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
+11:06:06.274 [main] INFO  c.j.t.s.i.StockDashboardQueryPersistenceTest - [logStarting,53] - Starting StockDashboardQueryPersistenceTest using Java 21.0.11 with PID 25755 (started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+11:06:06.276 [main] INFO  c.j.t.s.i.StockDashboardQueryPersistenceTest - [logStartupProfileInfo,658] - The following 1 profile is active: "test"
+11:06:09.207 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+11:06:10.178 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+11:06:11.776 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.web.context.support.GenericWebApplicationContext@2dfdea3a
+11:06:12.092 [main] INFO  c.j.t.s.i.StockDashboardQueryPersistenceTest - [logStarted,59] - Started StockDashboardQueryPersistenceTest in 6.382 seconds (process running for 22.243)
+11:06:15.804 [main] INFO  c.j.t.s.i.StockWatchlistPersistenceTest - [logStarting,53] - Starting StockWatchlistPersistenceTest using Java 21.0.11 with PID 25755 (started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+11:06:15.806 [main] INFO  c.j.t.s.i.StockWatchlistPersistenceTest - [logStartupProfileInfo,658] - The following 1 profile is active: "test"
+11:06:16.793 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-2} inited
+11:06:17.135 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+11:06:17.988 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.web.context.support.GenericWebApplicationContext@6d77c929
+11:06:18.142 [main] INFO  c.j.t.s.i.StockWatchlistPersistenceTest - [logStarted,59] - Started StockWatchlistPersistenceTest in 2.406 seconds (process running for 28.225)
+11:06:27.305 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+11:06:27.309 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
+11:06:27.316 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-2} closing ...
+11:06:27.317 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-2} closed
+11:14:13.481 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+11:14:13.500 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
+11:14:26.356 [background-preinit] INFO  o.h.v.i.util.Version - [<clinit>,21] - HV000001: Hibernate Validator 8.0.3.Final
+11:14:26.496 [main] INFO  c.j.t.TrackerApplication - [logStarting,53] - Starting TrackerApplication using Java 21.0.11 with PID 29317 (/Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service/target/classes started by zengbojia in /Users/zengbojia/githome/stock-ai-rule-system/stock-ai-rule-system-service)
+11:14:26.499 [main] INFO  c.j.t.TrackerApplication - [logStartupProfileInfo,658] - The following 1 profile is active: "dev"
+11:14:29.096 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Initializing ProtocolHandler ["http-nio-8080"]
+11:14:29.098 [main] INFO  o.a.c.c.StandardService - [log,168] - Starting service [Tomcat]
+11:14:29.099 [main] INFO  o.a.c.c.StandardEngine - [log,168] - Starting Servlet engine: [Apache Tomcat/10.1.55]
+11:14:29.185 [main] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring embedded WebApplicationContext
+11:14:30.270 [main] INFO  c.a.d.p.DruidDataSource - [init,865] - {dataSource-1} inited
+11:14:31.053 [main] INFO  o.f.c.FlywayExecutor - [info,41] - Database: jdbc:mysql://localhost/stock-ai-rule?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8 (MySQL 8.0)
+11:14:31.186 [main] INFO  o.f.c.i.c.DbValidate - [info,41] - Successfully validated 3 migrations (execution time 00:00.076s)
+11:14:31.215 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Current version of schema `stock-ai-rule`: 2
+11:14:31.220 [main] INFO  o.f.c.i.c.DbMigrate - [info,41] - Schema `stock-ai-rule` is up to date. No migration necessary.
+11:14:31.683 [main] INFO  c.j.t.c.RemoteServiceConfig - [init,29] - ----关联服务配置初始化 RemoteServiceConfig:RemoteServiceConfig(authServiceAddress=http://auth.ijianxin.com:8080)
+11:14:32.857 [main] INFO  c.b.m.e.s.MybatisPlusApplicationContextAware - [setApplicationContext,43] - Register ApplicationContext instances org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext@7051777c
+11:14:33.148 [main] INFO  o.a.c.h.Http11NioProtocol - [log,168] - Starting ProtocolHandler ["http-nio-8080"]
+11:14:33.196 [main] INFO  c.j.t.TrackerApplication - [logStarted,59] - Started TrackerApplication in 7.71 seconds (process running for 10.312)
+11:14:46.947 [http-nio-8080-exec-1] INFO  o.a.c.c.C.[.[.[/] - [log,168] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+11:19:31.358 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2083] - {dataSource-1} closing ...
+11:19:31.371 [SpringApplicationShutdownHook] INFO  c.a.d.p.DruidDataSource - [close,2156] - {dataSource-1} closed
