@@ -16,7 +16,7 @@ services:
       - --port
       - "8090"
       - --workers
-      - "2"
+      - "${RISK_AKTOOLS_WORKERS:-4}"
     container_name: stock-ai-rule-aktools
     environment:
       MKL_NUM_THREADS: "1"
@@ -38,6 +38,7 @@ services:
     environment:
       RISK_GATEWAY_AKTOOLS_BASE_URL: http://aktools:8090
       RISK_GATEWAY_CACHE_DIR: /cache
+      RISK_GATEWAY_MAX_CONCURRENCY: "${RISK_GATEWAY_MAX_CONCURRENCY:-4}"
     security_opt:
       - seccomp:unconfined
     ports:
