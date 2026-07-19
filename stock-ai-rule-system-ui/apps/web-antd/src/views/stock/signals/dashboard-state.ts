@@ -11,6 +11,7 @@ export function createDashboardQuery(): DashboardQueryState {
     pageNum: 1,
     pageSize: 20,
     poolCode: 'my-follow',
+    riskHorizon: '1-5d',
     sortField: 'confidence',
     sortOrder: 'desc',
   };

@@ -91,6 +91,7 @@ class StockConsoleControllerTest {
                         .param("industry", "白酒")
                         .param("confidenceMin", "0.60")
                         .param("confidenceMax", "0.90")
+                        .param("riskHorizon", "5-20d")
                         .param("pageNum", "2")
                         .param("pageSize", "50")
                         .param("sortField", "updatedAt")
@@ -110,6 +111,7 @@ class StockConsoleControllerTest {
         assertThat(query.industry()).isEqualTo("白酒");
         assertThat(query.confidenceMin()).isEqualByComparingTo("0.60");
         assertThat(query.confidenceMax()).isEqualByComparingTo("0.90");
+        assertThat(query.riskHorizon().getCode()).isEqualTo("5-20d");
         assertThat(query.pageNum()).isEqualTo(2);
         assertThat(query.pageSize()).isEqualTo(50);
         assertThat(query.sortField()).isEqualTo("updatedAt");

@@ -179,6 +179,9 @@ describe('stock real backend contract', () => {
     expect(stockRoutes).toContain("name: 'StockRunCenter'");
     expect(stockRoutes).toContain("path: '/stock/run-center'");
     expect(stockRoutes).toContain("title: '运行中心'");
+    expect(stockRoutes).toContain("name: 'StockRiskCenter'");
+    expect(stockRoutes).toContain("path: '/stock/risks'");
+    expect(stockRoutes).toContain("title: '风险中心'");
     expect(stockRoutes).toContain("name: 'StockRuleGovernance'");
     expect(stockRoutes).toContain("path: '/stock/rule-governance'");
     expect(stockRoutes).toContain("title: '规则治理'");
@@ -195,6 +198,7 @@ describe('stock real backend contract', () => {
 
     const visibleOrder = [
       "title: '信号看板'",
+      "title: '风险中心'",
       "title: '股票研究'",
       "title: '规则治理'",
       "title: '回测报告'",
@@ -205,6 +209,30 @@ describe('stock real backend contract', () => {
 
     expect(visibleOrder.every((index) => index > -1)).toBe(true);
     expect(visibleOrder.toSorted((a, b) => a - b)).toEqual(visibleOrder);
+  });
+
+  it('connects the risk center to the frozen read-only backend contract', () => {
+    const stockRoutes = appFile('src/router/routes/modules/stock.ts');
+    const riskApi = appFile('src/api/stock/risk/index.ts');
+    const riskTypes = appFile('src/api/stock/risk/types.ts');
+    const riskCenter = appFile('src/views/stock/risk/center/index.vue');
+    const riskCenterState = appFile(
+      'src/views/stock/risk/center/risk-center-state.ts',
+    );
+
+    expect(stockRoutes).toContain('#/views/stock/risk/center/index.vue');
+    expect(riskApi).toContain('getRiskOverview');
+    expect(riskApi).toContain('getRiskObjects');
+    expect(riskApi).toContain('getRiskObjectDetail');
+    expect(riskApi).toContain('getRiskObjectTrend');
+    expect(riskApi).not.toMatch(
+      /baseRequestClient\.(?:delete|post|put)<[\s\S]*?>\(\s*['`]\/risks\//,
+    );
+    expect(riskTypes).toContain('parentObjectType?: RiskObjectType');
+    expect(riskTypes).toContain('parentObjectId?: string');
+    expect(riskCenterState).toContain('parentObjectType');
+    expect(riskCenterState).toContain('parentObjectId');
+    expect(riskCenter).toContain('RISK_DECISION_SUPPORT_NOTICE');
   });
 
   it('hides detailed stock operation routes after consolidating the menu', () => {

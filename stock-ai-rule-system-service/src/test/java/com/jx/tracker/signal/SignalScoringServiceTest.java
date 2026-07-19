@@ -14,20 +14,20 @@ class SignalScoringServiceTest {
     private final SignalScoringService scoringService = new SignalScoringService();
 
     @Test
-    void emitsHighRiskWhenRiskScoreReachesHardThreshold() {
+    void keepsBullishDirectionWhenLegacyRiskScoreIsHigh() {
         SignalScore score = scoringService.score(new BigDecimal("82"), new BigDecimal("15"), new BigDecimal("85"));
 
-        assertThat(score.signal()).isEqualTo(SignalType.HIGH_RISK.getCode());
-        assertThat(score.signalLevel()).isEqualTo("高风险");
-        assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("0.8500"));
+        assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.signalLevel()).isEqualTo("强看涨");
+        assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("0.8200"));
     }
 
     @Test
-    void downgradesBullishSignalToWatchWhenRiskConflictsWithBullishRules() {
+    void legacyRiskScoreNeverOverridesBullishDirection() {
         SignalScore score = scoringService.score(new BigDecimal("72"), BigDecimal.ZERO, new BigDecimal("72"));
 
-        assertThat(score.signal()).isEqualTo(SignalType.WATCH.getCode());
-        assertThat(score.signalLevel()).isEqualTo("观望");
+        assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.signalLevel()).isEqualTo("强看涨");
     }
 
     @Test

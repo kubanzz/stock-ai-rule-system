@@ -82,8 +82,8 @@ public class DailyWorkflowOrchestrator {
                 new DailyWorkflowDependencyVo(
                         "M4",
                         "信号输出与规则触发记录",
-                        "生成看涨、看跌、观望、高风险等辅助决策信号",
-                        "必须保留风险提示，避免写成确定性预测或收益保证"),
+                        "生成看涨、看跌、观望等辅助决策方向，风险由独立影子闸门附加",
+                        "必须保留历史 high_risk 审计兼容，风险不得覆盖新信号方向"),
                 new DailyWorkflowDependencyVo(
                         "M5",
                         "预测结果验证与回测",

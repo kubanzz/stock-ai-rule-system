@@ -1,4 +1,13 @@
 import type {
+  RiskDataQualityStatus,
+  RiskDimension,
+  RiskGateDecision,
+  RiskHorizon,
+  RiskLevel,
+  RiskSnapshot,
+  SignalDirection,
+} from './risk/types';
+import type {
   AiReviewOverview,
   AiReviewReport,
   BacktestReportOverview,
@@ -12,11 +21,15 @@ import type {
   RuleVersion,
   RunCenterOverview,
   SignalDashboardOverview,
+  SignalDashboardQuery,
+  SignalDashboardRow,
   StockAnalysis,
   StockResearchDetail,
   StockSignalItem,
   WatchlistPool,
 } from './types';
+
+import { RISK_DECISION_SUPPORT_NOTICE } from './risk/types';
 
 export const STOCK_RISK_DISCLAIMER =
   '本系统输出仅作为股票研究和辅助决策信号，不构成投资建议，不代表确定性预测，也不保证收益。';
@@ -84,7 +97,341 @@ export const mockSignals: StockSignalItem[] = [
   },
 ];
 
-export const mockSignalDashboard: SignalDashboardOverview = {
+type DashboardRiskState = 'empty' | 'insufficient' | 'ready' | 'stale';
+
+interface DashboardRiskSeed {
+  gateMode: 'none' | 'shadow';
+  riskState: DashboardRiskState;
+  row: Omit<SignalDashboardRow, 'riskGateDecision' | 'riskSnapshot'>;
+  signalDirection: SignalDirection;
+}
+
+const dashboardRiskSeeds: DashboardRiskSeed[] = [
+  {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 18,
+      bullishScore: 76,
+      changePct: 1.24,
+      confidence: 0.78,
+      name: '贵州茅台',
+      price: 1486.2,
+      quoteStatus: 'ready',
+      riskScore: 69.5,
+      signal: 'bullish',
+      signalStatus: 'ready',
+      suggestedPeriod: '3-5 个交易日',
+      symbol: '600519.SH',
+      triggeredRuleCount: 5,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'bullish',
+  },
+  {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 68,
+      bullishScore: 24,
+      changePct: -2.16,
+      confidence: 0.72,
+      name: '宁德时代',
+      price: 214.35,
+      quoteStatus: 'ready',
+      riskScore: 61,
+      signal: 'bearish',
+      signalStatus: 'ready',
+      suggestedPeriod: '1-3 个交易日',
+      symbol: '300750.SZ',
+      triggeredRuleCount: 4,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'bearish',
+  },
+  {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 42,
+      bullishScore: 44,
+      changePct: -0.18,
+      confidence: 0.61,
+      name: '工商银行',
+      price: 7.18,
+      quoteStatus: 'ready',
+      riskScore: 48,
+      signal: 'watch',
+      signalStatus: 'ready',
+      suggestedPeriod: '盘后复核',
+      symbol: '601398.SH',
+      triggeredRuleCount: 2,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'watch',
+  },
+  {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 64,
+      bullishScore: 29,
+      changePct: -1.36,
+      confidence: 0.63,
+      name: '浦发银行（历史）',
+      price: 12.42,
+      quoteStatus: 'ready',
+      riskScore: 72,
+      signal: 'high_risk',
+      signalStatus: 'ready',
+      suggestedPeriod: '方向回填后复核',
+      symbol: '600000.SH',
+      triggeredRuleCount: 4,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'bearish',
+  },
+  {
+    gateMode: 'shadow',
+    riskState: 'ready',
+    row: {
+      bearishScore: 48,
+      bullishScore: 45,
+      changePct: -0.42,
+      confidence: 0.57,
+      name: '万科A（历史）',
+      price: 6.98,
+      quoteStatus: 'ready',
+      riskScore: 66,
+      signal: 'high_risk',
+      signalStatus: 'ready',
+      suggestedPeriod: '方向回填后复核',
+      symbol: '000002.SZ',
+      triggeredRuleCount: 3,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'watch',
+  },
+  {
+    gateMode: 'none',
+    riskState: 'stale',
+    row: {
+      bearishScore: 36,
+      bullishScore: 58,
+      changePct: 0.45,
+      confidence: 0.65,
+      name: '平安银行',
+      price: 12.86,
+      quoteStatus: 'ready',
+      riskScore: null,
+      signal: 'bullish',
+      signalStatus: 'ready',
+      suggestedPeriod: '风险数据更新后复核',
+      symbol: '000001.SZ',
+      triggeredRuleCount: 3,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'bullish',
+  },
+  {
+    gateMode: 'none',
+    riskState: 'insufficient',
+    row: {
+      bearishScore: 33,
+      bullishScore: 49,
+      changePct: 0.12,
+      confidence: 0.58,
+      name: '中芯国际',
+      price: 91.42,
+      quoteStatus: 'ready',
+      riskScore: null,
+      signal: 'watch',
+      signalStatus: 'ready',
+      suggestedPeriod: '历史补齐后复核',
+      symbol: '688981.SH',
+      triggeredRuleCount: 2,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'watch',
+  },
+  {
+    gateMode: 'none',
+    riskState: 'empty',
+    row: {
+      bearishScore: 21,
+      bullishScore: 71,
+      changePct: 3.06,
+      confidence: 0.67,
+      name: '新股示例',
+      price: 38.6,
+      quoteStatus: 'ready',
+      riskScore: null,
+      signal: 'bullish',
+      signalStatus: 'ready',
+      suggestedPeriod: '数据补齐后复核',
+      symbol: '688999.SH',
+      triggeredRuleCount: 3,
+      updatedAt: '2026-07-18 18:10',
+    },
+    signalDirection: 'bullish',
+  },
+];
+
+const riskHorizonScore: Record<
+  RiskHorizon,
+  { level: RiskLevel; score: number; stage: RiskSnapshot['stage'] }
+> = {
+  '1-5d': { level: 'critical', score: 69.5, stage: 'stampede' },
+  '5-20d': { level: 'warning', score: 63.8, stage: 'repricing' },
+  '20-60d': { level: 'watch', score: 59.6, stage: 'fragile' },
+};
+
+function dashboardRiskEvidence(
+  dimension: RiskDimension,
+  indicatorCode: string,
+  qualityStatus: RiskDataQualityStatus,
+  score: null | number,
+): RiskSnapshot['evidence'][number] {
+  const stale = qualityStatus === 'stale';
+  return {
+    availableAt: stale
+      ? '2026-07-17T16:30:00+08:00'
+      : '2026-07-18T16:30:00+08:00',
+    details: {
+      baselineYears: 5,
+      note: stale ? '数据源最近一次成功时间早于当前交易日' : '滚动分位证据',
+    },
+    dimension,
+    indicatorCode,
+    observedAt: stale
+      ? '2026-07-17T15:00:00+08:00'
+      : '2026-07-18T15:00:00+08:00',
+    qualityStatus,
+    rawValue: score === null ? null : score / 10,
+    score,
+    source: 'aktools',
+  };
+}
+
+function buildDashboardRiskSnapshot(
+  seed: DashboardRiskSeed,
+  horizon: RiskHorizon,
+): null | RiskSnapshot {
+  if (seed.riskState === 'empty') return null;
+
+  const ready = seed.riskState === 'ready';
+  const stale = seed.riskState === 'stale';
+  const horizonScore = riskHorizonScore[horizon];
+  let qualityStatus: RiskDataQualityStatus = 'insufficient_history';
+  if (stale) {
+    qualityStatus = 'stale';
+  } else if (ready) {
+    qualityStatus = 'available';
+  }
+  const score = ready ? horizonScore.score : null;
+  const dimensionScore = score === null ? null : Math.min(100, score + 2);
+  let completeness = 0.58;
+  if (ready) {
+    completeness = 0.92;
+  } else if (stale) {
+    completeness = 0.84;
+  }
+
+  return {
+    aScore: dimensionScore === null ? null : dimensionScore - 9,
+    cScore: dimensionScore === null ? null : dimensionScore + 1,
+    calculatedAt: '2026-07-18T18:10:00+08:00',
+    completeness,
+    evidence: [
+      dashboardRiskEvidence('V', 'V1', qualityStatus, dimensionScore),
+      dashboardRiskEvidence('T', 'T2', qualityStatus, dimensionScore),
+      dashboardRiskEvidence('S', 'S1', qualityStatus, dimensionScore),
+      dashboardRiskEvidence('C', 'C2', qualityStatus, dimensionScore),
+      dashboardRiskEvidence('A', 'A2', qualityStatus, dimensionScore),
+    ],
+    horizon,
+    level: ready ? horizonScore.level : null,
+    mScore: ready ? 1.05 : null,
+    modelVersion: 'risk-v1.0-shadow',
+    object: { objectId: seed.row.symbol, objectType: 'stock' },
+    riskConfidence: ready ? 0.86 : null,
+    sScore: dimensionScore,
+    stage: ready ? horizonScore.stage : null,
+    tScore: dimensionScore,
+    totalScore: score,
+    tradeDate: '2026-07-18',
+    vScore: dimensionScore,
+  };
+}
+
+function buildDashboardGateDecision(
+  seed: DashboardRiskSeed,
+  snapshot: null | RiskSnapshot,
+  horizon: RiskHorizon,
+): RiskGateDecision | undefined {
+  if (
+    seed.gateMode === 'none' ||
+    !snapshot ||
+    snapshot.level === null ||
+    snapshot.completeness < 0.8 ||
+    snapshot.evidence.some((item) => item.qualityStatus === 'stale') ||
+    seed.row.confidence === null
+  ) {
+    return undefined;
+  }
+  const signalDirection = seed.signalDirection;
+  if (signalDirection === 'bearish' || signalDirection === 'watch') {
+    return {
+      calculatedAt: snapshot.calculatedAt,
+      enforced: false,
+      horizon,
+      modelVersion: snapshot.modelVersion,
+      object: snapshot.object,
+      originalConfidence: seed.row.confidence,
+      reason: '看跌与观望信号仅附加风险说明，不改写方向或置信度。',
+      signalDirection,
+      suggestedAction: 'notice',
+      suggestedConfidence: seed.row.confidence,
+      tradeDate: snapshot.tradeDate,
+    };
+  }
+
+  const decisionByHorizon = {
+    '1-5d': {
+      action: 'block' as const,
+      confidence: 0,
+      reason: '个股完整红色门控，建议拦截看涨信号。',
+    },
+    '5-20d': {
+      action: 'downgrade' as const,
+      confidence: Math.max(0, seed.row.confidence - 0.15),
+      reason: '中期风险确认，建议降低看涨信号置信度。',
+    },
+    '20-60d': {
+      action: 'notice' as const,
+      confidence: seed.row.confidence,
+      reason: '长期风险处于关注阶段，仅附加风险说明。',
+    },
+  }[horizon];
+  return {
+    calculatedAt: snapshot.calculatedAt,
+    enforced: false,
+    horizon,
+    modelVersion: snapshot.modelVersion,
+    object: snapshot.object,
+    originalConfidence: seed.row.confidence,
+    reason: decisionByHorizon.reason,
+    signalDirection,
+    suggestedAction: decisionByHorizon.action,
+    suggestedConfidence: decisionByHorizon.confidence,
+    tradeDate: snapshot.tradeDate,
+  };
+}
+
+const mockSignalDashboardBase: Omit<
+  SignalDashboardOverview,
+  'riskHorizon' | 'signals'
+> = {
   availableIndustries: ['食品饮料', '电力设备', '银行'],
   marketContext: {
     available: true,
@@ -122,7 +469,7 @@ export const mockSignalDashboard: SignalDashboardOverview = {
     { label: '看涨', tone: 'green', unit: '条', value: 6 },
     { label: '看跌', tone: 'red', unit: '条', value: 14 },
     { label: '观望', tone: 'gold', unit: '条', value: 9 },
-    { label: '高风险', tone: 'purple', unit: '条', value: 3 },
+    { label: '严重风险', tone: 'purple', unit: '个', value: 3 },
     {
       change: 3.2,
       label: '命中率（5日）',
@@ -133,25 +480,63 @@ export const mockSignalDashboard: SignalDashboardOverview = {
   ],
   pageNum: 1,
   pageSize: 20,
-  riskDisclaimer: STOCK_RISK_DISCLAIMER,
-  signals: mockSignals.map((signal) => ({
-    bearishScore: signal.bearishScore ?? 0,
-    bullishScore: signal.bullishScore,
-    confidence: signal.confidence,
-    name: signal.name,
-    price: signal.currentPrice,
-    quoteStatus: 'ready',
-    riskScore: signal.riskScore,
-    signal: signal.signal,
-    signalStatus: 'ready',
-    suggestedPeriod: signal.suggestedPeriod,
-    symbol: signal.symbol,
-    triggeredRuleCount: signal.triggeredRuleCount ?? 0,
-    updatedAt: signal.updatedAt,
-  })),
-  total: 128,
-  tradeDate: '2026-06-20',
+  riskDisclaimer: RISK_DECISION_SUPPORT_NOTICE,
+  total: dashboardRiskSeeds.length,
+  tradeDate: '2026-07-18',
 };
+
+export function selectMockSignalDashboard(
+  query: SignalDashboardQuery = {},
+): SignalDashboardOverview {
+  const riskHorizon = query.riskHorizon ?? '1-5d';
+  const signals = dashboardRiskSeeds
+    .map((seed): SignalDashboardRow => {
+      const riskSnapshot = buildDashboardRiskSnapshot(seed, riskHorizon);
+      return {
+        ...seed.row,
+        riskGateDecision: buildDashboardGateDecision(
+          seed,
+          riskSnapshot,
+          riskHorizon,
+        ),
+        riskSnapshot,
+      };
+    })
+    .filter((row) => {
+      let signalMatched = true;
+      if (query.signal === 'pending') {
+        signalMatched = row.signalStatus === 'pending';
+      } else if (query.signal) {
+        signalMatched = row.signal === query.signal;
+      }
+      const symbolMatched = query.symbol
+        ? `${row.symbol}${row.name ?? ''}`
+            .toLowerCase()
+            .includes(query.symbol.toLowerCase())
+        : true;
+      const minMatched =
+        query.confidenceMin === undefined ||
+        (row.confidence ?? -1) >= query.confidenceMin;
+      const maxMatched =
+        query.confidenceMax === undefined ||
+        (row.confidence ?? 2) <= query.confidenceMax;
+      return signalMatched && symbolMatched && minMatched && maxMatched;
+    });
+  const pageNum = Math.max(1, query.pageNum ?? 1);
+  const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+  const start = (pageNum - 1) * pageSize;
+  return {
+    ...mockSignalDashboardBase,
+    pageNum,
+    pageSize,
+    riskHorizon,
+    signals: signals.slice(start, start + pageSize),
+    total: signals.length,
+    tradeDate: query.date ?? mockSignalDashboardBase.tradeDate,
+  };
+}
+
+export const mockSignalDashboard = selectMockSignalDashboard();
 
 export const mockWatchlists: WatchlistPool[] = [
   {

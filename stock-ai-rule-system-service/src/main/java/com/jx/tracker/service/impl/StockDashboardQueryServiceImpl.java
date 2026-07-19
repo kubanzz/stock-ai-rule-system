@@ -19,6 +19,9 @@ import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
+import com.jx.tracker.risk.dashboard.StockDashboardRiskOverlay;
+import com.jx.tracker.risk.dashboard.StockDashboardRiskReader;
+import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.service.StockDashboardQueryService;
 import com.jx.tracker.service.StockMarketContextService;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +62,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     private final StockWatchlistMapper stockWatchlistMapper;
     private final StockWatchlistItemMapper stockWatchlistItemMapper;
     private final StockMarketContextService stockMarketContextService;
+    private final StockDashboardRiskReader stockDashboardRiskReader;
 
     @Override
     public StockConsoleVo.SignalDashboardOverview dashboard(StockConsoleVo.SignalDashboardQuery input) {
@@ -164,7 +168,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         int toIndex = Math.min(fromIndex + query.pageSize(), rows.size());
         LocalDateTime dataUpdatedAt = latestUpdate(readySignals, quotesBySymbol.values(), filteredActualResults);
 
-        return overview(query, tradeDate, rows.subList(fromIndex, toIndex),
+        List<StockConsoleVo.SignalRow> pageRows = rows.subList(fromIndex, toIndex);
+        List<StockConsoleVo.SignalRow> riskRows = attachRisk(
+                pageRows, signalsBySymbol, tradeDate, query.riskHorizon());
+        return overview(query, tradeDate, riskRows,
                 metrics(candidates.size(), readySignals, filteredActualResults), rows.size(),
                 availableIndustries, dataUpdatedAt,
                 stockMarketContextService.marketContext(query, tradeDate, candidates));
@@ -243,7 +250,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 query.pageNum(),
                 query.pageSize(),
                 availableIndustries,
-                dataUpdatedAt
+                dataUpdatedAt,
+                query.riskHorizon()
         );
     }
 
@@ -254,7 +262,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 stock.getName(),
                 quote == null ? null : quote.getClosePrice(),
                 quote == null ? null : quote.getChangePct(),
-                ready ? signal.getSignal() : null,
+                ready ? displaySignal(signal) : null,
                 ready ? signal.getBullishScore() : null,
                 ready ? signal.getBearishScore() : null,
                 ready ? signal.getRiskScore() : null,
@@ -265,6 +273,43 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 ready ? "ready" : PENDING_SIGNAL,
                 quote == null ? PENDING_SIGNAL : "ready"
         );
+    }
+
+    private List<StockConsoleVo.SignalRow> attachRisk(
+            List<StockConsoleVo.SignalRow> rows,
+            Map<String, StockSignalDaily> signalsBySymbol,
+            LocalDate tradeDate,
+            RiskHorizon horizon
+    ) {
+        if (rows.isEmpty() || tradeDate == null) {
+            return rows;
+        }
+        List<String> symbols = rows.stream().map(StockConsoleVo.SignalRow::symbol).toList();
+        Map<String, StockDashboardRiskOverlay> overlays = stockDashboardRiskReader.findBySymbols(
+                tradeDate, horizon, symbols, LocalDateTime.now());
+        Map<String, StockDashboardRiskOverlay> safeOverlays = overlays == null ? Map.of() : overlays;
+        return rows.stream().map(row -> withRisk(
+                row, signalsBySymbol.get(row.symbol()), safeOverlays.get(row.symbol()))).toList();
+    }
+
+    private StockConsoleVo.SignalRow withRisk(
+            StockConsoleVo.SignalRow row,
+            StockSignalDaily persistedSignal,
+            StockDashboardRiskOverlay overlay
+    ) {
+        return new StockConsoleVo.SignalRow(
+                row.symbol(), row.name(), row.price(), row.changePct(), displaySignal(persistedSignal),
+                row.bullishScore(), row.bearishScore(), row.riskScore(), row.confidence(),
+                row.triggeredRuleCount(), row.suggestedPeriod(), row.updatedAt(),
+                row.signalStatus(), row.quoteStatus(),
+                overlay == null ? null : overlay.snapshot(),
+                overlay == null ? null : overlay.gateDecision());
+    }
+
+    private boolean isDirectionalSignal(String signal) {
+        return SignalType.BULLISH.getCode().equals(signal)
+                || SignalType.BEARISH.getCode().equals(signal)
+                || SignalType.WATCH.getCode().equals(signal);
     }
 
     private boolean matchesRow(StockConsoleVo.SignalRow row, StockConsoleVo.SignalDashboardQuery query) {
@@ -290,8 +335,13 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         if (PENDING_SIGNAL.equalsIgnoreCase(query.signal())) {
             return false;
         }
-        if (StringUtils.hasText(query.signal()) && !query.signal().equals(signal.getSignal())) {
-            return false;
+        if (StringUtils.hasText(query.signal())) {
+            String comparable = SignalType.HIGH_RISK.getCode().equals(query.signal())
+                    ? signal.getSignal()
+                    : displaySignal(signal);
+            if (!query.signal().equals(comparable)) {
+                return false;
+            }
         }
         if (query.confidenceMin() != null || query.confidenceMax() != null) {
             if (signal.getConfidence() == null) {
@@ -301,6 +351,13 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                     && (query.confidenceMax() == null || signal.getConfidence().compareTo(query.confidenceMax()) <= 0);
         }
         return true;
+    }
+
+    private String displaySignal(StockSignalDaily signal) {
+        if (signal != null && isDirectionalSignal(signal.getSignalDirection())) {
+            return signal.getSignalDirection();
+        }
+        return signal == null ? null : signal.getSignal();
     }
 
     private boolean isReadySignal(StockSignalDaily signal) {

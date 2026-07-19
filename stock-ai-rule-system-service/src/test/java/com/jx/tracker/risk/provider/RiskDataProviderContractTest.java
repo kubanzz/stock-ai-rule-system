@@ -1,0 +1,203 @@
+package com.jx.tracker.risk.provider;
+
+import com.jx.tracker.risk.data.market.IndustryExposure;
+import com.jx.tracker.risk.model.RiskDataQualityStatus;
+import com.jx.tracker.risk.model.RiskDimension;
+import com.jx.tracker.risk.model.RiskHorizon;
+import com.jx.tracker.risk.model.RiskObjectKey;
+import com.jx.tracker.risk.model.RiskObjectType;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class RiskDataProviderContractTest {
+
+    private static final RiskObjectKey MARKET = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+    private static final RiskObjectKey STOCK = new RiskObjectKey(RiskObjectType.STOCK, "000001.SZ");
+    private static final RiskObjectKey SECTOR = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
+    private static final LocalDateTime OBSERVED_AT = LocalDateTime.of(2026, 7, 18, 15, 0);
+    private static final LocalDateTime AVAILABLE_AT = LocalDateTime.of(2026, 7, 18, 16, 0);
+
+    @Test
+    void distinguishesAValidEmptyEventBatchFromProviderFailure() {
+        LocalDateTime fetchedAt = AVAILABLE_AT.plusMinutes(30);
+        RiskProviderBatch validZero = RiskProviderBatch.validZero(
+                "aktools",
+                new RiskIngestionCheckpoint("announcements", "CN-A", "cursor-18", AVAILABLE_AT),
+                fetchedAt
+        );
+        RiskProviderBatch failed = RiskProviderBatch.unavailable("aktools", "source timeout", AVAILABLE_AT);
+
+        assertThat(validZero.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        assertThat(validZero.observations()).isEmpty();
+        assertThat(validZero.events()).isEmpty();
+        assertThat(validZero.industryExposures()).isEmpty();
+        assertThat(validZero.errorMessage()).isNull();
+        assertThat(validZero.fetchedAt()).isEqualTo(fetchedAt);
+
+        assertThat(failed.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(failed.errorMessage()).isEqualTo("source timeout");
+        assertThat(failed.industryExposures()).isEmpty();
+    }
+
+    @Test
+    void typedIndustryExposureCanBeTheOnlyAvailableBatchRecordAndIsDefensivelyCopied() {
+        IndustryExposure exposure = new IndustryExposure(
+                STOCK, SECTOR, LocalDate.of(2025, 1, 1), LocalDate.of(2026, 12, 31),
+                OBSERVED_AT, AVAILABLE_AT, "aktools", RiskDataQualityStatus.AVAILABLE
+        );
+        List<IndustryExposure> mutableExposures = new java.util.ArrayList<>(List.of(exposure));
+
+        RiskProviderBatch batch = new RiskProviderBatch(
+                "aktools", List.of(), List.of(), mutableExposures, null,
+                RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
+        );
+        mutableExposures.clear();
+
+        assertThat(batch.industryExposures()).containsExactly(exposure);
+        assertThatThrownBy(() -> batch.industryExposures().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void observationRequiresAvailabilityMetadataAndDoesNotConflateMissingWithZero() {
+        RiskObservation observation = new RiskObservation(
+                MARKET,
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                RiskDimension.STRUCTURAL_FRAGILITY,
+                "market_pe_percentile",
+                BigDecimal.ZERO,
+                "ratio",
+                OBSERVED_AT,
+                AVAILABLE_AT,
+                "aktools",
+                RiskDataQualityStatus.AVAILABLE,
+                Map.of()
+        );
+
+        assertThat(observation.value()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThatThrownBy(() -> new RiskObservation(
+                MARKET, RiskHorizon.SHORT_TERM, LocalDate.of(2026, 7, 18), RiskDimension.STRUCTURAL_FRAGILITY,
+                "market_pe_percentile", null, "ratio", OBSERVED_AT, AVAILABLE_AT,
+                "aktools", RiskDataQualityStatus.AVAILABLE, Map.of()
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("value");
+    }
+
+    @Test
+    void observationEnforcesValueSemanticsForEveryQualityStatus() {
+        assertThatThrownBy(() -> observation(BigDecimal.ONE, RiskDataQualityStatus.VALID_ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valid_zero")
+                .hasMessageContaining("zero");
+
+        assertThatThrownBy(() -> observation(BigDecimal.ZERO, RiskDataQualityStatus.UNAVAILABLE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unavailable")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> observation(BigDecimal.ZERO, RiskDataQualityStatus.STALE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stale")
+                .hasMessageContaining("null");
+        assertThatThrownBy(() -> observation(BigDecimal.ZERO, RiskDataQualityStatus.INSUFFICIENT_HISTORY))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("insufficient_history")
+                .hasMessageContaining("null");
+
+        assertThat(observation(BigDecimal.ZERO, RiskDataQualityStatus.VALID_ZERO).value())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(observation(null, RiskDataQualityStatus.UNAVAILABLE).value()).isNull();
+    }
+
+    @Test
+    void directBatchConstructionRejectsContradictoryRecordsAndErrors() {
+        RiskObservation observation = observation(BigDecimal.ONE, RiskDataQualityStatus.AVAILABLE);
+
+        assertThatThrownBy(() -> new RiskProviderBatch(
+                "aktools", List.of(observation), List.of(), null,
+                RiskDataQualityStatus.UNAVAILABLE, "source timeout", AVAILABLE_AT
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unavailable");
+
+        assertThatThrownBy(() -> new RiskProviderBatch(
+                "aktools", List.of(), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, "unexpected error", AVAILABLE_AT
+        )).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("available");
+
+        assertThatThrownBy(() -> new RiskProviderBatch(
+                "aktools", List.of(), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("available")
+                .hasMessageContaining("record");
+
+        RiskProviderBatch available = new RiskProviderBatch(
+                "aktools", List.of(observation), List.of(), null,
+                RiskDataQualityStatus.AVAILABLE, null, AVAILABLE_AT
+        );
+        assertThat(available.observations()).containsExactly(observation);
+        assertThat(available.industryExposures()).isEmpty();
+    }
+
+    @Test
+    void scheduledEventMayBeKnownBeforeItsEffectiveTime() {
+        LocalDateTime effectiveAt = AVAILABLE_AT.plusDays(30);
+        RiskEvent event = new RiskEvent(
+                MARKET,
+                LocalDate.of(2026, 8, 17),
+                RiskDimension.FORCED_SELLING,
+                "share_unlock",
+                "unlock:600519.SH:2026-08-17",
+                new BigDecimal("75"),
+                effectiveAt,
+                OBSERVED_AT,
+                AVAILABLE_AT,
+                "exchange-announcement",
+                RiskDataQualityStatus.AVAILABLE,
+                Map.of("scheduled", true)
+        );
+
+        assertThat(event.occurredAt()).isAfter(event.observedAt());
+        assertThat(event.availableAt()).isAfterOrEqualTo(event.observedAt());
+    }
+
+    @Test
+    void requestSupportsBatchObjectsAndResumeCheckpoint() {
+        RiskIngestionCheckpoint checkpoint = new RiskIngestionCheckpoint(
+                "valuation", "CN-A", "2026-07-17", OBSERVED_AT
+        );
+        RiskProviderRequest request = new RiskProviderRequest(
+                List.of(MARKET, new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010")),
+                List.of(RiskHorizon.SHORT_TERM, RiskHorizon.MEDIUM_TERM),
+                LocalDate.of(2021, 7, 18),
+                LocalDate.of(2026, 7, 18),
+                checkpoint
+        );
+
+        assertThat(request.objects()).hasSize(2);
+        assertThat(request.checkpoint()).isEqualTo(checkpoint);
+    }
+
+    private RiskObservation observation(BigDecimal value, RiskDataQualityStatus status) {
+        return new RiskObservation(
+                MARKET,
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                RiskDimension.STRUCTURAL_FRAGILITY,
+                "market_pe_percentile",
+                value,
+                "ratio",
+                OBSERVED_AT,
+                AVAILABLE_AT,
+                "aktools",
+                status,
+                Map.of()
+        );
+    }
+}
