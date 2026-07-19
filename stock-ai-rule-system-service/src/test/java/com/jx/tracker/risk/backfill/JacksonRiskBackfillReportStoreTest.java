@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.backfill;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.risk.workflow.RiskWorkflowRunSummary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,9 +45,12 @@ class JacksonRiskBackfillReportStoreTest {
     void fullModeRequiresMatchingPassedSampleReport() throws Exception {
         store.write(directory, report("risk-v1", END_DATE, true, List.of()));
         store.write(directory, report("risk-v2", END_DATE, false, List.of("gate failed")));
+        store.write(directory, report(
+                "risk-forged", END_DATE, true, List.of(), false));
 
         assertThat(store.hasPassedSampleGate(directory, "risk-v1", END_DATE)).isTrue();
         assertThat(store.hasPassedSampleGate(directory, "risk-v2", END_DATE)).isFalse();
+        assertThat(store.hasPassedSampleGate(directory, "risk-forged", END_DATE)).isFalse();
         assertThat(store.hasPassedSampleGate(
                 directory, "risk-v1", END_DATE.minusDays(1))).isFalse();
     }
@@ -82,6 +86,16 @@ class JacksonRiskBackfillReportStoreTest {
             boolean sampleGatePassed,
             List<String> failures
     ) {
+        return report(modelVersion, endDate, sampleGatePassed, failures, sampleGatePassed);
+    }
+
+    private RiskBackfillReport report(
+            String modelVersion,
+            LocalDate endDate,
+            boolean sampleGatePassed,
+            List<String> failures,
+            boolean includeGateProof
+    ) {
         return new RiskBackfillReport(
                 1,
                 "run-123456",
@@ -100,12 +114,23 @@ class JacksonRiskBackfillReportStoreTest {
                 5530,
                 28,
                 null,
+                includeGateProof ? new RiskWorkflowRunSummary(1, 1, 1, 1, 0, 1, 0) : null,
                 null,
-                null,
-                null,
+                includeGateProof ? passedReadiness() : null,
                 null,
                 sampleGatePassed,
                 failures,
                 null);
+    }
+
+    private RiskBackfillReadiness passedReadiness() {
+        return new RiskBackfillReadiness(
+                26, 100, 100, java.math.BigDecimal.ONE,
+                java.util.Map.of(), List.of(), true,
+                END_DATE.minusYears(5), END_DATE, true,
+                java.util.Map.of(), true,
+                1, 1, 0, true,
+                0, true, 0, true,
+                List.of(), List.of(), true);
     }
 }

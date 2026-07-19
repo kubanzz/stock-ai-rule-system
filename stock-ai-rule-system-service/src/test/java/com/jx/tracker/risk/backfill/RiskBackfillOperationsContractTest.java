@@ -24,6 +24,9 @@ class RiskBackfillOperationsContractTest {
                 .contains("RISK_WARNING_BACKFILL_CONFIRMATION")
                 .contains("RISK_WARNING_BACKFILL_END_DATE")
                 .contains("RISK_WARNING_DERIVED_GATEWAY_BASE_URL")
+                .contains("DAILY_WORKFLOW_ENABLED=false")
+                .contains("--spring.task.scheduling.enabled=false")
+                .contains("--stock-ai-rule.scheduler.daily-enabled=false")
                 .doesNotContain("RISK_WARNING_BACKFILL_CONFIRMATION=BACKFILL_5Y")
                 .doesNotContain("password=")
                 .doesNotContain("TUSHARE_TOKEN=");

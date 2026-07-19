@@ -40,6 +40,10 @@ public record RiskBackfillReport(
     public boolean isPassedSampleGateFor(String expectedModelVersion, LocalDate expectedEndDate) {
         return sampleGatePassed
                 && (mode == RiskBackfillMode.SAMPLE || mode == RiskBackfillMode.STAGED)
+                && sampleSummary != null
+                && sampleSummary.unavailableDatasetCount() == 0
+                && sampleReadiness != null
+                && sampleReadiness.ready()
                 && expectedModelVersion != null
                 && expectedModelVersion.equals(modelVersion)
                 && expectedEndDate != null
