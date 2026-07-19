@@ -2,9 +2,14 @@ from datetime import date, datetime, timedelta
 import math
 
 import numpy as np
+import pandas as pd
 
 from risk_gateway.datasets import DatasetContext
-from risk_gateway.datasets.cross_market import CrossMarketDataset, history_coverage_complete
+from risk_gateway.datasets.cross_market import (
+    CrossMarketDataset,
+    aggregate_aligned_asset_returns,
+    history_coverage_complete,
+)
 from risk_gateway.aktools import AkToolsUnavailable
 from risk_gateway.models import RiskQuery
 
@@ -118,3 +123,23 @@ def test_cross_market_history_allows_normal_global_holiday_gaps_but_not_large_ga
 
     assert history_coverage_complete(requested[1:], requested) is True
     assert history_coverage_complete(requested[2:], requested) is False
+
+
+def test_cross_market_compounds_multiple_closes_aligned_to_one_a_share_session_per_asset():
+    trade_date = date(2026, 7, 20)
+    frame = pd.DataFrame([
+        {"tradeDate": trade_date, "asset": "SP500", "assetReturn": 0.10,
+         "observedAt": "2026-07-17T16:00:00-04:00", "availableAt": "2026-07-20T09:00:00+08:00"},
+        {"tradeDate": trade_date, "asset": "SP500", "assetReturn": -0.20,
+         "observedAt": "2026-07-18T16:00:00-04:00", "availableAt": "2026-07-20T09:00:00+08:00"},
+        {"tradeDate": trade_date, "asset": "NASDAQ", "assetReturn": 0.05,
+         "observedAt": "2026-07-17T16:00:00-04:00", "availableAt": "2026-07-20T09:00:00+08:00"},
+        {"tradeDate": trade_date, "asset": "HSI", "assetReturn": -0.01,
+         "observedAt": "2026-07-17T16:00:00+08:00", "availableAt": "2026-07-20T09:00:00+08:00"},
+    ])
+
+    daily = aggregate_aligned_asset_returns(frame).iloc[0]
+
+    assert daily["observedMarketCount"] == 3
+    assert daily["confirmedDownMarketCount"] == 2
+    assert abs(daily["leadingAssetReturn"] - ((-0.12 + 0.05 - 0.01) / 3)) < 1e-12

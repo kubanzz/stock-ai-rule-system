@@ -517,16 +517,25 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             if (!StringUtils.hasText(rawCode)) {
                 throw new MappingException("股票代码/代码 missing");
             }
-            RiskObjectKey object = new RiskObjectKey(RiskObjectType.STOCK, normalizeStockCode(rawCode));
-            if (!requested.contains(object)) {
+            if (!matchesRequestedStock(requested, rawCode)) {
                 continue;
             }
+            RiskObjectKey object = new RiskObjectKey(RiskObjectType.STOCK, normalizeStockCode(rawCode));
             FlowEventSourceRecord record = mapper.map(object, row);
             if (inRequestedFactWindow(request, record)) {
                 records.add(record);
             }
         }
         return records;
+    }
+
+    private boolean matchesRequestedStock(Set<RiskObjectKey> requested, String rawCode) {
+        String trimmed = rawCode.trim().toUpperCase();
+        String digits = trimmed.replaceAll("[^0-9]", "");
+        return requested.stream().anyMatch(object ->
+                object.objectId().equals(trimmed)
+                        || (digits.matches("\\d{6}")
+                        && object.objectId().startsWith(digits + ".")));
     }
 
     private FlowEventSourceRecord mapForecast(RiskObjectKey object, JsonNode row) {

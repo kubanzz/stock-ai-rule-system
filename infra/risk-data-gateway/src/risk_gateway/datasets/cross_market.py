@@ -53,13 +53,7 @@ class CrossMarketDataset:
             return self._incomplete([], "fewer than three global markets are available")
 
         global_returns = pd.concat(asset_frames, ignore_index=True)
-        daily = global_returns.groupby("tradeDate", as_index=False).agg(
-            leadingAssetReturn=("assetReturn", "mean"),
-            confirmedDownMarketCount=("assetReturn", lambda values: int((values < 0).sum())),
-            observedMarketCount=("asset", "nunique"),
-            observedAt=("observedAt", "max"),
-            availableAt=("availableAt", "max"),
-        )
+        daily = aggregate_aligned_asset_returns(global_returns)
         daily = daily.loc[daily["observedMarketCount"] >= 3]
 
         target = self._target_returns()
@@ -134,6 +128,22 @@ class CrossMarketDataset:
             self.context, data, source=SOURCE, calculation_version=CALCULATION_VERSION,
             complete=False, reason=reason, earliest=None,
         )
+
+
+def aggregate_aligned_asset_returns(global_returns: pd.DataFrame) -> pd.DataFrame:
+    """Collapse every asset to one cumulative move per upcoming A-share session."""
+    by_asset = global_returns.groupby(["tradeDate", "asset"], as_index=False).agg(
+        assetReturn=("assetReturn", lambda values: float((1.0 + values).prod() - 1.0)),
+        observedAt=("observedAt", "max"),
+        availableAt=("availableAt", "max"),
+    )
+    return by_asset.groupby("tradeDate", as_index=False).agg(
+        leadingAssetReturn=("assetReturn", "mean"),
+        confirmedDownMarketCount=("assetReturn", lambda values: int((values < 0).sum())),
+        observedMarketCount=("asset", "nunique"),
+        observedAt=("observedAt", "max"),
+        availableAt=("availableAt", "max"),
+    )
 
 
 def history_coverage_complete(
