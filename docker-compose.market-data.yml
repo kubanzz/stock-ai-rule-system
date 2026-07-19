@@ -10,6 +10,31 @@ services:
       NUMEXPR_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "127.0.0.1:8090:8090"
     restart: unless-stopped
+
+  risk-data-gateway:
+    build:
+      context: ./infra/risk-data-gateway
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    container_name: stock-risk-data-gateway
+    environment:
+      RISK_GATEWAY_AKTOOLS_BASE_URL: http://aktools:8090
+      RISK_GATEWAY_CACHE_DIR: /cache
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "127.0.0.1:18090:18090"
+    volumes:
+      - risk-data-gateway-cache:/cache
+    depends_on:
+      aktools:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  risk-data-gateway-cache:

@@ -271,6 +271,9 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 decimal(row, "volume", "成交量"),
                 decimal(row, "benchmarkClose", "benchmark_close"),
                 decimal(row, "leaderClose", "leader_close"),
+                text(row, "benchmarkDefinition", "benchmark_definition"),
+                text(row, "leaderDefinition", "leader_definition"),
+                booleanValue(row, false, "proxy"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -403,6 +406,23 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
 
     private int integer(Map<String, Object> row, String... keys) {
         return decimal(row, keys).intValueExact();
+    }
+
+    private boolean booleanValue(Map<String, Object> row, boolean defaultValue, String... keys) {
+        Object value = first(row, keys);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if ("true".equalsIgnoreCase(value.toString()) || "1".equals(value.toString())) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value.toString()) || "0".equals(value.toString())) {
+            return false;
+        }
+        throw new IllegalArgumentException("invalid boolean field: " + String.join("/", keys));
     }
 
     private String text(Map<String, Object> row, String... keys) {

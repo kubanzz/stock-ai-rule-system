@@ -462,6 +462,9 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                 "close", point.close(),
                 "benchmarkClose", point.benchmarkClose(),
                 "leaderClose", point.leaderClose(),
+                "benchmarkDefinition", point.benchmarkDefinition(),
+                "leaderDefinition", point.leaderDefinition(),
+                "proxy", point.proxy(),
                 "volume", point.volume()
         );
 

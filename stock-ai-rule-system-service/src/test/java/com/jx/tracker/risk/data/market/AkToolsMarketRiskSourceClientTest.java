@@ -213,6 +213,39 @@ class AkToolsMarketRiskSourceClientTest {
     }
 
     @Test
+    void derivedDailyPreservesBenchmarkAndLeaderAuditDefinitions() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport derivedTransport = new ScriptedTransport();
+        derivedTransport.daily = List.of(Map.ofEntries(
+                Map.entry("objectType", "market"),
+                Map.entry("objectId", "CN-A"),
+                Map.entry("tradeDate", "2026-07-18"),
+                Map.entry("open", "100"),
+                Map.entry("close", "101"),
+                Map.entry("volume", "1000"),
+                Map.entry("benchmarkClose", "4000"),
+                Map.entry("leaderClose", "2800"),
+                Map.entry("benchmarkDefinition", "CSI300"),
+                Map.entry("leaderDefinition", "SSE50"),
+                Map.entry("proxy", true),
+                Map.entry("observedAt", "2026-07-18T15:00:00+08:00"),
+                Map.entry("availableAt", "2026-07-18T15:30:00+08:00")
+        ));
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, derivedTransport, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY, currentRequest(List.of(MARKET)));
+
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            MarketDailyPoint point = (MarketDailyPoint) record;
+            assertThat(point.benchmarkDefinition()).isEqualTo("CSI300");
+            assertThat(point.leaderDefinition()).isEqualTo("SSE50");
+            assertThat(point.proxy()).isTrue();
+        });
+    }
+
+    @Test
     void derivedGatewayPartialRowsRemainInsufficientAndNeverAdvanceCheckpoint() {
         ScriptedTransport nativeTransport = new ScriptedTransport();
         ScriptedTransport derivedTransport = new ScriptedTransport();
@@ -358,6 +391,7 @@ class AkToolsMarketRiskSourceClientTest {
         private List<Map<String, Object>> stockMaster = List.of();
         private List<Map<String, Object>> sw1Catalog = List.of();
         private List<Map<String, Object>> sw1Components = List.of();
+        private List<Map<String, Object>> daily = List.of();
         private List<Map<String, Object>> valuation = List.of();
         private String nextCursor;
         private LocalDate earliestAvailableDate = LocalDate.of(2021, 7, 18);
@@ -372,6 +406,7 @@ class AkToolsMarketRiskSourceClientTest {
                 case "/api/public/stock_info_a_code_name" -> stockMaster;
                 case "/api/public/sw_index_first_info" -> sw1Catalog;
                 case "/api/public/index_component_sw" -> sw1Components;
+                case "/api/risk/market-daily" -> daily;
                 case "/api/risk/valuation" -> valuation;
                 default -> List.of();
             };

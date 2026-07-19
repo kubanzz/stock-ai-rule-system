@@ -213,6 +213,25 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void marketDailyObservationsPreserveProxyDefinitionsForAudit() {
+        MarketDailyPoint point = new MarketDailyPoint(
+                MARKET, END_DATE, new BigDecimal("100"), new BigDecimal("101"), new BigDecimal("1000"),
+                new BigDecimal("4000"), new BigDecimal("2800"), "CSI300", "SSE50", true,
+                END_DATE.atTime(15, 0), END_DATE.atTime(15, 30), "risk-derived-gateway",
+                RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch batch = provider(List.of(point), null)
+                .fetch("market_daily", request(null));
+
+        assertThat(batch.observations()).isNotEmpty().allSatisfy(observation ->
+                assertThat(observation.attributes())
+                        .containsEntry("benchmarkDefinition", "CSI300")
+                        .containsEntry("leaderDefinition", "SSE50")
+                        .containsEntry("proxy", true));
+    }
+
+    @Test
     void a3TreatsFlatRecentReturnsAsInsufficientInsteadOfAvailableZero() {
         RiskProviderBatch batch = provider(flatRecentDailyPoints(25), null)
                 .fetch("market_daily", request(null));
