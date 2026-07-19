@@ -51,7 +51,10 @@ class AkToolsContractSmokeTest {
 
     private void verifyDerived(DerivedEndpointSpec spec) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(derivedUri(spec.path(), spec.query()))
-                .timeout(Duration.ofSeconds(300))
+                .timeout(Duration.ofSeconds(spec.path().endsWith("/breadth")
+                        ? Long.parseLong(environment(
+                        "RISK_DERIVED_GATEWAY_BREADTH_TIMEOUT_SECONDS", "1800"))
+                        : 300))
                 .GET()
                 .build();
         HttpResponse<String> response = HTTP_CLIENT.send(

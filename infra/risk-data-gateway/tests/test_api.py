@@ -1,4 +1,7 @@
 from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
+from time import sleep
 
 import pytest
 from fastapi.testclient import TestClient
@@ -142,3 +145,54 @@ def test_breadth_api_reuses_short_lived_derived_result_cache(tmp_path, monkeypat
     assert second.status_code == 200
     assert first.json() == second.json()
     assert CountingBreadthDataset.calls == 1
+
+
+def test_breadth_api_coalesces_concurrent_cache_misses(tmp_path, monkeypatch):
+    class SlowCountingBreadthDataset:
+        calls = 0
+        guard = Lock()
+
+        def __init__(self, _context, *, max_concurrency):
+            assert max_concurrency == 4
+
+        def fetch(self, _query):
+            with SlowCountingBreadthDataset.guard:
+                SlowCountingBreadthDataset.calls += 1
+            sleep(0.1)
+            return GatewayResponse.model_validate({
+                "data": [{"tradeDate": "2026-07-17", "totalCount": 5000}],
+                "meta": {
+                    "historyComplete": True,
+                    "insufficientHistory": False,
+                    "earliestAvailableDate": "2026-07-17",
+                    "historyGapReason": None,
+                    "nextCursor": None,
+                    "source": "test",
+                    "sourceVersion": "test-v1",
+                    "calculationVersion": "breadth-v1",
+                    "fetchedAt": "2026-07-19T10:00:00+08:00",
+                },
+            })
+
+    monkeypatch.setattr("risk_gateway.app.BreadthDataset", SlowCountingBreadthDataset)
+    api = TestClient(create_app(
+        Settings(aktools_base_url="http://aktools:8090", cache_dir=tmp_path),
+        health_probe=HealthyDependencies(),
+        client=FakeClient(),
+        calendar_provider=lambda _query: (date(2026, 7, 17),),
+    ))
+    params = {
+        "start_date": "20260717", "end_date": "20260717", "objects": "market:CN-A",
+    }
+    start = Barrier(2)
+
+    def request():
+        start.wait()
+        return api.get("/api/risk/breadth", params=params)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _value: request(), range(2)))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert responses[0].json() == responses[1].json()
+    assert SlowCountingBreadthDataset.calls == 1

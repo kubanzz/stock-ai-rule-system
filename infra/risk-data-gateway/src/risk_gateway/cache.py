@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
@@ -6,7 +7,8 @@ import os
 from pathlib import Path
 import re
 from tempfile import NamedTemporaryFile
-from typing import Any
+from threading import Lock
+from typing import Any, Iterator
 from uuid import uuid4
 
 import pandas as pd
@@ -16,6 +18,38 @@ from risk_gateway.models import GatewayResponse
 
 class InvalidCachePartition(ValueError):
     pass
+
+
+@dataclass
+class _LockEntry:
+    lock: Any
+    references: int
+
+
+class KeyedLockPool:
+    """Coalesce identical in-process cache misses without leaking request keys."""
+
+    def __init__(self):
+        self._guard = Lock()
+        self._entries: dict[str, _LockEntry] = {}
+
+    @contextmanager
+    def acquire(self, key: str) -> Iterator[None]:
+        with self._guard:
+            entry = self._entries.get(key)
+            if entry is None:
+                entry = _LockEntry(Lock(), 0)
+                self._entries[key] = entry
+            entry.references += 1
+        entry.lock.acquire()
+        try:
+            yield
+        finally:
+            entry.lock.release()
+            with self._guard:
+                entry.references -= 1
+                if entry.references == 0:
+                    self._entries.pop(key, None)
 
 
 _DATASET = re.compile(r"^[a-z][a-z0-9_]*$")

@@ -113,7 +113,7 @@ docker build --target test -t stock-risk-data-gateway-test infra/risk-data-gatew
 docker run --rm --security-opt seccomp=unconfined stock-risk-data-gateway-test pytest -q
 ```
 
-缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务；成功原始响应由带 SHA-256 的 Parquet 长期复用，聚合响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务；成功原始响应由带 SHA-256 的 Parquet 长期复用，聚合响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源。同一网关进程内相同请求的冷缓存缺失会以请求哈希合并，避免重复扫描。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
 
 网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次采集中消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。
 
@@ -128,7 +128,8 @@ mvn -Dtest=AkToolsContractSmokeTest test
 ```bash
 RISK_DERIVED_GATEWAY_IT=true \
 RISK_WARNING_DERIVED_GATEWAY_BASE_URL=http://127.0.0.1:18090 \
+RISK_DERIVED_GATEWAY_BREADTH_TIMEOUT_SECONDS=1800 \
 mvn -Dtest=AkToolsContractSmokeTest test
 ```
 
-可通过 `RISK_AKTOOLS_STOCK_SYMBOL`、`RISK_AKTOOLS_SW1_SYMBOL`、`RISK_AKTOOLS_INDEX_SYMBOL`、`RISK_AKTOOLS_SMOKE_END_DATE`、`RISK_AKTOOLS_REPORT_DATE` 和 `RISK_DERIVED_GATEWAY_SMOKE_DATE` 覆盖样本。衍生冒烟只打印端点、行数、最早日期和质量状态，不打印完整响应。
+可通过 `RISK_AKTOOLS_STOCK_SYMBOL`、`RISK_AKTOOLS_SW1_SYMBOL`、`RISK_AKTOOLS_INDEX_SYMBOL`、`RISK_AKTOOLS_SMOKE_END_DATE`、`RISK_AKTOOLS_REPORT_DATE` 和 `RISK_DERIVED_GATEWAY_SMOKE_DATE` 覆盖样本。宽度冷缓存的默认测试超时为 1800 秒，可用 `RISK_DERIVED_GATEWAY_BREADTH_TIMEOUT_SECONDS` 调整；其他衍生端点为 300 秒。衍生冒烟只打印端点、行数、最早日期和质量状态，不打印完整响应。

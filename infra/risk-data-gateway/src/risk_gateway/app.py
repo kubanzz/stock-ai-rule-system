@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from risk_gateway.aktools import AkToolsClient, AkToolsSchemaError, AkToolsUnavailable
-from risk_gateway.cache import DerivedResponseCache, ParquetCache
+from risk_gateway.cache import DerivedResponseCache, KeyedLockPool, ParquetCache
 from risk_gateway.cached_client import CachedAkToolsClient
 from risk_gateway.config import Settings
 from risk_gateway.datasets import DatasetContext
@@ -68,6 +68,7 @@ def create_app(
         fetched_at=lambda: datetime.now(SHANGHAI),
     )
     derived_response_cache = DerivedResponseCache(settings.cache_dir)
+    derived_request_locks = KeyedLockPool()
     provide_calendar = calendar_provider or (lambda query: _calendar(source_client, query))
 
     @application.get("/health")
@@ -134,32 +135,47 @@ def create_app(
             else None
         )
         if result is None:
-            context = DatasetContext(
-                client=source_client,
-                fetched_at=now,
-                a_share_sessions=provide_calendar(query),
-                source_version="AKTools/AKShare",
-            )
-            dataset_type = dataset_types[dataset_code]
             if dataset_code == "breadth":
-                dataset = dataset_type(context, max_concurrency=settings.max_concurrency)
+                with derived_request_locks.acquire(request_hash):
+                    now = datetime.now(SHANGHAI)
+                    result = derived_response_cache.get(
+                        dataset_code, request_hash, now=now,
+                    )
+                    if result is None:
+                        result = fetch_dataset(dataset_code, query, now)
+                        derived_response_cache.put(
+                            dataset_code,
+                            request_hash,
+                            result,
+                            stored_at=now,
+                            ttl=timedelta(seconds=settings.derived_cache_ttl_seconds),
+                        )
             else:
-                dataset = dataset_type(context)
-            result = dataset.fetch(query)
-            if dataset_code == "breadth":
-                derived_response_cache.put(
-                    dataset_code,
-                    request_hash,
-                    result,
-                    stored_at=now,
-                    ttl=timedelta(seconds=settings.derived_cache_ttl_seconds),
-                )
+                result = fetch_dataset(dataset_code, query, now)
         page, next_cursor = paginate(
             result.data, request_hash, query.cursor, settings.page_size,
         )
         result.meta.next_cursor = next_cursor
         result.data = page
         return JSONResponse(content=result.payload())
+
+    def fetch_dataset(
+        dataset_code: str,
+        query: RiskQuery,
+        fetched_at: datetime,
+    ):
+        context = DatasetContext(
+            client=source_client,
+            fetched_at=fetched_at,
+            a_share_sessions=provide_calendar(query),
+            source_version="AKTools/AKShare",
+        )
+        dataset_type = dataset_types[dataset_code]
+        if dataset_code == "breadth":
+            dataset = dataset_type(context, max_concurrency=settings.max_concurrency)
+        else:
+            dataset = dataset_type(context)
+        return dataset.fetch(query)
 
     for dataset_code in dataset_types:
         def route(
