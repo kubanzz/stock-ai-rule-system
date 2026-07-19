@@ -33,7 +33,8 @@ class RiskBackfillCommandApplicationTest {
 
         assertThat(exitCode).isEqualTo(RiskBackfillExitCode.SAMPLE_GATE_REJECTED.code());
         assertThat(launchedArguments.get())
-                .endsWith(
+                .containsExactly(
+                        "--example=value",
                         "--spring.main.web-application-type=none",
                         "--spring.task.scheduling.enabled=false",
                         "--stock-ai-rule.scheduler.daily-enabled=false");

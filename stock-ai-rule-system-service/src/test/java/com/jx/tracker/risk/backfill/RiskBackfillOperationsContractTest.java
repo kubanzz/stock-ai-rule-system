@@ -17,7 +17,6 @@ class RiskBackfillOperationsContractTest {
 
         assertThat(script)
                 .contains("com.jx.tracker.risk.backfill.RiskBackfillCommandApplication")
-                .contains("--spring.main.web-application-type=none")
                 .contains("RISK_WARNING_ENABLED")
                 .contains("RISK_WARNING_BACKFILL_ENABLED")
                 .contains("RISK_WARNING_BACKFILL_COMMAND_ENABLED")
@@ -25,8 +24,7 @@ class RiskBackfillOperationsContractTest {
                 .contains("RISK_WARNING_BACKFILL_END_DATE")
                 .contains("RISK_WARNING_DERIVED_GATEWAY_BASE_URL")
                 .contains("DAILY_WORKFLOW_ENABLED=false")
-                .contains("--spring.task.scheduling.enabled=false")
-                .contains("--stock-ai-rule.scheduler.daily-enabled=false")
+                .doesNotContain("spring-boot.run.arguments")
                 .doesNotContain("RISK_WARNING_BACKFILL_CONFIRMATION=BACKFILL_5Y")
                 .doesNotContain("password=")
                 .doesNotContain("TUSHARE_TOKEN=");

@@ -5,9 +5,15 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.context.ConfigurableApplicationContext;
 
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class RiskBackfillCommandApplication {
+
+    private static final List<String> SAFETY_ARGUMENTS = List.of(
+            "--spring.main.web-application-type=none",
+            "--spring.task.scheduling.enabled=false",
+            "--stock-ai-rule.scheduler.daily-enabled=false");
 
     private RiskBackfillCommandApplication() {
     }
@@ -38,11 +44,20 @@ public final class RiskBackfillCommandApplication {
 
     private static String[] safeArguments(String[] args) {
         String[] original = args == null ? new String[0] : args;
-        String[] safe = Arrays.copyOf(original, original.length + 3);
-        safe[original.length] = "--spring.main.web-application-type=none";
-        safe[original.length + 1] = "--spring.task.scheduling.enabled=false";
-        safe[original.length + 2] = "--stock-ai-rule.scheduler.daily-enabled=false";
-        return safe;
+        List<String> safe = new ArrayList<>(original.length + SAFETY_ARGUMENTS.size());
+        for (String argument : original) {
+            if (!isSafetyArgument(argument)) {
+                safe.add(argument);
+            }
+        }
+        safe.addAll(SAFETY_ARGUMENTS);
+        return safe.toArray(String[]::new);
+    }
+
+    private static boolean isSafetyArgument(String argument) {
+        return argument != null && SAFETY_ARGUMENTS.stream()
+                .map(value -> value.substring(0, value.indexOf('=') + 1))
+                .anyMatch(argument::startsWith);
     }
 
     @FunctionalInterface

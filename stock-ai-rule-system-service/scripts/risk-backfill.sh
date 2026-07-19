@@ -31,7 +31,4 @@ export DAILY_WORKFLOW_ENABLED=false
 
 cd "$service_dir"
 exec "$maven_bin" -DskipTests spring-boot:run \
-  -Dspring-boot.run.main-class=com.jx.tracker.risk.backfill.RiskBackfillCommandApplication \
-  -Dspring-boot.run.arguments="--spring.main.web-application-type=none \
---spring.task.scheduling.enabled=false \
---stock-ai-rule.scheduler.daily-enabled=false"
+  -Dspring-boot.run.main-class=com.jx.tracker.risk.backfill.RiskBackfillCommandApplication
