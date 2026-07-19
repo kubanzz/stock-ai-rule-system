@@ -92,6 +92,7 @@ class RiskWarningWorkflowTest {
         assertThat(provider.requests()).hasSize(2);
         assertThat(provider.requests().get(0).checkpoint()).isNull();
         assertThat(provider.requests().get(1).checkpoint()).isNotNull();
+        assertThat(provider.requests().get(1).checkpoint().cursor()).isEqualTo("cursor-2");
         assertThat(repository.observations).hasSize(3);
         assertThat(repository.events).hasSize(1);
         assertThat(repository.snapshots).isNotEmpty();
