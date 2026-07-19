@@ -39,7 +39,7 @@ public final class JacksonRiskBackfillReportStore implements RiskBackfillReportS
     @Override
     public Path write(Path directory, RiskBackfillReport report) throws IOException {
         if (directory == null || report == null || report.startedAt() == null
-                || report.mode() == null || report.endDate() == null) {
+                || report.mode() == null) {
             throw new IllegalArgumentException("report directory and identity fields are required");
         }
         Files.createDirectories(directory);
@@ -106,9 +106,11 @@ public final class JacksonRiskBackfillReportStore implements RiskBackfillReportS
         if (modelVersion.isBlank()) {
             modelVersion = "model";
         }
+        String endDate = report.endDate() == null ? "undated"
+                : report.endDate().format(DateTimeFormatter.BASIC_ISO_DATE);
         return "risk-backfill-" + FILE_TIME.format(report.startedAt()) + "-"
                 + report.mode().name().toLowerCase(Locale.ROOT) + "-"
-                + report.endDate().format(DateTimeFormatter.BASIC_ISO_DATE) + "-"
+                + endDate + "-"
                 + modelVersion + "-" + runId + ".json";
     }
 

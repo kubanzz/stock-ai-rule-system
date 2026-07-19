@@ -81,7 +81,7 @@ public final class RiskBackfillPreflightService {
                 akTools, derived, reportDirectoryWritable, enforcedGateCount);
     }
 
-    private List<String> configurationFailures(
+    public List<String> configurationFailures(
             RiskBackfillCommandProperties command,
             RiskWarningProperties warning
     ) {

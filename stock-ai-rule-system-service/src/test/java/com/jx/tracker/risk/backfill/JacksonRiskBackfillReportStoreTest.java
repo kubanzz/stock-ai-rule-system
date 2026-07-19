@@ -66,6 +66,16 @@ class JacksonRiskBackfillReportStoreTest {
                 .contains("[REDACTED]");
     }
 
+    @Test
+    void writesAnUndatedConfigurationFailureReport() throws Exception {
+        RiskBackfillReport report = report(
+                "risk-v1", null, false, List.of("endDate must be configured"));
+
+        Path written = store.write(directory, report);
+
+        assertThat(written.getFileName().toString()).contains("-undated-");
+    }
+
     private RiskBackfillReport report(
             String modelVersion,
             LocalDate endDate,
@@ -84,8 +94,8 @@ class JacksonRiskBackfillReportStoreTest {
                         : RiskBackfillExitCode.SAMPLE_GATE_REJECTED.code(),
                 sampleGatePassed ? "success" : "failed",
                 endDate,
-                endDate.minusYears(5),
-                endDate.minusYears(11),
+                endDate == null ? null : endDate.minusYears(5),
+                endDate == null ? null : endDate.minusYears(11),
                 List.of("600519.SH"),
                 5530,
                 28,
