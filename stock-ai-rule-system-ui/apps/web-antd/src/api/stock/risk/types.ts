@@ -77,7 +77,7 @@ export interface RiskOverview {
   levelCounts: RiskLevelCount[];
   marketSnapshot: null | RiskSnapshot;
   riskDisclaimer: string;
-  tradeDate: string;
+  tradeDate: null | string;
 }
 
 export interface RiskObjectListItem {

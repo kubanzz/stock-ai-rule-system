@@ -257,9 +257,12 @@ export function selectMockRiskOverview(
     }),
   );
   return {
-    highRiskObjects: selectMockRiskObjects({ horizon, tradeDate }).filter(
-      (item) => item.snapshot.level === 'critical',
-    ),
+    highRiskObjects:
+      tradeDate === null
+        ? []
+        : selectMockRiskObjects({ horizon, tradeDate }).filter(
+            (item) => item.snapshot.level === 'critical',
+          ),
     horizon,
     levelCounts,
     marketSnapshot:

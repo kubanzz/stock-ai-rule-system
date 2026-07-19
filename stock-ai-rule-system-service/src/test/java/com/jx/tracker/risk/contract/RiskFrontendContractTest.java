@@ -36,6 +36,7 @@ class RiskFrontendContractTest {
                 .contains("export interface RiskEvidence")
                 .contains("export interface RiskSnapshot")
                 .contains("export interface RiskOverview")
+                .contains("tradeDate: null | string;")
                 .contains("export interface RiskObjectDetail")
                 .contains("export interface RiskTrendPoint")
                 .contains(RiskDecisionSupportNotice.TEXT);

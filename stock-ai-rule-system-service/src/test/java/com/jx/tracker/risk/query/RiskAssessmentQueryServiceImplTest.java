@@ -158,12 +158,23 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
-    void overviewWithoutAnyAvailableTradeDateDoesNotBreakNonNullFrontendContract() {
+    void overviewWithoutAnyAvailableTradeDateReturnsEmptyOverview() {
         when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(null);
 
-        assertThatThrownBy(() -> service.overview(null, null))
-                .isInstanceOf(ServiceException.class)
-                .hasMessageContaining("未找到风险快照");
+        var overview = service.overview(null, null);
+
+        assertThat(overview.horizon()).isEqualTo("1-5d");
+        assertThat(overview.tradeDate()).isNull();
+        assertThat(overview.levelCounts()).extracting("level", "count")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("normal", 0L),
+                        org.assertj.core.groups.Tuple.tuple("watch", 0L),
+                        org.assertj.core.groups.Tuple.tuple("warning", 0L),
+                        org.assertj.core.groups.Tuple.tuple("critical", 0L)
+                );
+        assertThat(overview.marketSnapshot()).isNull();
+        assertThat(overview.highRiskObjects()).isEmpty();
+        assertThat(overview.riskDisclaimer()).isEqualTo(RiskDecisionSupportNotice.TEXT);
     }
 
     @Test

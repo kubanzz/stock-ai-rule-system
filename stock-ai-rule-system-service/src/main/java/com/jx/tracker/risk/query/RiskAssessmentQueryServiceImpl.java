@@ -67,7 +67,17 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 ? tradeDate
                 : snapshotMapper.selectLatestTradeDate(normalizedHorizon);
         if (resolvedDate == null) {
-            throw new ServiceException("未找到风险快照 " + normalizedHorizon, 404);
+            List<RiskLevelCount> emptyCounts = LEVELS.stream()
+                    .map(level -> new RiskLevelCount(level, 0L))
+                    .toList();
+            return new RiskOverview(
+                    normalizedHorizon,
+                    null,
+                    emptyCounts,
+                    null,
+                    List.of(),
+                    RiskDecisionSupportNotice.TEXT
+            );
         }
         List<RiskScoreSnapshotEntity> rows = safeList(
                 snapshotMapper.selectForOverview(normalizedHorizon, resolvedDate)
