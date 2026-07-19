@@ -184,14 +184,19 @@ class AkToolsContractSmokeTest {
         String stock = environment("RISK_AKTOOLS_STOCK_SYMBOL", "600519") + ".SH";
         String rawDate = environment("RISK_DERIVED_GATEWAY_SMOKE_DATE", "2026-07-17");
         String compactDate = LocalDate.parse(rawDate).format(BASIC_DATE);
+        String breadthStartDate = LocalDate.parse(environment(
+                "RISK_DERIVED_GATEWAY_BREADTH_START_DATE", "2015-07-17"))
+                .format(BASIC_DATE);
         Map<String, String> marketQuery = orderedQuery(
                 "start_date", compactDate, "end_date", compactDate, "objects", "market:CN-A");
+        Map<String, String> breadthQuery = orderedQuery(
+                "start_date", breadthStartDate, "end_date", compactDate, "objects", "market:CN-A");
         Map<String, String> stockQuery = orderedQuery(
                 "start_date", compactDate, "end_date", compactDate, "objects", "stock:" + stock);
         return List.of(
                 derivedSpec("market-daily", "/api/risk/market-daily", marketQuery, false),
                 derivedSpec("valuation", "/api/risk/valuation", stockQuery, false),
-                derivedSpec("breadth", "/api/risk/breadth", marketQuery, false),
+                derivedSpec("breadth", "/api/risk/breadth", breadthQuery, false),
                 derivedSpec("cross-market", "/api/risk/cross-market", marketQuery, false),
                 derivedSpec("sw1-membership", "/api/risk/sw1-membership", stockQuery, false),
                 derivedSpec("etf-redemption", "/api/risk/etf-redemption", marketQuery, true)

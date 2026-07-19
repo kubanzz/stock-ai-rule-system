@@ -3,16 +3,17 @@ set -eu
 
 gateway_base_url="${RISK_WARNING_DERIVED_GATEWAY_BASE_URL:-http://127.0.0.1:18090}"
 smoke_date="${RISK_DERIVED_GATEWAY_SMOKE_DATE:-20260717}"
+breadth_start_date="${RISK_DERIVED_GATEWAY_BREADTH_START_DATE:-20150717}"
 stock_object="${RISK_DERIVED_GATEWAY_STOCK_OBJECT:-stock:600519.SH}"
 market_object="market:CN-A"
 
-python3 - "$gateway_base_url" "$smoke_date" "$stock_object" "$market_object" <<'PY'
+python3 - "$gateway_base_url" "$smoke_date" "$breadth_start_date" "$stock_object" "$market_object" <<'PY'
 import json
 import sys
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-base, trade_date, stock, market = sys.argv[1:]
+base, trade_date, breadth_start_date, stock, market = sys.argv[1:]
 base = base.rstrip("/")
 
 with urlopen(base + "/health", timeout=10) as response:
@@ -29,7 +30,8 @@ specs = (
     ("etf-redemption", market, True),
 )
 for endpoint, objects, etf_gap in specs:
-    query = urlencode({"start_date": trade_date, "end_date": trade_date, "objects": objects})
+    start_date = breadth_start_date if endpoint == "breadth" else trade_date
+    query = urlencode({"start_date": start_date, "end_date": trade_date, "objects": objects})
     with urlopen(f"{base}/api/risk/{endpoint}?{query}", timeout=300) as response:
         payload = json.load(response)
     if not isinstance(payload.get("data"), list) or not isinstance(payload.get("meta"), dict):

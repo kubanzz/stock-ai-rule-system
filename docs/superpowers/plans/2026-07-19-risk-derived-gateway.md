@@ -560,7 +560,7 @@ git commit -m "feat(risk): 接入衍生网关运行环境"
 
 - [ ] **步骤 2：编写一键冒烟脚本**
 
-`smoke.sh` 依次检查 `/health`、五个市场端点和 ETF 缺失语义。脚本使用 `set -eu`，请求固定 `market:CN-A` 和一个交易日小窗口，任何 schema 错误返回非零。
+`smoke.sh` 依次检查 `/health`、五个市场端点和 ETF 缺失语义。脚本使用 `set -eu`，请求固定 `market:CN-A`；除市场宽度复用五年预热窗口外，其余端点使用一个交易日小窗口，任何 schema 错误返回非零。可通过 `RISK_DERIVED_GATEWAY_BREADTH_START_DATE` 覆盖宽度起始日。
 
 - [ ] **步骤 3：更新文档**
 

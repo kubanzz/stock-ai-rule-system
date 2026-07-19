@@ -119,6 +119,8 @@ class BreadthDataset:
                     counts = future.result()
                 except (InvalidSeries, RuntimeError, ValueError):
                     continue
+                finally:
+                    futures.pop(future, None)
                 successful += 1
                 for trade_date, values in counts.items():
                     for key, value in values.items():
