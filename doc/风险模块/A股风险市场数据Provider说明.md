@@ -85,9 +85,36 @@
 5. `stock_zh_a_spot_em()`：仅为 A 股全市场当前快照，不能伪装成历史宽度。
 6. `index_global_spot_em()`：仅为跨市场当前快照，不能代替领先资产、动态相关及独立市场确认的历史对齐序列。
 
-本分支没有声称完成真实网络验证。最终集成验收仍需在可访问 AKTools 的环境运行上述端点，生成字段、时间跨度、空值、限频和历史覆盖报告；任何单一近期接口都不得被视为满足 5 年基线。
+仓库现已提供 `infra/risk-data-gateway` 免费数据衍生网关。网关固定保留 `tradeDate/observedAt/availableAt/fetchedAt`，并在 `market_daily` 中把沪深 300 和上证 50 分别记录为 `benchmarkDefinition=CSI300`、`leaderDefinition=SSE50`，同时写入 `proxy=true`。这些字段只说明代理定义与血缘，不改变评分公式，也不把风险分解释为暴跌概率。
 
-仓库提供默认跳过的 12 端点真实契约冒烟测试。连接已部署的 AKTools 后执行：
+当前免费源的客观边界必须原样保留：
+
+- `stock_industry_clf_hist_sw` 依赖申万官网文件；TLS/502 或文件结构异常时不关闭证书校验，只返回带真实抓取时间的当前成分，历史请求保持不足；
+- 百度个股 PE 的长区间会降采样，不能把稀疏的“全部”序列补成逐交易日估值；PE 或 10 年国债收益率缺失时 V1 不出正式值；
+- ETF 免费接口只有净值、成交和申赎状态，没有历史真实申赎份额/净额，A2 固定返回 `free_source_has_no_historical_etf_redemption_fact`，不得以净值或订单流替代；
+- 跨市场篮子固定为标普 500、纳斯达克、恒生和日经 225；单源失败可在至少三个市场时继续，少于三个或 60 日相关窗口不足时返回历史不足；
+- 历史市场宽度使用“当前上市且存在当日历史行情”的股票集合，明确标记 `currentListedStocksWithObservableHistoricalBars` 和 `proxy=true`，不声称拥有已退市股票的完整历史成分。
+
+因此，网关健康只表示进程、缓存和 AKTools 可连接，不表示 80% 正式覆盖已经通过。最终资格必须以样本回填报告为准；任何单一近期接口都不得被视为满足 5 年基线。
+
+仓库提供默认跳过的原生端点和衍生网关真实契约冒烟测试。先启动容器：
+
+```bash
+docker-compose -f docker-compose.market-data.yml up -d --build aktools risk-data-gateway
+docker-compose -f docker-compose.market-data.yml ps
+```
+
+网关缓存位于 Docker 卷 `risk-data-gateway-cache`。查看健康和运行网关单测：
+
+```bash
+curl -fsS http://127.0.0.1:18090/health
+docker build --target test -t stock-risk-data-gateway-test infra/risk-data-gateway
+docker run --rm --security-opt seccomp=unconfined stock-risk-data-gateway-test pytest -q
+```
+
+缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+
+连接已部署的 AKTools 与网关后执行：
 
 ```bash
 RISK_AKTOOLS_IT=true \
@@ -95,4 +122,10 @@ RISK_AKTOOLS_BASE_URL=http://127.0.0.1:8090 \
 mvn -Dtest=AkToolsContractSmokeTest test
 ```
 
-可通过 `RISK_AKTOOLS_STOCK_SYMBOL`、`RISK_AKTOOLS_SW1_SYMBOL`、`RISK_AKTOOLS_INDEX_SYMBOL`、`RISK_AKTOOLS_SMOKE_END_DATE` 和 `RISK_AKTOOLS_REPORT_DATE` 覆盖样本。该测试校验的是原生函数参数和原始字段形状；衍生网关的 point-in-time 契约由固定响应测试覆盖。
+```bash
+RISK_DERIVED_GATEWAY_IT=true \
+RISK_WARNING_DERIVED_GATEWAY_BASE_URL=http://127.0.0.1:18090 \
+mvn -Dtest=AkToolsContractSmokeTest test
+```
+
+可通过 `RISK_AKTOOLS_STOCK_SYMBOL`、`RISK_AKTOOLS_SW1_SYMBOL`、`RISK_AKTOOLS_INDEX_SYMBOL`、`RISK_AKTOOLS_SMOKE_END_DATE`、`RISK_AKTOOLS_REPORT_DATE` 和 `RISK_DERIVED_GATEWAY_SMOKE_DATE` 覆盖样本。衍生冒烟只打印端点、行数、最早日期和质量状态，不打印完整响应。
