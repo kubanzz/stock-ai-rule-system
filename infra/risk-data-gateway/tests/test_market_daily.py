@@ -26,7 +26,7 @@ def bars(*dates, base=10):
 def context(target_dates=("2026-07-17", "2026-07-20")):
     client = FakeClient(
         {
-            ("stock_zh_a_hist", "600519"): bars(*target_dates, base=100),
+            ("stock_zh_a_daily", "sh600519"): bars(*target_dates, base=100),
             ("stock_zh_index_daily", "sh000300"): bars("2026-07-17", "2026-07-20", base=4000),
             ("stock_zh_index_daily", "sh000016"): bars("2026-07-17", "2026-07-20", base=2800),
         }

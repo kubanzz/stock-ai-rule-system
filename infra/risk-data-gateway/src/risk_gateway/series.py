@@ -55,10 +55,17 @@ def normalize_object_key(raw: str) -> str:
     raise ValueError(f"unsupported risk object: {raw}")
 
 
+def akshare_stock_symbol(raw: str) -> str:
+    normalized = normalize_object_key(raw)
+    symbol, exchange = normalized.split(":", 1)[1].split(".", 1)
+    return f"{exchange.lower()}{symbol}"
+
+
 def normalize_market_frame(
     rows: Sequence[Mapping[str, object]] | pd.DataFrame,
     *,
     expected_dates: Iterable[date] | None = None,
+    require_positive_open: bool = True,
 ) -> pd.DataFrame:
     frame = rows.copy() if isinstance(rows, pd.DataFrame) else pd.DataFrame(rows)
     if frame.empty:
@@ -86,7 +93,8 @@ def normalize_market_frame(
         raise AmbiguousRevision(f"conflicting rows for trade date: {dates}")
     normalized = exact.sort_values("date").reset_index(drop=True)
 
-    if normalized[["open", "close"]].isna().any().any() or (normalized[["open", "close"]] <= 0).any().any():
+    price_columns = ["open", "close"] if require_positive_open else ["close"]
+    if normalized[price_columns].isna().any().any() or (normalized[price_columns] <= 0).any().any():
         raise InvalidSeries("market prices must be positive")
     if normalized["volume"].isna().any() or (normalized["volume"] < 0).any():
         raise InvalidSeries("market volume must not be negative")

@@ -90,7 +90,9 @@ class CrossMarketDataset:
                 "availabilityPolicyVersion": TIME_POLICY_VERSION,
             })
 
-        complete = len(rows) == len(requested) and bool(requested)
+        complete = history_coverage_complete(
+            tuple(date.fromisoformat(str(row["tradeDate"])) for row in rows), requested,
+        )
         reason = None if complete else "60-day correlation or aligned global history is incomplete"
         earliest = date.fromisoformat(str(rows[0]["tradeDate"])) if rows else None
         return response(
@@ -100,7 +102,7 @@ class CrossMarketDataset:
 
     def _asset_returns(self, asset: Asset) -> pd.DataFrame:
         rows = self.context.client.get(asset.function, {"symbol": asset.symbol})
-        frame = normalize_market_frame(rows)
+        frame = normalize_market_frame(rows, require_positive_open=False)
         frame["assetReturn"] = frame["close"].pct_change()
         records = []
         timezone = ZoneInfo(asset.timezone)
@@ -121,7 +123,7 @@ class CrossMarketDataset:
 
     def _target_returns(self) -> pd.DataFrame:
         rows = self.context.client.get("stock_zh_index_daily", {"symbol": "sh000001"})
-        frame = normalize_market_frame(rows)
+        frame = normalize_market_frame(rows, require_positive_open=False)
         frame["targetReturn"] = frame["close"].pct_change()
         return frame.dropna(subset=["targetReturn"])[["date", "targetReturn"]].rename(
             columns={"date": "tradeDate"}
@@ -132,3 +134,14 @@ class CrossMarketDataset:
             self.context, data, source=SOURCE, calculation_version=CALCULATION_VERSION,
             complete=False, reason=reason, earliest=None,
         )
+
+
+def history_coverage_complete(
+    returned_dates: tuple[date, ...],
+    requested_dates: tuple[date, ...],
+) -> bool:
+    if not requested_dates or not returned_dates:
+        return False
+    returned = set(returned_dates)
+    covered = sum(value in returned for value in requested_dates)
+    return requested_dates[-1] in returned and covered / len(requested_dates) >= 0.80

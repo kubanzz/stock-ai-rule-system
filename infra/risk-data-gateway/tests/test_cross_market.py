@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 from risk_gateway.datasets import DatasetContext
-from risk_gateway.datasets.cross_market import CrossMarketDataset
+from risk_gateway.datasets.cross_market import CrossMarketDataset, history_coverage_complete
 from risk_gateway.aktools import AkToolsUnavailable
 from risk_gateway.models import RiskQuery
 
@@ -111,3 +111,10 @@ def test_cross_market_is_incomplete_with_fewer_than_three_assets():
     assert response.data == []
     assert response.meta.history_complete is False
     assert response.meta.history_gap_reason == "fewer than three global markets are available"
+
+
+def test_cross_market_history_allows_normal_global_holiday_gaps_but_not_large_gaps():
+    requested = DATES[-5:]
+
+    assert history_coverage_complete(requested[1:], requested) is True
+    assert history_coverage_complete(requested[2:], requested) is False

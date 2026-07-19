@@ -14,10 +14,12 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** AKTools 原生元数据与规范化风险衍生网关的严格契约适配器。 */
 public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClient {
@@ -138,7 +140,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                     DERIVED_SOURCE, dataset.code() + " requires the normalized derived gateway", fetchedAt);
         }
         Map<String, String> query = derivedQuery(request);
-        MarketRiskHttpResponse response = derivedTransport.getResponse(DERIVED_ENDPOINTS.get(dataset), query);
+        MarketRiskHttpResponse response = derivedPages(DERIVED_ENDPOINTS.get(dataset), query);
         List<MarketSourceRecord> records = response.rows().stream()
                 .map(row -> parseDerived(dataset, row))
                 .toList();
@@ -161,6 +163,43 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         return new MarketSourceBatch(
                 DERIVED_SOURCE, records,
                 nextCheckpoint(dataset, request, response.nextCursor(), fetchedAt), fetchedAt);
+    }
+
+    private MarketRiskHttpResponse derivedPages(String endpoint, Map<String, String> initialQuery) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, String> query = new LinkedHashMap<>(initialQuery);
+        Set<String> visitedCursors = new HashSet<>();
+        LocalDate earliest = null;
+        boolean everyPageHasEarliest = true;
+        boolean historyComplete = true;
+        boolean insufficientHistory = false;
+        String historyGapReason = null;
+        for (int page = 0; page < 1000; page++) {
+            MarketRiskHttpResponse response = derivedTransport.getResponse(endpoint, Map.copyOf(query));
+            rows.addAll(response.rows());
+            everyPageHasEarliest &= response.earliestAvailableDate() != null;
+            if (response.earliestAvailableDate() != null
+                    && (earliest == null || response.earliestAvailableDate().isBefore(earliest))) {
+                earliest = response.earliestAvailableDate();
+            }
+            historyComplete &= response.historyComplete();
+            insufficientHistory |= response.insufficientHistory();
+            if (historyGapReason == null && response.historyGapReason() != null
+                    && !response.historyGapReason().isBlank()) {
+                historyGapReason = response.historyGapReason();
+            }
+            String nextCursor = response.nextCursor();
+            if (nextCursor == null || nextCursor.isBlank()) {
+                return new MarketRiskHttpResponse(
+                        rows, null, everyPageHasEarliest ? earliest : null,
+                        historyComplete, insufficientHistory, historyGapReason);
+            }
+            if (!visitedCursors.add(nextCursor)) {
+                throw new IllegalArgumentException("derived gateway returned a repeated cursor");
+            }
+            query.put("cursor", nextCursor);
+        }
+        throw new IllegalArgumentException("derived gateway pagination exceeded 1000 pages");
     }
 
     private String historyGapReason(

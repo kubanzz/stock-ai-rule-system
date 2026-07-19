@@ -69,6 +69,15 @@ def test_market_frame_rejects_missing_expected_trade_date():
         )
 
 
+def test_close_only_dataset_can_ignore_invalid_unused_open_price():
+    frame = normalize_market_frame(
+        [{"date": "2026-07-17", "open": 0, "close": 100, "volume": 1, "amount": 1}],
+        require_positive_open=False,
+    )
+
+    assert frame.iloc[0]["close"] == 100
+
+
 def test_series_alignment_uses_only_dates_available_on_both_sides():
     left = pd.DataFrame(
         [

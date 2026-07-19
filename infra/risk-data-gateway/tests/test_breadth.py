@@ -42,8 +42,8 @@ class FakeClient:
     def get(self, function, params):
         if function == "stock_info_a_code_name":
             return [{"code": f"00000{index}", "name": str(index)} for index in range(1, 7)]
-        if function == "stock_zh_a_hist":
-            return history(params["symbol"])
+        if function == "stock_zh_a_daily":
+            return history(params["symbol"][-6:])
         raise AssertionError(function)
 
 

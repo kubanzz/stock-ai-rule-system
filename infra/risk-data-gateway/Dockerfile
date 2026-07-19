@@ -19,6 +19,7 @@ WORKDIR /app
 COPY requirements.txt requirements-test.txt ./
 
 FROM base AS test
+ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN pip install --index-url "${PIP_INDEX_URL}" --requirement requirements-test.txt
 COPY pytest.ini ./pytest.ini
 COPY src ./src
@@ -26,6 +27,7 @@ COPY tests ./tests
 CMD ["pytest", "-q"]
 
 FROM base AS runtime
+ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN pip install --index-url "${PIP_INDEX_URL}" --requirement requirements.txt
 COPY src ./src
 RUN mkdir -p /cache

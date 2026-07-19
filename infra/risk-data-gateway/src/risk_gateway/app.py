@@ -8,6 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from risk_gateway.aktools import AkToolsClient, AkToolsSchemaError, AkToolsUnavailable
+from risk_gateway.cache import ParquetCache
+from risk_gateway.cached_client import CachedAkToolsClient
 from risk_gateway.config import Settings
 from risk_gateway.datasets import DatasetContext
 from risk_gateway.datasets.breadth import BreadthDataset
@@ -60,7 +62,11 @@ def create_app(
 ) -> FastAPI:
     application = FastAPI(title="A-share risk derived data gateway")
     probe = health_probe or DefaultHealthProbe(settings)
-    source_client = client or AkToolsClient(settings)
+    source_client = CachedAkToolsClient(
+        client or AkToolsClient(settings),
+        ParquetCache(settings.cache_dir),
+        fetched_at=lambda: datetime.now(SHANGHAI),
+    )
     provide_calendar = calendar_provider or (lambda query: _calendar(source_client, query))
 
     @application.get("/health")

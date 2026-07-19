@@ -191,13 +191,12 @@ class AkToolsMarketRiskSourceClientTest {
                 MarketDatasetCode.VALUATION, currentRequest(List.of(MARKET)));
 
         assertThat(nativeTransport.calls).isEmpty();
-        assertThat(derivedTransport.calls).containsExactly(new Call(
-                "/api/risk/valuation",
-                Map.of(
-                        "start_date", "20210718",
-                        "end_date", "20260718",
-                        "objects", "market:CN-A"
-                )));
+        assertThat(derivedTransport.calls).containsExactly(
+                new Call("/api/risk/valuation", Map.of(
+                        "start_date", "20210718", "end_date", "20260718", "objects", "market:CN-A")),
+                new Call("/api/risk/valuation", Map.of(
+                        "start_date", "20210718", "end_date", "20260718", "objects", "market:CN-A",
+                        "cursor", "valuation-page-2")));
         assertThat(result.records()).singleElement().satisfies(record -> {
             ValuationPoint valuation = (ValuationPoint) record;
             assertThat(valuation.peTtm()).isEqualByComparingTo("20");
@@ -206,10 +205,7 @@ class AkToolsMarketRiskSourceClientTest {
             assertThat(valuation.availableAt()).isEqualTo(
                     LocalDateTime.of(2026, 7, 18, 16, 0));
         });
-        assertThat(result.nextCheckpoint()).satisfies(checkpoint -> {
-            assertThat(checkpoint.datasetCode()).isEqualTo("valuation");
-            assertThat(checkpoint.cursor()).isEqualTo("valuation-page-2");
-        });
+        assertThat(result.nextCheckpoint()).isNull();
     }
 
     @Test
@@ -243,6 +239,48 @@ class AkToolsMarketRiskSourceClientTest {
             assertThat(point.leaderDefinition()).isEqualTo("SSE50");
             assertThat(point.proxy()).isTrue();
         });
+    }
+
+    @Test
+    void derivedGatewayConsumesEveryPageWithinOneProviderFetch() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        List<Map<String, String>> queries = new ArrayList<>();
+        MarketRiskHttpTransport pagedTransport = new MarketRiskHttpTransport() {
+            @Override
+            public List<Map<String, Object>> get(String endpoint, Map<String, String> query) {
+                return getResponse(endpoint, query).rows();
+            }
+
+            @Override
+            public MarketRiskHttpResponse getResponse(String endpoint, Map<String, String> query) {
+                queries.add(query);
+                boolean secondPage = "page-2".equals(query.get("cursor"));
+                Map<String, Object> row = Map.ofEntries(
+                        Map.entry("objectType", "market"),
+                        Map.entry("objectId", "CN-A"),
+                        Map.entry("tradeDate", secondPage ? "2026-07-18" : "2026-07-17"),
+                        Map.entry("open", "100"), Map.entry("close", secondPage ? "102" : "101"),
+                        Map.entry("volume", "1000"), Map.entry("benchmarkClose", "4000"),
+                        Map.entry("leaderClose", "2800"), Map.entry("benchmarkDefinition", "CSI300"),
+                        Map.entry("leaderDefinition", "SSE50"), Map.entry("proxy", true),
+                        Map.entry("observedAt", "2026-07-18T15:00:00"),
+                        Map.entry("availableAt", "2026-07-18T15:30:00")
+                );
+                return new MarketRiskHttpResponse(
+                        List.of(row), secondPage ? null : "page-2", LocalDate.of(2021, 7, 18),
+                        true, false, null);
+            }
+        };
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, pagedTransport, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY, currentRequest(List.of(MARKET)));
+
+        assertThat(result.records()).hasSize(2);
+        assertThat(queries).hasSize(2);
+        assertThat(queries.getFirst()).doesNotContainKey("cursor");
+        assertThat(queries.getLast()).containsEntry("cursor", "page-2");
     }
 
     @Test
@@ -414,6 +452,12 @@ class AkToolsMarketRiskSourceClientTest {
 
         @Override
         public MarketRiskHttpResponse getResponse(String endpoint, Map<String, String> query) {
+            if (query.containsKey("cursor")) {
+                calls.add(new Call(endpoint, query));
+                return new MarketRiskHttpResponse(
+                        List.of(), null, earliestAvailableDate,
+                        historyComplete, insufficientHistory, historyGapReason);
+            }
             return new MarketRiskHttpResponse(
                     get(endpoint, query), nextCursor, earliestAvailableDate,
                     historyComplete, insufficientHistory, historyGapReason);

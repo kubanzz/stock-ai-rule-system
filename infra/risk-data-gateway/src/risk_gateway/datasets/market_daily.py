@@ -4,11 +4,11 @@ import pandas as pd
 
 from risk_gateway.datasets import DatasetContext, object_parts, requested_sessions, response
 from risk_gateway.models import GatewayResponse, RiskQuery
-from risk_gateway.series import normalize_market_frame
+from risk_gateway.series import akshare_stock_symbol, normalize_market_frame
 from risk_gateway.time_policy import TIME_POLICY_VERSION, market_times
 
 
-SOURCE = "AKTools:stock_zh_a_hist/index_hist_sw/stock_zh_index_daily"
+SOURCE = "AKTools:stock_zh_a_daily/index_hist_sw/stock_zh_index_daily"
 CALCULATION_VERSION = "market-daily-proxy-v1"
 BENCHMARK_SYMBOL = "sh000300"
 LEADER_SYMBOL = "sh000016"
@@ -77,9 +77,8 @@ class MarketDailyDataset:
     def _target(self, object_key: str, start: date, end: date) -> pd.DataFrame:
         object_type, object_id = object_parts(object_key)
         if object_type == "stock":
-            rows = self.context.client.get("stock_zh_a_hist", {
-                "symbol": object_id.split(".", 1)[0],
-                "period": "daily",
+            rows = self.context.client.get("stock_zh_a_daily", {
+                "symbol": akshare_stock_symbol(object_id),
                 "start_date": start.strftime("%Y%m%d"),
                 "end_date": end.strftime("%Y%m%d"),
                 "adjust": "qfq",

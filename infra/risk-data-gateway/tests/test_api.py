@@ -22,7 +22,7 @@ class HealthyDependencies:
 
 class FakeClient:
     def get(self, function, params):
-        if function == "stock_zh_a_hist":
+        if function == "stock_zh_a_daily":
             return self._bars(100)
         if function == "stock_zh_index_daily" and params["symbol"] == "sh000300":
             return self._bars(4000)

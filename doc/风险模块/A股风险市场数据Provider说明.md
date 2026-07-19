@@ -94,6 +94,7 @@
 - ETF 免费接口只有净值、成交和申赎状态，没有历史真实申赎份额/净额，A2 固定返回 `free_source_has_no_historical_etf_redemption_fact`，不得以净值或订单流替代；
 - 跨市场篮子固定为标普 500、纳斯达克、恒生和日经 225；单源失败可在至少三个市场时继续，少于三个或 60 日相关窗口不足时返回历史不足；
 - 历史市场宽度使用“当前上市且存在当日历史行情”的股票集合，明确标记 `currentListedStocksWithObservableHistoricalBars` 和 `proxy=true`，不声称拥有已退市股票的完整历史成分。
+- 个股复权日线优先使用实测可批量访问的新浪 `stock_zh_a_daily`；东方财富 `stock_zh_a_hist` 在批量并发时可能由 AKTools 映射为 HTTP 500，不能把该 500 当成空行情。相同函数与参数的成功原始响应会写入带 SHA-256 清单的 Parquet 缓存，断点重跑不重复抓取。
 
 因此，网关健康只表示进程、缓存和 AKTools 可连接，不表示 80% 正式覆盖已经通过。最终资格必须以样本回填报告为准；任何单一近期接口都不得被视为满足 5 年基线。
 
@@ -112,7 +113,9 @@ docker build --target test -t stock-risk-data-gateway-test infra/risk-data-gatew
 docker run --rm --security-opt seccomp=unconfined stock-risk-data-gateway-test pytest -q
 ```
 
-缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务；同参数重跑直接复用缓存。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+
+网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次采集中消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。
 
 连接已部署的 AKTools 与网关后执行：
 

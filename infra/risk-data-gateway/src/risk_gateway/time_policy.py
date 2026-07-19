@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from bisect import bisect_left, bisect_right
 from datetime import date, datetime, time
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 
@@ -58,7 +60,9 @@ def align_global_to_a_share(
     """Map a known global close to the first A-share session not yet open."""
     _require_aware(market_close_at)
     observed_at = market_close_at.astimezone(SHANGHAI)
-    for trade_date in sorted(set(a_share_sessions)):
+    sessions = _sorted_sessions(tuple(a_share_sessions))
+    start_index = bisect_left(sessions, observed_at.date())
+    for trade_date in sessions[start_index:start_index + 2]:
         available_at = datetime.combine(trade_date, time(9, 0), SHANGHAI)
         if available_at > observed_at:
             return AlignedAvailability(
@@ -73,10 +77,16 @@ def _next_session(
     current_date: date,
     sessions: tuple[date, ...] | list[date],
 ) -> date:
-    for candidate in sorted(set(sessions)):
-        if candidate > current_date:
-            return candidate
+    ordered = _sorted_sessions(tuple(sessions))
+    index = bisect_right(ordered, current_date)
+    if index < len(ordered):
+        return ordered[index]
     raise ValueError("no later A-share session is available")
+
+
+@lru_cache(maxsize=32)
+def _sorted_sessions(sessions: tuple[date, ...]) -> tuple[date, ...]:
+    return tuple(sorted(set(sessions)))
 
 
 def _require_aware(value: datetime) -> None:
