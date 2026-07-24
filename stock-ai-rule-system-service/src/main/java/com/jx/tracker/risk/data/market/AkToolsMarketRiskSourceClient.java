@@ -14,10 +14,12 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** AKTools 原生元数据与规范化风险衍生网关的严格契约适配器。 */
 public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClient {
@@ -138,7 +140,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                     DERIVED_SOURCE, dataset.code() + " requires the normalized derived gateway", fetchedAt);
         }
         Map<String, String> query = derivedQuery(request);
-        MarketRiskHttpResponse response = derivedTransport.getResponse(DERIVED_ENDPOINTS.get(dataset), query);
+        MarketRiskHttpResponse response = derivedPages(DERIVED_ENDPOINTS.get(dataset), query);
         List<MarketSourceRecord> records = response.rows().stream()
                 .map(row -> parseDerived(dataset, row))
                 .toList();
@@ -161,6 +163,43 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         return new MarketSourceBatch(
                 DERIVED_SOURCE, records,
                 nextCheckpoint(dataset, request, response.nextCursor(), fetchedAt), fetchedAt);
+    }
+
+    private MarketRiskHttpResponse derivedPages(String endpoint, Map<String, String> initialQuery) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, String> query = new LinkedHashMap<>(initialQuery);
+        Set<String> visitedCursors = new HashSet<>();
+        LocalDate earliest = null;
+        boolean everyPageHasEarliest = true;
+        boolean historyComplete = true;
+        boolean insufficientHistory = false;
+        String historyGapReason = null;
+        for (int page = 0; page < 1000; page++) {
+            MarketRiskHttpResponse response = derivedTransport.getResponse(endpoint, Map.copyOf(query));
+            rows.addAll(response.rows());
+            everyPageHasEarliest &= response.earliestAvailableDate() != null;
+            if (response.earliestAvailableDate() != null
+                    && (earliest == null || response.earliestAvailableDate().isBefore(earliest))) {
+                earliest = response.earliestAvailableDate();
+            }
+            historyComplete &= response.historyComplete();
+            insufficientHistory |= response.insufficientHistory();
+            if (historyGapReason == null && response.historyGapReason() != null
+                    && !response.historyGapReason().isBlank()) {
+                historyGapReason = response.historyGapReason();
+            }
+            String nextCursor = response.nextCursor();
+            if (nextCursor == null || nextCursor.isBlank()) {
+                return new MarketRiskHttpResponse(
+                        rows, null, everyPageHasEarliest ? earliest : null,
+                        historyComplete, insufficientHistory, historyGapReason);
+            }
+            if (!visitedCursors.add(nextCursor)) {
+                throw new IllegalArgumentException("derived gateway returned a repeated cursor");
+            }
+            query.put("cursor", nextCursor);
+        }
+        throw new IllegalArgumentException("derived gateway pagination exceeded 1000 pages");
     }
 
     private String historyGapReason(
@@ -189,7 +228,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
             LocalDateTime fetchedAt
     ) {
         if (nextCursor == null || nextCursor.isBlank()) {
-            return request.checkpoint();
+            return null;
         }
         if (request.checkpoint() != null
                 && nextCursor.compareTo(request.checkpoint().cursor()) <= 0) {
@@ -214,9 +253,6 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         query.put("objects", request.objects().stream()
                 .map(object -> object.objectType().getCode() + ":" + object.objectId())
                 .sorted().reduce((left, right) -> left + "," + right).orElse(""));
-        if (request.checkpoint() != null) {
-            query.put("cursor", request.checkpoint().cursor());
-        }
         return Map.copyOf(query);
     }
 
@@ -271,6 +307,9 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 decimal(row, "volume", "成交量"),
                 decimal(row, "benchmarkClose", "benchmark_close"),
                 decimal(row, "leaderClose", "leader_close"),
+                text(row, "benchmarkDefinition", "benchmark_definition"),
+                text(row, "leaderDefinition", "leader_definition"),
+                booleanValue(row, false, "proxy"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -284,12 +323,68 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         if (earningsYield == null) {
             earningsYield = BigDecimal.ONE.divide(peTtm, 10, java.math.RoundingMode.HALF_UP);
         }
+        LocalDate valuationSourceDate = optionalDate(
+                row, "valuationSourceDate", "valuation_source_date");
+        boolean missingMarketProxyAudit = object.objectType() == RiskObjectType.MARKET
+                && first(row, "proxy") == null;
+        boolean proxy = booleanValue(row, false, "proxy");
+        boolean constituentUniversePointInTime = booleanValue(
+                row, !proxy,
+                "constituentUniversePointInTime", "constituent_universe_point_in_time");
+        RiskDataQualityStatus qualityStatus = quality(row);
+        boolean missingScoringEligibilityAudit = first(
+                row, "scoringEligible", "scoring_eligible") == null;
+        boolean scoringEligible = booleanValue(
+                row,
+                false,
+                "scoringEligible", "scoring_eligible");
+        String qualityReason = optionalText(row, "qualityReason", "quality_reason");
+        if (missingScoringEligibilityAudit) {
+            scoringEligible = false;
+            if (qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+                qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            }
+            qualityReason = "valuation scoring eligibility audit metadata is missing";
+        } else if (missingMarketProxyAudit) {
+            scoringEligible = false;
+            if (qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+                qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            }
+            if (qualityReason == null || qualityReason.isBlank()) {
+                qualityReason = "market valuation proxy audit metadata is missing";
+            }
+        } else if (proxy && !constituentUniversePointInTime) {
+            scoringEligible = false;
+            if (qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+                qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            }
+            if (qualityReason == null || qualityReason.isBlank()) {
+                qualityReason = "historical market proxy has no point-in-time constituent evidence";
+            }
+        } else if (!scoringEligible && qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+            qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            if (qualityReason == null || qualityReason.isBlank()) {
+                qualityReason = "valuation record is explicitly audit-only";
+            }
+        }
         return new ValuationPoint(
                 object, date, peTtm, earningsYield,
                 optionalDecimal(row, "riskFreeYield", "risk_free_yield"),
+                valuationSourceDate == null ? date : valuationSourceDate,
+                integerOrDefault(row, 0, "valuationAgeSessions", "valuation_age_sessions"),
+                textOrDefault(row, "unspecified", "stalenessPolicy", "staleness_policy"),
+                proxy,
+                integerOrDefault(row, 0, "constituentCount", "constituent_count"),
+                optionalText(row, "aggregateDefinition", "aggregate_definition"),
+                optionalText(row, "universeDefinition", "universe_definition"),
+                constituentUniversePointInTime,
+                scoringEligible,
+                qualityReason,
+                textOrDefault(row, "pe-risk-premium-v2", "calculationVersion"),
+                textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
-                DERIVED_SOURCE, quality(row));
+                DERIVED_SOURCE, qualityStatus);
     }
 
     private BreadthPoint breadth(Map<String, Object> row) {
@@ -301,6 +396,11 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 integer(row, "newHighCount", "新高家数"), integer(row, "newLowCount", "新低家数"),
                 integer(row, "aboveMovingAverageCount", "均线上方家数"),
                 integer(row, "totalCount", "总家数"),
+                text(row, "breadthDefinition", "breadth_definition"),
+                text(row, "universeDefinition", "universe_definition"),
+                booleanValue(row, true, "proxy"),
+                textOrDefault(row, "breadth-current-universe-proxy-v1", "calculationVersion"),
+                textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -314,6 +414,10 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 decimal(row, "dynamicCorrelation", "dynamic_correlation"),
                 integer(row, "confirmedDownMarketCount", "confirmed_down_market_count"),
                 integer(row, "observedMarketCount", "observed_market_count"),
+                text(row, "basketDefinition", "basket_definition"),
+                booleanValue(row, true, "proxy"),
+                textOrDefault(row, "cross-market-equal-weight-correlation-v1", "calculationVersion"),
+                textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -405,12 +509,43 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         return decimal(row, keys).intValueExact();
     }
 
+    private int integerOrDefault(
+            Map<String, Object> row,
+            int defaultValue,
+            String... keys
+    ) {
+        BigDecimal value = optionalDecimal(row, keys);
+        return value == null ? defaultValue : value.intValueExact();
+    }
+
+    private boolean booleanValue(Map<String, Object> row, boolean defaultValue, String... keys) {
+        Object value = first(row, keys);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if ("true".equalsIgnoreCase(value.toString()) || "1".equals(value.toString())) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value.toString()) || "0".equals(value.toString())) {
+            return false;
+        }
+        throw new IllegalArgumentException("invalid boolean field: " + String.join("/", keys));
+    }
+
     private String text(Map<String, Object> row, String... keys) {
         String value = optionalText(row, keys);
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("missing text field: " + String.join("/", keys));
         }
         return value;
+    }
+
+    private String textOrDefault(Map<String, Object> row, String defaultValue, String... keys) {
+        String value = optionalText(row, keys);
+        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     private String optionalText(Map<String, Object> row, String... keys) {

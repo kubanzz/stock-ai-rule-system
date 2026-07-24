@@ -55,7 +55,7 @@ class RiskRuntimeWorkflowTest {
         assertThat(request.asOf()).isEqualTo(DATE.atTime(19, 0));
         assertThat(request.afterCloseCutoff()).isEqualTo(LocalTime.of(19, 0));
         assertThat(request.modelVersion()).isEqualTo("risk-runtime-v1");
-        assertThat(request.collectionTasks()).hasSize(12);
+        assertThat(request.collectionTasks()).hasSize(13);
         verify(candidateReader).read(
                 DATE,
                 request.collectionTasks().getFirst().objects(),

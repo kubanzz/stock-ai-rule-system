@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
@@ -36,10 +37,12 @@ class RiskWarningConfigurationTest {
     void riskRuntimeIsDisabledByDefault() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(RiskWarningProperties.class);
+            assertThat(context).hasSingleBean(RiskBackfillCommandProperties.class);
+            assertThat(context.getBean(RiskBackfillCommandProperties.class).isEnabled()).isFalse();
             assertThat(context.getBean(RiskWarningProperties.class)).satisfies(properties -> {
                 assertThat(properties.isEnabled()).isFalse();
                 assertThat(properties.isBackfillEnabled()).isFalse();
-                assertThat(properties.getCollectionChunkSize()).isEqualTo(200);
+                assertThat(properties.getCollectionChunkSize()).isEqualTo(25);
             });
             assertThat(context).doesNotHaveBean(Clock.class);
             assertThat(context).doesNotHaveBean(RiskDataProvider.class);
@@ -110,7 +113,7 @@ class RiskWarningConfigurationTest {
         ).run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure()).hasRootCauseMessage(
-                    "risk warning collectionChunkSize must be between 1 and 500");
+                    "risk warning collectionChunkSize must be between 21 and 50");
         });
 
         contextRunner.withPropertyValues(
@@ -122,7 +125,7 @@ class RiskWarningConfigurationTest {
         ).run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure()).hasRootCauseMessage(
-                    "risk warning collectionChunkSize must be between 1 and 500");
+                    "risk warning collectionChunkSize must be between 21 and 50");
         });
 
         contextRunner.withPropertyValues(

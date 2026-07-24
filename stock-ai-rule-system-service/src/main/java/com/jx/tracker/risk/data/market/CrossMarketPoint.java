@@ -14,6 +14,10 @@ public record CrossMarketPoint(
         BigDecimal dynamicCorrelation,
         int confirmedDownMarketCount,
         int observedMarketCount,
+        String basketDefinition,
+        boolean proxy,
+        String calculationVersion,
+        String availabilityPolicyVersion,
         LocalDateTime observedAt,
         LocalDateTime availableAt,
         String source,
@@ -30,5 +34,26 @@ public record CrossMarketPoint(
                 || confirmedDownMarketCount > observedMarketCount) {
             throw new IllegalArgumentException("invalid cross-market confirmation counts");
         }
+        if (blank(basketDefinition) || blank(calculationVersion)
+                || blank(availabilityPolicyVersion)) {
+            throw new IllegalArgumentException("cross-market audit definitions are required");
+        }
+    }
+
+    public CrossMarketPoint(
+            RiskObjectKey object, LocalDate tradeDate,
+            BigDecimal leadingAssetReturn, BigDecimal dynamicCorrelation,
+            int confirmedDownMarketCount, int observedMarketCount,
+            LocalDateTime observedAt, LocalDateTime availableAt,
+            String source, RiskDataQualityStatus qualityStatus
+    ) {
+        this(object, tradeDate, leadingAssetReturn, dynamicCorrelation,
+                confirmedDownMarketCount, observedMarketCount,
+                "unspecified", true, "unspecified", "unspecified",
+                observedAt, availableAt, source, qualityStatus);
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 }

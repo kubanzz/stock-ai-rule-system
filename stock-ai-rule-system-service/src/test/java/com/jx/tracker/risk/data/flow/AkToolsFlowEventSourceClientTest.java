@@ -24,6 +24,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class AkToolsFlowEventSourceClientTest {
@@ -174,7 +175,9 @@ class AkToolsFlowEventSourceClientTest {
                 .andRespond(withSuccess("""
                         [
                           {"股票代码":"600519","股票简称":"贵州茅台","业绩变动幅度":18.5,"预告类型":"预增","公告日期":"2026-04-10"},
-                          {"股票代码":"000001","股票简称":"平安银行","业绩变动幅度":-22.0,"预告类型":"预减","公告日期":"2026-04-11"}
+                          {"股票代码":"000001","股票简称":"平安银行","业绩变动幅度":-22.0,"预告类型":"预减","公告日期":"2026-04-11"},
+                          {"股票代码":"200429","股票简称":"粤高速B","业绩变动幅度":-12.0,"预告类型":"预减","公告日期":"2026-04-11"},
+                          {"股票代码":"900901","股票简称":"云赛B股","业绩变动幅度":-8.0,"预告类型":"预减","公告日期":"2026-04-11"}
                         ]
                         """, MediaType.APPLICATION_JSON));
         server.expect(requestTo(org.hamcrest.Matchers.startsWith(
@@ -193,6 +196,35 @@ class AkToolsFlowEventSourceClientTest {
             assertThat(record.observedAt()).isEqualTo(LocalDateTime.of(2026, 4, 10, 0, 0));
             assertThat(record.availableAt()).isEqualTo(LocalDateTime.of(2026, 4, 11, 0, 0));
         });
+        server.verify();
+    }
+
+    @Test
+    void forecastKeepsSuccessfulQuartersAsPartialHistoryWhenOneQuarterFails() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_yjyg_em")))
+                .andExpect(queryParam("date", "20260630"))
+                .andRespond(withSuccess("""
+                        [{"股票代码":"600519","业绩变动幅度":-20.0,"预告类型":"预减",
+                          "公告日期":"2026-07-12"}]
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_yjyg_em")))
+                .andExpect(queryParam("date", "20260930"))
+                .andRespond(withServerError());
+
+        FlowEventSourceBatch batch = client(builder).fetch(sourceRequest(
+                FlowEventDataset.EARNINGS_FORECAST, List.of(STOCK),
+                LocalDate.of(2026, 7, 10), LocalDate.of(2026, 7, 18)));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.historyComplete()).isFalse();
+        assertThat(batch.nextCursor()).isNull();
+        assertThat(batch.failureReason()).contains("2026-09-30").contains("500");
+        assertThat(batch.records()).singleElement().satisfies(record ->
+                assertThat(record.value()).isEqualByComparingTo("-20.0"));
         server.verify();
     }
 

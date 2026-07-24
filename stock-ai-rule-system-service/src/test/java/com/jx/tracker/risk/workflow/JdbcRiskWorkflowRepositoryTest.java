@@ -1,5 +1,7 @@
 package com.jx.tracker.risk.workflow;
 
+import com.alibaba.druid.DbType;
+import com.alibaba.druid.sql.SQLUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
@@ -42,6 +44,17 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class JdbcRiskWorkflowRepositoryTest {
+
+    @Test
+    void checkpointLookupSqlIsAcceptedByMySqlParser() {
+        QueryRecordingJdbcTemplate jdbc = new QueryRecordingJdbcTemplate();
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.findCheckpoint("provider-a", "dataset-a", "stock:600519.SH");
+
+        assertThat(jdbc.query).isNotBlank();
+        SQLUtils.parseSingleStatement(jdbc.query, DbType.mysql);
+    }
 
     @Test
     void everyWorkflowArtifactUsesStableMySqlUpsertKey() {
@@ -122,7 +135,7 @@ class JdbcRiskWorkflowRepositoryTest {
             assertThat(arguments[9]).isEqualTo("source failed");
         });
         assertThat(jdbc.updates).singleElement().asString()
-                .contains("checkpoint_value = checkpoint_value", "checkpoint_at = checkpoint_at");
+                .contains("ELSE checkpoint_value", "ELSE checkpoint_at");
     }
 
     @Test
@@ -137,6 +150,28 @@ class JdbcRiskWorkflowRepositoryTest {
 
         assertThat(jdbc.arguments).singleElement().satisfies(arguments ->
                 assertThat(arguments[3].toString()).isEqualTo("{}"));
+    }
+
+    @Test
+    void successfulTerminalStatusClearsExistingCursor() {
+        RecordingJdbcTemplate jdbc = new RecordingJdbcTemplate();
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        LocalDateTime checkpointAt = LocalDateTime.of(2026, 7, 17, 20, 0);
+        LocalDateTime completedAt = checkpointAt.plusDays(1);
+        RiskIngestionCheckpoint current = new RiskIngestionCheckpoint(
+                "dataset-a", "stock:600519.SH", "cursor-7", checkpointAt);
+
+        repository.saveIngestionStatus(
+                "provider-a", "dataset-a", "stock:600519.SH", current,
+                RiskProviderBatch.validZero("source-a", null, completedAt));
+
+        assertThat(jdbc.arguments).singleElement().satisfies(arguments -> {
+            assertThat(arguments[3].toString()).isEqualTo("{}");
+            assertThat(arguments[4]).isEqualTo(completedAt);
+        });
+        assertThat(jdbc.updates).singleElement().asString()
+                .contains("VALUES(quality_status) IN ('available', 'valid_zero')")
+                .contains("THEN VALUES(checkpoint_value)", "THEN VALUES(checkpoint_at)");
     }
 
     @Test
@@ -551,6 +586,16 @@ class JdbcRiskWorkflowRepositoryTest {
                 return requiredType.cast(42L);
             }
             return null;
+        }
+    }
+
+    private static final class QueryRecordingJdbcTemplate extends JdbcTemplate {
+        private String query;
+
+        @Override
+        public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
+            query = sql;
+            return List.of();
         }
     }
 }

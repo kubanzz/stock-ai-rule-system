@@ -24,9 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * AKShare 1.18.64 / AKTools 0.0.91 真实契约冒烟。
- * 默认跳过；集成环境设置 RISK_AKTOOLS_IT=true 后执行。
+ * 默认跳过；原生端点使用 RISK_AKTOOLS_IT，衍生网关使用 RISK_DERIVED_GATEWAY_IT 分别开启。
  */
-@EnabledIfEnvironmentVariable(named = "RISK_AKTOOLS_IT", matches = "(?i:true|1)")
 class AkToolsContractSmokeTest {
 
     private static final String AUDITED_AKSHARE_VERSION = "1.18.64";
@@ -37,9 +36,56 @@ class AkToolsContractSmokeTest {
             .build();
 
     @TestFactory
+    @EnabledIfEnvironmentVariable(named = "RISK_AKTOOLS_IT", matches = "(?i:true|1)")
     Stream<DynamicTest> verifiesTwelveExactAkShareSignaturesAndResponseShapes() {
         return endpointSpecs().stream().map(spec -> DynamicTest.dynamicTest(
                 "AKShare " + AUDITED_AKSHARE_VERSION + " - " + spec.name(), () -> verify(spec)));
+    }
+
+    @TestFactory
+    @EnabledIfEnvironmentVariable(named = "RISK_DERIVED_GATEWAY_IT", matches = "(?i:true|1)")
+    Stream<DynamicTest> verifiesDerivedGatewayEnvelopeAndQualityMetadata() {
+        return derivedEndpointSpecs().stream().map(spec -> DynamicTest.dynamicTest(
+                "derived gateway - " + spec.name(), () -> verifyDerived(spec)));
+    }
+
+    private void verifyDerived(DerivedEndpointSpec spec) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(derivedUri(spec.path(), spec.query()))
+                .timeout(Duration.ofSeconds(spec.path().endsWith("/breadth")
+                        ? Long.parseLong(environment(
+                        "RISK_DERIVED_GATEWAY_BREADTH_TIMEOUT_SECONDS", "1800"))
+                        : 300))
+                .GET()
+                .build();
+        HttpResponse<String> response = HTTP_CLIENT.send(
+                request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+        assertThat(response.statusCode()).as(spec.name()).isEqualTo(200);
+        JsonNode root = OBJECT_MAPPER.readTree(response.body());
+        assertThat(root.path("data").isArray()).as(spec.name() + " data").isTrue();
+        JsonNode meta = root.path("meta");
+        assertThat(meta.isObject()).as(spec.name() + " meta").isTrue();
+        assertThat(meta.has("historyComplete")).isTrue();
+        assertThat(meta.has("insufficientHistory")).isTrue();
+        assertThat(meta.has("source")).isTrue();
+        assertThat(meta.has("sourceVersion")).isTrue();
+        assertThat(meta.has("calculationVersion")).isTrue();
+        assertThat(meta.has("fetchedAt")).isTrue();
+        if (spec.etfGap()) {
+            assertThat(root.path("data").isEmpty()).isTrue();
+            assertThat(meta.path("historyComplete").asBoolean()).isFalse();
+            assertThat(meta.path("historyGapReason").asText()).contains("redemption");
+        }
+        if (!spec.requiredDataFields().isEmpty()) {
+            assertThat(root.path("data").isEmpty()).as(spec.name() + " data").isFalse();
+            JsonNode first = root.path("data").get(0);
+            assertThat(spec.requiredDataFields()).allSatisfy(field ->
+                    assertThat(first.has(field)).as(spec.name() + " field " + field).isTrue());
+        }
+        System.out.printf(
+                "derived endpoint=%s rows=%d earliest=%s complete=%s insufficient=%s%n",
+                spec.name(), root.path("data").size(), meta.path("earliestAvailableDate").asText(),
+                meta.path("historyComplete").asBoolean(), meta.path("insufficientHistory").asBoolean());
     }
 
     private void verify(EndpointSpec spec) throws Exception {
@@ -74,6 +120,17 @@ class AkToolsContractSmokeTest {
         if (query.isEmpty()) {
             return URI.create(baseUrl + path);
         }
+        String encodedQuery = query.entrySet().stream()
+                .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
+                .reduce((left, right) -> left + "&" + right)
+                .orElseThrow();
+        return URI.create(baseUrl + path + "?" + encodedQuery);
+    }
+
+    private URI derivedUri(String path, Map<String, String> query) {
+        String baseUrl = environment(
+                "RISK_WARNING_DERIVED_GATEWAY_BASE_URL", "http://127.0.0.1:18090")
+                .replaceAll("/+$", "");
         String encodedQuery = query.entrySet().stream()
                 .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
                 .reduce((left, right) -> left + "&" + right)
@@ -132,6 +189,51 @@ class AkToolsContractSmokeTest {
         );
     }
 
+    private List<DerivedEndpointSpec> derivedEndpointSpecs() {
+        String stock = environment("RISK_AKTOOLS_STOCK_SYMBOL", "600519") + ".SH";
+        String rawDate = environment("RISK_DERIVED_GATEWAY_SMOKE_DATE", "2026-07-17");
+        String compactDate = LocalDate.parse(rawDate).format(BASIC_DATE);
+        String breadthStartDate = LocalDate.parse(environment(
+                "RISK_DERIVED_GATEWAY_BREADTH_START_DATE", "2015-07-17"))
+                .format(BASIC_DATE);
+        Map<String, String> marketQuery = orderedQuery(
+                "start_date", compactDate, "end_date", compactDate, "objects", "market:CN-A");
+        Map<String, String> breadthQuery = orderedQuery(
+                "start_date", breadthStartDate, "end_date", compactDate, "objects", "market:CN-A");
+        Map<String, String> stockQuery = orderedQuery(
+                "start_date", compactDate, "end_date", compactDate, "objects", "stock:" + stock);
+        return List.of(
+                derivedSpec("market-daily", "/api/risk/market-daily", marketQuery, false),
+                derivedSpec("valuation", "/api/risk/valuation", stockQuery, false,
+                        List.of("scoringEligible", "constituentUniversePointInTime", "qualityReason")),
+                derivedSpec("market-valuation-proxy", "/api/risk/valuation", marketQuery, false,
+                        List.of("objectType", "objectId", "proxy", "constituentCount",
+                                "aggregateDefinition", "universeDefinition", "calculationVersion",
+                                "availabilityPolicyVersion", "scoringEligible",
+                                "constituentUniversePointInTime", "qualityReason")),
+                derivedSpec("breadth", "/api/risk/breadth", breadthQuery, false),
+                derivedSpec("cross-market", "/api/risk/cross-market", marketQuery, false),
+                derivedSpec("sw1-membership", "/api/risk/sw1-membership", stockQuery, false),
+                derivedSpec("etf-redemption", "/api/risk/etf-redemption", marketQuery, true)
+        );
+    }
+
+    private DerivedEndpointSpec derivedSpec(
+            String name, String path, Map<String, String> query, boolean etfGap
+    ) {
+        return derivedSpec(name, path, query, etfGap, List.of());
+    }
+
+    private DerivedEndpointSpec derivedSpec(
+            String name,
+            String path,
+            Map<String, String> query,
+            boolean etfGap,
+            List<String> requiredDataFields
+    ) {
+        return new DerivedEndpointSpec(name, path, query, etfGap, requiredDataFields);
+    }
+
     private EndpointSpec spec(
             String name,
             String path,
@@ -166,6 +268,15 @@ class AkToolsContractSmokeTest {
             Map<String, String> query,
             boolean allowEmpty,
             List<List<String>> requiredFieldAlternatives
+    ) {
+    }
+
+    private record DerivedEndpointSpec(
+            String name,
+            String path,
+            Map<String, String> query,
+            boolean etfGap,
+            List<String> requiredDataFields
     ) {
     }
 }

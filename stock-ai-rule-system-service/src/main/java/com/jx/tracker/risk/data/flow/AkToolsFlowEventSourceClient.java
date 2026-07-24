@@ -218,22 +218,45 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
         }
         List<FlowEventSourceRecord> records = new ArrayList<>();
         LocalDate earliest = null;
+        boolean historyComplete = true;
+        String historyGapReason = null;
         for (LocalDate reportDate : reportDates) {
-            FlowEventSourceBatch quarter = parseResponse(request, get(request, reportDate), fetchedAt);
+            FlowEventSourceBatch quarter;
+            try {
+                quarter = parseResponse(request, get(request, reportDate), fetchedAt);
+            } catch (RuntimeException exception) {
+                historyComplete = false;
+                if (historyGapReason == null) {
+                    historyGapReason = "earnings forecast quarter " + reportDate
+                            + " unavailable: " + rootMessage(exception);
+                }
+                continue;
+            }
             if (quarter.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE
                     || quarter.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
-                return quarter;
+                historyComplete = false;
+                earliest = earlier(earliest, quarter.earliestAvailableDate());
+                if (historyGapReason == null) {
+                    historyGapReason = "earnings forecast quarter " + reportDate
+                            + " incomplete: " + quarter.failureReason();
+                }
+                continue;
             }
             records.addAll(quarter.records());
             earliest = earlier(earliest, quarter.earliestAvailableDate());
         }
         if (records.isEmpty()) {
+            if (!historyComplete) {
+                return FlowEventSourceBatch.insufficientHistory(
+                        SOURCE, historyGapReason, earliest, fetchedAt);
+            }
             return FlowEventSourceBatch.validZero(SOURCE, boundaryCursor(request.endDate()), fetchedAt);
         }
         return new FlowEventSourceBatch(
-                SOURCE, deduplicate(records), RiskDataQualityStatus.AVAILABLE, null,
-                maxRecordCursor(records), earlier(earliest, earliestTradeDate(records)),
-                true, fetchedAt, null);
+                SOURCE, deduplicate(records), RiskDataQualityStatus.AVAILABLE, historyGapReason,
+                historyComplete ? maxRecordCursor(records) : null,
+                earlier(earliest, earliestTradeDate(records)),
+                historyComplete, fetchedAt, null);
     }
 
     private FlowEventSourceBatch fetchPerStock(
@@ -517,16 +540,25 @@ public final class AkToolsFlowEventSourceClient implements FlowEventSourceClient
             if (!StringUtils.hasText(rawCode)) {
                 throw new MappingException("股票代码/代码 missing");
             }
-            RiskObjectKey object = new RiskObjectKey(RiskObjectType.STOCK, normalizeStockCode(rawCode));
-            if (!requested.contains(object)) {
+            if (!matchesRequestedStock(requested, rawCode)) {
                 continue;
             }
+            RiskObjectKey object = new RiskObjectKey(RiskObjectType.STOCK, normalizeStockCode(rawCode));
             FlowEventSourceRecord record = mapper.map(object, row);
             if (inRequestedFactWindow(request, record)) {
                 records.add(record);
             }
         }
         return records;
+    }
+
+    private boolean matchesRequestedStock(Set<RiskObjectKey> requested, String rawCode) {
+        String trimmed = rawCode.trim().toUpperCase();
+        String digits = trimmed.replaceAll("[^0-9]", "");
+        return requested.stream().anyMatch(object ->
+                object.objectId().equals(trimmed)
+                        || (digits.matches("\\d{6}")
+                        && object.objectId().startsWith(digits + ".")));
     }
 
     private FlowEventSourceRecord mapForecast(RiskObjectKey object, JsonNode row) {

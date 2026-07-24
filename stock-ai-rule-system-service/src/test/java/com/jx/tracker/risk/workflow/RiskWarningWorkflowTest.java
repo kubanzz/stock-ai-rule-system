@@ -92,6 +92,7 @@ class RiskWarningWorkflowTest {
         assertThat(provider.requests()).hasSize(2);
         assertThat(provider.requests().get(0).checkpoint()).isNull();
         assertThat(provider.requests().get(1).checkpoint()).isNotNull();
+        assertThat(provider.requests().get(1).checkpoint().cursor()).isEqualTo("cursor-2");
         assertThat(repository.observations).hasSize(3);
         assertThat(repository.events).hasSize(1);
         assertThat(repository.snapshots).isNotEmpty();
@@ -155,6 +156,26 @@ class RiskWarningWorkflowTest {
                 .extracting(RiskProviderBatch::qualityStatus)
                 .isEqualTo(RiskDataQualityStatus.VALID_ZERO);
         assertThat(repository.checkpoints).isEmpty();
+    }
+
+    @Test
+    void availableBatchWithoutCursorPersistsSuccessfulIngestionStatus() {
+        InMemoryRepository repository = new InMemoryRepository();
+        RiskProviderBatch available = new RiskProviderBatch(
+                "derived-gateway", List.of(observation("S1", DATE, AS_OF.minusMinutes(1))),
+                List.of(), null, RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+
+        workflow(repository, new CapturingProvider(available)).run(RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "market:CN-A", List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1"));
+
+        assertThat(repository.checkpoints).isEmpty();
+        assertThat(repository.ingestionStatuses).singleElement().satisfies(batch -> {
+            assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(batch.errorMessage()).isNull();
+        });
     }
 
     @Test
@@ -718,7 +739,7 @@ class RiskWarningWorkflowTest {
                 DATE, AS_OF, plan.collectionTasks(), List.of(RiskHorizon.SHORT_TERM),
                 List.of(), "risk-engine-closure-v1"));
 
-        assertThat(plan.collectionTasks()).hasSize(12);
+        assertThat(plan.collectionTasks()).hasSize(13);
         RiskSnapshot market = storedSnapshot(repository, MARKET);
         RiskSnapshot sector = storedSnapshot(repository, SECTOR);
         RiskSnapshot stock = storedSnapshot(repository, STOCK);

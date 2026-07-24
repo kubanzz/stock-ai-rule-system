@@ -7,6 +7,8 @@ import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
 import com.jx.tracker.risk.data.market.RestClientMarketRiskHttpTransport;
+import com.jx.tracker.risk.backfill.RiskBackfillCommandConfiguration;
+import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.engine.RiskScoringEngine;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
@@ -28,8 +30,15 @@ import java.time.ZoneId;
 import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({RiskWarningProperties.class, MarketDataProviderProperties.class})
-@Import(RiskWarningConfiguration.EnabledRiskWarningConfiguration.class)
+@EnableConfigurationProperties({
+        RiskWarningProperties.class,
+        RiskBackfillCommandProperties.class,
+        MarketDataProviderProperties.class
+})
+@Import({
+        RiskWarningConfiguration.EnabledRiskWarningConfiguration.class,
+        RiskBackfillCommandConfiguration.class
+})
 public class RiskWarningConfiguration {
 
     @Configuration(proxyBeanMethods = false)

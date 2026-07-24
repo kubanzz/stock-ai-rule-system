@@ -7,6 +7,7 @@ import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
+import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -179,6 +180,15 @@ class AkToolsMarketRiskSourceClientTest {
                 Map.entry("tradeDate", "2026-07-18"),
                 Map.entry("TTM(滚动)市盈率", "20"),
                 Map.entry("riskFreeYield", "0.018"),
+                Map.entry("valuationSourceDate", "2026-06-28"),
+                Map.entry("valuationAgeSessions", 15),
+                Map.entry("stalenessPolicy", "lastPublishedWithin20AshareSessions-v1"),
+                Map.entry("proxy", true),
+                Map.entry("constituentCount", 50),
+                Map.entry("aggregateDefinition", "equalWeightEarningsYieldOfStableConstituents-v1"),
+                Map.entry("universeDefinition", "first50CurrentAshareCodesSorted-v1"),
+                Map.entry("calculationVersion", "pe-risk-premium-v2"),
+                Map.entry("availabilityPolicyVersion", "cn-a-pit-v1"),
                 Map.entry("observedAt", "2026-07-18T07:00:00+00:00"),
                 Map.entry("availableAt", "2026-07-18T08:00:00+00:00")
         ));
@@ -191,25 +201,139 @@ class AkToolsMarketRiskSourceClientTest {
                 MarketDatasetCode.VALUATION, currentRequest(List.of(MARKET)));
 
         assertThat(nativeTransport.calls).isEmpty();
-        assertThat(derivedTransport.calls).containsExactly(new Call(
-                "/api/risk/valuation",
-                Map.of(
-                        "start_date", "20210718",
-                        "end_date", "20260718",
-                        "objects", "market:CN-A"
-                )));
+        assertThat(derivedTransport.calls).containsExactly(
+                new Call("/api/risk/valuation", Map.of(
+                        "start_date", "20210718", "end_date", "20260718", "objects", "market:CN-A")),
+                new Call("/api/risk/valuation", Map.of(
+                        "start_date", "20210718", "end_date", "20260718", "objects", "market:CN-A",
+                        "cursor", "valuation-page-2")));
         assertThat(result.records()).singleElement().satisfies(record -> {
             ValuationPoint valuation = (ValuationPoint) record;
             assertThat(valuation.peTtm()).isEqualByComparingTo("20");
+            assertThat(valuation.valuationSourceDate()).isEqualTo(LocalDate.of(2026, 6, 28));
+            assertThat(valuation.valuationAgeSessions()).isEqualTo(15);
+            assertThat(valuation.stalenessPolicy())
+                    .isEqualTo("lastPublishedWithin20AshareSessions-v1");
             assertThat(valuation.observedAt()).isEqualTo(
                     LocalDateTime.of(2026, 7, 18, 15, 0));
             assertThat(valuation.availableAt()).isEqualTo(
                     LocalDateTime.of(2026, 7, 18, 16, 0));
+            assertThat(valuation.proxy()).isTrue();
+            assertThat(valuation.constituentCount()).isEqualTo(50);
+            assertThat(valuation.aggregateDefinition())
+                    .isEqualTo("equalWeightEarningsYieldOfStableConstituents-v1");
+            assertThat(valuation.universeDefinition())
+                    .isEqualTo("first50CurrentAshareCodesSorted-v1");
+            assertThat(valuation.calculationVersion()).isEqualTo("pe-risk-premium-v2");
+            assertThat(valuation.availabilityPolicyVersion()).isEqualTo("cn-a-pit-v1");
         });
-        assertThat(result.nextCheckpoint()).satisfies(checkpoint -> {
-            assertThat(checkpoint.datasetCode()).isEqualTo("valuation");
-            assertThat(checkpoint.cursor()).isEqualTo("valuation-page-2");
+        assertThat(result.nextCheckpoint()).isNull();
+    }
+
+    @Test
+    void derivedDailyPreservesBenchmarkAndLeaderAuditDefinitions() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport derivedTransport = new ScriptedTransport();
+        derivedTransport.daily = List.of(Map.ofEntries(
+                Map.entry("objectType", "market"),
+                Map.entry("objectId", "CN-A"),
+                Map.entry("tradeDate", "2026-07-18"),
+                Map.entry("open", "100"),
+                Map.entry("close", "101"),
+                Map.entry("volume", "1000"),
+                Map.entry("benchmarkClose", "4000"),
+                Map.entry("leaderClose", "2800"),
+                Map.entry("benchmarkDefinition", "CSI300"),
+                Map.entry("leaderDefinition", "SSE50"),
+                Map.entry("proxy", true),
+                Map.entry("observedAt", "2026-07-18T15:00:00+08:00"),
+                Map.entry("availableAt", "2026-07-18T15:30:00+08:00")
+        ));
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, derivedTransport, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY, currentRequest(List.of(MARKET)));
+
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            MarketDailyPoint point = (MarketDailyPoint) record;
+            assertThat(point.benchmarkDefinition()).isEqualTo("CSI300");
+            assertThat(point.leaderDefinition()).isEqualTo("SSE50");
+            assertThat(point.proxy()).isTrue();
         });
+    }
+
+    @Test
+    void derivedGatewayConsumesEveryPageWithinOneProviderFetch() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        List<Map<String, String>> queries = new ArrayList<>();
+        MarketRiskHttpTransport pagedTransport = new MarketRiskHttpTransport() {
+            @Override
+            public List<Map<String, Object>> get(String endpoint, Map<String, String> query) {
+                return getResponse(endpoint, query).rows();
+            }
+
+            @Override
+            public MarketRiskHttpResponse getResponse(String endpoint, Map<String, String> query) {
+                queries.add(query);
+                boolean secondPage = "page-2".equals(query.get("cursor"));
+                Map<String, Object> row = Map.ofEntries(
+                        Map.entry("objectType", "market"),
+                        Map.entry("objectId", "CN-A"),
+                        Map.entry("tradeDate", secondPage ? "2026-07-18" : "2026-07-17"),
+                        Map.entry("open", "100"), Map.entry("close", secondPage ? "102" : "101"),
+                        Map.entry("volume", "1000"), Map.entry("benchmarkClose", "4000"),
+                        Map.entry("leaderClose", "2800"), Map.entry("benchmarkDefinition", "CSI300"),
+                        Map.entry("leaderDefinition", "SSE50"), Map.entry("proxy", true),
+                        Map.entry("observedAt", "2026-07-18T15:00:00"),
+                        Map.entry("availableAt", "2026-07-18T15:30:00")
+                );
+                return new MarketRiskHttpResponse(
+                        List.of(row), secondPage ? null : "page-2", LocalDate.of(2021, 7, 18),
+                        true, false, null);
+            }
+        };
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, pagedTransport, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY, currentRequest(List.of(MARKET)));
+
+        assertThat(result.records()).hasSize(2);
+        assertThat(queries).hasSize(2);
+        assertThat(queries.getFirst()).doesNotContainKey("cursor");
+        assertThat(queries.getLast()).containsEntry("cursor", "page-2");
+    }
+
+    @Test
+    void fullRangeDerivedRequestIgnoresPreviouslyPersistedCursorAndRestartsFromFirstPage() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport derivedTransport = new ScriptedTransport();
+        derivedTransport.daily = List.of(Map.ofEntries(
+                Map.entry("objectType", "market"), Map.entry("objectId", "CN-A"),
+                Map.entry("tradeDate", "2026-07-18"), Map.entry("open", "100"),
+                Map.entry("close", "101"), Map.entry("volume", "1000"),
+                Map.entry("benchmarkClose", "4000"), Map.entry("leaderClose", "2800"),
+                Map.entry("benchmarkDefinition", "CSI300"),
+                Map.entry("leaderDefinition", "SSE50"), Map.entry("proxy", true),
+                Map.entry("observedAt", "2026-07-18T15:00:00"),
+                Map.entry("availableAt", "2026-07-18T15:30:00")
+        ));
+        RiskIngestionCheckpoint old = new RiskIngestionCheckpoint(
+                "market_daily", "market:CN-A", "old-page", LocalDateTime.of(2026, 7, 17, 20, 0));
+        RiskProviderRequest request = new RiskProviderRequest(
+                List.of(MARKET), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2021, 7, 18), LocalDate.of(2026, 7, 18), old);
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, derivedTransport, CLOCK);
+
+        MarketSourceBatch result = client.fetch(MarketDatasetCode.MARKET_DAILY, request);
+
+        assertThat(derivedTransport.calls).singleElement().satisfies(call ->
+                assertThat(call.query()).doesNotContainKey("cursor"));
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).hasSize(1);
+        assertThat(result.nextCheckpoint()).isNull();
     }
 
     @Test
@@ -235,15 +359,55 @@ class AkToolsMarketRiskSourceClientTest {
         RiskProviderBatch result = provider.fetch(
                 MarketDatasetCode.VALUATION.code(), currentRequest(List.of(MARKET)));
 
-        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.qualityStatus())
+                .as("provider error: %s", result.errorMessage())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.errorMessage()).contains("only recent valuation history");
-        assertThat(result.observations()).isNotEmpty().allSatisfy(observation -> {
+        assertThat(result.observations())
+                .as("provider error: %s", result.errorMessage())
+                .isNotEmpty().allSatisfy(observation -> {
             assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
             assertThat(observation.value()).isNull();
             assertThat(observation.attributes()).containsKeys(
                     "auditValue", "sourceQuality", "partialHistoryReason");
         });
         assertThat(result.nextCheckpoint()).isNull();
+    }
+
+    @Test
+    void partialLegacyStockValuationWithoutScoringEligibilityIsAuditOnly() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport derivedTransport = new ScriptedTransport();
+        derivedTransport.valuation = List.of(Map.ofEntries(
+                Map.entry("objectType", "stock"),
+                Map.entry("objectId", "600519.SH"),
+                Map.entry("tradeDate", "2026-07-18"),
+                Map.entry("peTtm", "20"),
+                Map.entry("riskFreeYield", "0.018"),
+                Map.entry("qualityStatus", "available"),
+                Map.entry("observedAt", "2026-07-18T15:00:00"),
+                Map.entry("availableAt", "2026-07-18T16:00:00")
+        ));
+        derivedTransport.earliestAvailableDate = LocalDate.of(2025, 1, 1);
+        derivedTransport.historyComplete = false;
+        derivedTransport.historyGapReason = "one stock has partial valuation history";
+        MarketRiskDataProvider provider = new MarketRiskDataProvider(
+                new AkToolsMarketRiskSourceClient(nativeTransport, derivedTransport, CLOCK));
+
+        RiskProviderBatch result = provider.fetch(
+                MarketDatasetCode.VALUATION.code(), currentRequest(List.of(STOCK)));
+
+        assertThat(result.observations())
+                .as("provider error: %s", result.errorMessage())
+                .isNotEmpty().allSatisfy(observation -> {
+            assertThat(observation.qualityStatus())
+                    .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(observation.value()).isNull();
+            assertThat(observation.attributes())
+                    .containsEntry("scoringEligible", false)
+                    .containsEntry("qualityReason",
+                            "valuation scoring eligibility audit metadata is missing");
+        });
     }
 
     @Test
@@ -268,7 +432,9 @@ class AkToolsMarketRiskSourceClientTest {
         RiskProviderBatch result = provider.fetch(
                 MarketDatasetCode.VALUATION.code(), currentRequest(List.of(MARKET)));
 
-        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.qualityStatus())
+                .as("provider error: %s", result.errorMessage())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.errorMessage()).contains("earliestAvailableDate");
         assertThat(result.nextCheckpoint()).isNull();
     }
@@ -358,6 +524,7 @@ class AkToolsMarketRiskSourceClientTest {
         private List<Map<String, Object>> stockMaster = List.of();
         private List<Map<String, Object>> sw1Catalog = List.of();
         private List<Map<String, Object>> sw1Components = List.of();
+        private List<Map<String, Object>> daily = List.of();
         private List<Map<String, Object>> valuation = List.of();
         private String nextCursor;
         private LocalDate earliestAvailableDate = LocalDate.of(2021, 7, 18);
@@ -372,6 +539,7 @@ class AkToolsMarketRiskSourceClientTest {
                 case "/api/public/stock_info_a_code_name" -> stockMaster;
                 case "/api/public/sw_index_first_info" -> sw1Catalog;
                 case "/api/public/index_component_sw" -> sw1Components;
+                case "/api/risk/market-daily" -> daily;
                 case "/api/risk/valuation" -> valuation;
                 default -> List.of();
             };
@@ -379,6 +547,12 @@ class AkToolsMarketRiskSourceClientTest {
 
         @Override
         public MarketRiskHttpResponse getResponse(String endpoint, Map<String, String> query) {
+            if (query.containsKey("cursor")) {
+                calls.add(new Call(endpoint, query));
+                return new MarketRiskHttpResponse(
+                        List.of(), null, earliestAvailableDate,
+                        historyComplete, insufficientHistory, historyGapReason);
+            }
             return new MarketRiskHttpResponse(
                     get(endpoint, query), nextCursor, earliestAvailableDate,
                     historyComplete, insufficientHistory, historyGapReason);

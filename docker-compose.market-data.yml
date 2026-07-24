@@ -4,12 +4,52 @@ services:
       context: ./infra/aktools
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    command:
+      - python
+      - -m
+      - uvicorn
+      - main:app
+      - --app-dir
+      - /usr/local/lib/python3.12/site-packages/aktools
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8090"
+      - --workers
+      - "${RISK_AKTOOLS_WORKERS:-4}"
     container_name: stock-ai-rule-aktools
     environment:
       MKL_NUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "127.0.0.1:8090:8090"
     restart: unless-stopped
+
+  risk-data-gateway:
+    build:
+      context: ./infra/risk-data-gateway
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    container_name: stock-risk-data-gateway
+    environment:
+      RISK_GATEWAY_AKTOOLS_BASE_URL: http://aktools:8090
+      RISK_GATEWAY_CACHE_DIR: /cache
+      RISK_GATEWAY_MAX_CONCURRENCY: "${RISK_GATEWAY_MAX_CONCURRENCY:-4}"
+      RISK_GATEWAY_DERIVED_CACHE_TTL_SECONDS: "${RISK_GATEWAY_DERIVED_CACHE_TTL_SECONDS:-3600}"
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "127.0.0.1:18090:18090"
+    volumes:
+      - risk-data-gateway-cache:/cache
+    depends_on:
+      aktools:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  risk-data-gateway-cache:

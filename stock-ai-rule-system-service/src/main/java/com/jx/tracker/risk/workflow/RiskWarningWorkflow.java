@@ -145,7 +145,8 @@ public final class RiskWarningWorkflow {
                     repository.saveCheckpoint(
                             task.providerCode(), task.datasetCode(), task.scopeKey(), nextCheckpoint, batch);
                     checkpointsSaved++;
-                } else if (batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
+                } else if (batch.qualityStatus() == RiskDataQualityStatus.AVAILABLE
+                        || batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
                         || batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY) {
                     repository.saveIngestionStatus(
                             task.providerCode(), task.datasetCode(), task.scopeKey(), repositoryCheckpoint, batch);
