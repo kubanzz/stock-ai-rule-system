@@ -18,6 +18,8 @@ public final class RiskBackfillReadinessEvaluator {
 
     private static final BigDecimal MINIMUM_OVERALL_COVERAGE = new BigDecimal("0.8000");
     private static final BigDecimal MINIMUM_DIMENSION_COVERAGE = new BigDecimal("0.6000");
+    private static final long MINIMUM_FIVE_YEAR_MARKET_SESSIONS = 1200;
+    private static final long MAXIMUM_START_BOUNDARY_GAP_DAYS = 10;
 
     public RiskBackfillReadiness evaluate(RiskBackfillReadinessData data) {
         if (data == null) {
@@ -41,7 +43,8 @@ public final class RiskBackfillReadinessEvaluator {
                 && (meets(dimensionCoverage, RiskDimension.SUBSTANTIVE_TRIGGER)
                 || meets(dimensionCoverage, RiskDimension.EXTERNAL_TRANSMISSION));
         boolean dateCoverageReady = data.coreEarliestDate() != null
-                && !data.coreEarliestDate().isAfter(data.scoreStartDate())
+                && !data.coreEarliestDate().isAfter(
+                data.scoreStartDate().plusDays(MAXIMUM_START_BOUNDARY_GAP_DAYS))
                 && data.coreLatestDate() != null
                 && !data.coreLatestDate().isBefore(data.endDate());
         boolean horizonsReady = java.util.Arrays.stream(RiskHorizon.values()).allMatch(horizon -> {
@@ -49,6 +52,16 @@ public final class RiskBackfillReadinessEvaluator {
                     data.horizonSnapshots().get(horizon);
             return stats != null && stats.marketCount() > 0 && stats.formalMarketCount() > 0;
         });
+        RiskBackfillReadinessData.PopulationCoverage population = data.populationCoverage();
+        long requiredStocks = minimumPopulation(population.requestedStockCount());
+        boolean marketSessionsReady = population.marketCoreTradingDayCount()
+                >= MINIMUM_FIVE_YEAR_MARKET_SESSIONS;
+        boolean corePopulationReady = requiredStocks > 0
+                && population.coreCoveredStockCount() >= requiredStocks;
+        boolean formalEndPopulationReady = requiredStocks > 0
+                && population.formalEndDateStockCount() >= requiredStocks;
+        boolean populationCoverageReady = marketSessionsReady
+                && corePopulationReady && formalEndPopulationReady;
         boolean formalSnapshotsReady = data.formalSnapshotCount() > 0
                 && data.invalidFormalSnapshotCount() == 0;
         boolean timestampReady = data.timestampViolationCount() == 0;
@@ -67,6 +80,17 @@ public final class RiskBackfillReadinessEvaluator {
         if (!horizonsReady) {
             failures.add("三个周期缺少正式市场快照");
         }
+        if (!marketSessionsReady) {
+            failures.add("五年窗口市场交易日不足 1200：" + population.marketCoreTradingDayCount());
+        }
+        if (!corePopulationReady) {
+            failures.add("核心行情股票覆盖率低于 80%："
+                    + population.coreCoveredStockCount() + "/" + population.requestedStockCount());
+        }
+        if (!formalEndPopulationReady) {
+            failures.add("结束日三个周期正式股票快照覆盖率低于 80%："
+                    + population.formalEndDateStockCount() + "/" + population.requestedStockCount());
+        }
         if (data.formalSnapshotCount() == 0) {
             failures.add("不存在完整度至少 80% 的正式风险快照");
         }
@@ -81,17 +105,22 @@ public final class RiskBackfillReadinessEvaluator {
         }
         boolean ready = weightedCoverage.compareTo(MINIMUM_OVERALL_COVERAGE) >= 0
                 && mandatoryEvidenceReady && dateCoverageReady && horizonsReady
-                && formalSnapshotsReady && timestampReady && shadowReady;
+                && populationCoverageReady && formalSnapshotsReady && timestampReady && shadowReady;
         return new RiskBackfillReadiness(
                 availableCount, availableWeight, catalogWeight, weightedCoverage,
                 dimensionCoverage, statuses, mandatoryEvidenceReady,
                 data.coreEarliestDate(), data.coreLatestDate(), dateCoverageReady,
                 data.horizonSnapshots(), horizonsReady,
+                population, populationCoverageReady,
                 data.totalSnapshotCount(), data.formalSnapshotCount(),
                 data.invalidFormalSnapshotCount(), formalSnapshotsReady,
                 data.timestampViolationCount(), timestampReady,
                 data.enforcedGateCount(), shadowReady,
                 data.checkpoints(), failures, ready);
+    }
+
+    private long minimumPopulation(int requestedStockCount) {
+        return (requestedStockCount * 8L + 9L) / 10L;
     }
 
     private RiskBackfillIndicatorStatus status(

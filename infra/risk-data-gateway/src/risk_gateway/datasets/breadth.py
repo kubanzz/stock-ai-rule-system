@@ -65,6 +65,7 @@ class BreadthDataset:
                 "breadthDefinition": BREADTH_DEFINITION,
                 "universeDefinition": "currentListedStocksWithObservableHistoricalBars",
                 "proxy": True,
+                "calculationVersion": CALCULATION_VERSION,
                 "qualityStatus": "available",
                 "observedAt": times.observed_at.isoformat(),
                 "availableAt": times.available_at.isoformat(),

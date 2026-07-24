@@ -20,8 +20,14 @@ from risk_gateway.datasets.membership import MembershipDataset
 from risk_gateway.datasets.valuation import ValuationDataset
 from risk_gateway.models import InvalidQuery, RiskQuery
 from risk_gateway.pagination import InvalidCursor, paginate
-from risk_gateway.series import InvalidSeries, normalize_market_frame
+from risk_gateway.series import InvalidSeries
 from risk_gateway.time_policy import SHANGHAI
+
+
+DERIVED_REQUEST_HASH_VERSIONS = {
+    # Keep immutable raw partitions, but do not reuse pre-proxy valuation responses.
+    "valuation": "valuation-forward-fill-v4",
+}
 
 
 class HealthProbe(Protocol):
@@ -128,30 +134,26 @@ def create_app(
     ) -> JSONResponse:
         query = RiskQuery.from_raw(start_date, end_date, objects, cursor)
         now = datetime.now(SHANGHAI)
-        request_hash = query.request_hash(dataset_code)
-        result = (
-            derived_response_cache.get(dataset_code, request_hash, now=now)
-            if dataset_code == "breadth"
-            else None
-        )
+        cache_contract = DERIVED_REQUEST_HASH_VERSIONS.get(dataset_code)
+        cache_key = (f"{dataset_code}@{cache_contract}"
+                     if cache_contract else dataset_code)
+        request_hash = query.request_hash(cache_key)
+        result = derived_response_cache.get(dataset_code, request_hash, now=now)
         if result is None:
-            if dataset_code == "breadth":
-                with derived_request_locks.acquire(request_hash):
-                    now = datetime.now(SHANGHAI)
-                    result = derived_response_cache.get(
-                        dataset_code, request_hash, now=now,
+            with derived_request_locks.acquire(request_hash):
+                now = datetime.now(SHANGHAI)
+                result = derived_response_cache.get(
+                    dataset_code, request_hash, now=now,
+                )
+                if result is None:
+                    result = fetch_dataset(dataset_code, query, now)
+                    derived_response_cache.put(
+                        dataset_code,
+                        request_hash,
+                        result,
+                        stored_at=now,
+                        ttl=timedelta(seconds=settings.derived_cache_ttl_seconds),
                     )
-                    if result is None:
-                        result = fetch_dataset(dataset_code, query, now)
-                        derived_response_cache.put(
-                            dataset_code,
-                            request_hash,
-                            result,
-                            stored_at=now,
-                            ttl=timedelta(seconds=settings.derived_cache_ttl_seconds),
-                        )
-            else:
-                result = fetch_dataset(dataset_code, query, now)
         page, next_cursor = paginate(
             result.data, request_hash, query.cursor, settings.page_size,
         )
@@ -197,9 +199,17 @@ def create_app(
 
 def _calendar(client: AkToolsClient, query: RiskQuery) -> tuple[date, ...]:
     del query
-    rows = client.get("stock_zh_index_daily", {"symbol": "sh000300"})
-    frame = normalize_market_frame(rows)
-    return tuple(frame["date"])
+    rows = client.get("tool_trade_date_hist_sina", {})
+    try:
+        sessions = {
+            date.fromisoformat(str(row["trade_date"])[:10])
+            for row in rows
+        }
+    except (KeyError, TypeError, ValueError) as exception:
+        raise AkToolsSchemaError("published A-share trade calendar schema is invalid") from exception
+    if not sessions:
+        raise AkToolsSchemaError("published A-share trade calendar is empty")
+    return tuple(sorted(sessions))
 
 
 app = create_app(Settings.from_env())

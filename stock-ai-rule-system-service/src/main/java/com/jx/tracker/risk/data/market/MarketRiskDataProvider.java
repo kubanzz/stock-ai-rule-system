@@ -392,7 +392,16 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                                 mapOf(
                                         "peTtm", point.peTtm(),
                                         "earningsYield", point.earningsYield(),
-                                        "riskFreeYield", point.riskFreeYield()
+                                        "riskFreeYield", point.riskFreeYield(),
+                                        "valuationSourceDate", point.valuationSourceDate(),
+                                        "valuationAgeSessions", point.valuationAgeSessions(),
+                                        "stalenessPolicy", point.stalenessPolicy(),
+                                        "proxy", point.proxy(),
+                                        "constituentCount", point.constituentCount(),
+                                        "aggregateDefinition", point.aggregateDefinition(),
+                                        "universeDefinition", point.universeDefinition(),
+                                        "calculationVersion", point.calculationVersion(),
+                                        "availabilityPolicyVersion", point.availabilityPolicyVersion()
                                 )
                         ),
                         computed(
@@ -403,7 +412,16 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                                 mapOf(
                                         "peTtm", point.peTtm(),
                                         "earningsYield", point.earningsYield(),
-                                        "riskFreeYield", point.riskFreeYield()
+                                        "riskFreeYield", point.riskFreeYield(),
+                                        "valuationSourceDate", point.valuationSourceDate(),
+                                        "valuationAgeSessions", point.valuationAgeSessions(),
+                                        "stalenessPolicy", point.stalenessPolicy(),
+                                        "proxy", point.proxy(),
+                                        "constituentCount", point.constituentCount(),
+                                        "aggregateDefinition", point.aggregateDefinition(),
+                                        "universeDefinition", point.universeDefinition(),
+                                        "calculationVersion", point.calculationVersion(),
+                                        "availabilityPolicyVersion", point.availabilityPolicyVersion()
                                 )
                         )
                 ).stream()))
@@ -580,7 +598,12 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                             "newHighCount", point.newHighCount(),
                             "newLowCount", point.newLowCount(),
                             "aboveMovingAverageCount", point.aboveMovingAverageCount(),
-                            "totalCount", point.totalCount()
+                            "totalCount", point.totalCount(),
+                            "breadthDefinition", point.breadthDefinition(),
+                            "universeDefinition", point.universeDefinition(),
+                            "sourceProxy", point.proxy(),
+                            "calculationVersion", point.calculationVersion(),
+                            "availabilityPolicyVersion", point.availabilityPolicyVersion()
                     );
                     Map<String, Object> depthProxy = new LinkedHashMap<>(raw);
                     depthProxy.put("proxy", true);
@@ -639,7 +662,11 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                             "leadingAssetReturn", point.leadingAssetReturn(),
                             "dynamicCorrelation", point.dynamicCorrelation(),
                             "confirmedDownMarketCount", point.confirmedDownMarketCount(),
-                            "observedMarketCount", point.observedMarketCount()
+                            "observedMarketCount", point.observedMarketCount(),
+                            "basketDefinition", point.basketDefinition(),
+                            "proxy", point.proxy(),
+                            "calculationVersion", point.calculationVersion(),
+                            "availabilityPolicyVersion", point.availabilityPolicyVersion()
                     );
                     Optional<BigDecimal> standardizedReturn = history
                             .availableTrailing(windows.baselineWindow())

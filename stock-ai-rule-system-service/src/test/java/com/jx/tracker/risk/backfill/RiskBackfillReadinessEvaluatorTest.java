@@ -43,6 +43,19 @@ class RiskBackfillReadinessEvaluatorTest {
     }
 
     @Test
+    void acceptsTheFirstTradingSessionAfterAWeekendScoreBoundary() {
+        RiskBackfillReadinessData data = new RiskBackfillReadinessData(
+                SCORE_START, END_DATE, observed(EIGHTY_PERCENT_CODES),
+                SCORE_START.plusDays(2), END_DATE,
+                readyHorizons(), readyPopulation(), 30, 30, 0, 0, 0, List.of());
+
+        RiskBackfillReadiness result = evaluator.evaluate(data);
+
+        assertThat(result.coreDateCoverageReady()).isTrue();
+        assertThat(result.ready()).isTrue();
+    }
+
+    @Test
     void catalogSupportWithoutPersistedEvidenceDoesNotCountAsCoverage() {
         RiskBackfillReadiness result = evaluator.evaluate(
                 readyData(Set.of("V1", "V3", "C1")));
@@ -96,7 +109,7 @@ class RiskBackfillReadinessEvaluatorTest {
                 SCORE_START, END_DATE,
                 observed(EIGHTY_PERCENT_CODES),
                 SCORE_START.plusDays(1), END_DATE.minusDays(1),
-                horizons, 30, 20, 1, 2, 3, List.of());
+                horizons, readyPopulation(), 30, 20, 1, 2, 3, List.of());
 
         RiskBackfillReadiness result = evaluator.evaluate(data);
 
@@ -109,10 +122,39 @@ class RiskBackfillReadinessEvaluatorTest {
                 .contains("影子闸门存在 enforced=true 记录：3");
     }
 
+    @Test
+    void rejectsSparseStockPopulationEvenWhenGlobalIndicatorCatalogLooksComplete() {
+        RiskBackfillReadinessData data = new RiskBackfillReadinessData(
+                SCORE_START, END_DATE, observed(EIGHTY_PERCENT_CODES), SCORE_START, END_DATE,
+                readyHorizons(), new RiskBackfillReadinessData.PopulationCoverage(50, 1250, 1, 1),
+                30, 30, 0, 0, 0, List.of());
+
+        RiskBackfillReadiness result = evaluator.evaluate(data);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.populationCoverageReady()).isFalse();
+        assertThat(result.failures())
+                .contains("核心行情股票覆盖率低于 80%：1/50")
+                .contains("结束日三个周期正式股票快照覆盖率低于 80%：1/50");
+    }
+
+    @Test
+    void rejectsAWindowWithTooFewDistinctMarketSessions() {
+        RiskBackfillReadinessData data = new RiskBackfillReadinessData(
+                SCORE_START, END_DATE, observed(EIGHTY_PERCENT_CODES), SCORE_START, END_DATE,
+                readyHorizons(), new RiskBackfillReadinessData.PopulationCoverage(50, 10, 50, 50),
+                30, 30, 0, 0, 0, List.of());
+
+        RiskBackfillReadiness result = evaluator.evaluate(data);
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.failures()).contains("五年窗口市场交易日不足 1200：10");
+    }
+
     private RiskBackfillReadinessData readyData(Set<String> availableCodes) {
         return new RiskBackfillReadinessData(
                 SCORE_START, END_DATE, observed(availableCodes), SCORE_START, END_DATE,
-                readyHorizons(), 30, 30, 0, 0, 0, List.of());
+                readyHorizons(), readyPopulation(), 30, 30, 0, 0, 0, List.of());
     }
 
     private Map<String, RiskBackfillReadinessData.ObservedIndicator> observed(
@@ -138,6 +180,10 @@ class RiskBackfillReadinessEvaluatorTest {
                     new RiskBackfillReadinessData.HorizonSnapshotStats(10, 10, 1, 1));
         }
         return result;
+    }
+
+    private RiskBackfillReadinessData.PopulationCoverage readyPopulation() {
+        return new RiskBackfillReadinessData.PopulationCoverage(50, 1250, 50, 50);
     }
 
     private static Set<String> allCodesExcept(String... excluded) {

@@ -72,7 +72,8 @@ stock-ai-rule:
     derived-gateway-base-url: ${RISK_WARNING_DERIVED_GATEWAY_BASE_URL:}
     model-version: ${RISK_WARNING_MODEL_VERSION:risk-warning-v1}
     after-close-cutoff: ${RISK_WARNING_AFTER_CLOSE_CUTOFF:20:00}
-    collection-chunk-size: ${RISK_WARNING_COLLECTION_CHUNK_SIZE:200}
+    # 每批最多 50 个股票对象，默认 25；市场估值代理使用独立、可审计的稳定样本池。
+    collection-chunk-size: ${RISK_WARNING_COLLECTION_CHUNK_SIZE:25}
     backfill-command:
       # 一次性内部命令默认关闭；普通 Web 启动不会自动执行 Runner。
       enabled: ${RISK_WARNING_BACKFILL_COMMAND_ENABLED:false}

@@ -41,16 +41,20 @@ class RiskWorkflowPlannerTest {
     }
 
     @Test
-    void emptySymbolsUseAllActiveStocksAndAllocateTwelveProviderTasks() {
+    void emptySymbolsUseAllActiveStocksAndIsolateMarketValuationFromStockBatches() {
         RiskWorkflowPlan plan = planner().plan(List.of());
 
         assertThat(plan.stockObjects()).extracting(RiskObjectKey::objectId)
                 .containsExactly("000001.SZ", "600519.SH", "920992.BJ");
         assertThat(plan.horizons()).containsExactly(RiskHorizon.values());
-        assertThat(plan.collectionTasks()).hasSize(12);
+        assertThat(plan.collectionTasks()).hasSize(13);
 
         Map<String, RiskCollectionTask> tasks = plan.collectionTasks().stream()
-                .collect(Collectors.toMap(RiskCollectionTask::datasetCode, Function.identity()));
+                .collect(Collectors.toMap(
+                        RiskCollectionTask::datasetCode,
+                        Function.identity(),
+                        (first, ignored) -> first
+                ));
         assertThat(tasks.keySet()).containsExactlyInAnyOrderElementsOf(
                 List.of(
                         MarketDatasetCode.CN_A_STOCK_MASTER.code(),
@@ -78,6 +82,10 @@ class RiskWorkflowPlannerTest {
         assertThat(tasks.get(MarketDatasetCode.MARKET_DAILY.code()).objects())
                 .containsExactly(market(), plan.stockObjects().get(0),
                         plan.stockObjects().get(1), plan.stockObjects().get(2));
+        assertThat(plan.collectionTasks().stream()
+                .filter(task -> task.datasetCode().equals(MarketDatasetCode.VALUATION.code()))
+                .map(RiskCollectionTask::objects))
+                .containsExactly(List.of(market()), plan.stockObjects());
     }
 
     @Test
@@ -112,14 +120,14 @@ class RiskWorkflowPlannerTest {
         List<String> universe = java.util.stream.IntStream.range(0, 5_000)
                 .mapToObj(index -> String.format("%06d.SH", index))
                 .toList();
-        RiskWorkflowPlanner planner = new RiskWorkflowPlanner(() -> universe, 200);
+        RiskWorkflowPlanner planner = new RiskWorkflowPlanner(() -> universe, 25);
 
         RiskWorkflowPlan first = planner.plan(List.of());
         RiskWorkflowPlan second = new RiskWorkflowPlanner(
-                () -> universe.reversed(), 200).plan(List.of());
+                () -> universe.reversed(), 25).plan(List.of());
 
         assertThat(first.collectionTasks()).allSatisfy(task -> {
-            assertThat(task.objects()).hasSizeLessThanOrEqualTo(200);
+            assertThat(task.objects()).hasSizeLessThanOrEqualTo(25);
             assertThat(task.scopeKey()).startsWith("scope:v1:n=").contains(":sha256=");
             assertThat(task.scopeKey().length()).isLessThanOrEqualTo(128);
         });
@@ -135,10 +143,20 @@ class RiskWorkflowPlannerTest {
                 .containsAll(Set.of(FlowEventDataset.values()).stream().map(FlowEventDataset::code).toList());
         assertThat(first.collectionTasks().stream()
                 .filter(task -> task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code())))
-                .hasSize(25);
+                .hasSize(200);
         assertThat(first.collectionTasks().stream()
                 .filter(task -> task.datasetCode().equals(MarketDatasetCode.MARKET_DAILY.code())))
-                .hasSize(26);
+                .hasSize(201);
+        List<RiskCollectionTask> valuationTasks = first.collectionTasks().stream()
+                .filter(task -> task.datasetCode().equals(MarketDatasetCode.VALUATION.code()))
+                .toList();
+        assertThat(valuationTasks).hasSize(201);
+        assertThat(valuationTasks.getFirst().objects()).containsExactly(market());
+        assertThat(valuationTasks.subList(1, valuationTasks.size()))
+                .allSatisfy(task -> assertThat(task.objects())
+                        .hasSizeLessThanOrEqualTo(25)
+                        .allSatisfy(object -> assertThat(object.objectType())
+                                .isEqualTo(RiskObjectType.STOCK)));
 
         RiskWorkflowPlan subset = planner.plan(List.of("000001.SH"));
         assertThat(subset.collectionTasks().stream()

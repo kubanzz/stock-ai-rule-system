@@ -228,7 +228,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
             LocalDateTime fetchedAt
     ) {
         if (nextCursor == null || nextCursor.isBlank()) {
-            return request.checkpoint();
+            return null;
         }
         if (request.checkpoint() != null
                 && nextCursor.compareTo(request.checkpoint().cursor()) <= 0) {
@@ -326,9 +326,20 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         if (earningsYield == null) {
             earningsYield = BigDecimal.ONE.divide(peTtm, 10, java.math.RoundingMode.HALF_UP);
         }
+        LocalDate valuationSourceDate = optionalDate(
+                row, "valuationSourceDate", "valuation_source_date");
         return new ValuationPoint(
                 object, date, peTtm, earningsYield,
                 optionalDecimal(row, "riskFreeYield", "risk_free_yield"),
+                valuationSourceDate == null ? date : valuationSourceDate,
+                integerOrDefault(row, 0, "valuationAgeSessions", "valuation_age_sessions"),
+                textOrDefault(row, "unspecified", "stalenessPolicy", "staleness_policy"),
+                booleanValue(row, false, "proxy"),
+                integerOrDefault(row, 0, "constituentCount", "constituent_count"),
+                optionalText(row, "aggregateDefinition", "aggregate_definition"),
+                optionalText(row, "universeDefinition", "universe_definition"),
+                textOrDefault(row, "pe-risk-premium-v2", "calculationVersion"),
+                textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -343,6 +354,11 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 integer(row, "newHighCount", "新高家数"), integer(row, "newLowCount", "新低家数"),
                 integer(row, "aboveMovingAverageCount", "均线上方家数"),
                 integer(row, "totalCount", "总家数"),
+                text(row, "breadthDefinition", "breadth_definition"),
+                text(row, "universeDefinition", "universe_definition"),
+                booleanValue(row, true, "proxy"),
+                textOrDefault(row, "breadth-current-universe-proxy-v1", "calculationVersion"),
+                textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -356,6 +372,10 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 decimal(row, "dynamicCorrelation", "dynamic_correlation"),
                 integer(row, "confirmedDownMarketCount", "confirmed_down_market_count"),
                 integer(row, "observedMarketCount", "observed_market_count"),
+                text(row, "basketDefinition", "basket_definition"),
+                booleanValue(row, true, "proxy"),
+                textOrDefault(row, "cross-market-equal-weight-correlation-v1", "calculationVersion"),
+                textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
                 DERIVED_SOURCE, quality(row));
@@ -447,6 +467,15 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         return decimal(row, keys).intValueExact();
     }
 
+    private int integerOrDefault(
+            Map<String, Object> row,
+            int defaultValue,
+            String... keys
+    ) {
+        BigDecimal value = optionalDecimal(row, keys);
+        return value == null ? defaultValue : value.intValueExact();
+    }
+
     private boolean booleanValue(Map<String, Object> row, boolean defaultValue, String... keys) {
         Object value = first(row, keys);
         if (value == null) {
@@ -470,6 +499,11 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
             throw new IllegalArgumentException("missing text field: " + String.join("/", keys));
         }
         return value;
+    }
+
+    private String textOrDefault(Map<String, Object> row, String defaultValue, String... keys) {
+        String value = optionalText(row, keys);
+        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     private String optionalText(Map<String, Object> row, String... keys) {

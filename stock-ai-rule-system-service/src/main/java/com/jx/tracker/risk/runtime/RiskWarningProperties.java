@@ -7,7 +7,7 @@ import java.time.LocalTime;
 @ConfigurationProperties(prefix = "stock-ai-rule.risk-warning")
 public class RiskWarningProperties {
 
-    public static final int DEFAULT_COLLECTION_CHUNK_SIZE = 200;
+    public static final int DEFAULT_COLLECTION_CHUNK_SIZE = 25;
 
     private boolean enabled;
     private boolean backfillEnabled;
@@ -88,8 +88,8 @@ public class RiskWarningProperties {
     }
 
     public int requiredCollectionChunkSize() {
-        if (collectionChunkSize < 1 || collectionChunkSize > 500) {
-            throw new IllegalStateException("risk warning collectionChunkSize must be between 1 and 500");
+        if (collectionChunkSize < 21 || collectionChunkSize > 50) {
+            throw new IllegalStateException("risk warning collectionChunkSize must be between 21 and 50");
         }
         return collectionChunkSize;
     }

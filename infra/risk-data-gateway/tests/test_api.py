@@ -1,14 +1,13 @@
 from datetime import date
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
-from time import sleep
 
 import pytest
 from fastapi.testclient import TestClient
 
-from risk_gateway.app import create_app
+from risk_gateway.app import _calendar, create_app
 from risk_gateway.config import Settings
-from risk_gateway.models import GatewayResponse
+from risk_gateway.models import GatewayResponse, RiskQuery
 
 
 pytestmark = pytest.mark.filterwarnings(
@@ -73,6 +72,70 @@ def test_api_pages_market_daily_with_stable_cursor(tmp_path):
     assert second.status_code == 200
     assert second.json()["data"][0]["tradeDate"] == "2026-07-20"
     assert second.json()["meta"]["nextCursor"] is None
+
+
+def test_market_daily_pagination_reuses_one_derived_calculation(tmp_path, monkeypatch):
+    class CountingMarketDailyDataset:
+        calls = 0
+
+        def __init__(self, _context):
+            pass
+
+        def fetch(self, _query):
+            CountingMarketDailyDataset.calls += 1
+            return GatewayResponse.model_validate({
+                "data": [
+                    {"tradeDate": "2026-07-17", "close": 100},
+                    {"tradeDate": "2026-07-20", "close": 101},
+                ],
+                "meta": {
+                    "historyComplete": True, "insufficientHistory": False,
+                    "earliestAvailableDate": "2026-07-17", "historyGapReason": None,
+                    "nextCursor": None, "source": "test", "sourceVersion": "test-v1",
+                    "calculationVersion": "daily-v1",
+                    "fetchedAt": "2026-07-21T10:00:00+08:00",
+                },
+            })
+
+    monkeypatch.setattr("risk_gateway.app.MarketDailyDataset", CountingMarketDailyDataset)
+    api = TestClient(create_app(
+        Settings(
+            aktools_base_url="http://aktools:8090", cache_dir=tmp_path, page_size=1,
+        ),
+        health_probe=HealthyDependencies(), client=FakeClient(),
+        calendar_provider=lambda _query: (date(2026, 7, 17), date(2026, 7, 20)),
+    ))
+    params = {
+        "start_date": "20260717", "end_date": "20260720",
+        "objects": "stock:600519.SH",
+    }
+
+    first = api.get("/api/risk/market-daily", params=params)
+    params["cursor"] = first.json()["meta"]["nextCursor"]
+    second = api.get("/api/risk/market-daily", params=params)
+
+    assert second.status_code == 200
+    assert CountingMarketDailyDataset.calls == 1
+
+
+def test_calendar_uses_published_trade_dates_including_future_sessions():
+    class CalendarClient:
+        def get(self, function, params):
+            assert function == "tool_trade_date_hist_sina"
+            assert params == {}
+            return [
+                {"trade_date": "2026-07-20T00:00:00.000"},
+                {"trade_date": "2026-07-17T00:00:00.000"},
+                {"trade_date": "2026-07-20T00:00:00.000"},
+            ]
+
+    query = RiskQuery.from_raw(
+        "20260717", "20260717", "stock:600519.SH",
+    )
+
+    assert _calendar(CalendarClient(), query) == (
+        date(2026, 7, 17), date(2026, 7, 20),
+    )
 
 
 def test_etf_api_returns_explicit_history_gap_without_querying_nav(tmp_path):
@@ -158,7 +221,6 @@ def test_breadth_api_coalesces_concurrent_cache_misses(tmp_path, monkeypatch):
         def fetch(self, _query):
             with SlowCountingBreadthDataset.guard:
                 SlowCountingBreadthDataset.calls += 1
-            sleep(0.1)
             return GatewayResponse.model_validate({
                 "data": [{"tradeDate": "2026-07-17", "totalCount": 5000}],
                 "meta": {
@@ -175,6 +237,22 @@ def test_breadth_api_coalesces_concurrent_cache_misses(tmp_path, monkeypatch):
             })
 
     monkeypatch.setattr("risk_gateway.app.BreadthDataset", SlowCountingBreadthDataset)
+    from risk_gateway.cache import DerivedResponseCache
+    original_get = DerivedResponseCache.get
+    initial_misses = Barrier(2)
+    guarded_calls = {"value": 0}
+    guarded_lock = Lock()
+
+    def synchronized_initial_miss(self, dataset, request_hash, *, now):
+        result = original_get(self, dataset, request_hash, now=now)
+        with guarded_lock:
+            guarded_calls["value"] += 1
+            call = guarded_calls["value"]
+        if result is None and call <= 2:
+            initial_misses.wait()
+        return result
+
+    monkeypatch.setattr(DerivedResponseCache, "get", synchronized_initial_miss)
     api = TestClient(create_app(
         Settings(aktools_base_url="http://aktools:8090", cache_dir=tmp_path),
         health_probe=HealthyDependencies(),
@@ -196,3 +274,43 @@ def test_breadth_api_coalesces_concurrent_cache_misses(tmp_path, monkeypatch):
     assert [response.status_code for response in responses] == [200, 200]
     assert responses[0].json() == responses[1].json()
     assert SlowCountingBreadthDataset.calls == 1
+
+
+def test_breadth_singleflight_releases_lock_after_failed_calculation(tmp_path, monkeypatch):
+    class FailOnceBreadthDataset:
+        calls = 0
+
+        def __init__(self, _context, *, max_concurrency):
+            assert max_concurrency == 4
+
+        def fetch(self, _query):
+            FailOnceBreadthDataset.calls += 1
+            if FailOnceBreadthDataset.calls == 1:
+                raise RuntimeError("calculation failed")
+            return GatewayResponse.model_validate({
+                "data": [{"tradeDate": "2026-07-17", "totalCount": 5000}],
+                "meta": {
+                    "historyComplete": True, "insufficientHistory": False,
+                    "earliestAvailableDate": "2026-07-17", "historyGapReason": None,
+                    "nextCursor": None, "source": "test", "sourceVersion": "test-v1",
+                    "calculationVersion": "breadth-v1",
+                    "fetchedAt": "2026-07-19T10:00:00+08:00",
+                },
+            })
+
+    monkeypatch.setattr("risk_gateway.app.BreadthDataset", FailOnceBreadthDataset)
+    api = TestClient(create_app(
+        Settings(aktools_base_url="http://aktools:8090", cache_dir=tmp_path),
+        health_probe=HealthyDependencies(), client=FakeClient(),
+        calendar_provider=lambda _query: (date(2026, 7, 17),),
+    ))
+    params = {
+        "start_date": "20260717", "end_date": "20260717", "objects": "market:CN-A",
+    }
+
+    with pytest.raises(RuntimeError, match="calculation failed"):
+        api.get("/api/risk/breadth", params=params)
+    response = api.get("/api/risk/breadth", params=params)
+
+    assert response.status_code == 200
+    assert FailOnceBreadthDataset.calls == 2

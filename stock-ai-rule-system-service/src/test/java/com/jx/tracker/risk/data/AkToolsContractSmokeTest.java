@@ -76,6 +76,12 @@ class AkToolsContractSmokeTest {
             assertThat(meta.path("historyComplete").asBoolean()).isFalse();
             assertThat(meta.path("historyGapReason").asText()).contains("redemption");
         }
+        if (!spec.requiredDataFields().isEmpty()) {
+            assertThat(root.path("data").isEmpty()).as(spec.name() + " data").isFalse();
+            JsonNode first = root.path("data").get(0);
+            assertThat(spec.requiredDataFields()).allSatisfy(field ->
+                    assertThat(first.has(field)).as(spec.name() + " field " + field).isTrue());
+        }
         System.out.printf(
                 "derived endpoint=%s rows=%d earliest=%s complete=%s insufficient=%s%n",
                 spec.name(), root.path("data").size(), meta.path("earliestAvailableDate").asText(),
@@ -199,6 +205,10 @@ class AkToolsContractSmokeTest {
         return List.of(
                 derivedSpec("market-daily", "/api/risk/market-daily", marketQuery, false),
                 derivedSpec("valuation", "/api/risk/valuation", stockQuery, false),
+                derivedSpec("market-valuation-proxy", "/api/risk/valuation", marketQuery, false,
+                        List.of("objectType", "objectId", "proxy", "constituentCount",
+                                "aggregateDefinition", "universeDefinition", "calculationVersion",
+                                "availabilityPolicyVersion")),
                 derivedSpec("breadth", "/api/risk/breadth", breadthQuery, false),
                 derivedSpec("cross-market", "/api/risk/cross-market", marketQuery, false),
                 derivedSpec("sw1-membership", "/api/risk/sw1-membership", stockQuery, false),
@@ -209,7 +219,17 @@ class AkToolsContractSmokeTest {
     private DerivedEndpointSpec derivedSpec(
             String name, String path, Map<String, String> query, boolean etfGap
     ) {
-        return new DerivedEndpointSpec(name, path, query, etfGap);
+        return derivedSpec(name, path, query, etfGap, List.of());
+    }
+
+    private DerivedEndpointSpec derivedSpec(
+            String name,
+            String path,
+            Map<String, String> query,
+            boolean etfGap,
+            List<String> requiredDataFields
+    ) {
+        return new DerivedEndpointSpec(name, path, query, etfGap, requiredDataFields);
     }
 
     private EndpointSpec spec(
@@ -253,7 +273,8 @@ class AkToolsContractSmokeTest {
             String name,
             String path,
             Map<String, String> query,
-            boolean etfGap
+            boolean etfGap,
+            List<String> requiredDataFields
     ) {
     }
 }

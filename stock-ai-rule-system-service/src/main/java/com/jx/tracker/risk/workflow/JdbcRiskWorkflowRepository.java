@@ -192,8 +192,12 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
             RiskIngestionCheckpoint currentCheckpoint,
             RiskProviderBatch batch
     ) {
-        String cursor = currentCheckpoint == null ? null : currentCheckpoint.cursor();
-        LocalDateTime checkpointAt = currentCheckpoint == null
+        boolean terminalSuccess = (batch.qualityStatus() == RiskDataQualityStatus.AVAILABLE
+                || batch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO)
+                && batch.nextCheckpoint() == null;
+        String cursor = currentCheckpoint == null || terminalSuccess
+                ? null : currentCheckpoint.cursor();
+        LocalDateTime checkpointAt = currentCheckpoint == null || terminalSuccess
                 ? batch.fetchedAt() : currentCheckpoint.checkpointAt();
         Map<String, Object> checkpointValue = new HashMap<>();
         if (cursor != null) {
@@ -205,7 +209,12 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     observed_at, available_at, source, quality_status, last_error
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
-                    checkpoint_value = checkpoint_value, checkpoint_at = checkpoint_at,
+                    checkpoint_value = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(checkpoint_value) ELSE checkpoint_value END,
+                    checkpoint_at = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(checkpoint_at) ELSE checkpoint_at END,
                     observed_at = VALUES(observed_at), available_at = VALUES(available_at),
                     source = VALUES(source), quality_status = VALUES(quality_status),
                     last_error = VALUES(last_error)

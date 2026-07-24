@@ -7,6 +7,7 @@ from risk_gateway.cache import (
     CachePartition,
     DerivedResponseCache,
     InvalidCachePartition,
+    KeyedLockPool,
     ParquetCache,
 )
 from risk_gateway.models import GatewayResponse
@@ -103,3 +104,14 @@ def test_derived_response_cache_rejects_unsafe_key(tmp_path):
 
     with pytest.raises(InvalidCachePartition):
         cache.get("../breadth", "not-a-hash", now=datetime.now(timezone.utc))
+
+
+def test_keyed_lock_pool_releases_entry_after_exception():
+    locks = KeyedLockPool()
+
+    with pytest.raises(RuntimeError, match="failed"):
+        with locks.acquire("request"):
+            assert locks.entry_count == 1
+            raise RuntimeError("failed")
+
+    assert locks.entry_count == 0

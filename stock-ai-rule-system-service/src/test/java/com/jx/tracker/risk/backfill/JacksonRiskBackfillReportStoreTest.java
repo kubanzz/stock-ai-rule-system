@@ -129,6 +129,7 @@ class JacksonRiskBackfillReportStoreTest {
                 java.util.Map.of(), List.of(), true,
                 END_DATE.minusYears(5), END_DATE, true,
                 java.util.Map.of(), true,
+                new RiskBackfillReadinessData.PopulationCoverage(50, 1250, 50, 50), true,
                 1, 1, 0, true,
                 0, true, 0, true,
                 List.of(), List.of(), true);

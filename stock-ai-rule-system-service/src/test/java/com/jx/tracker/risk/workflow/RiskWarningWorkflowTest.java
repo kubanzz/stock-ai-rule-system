@@ -739,7 +739,7 @@ class RiskWarningWorkflowTest {
                 DATE, AS_OF, plan.collectionTasks(), List.of(RiskHorizon.SHORT_TERM),
                 List.of(), "risk-engine-closure-v1"));
 
-        assertThat(plan.collectionTasks()).hasSize(12);
+        assertThat(plan.collectionTasks()).hasSize(13);
         RiskSnapshot market = storedSnapshot(repository, MARKET);
         RiskSnapshot sector = storedSnapshot(repository, SECTOR);
         RiskSnapshot stock = storedSnapshot(repository, STOCK);

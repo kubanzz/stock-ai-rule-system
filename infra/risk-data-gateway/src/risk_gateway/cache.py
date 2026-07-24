@@ -33,6 +33,11 @@ class KeyedLockPool:
         self._guard = Lock()
         self._entries: dict[str, _LockEntry] = {}
 
+    @property
+    def entry_count(self) -> int:
+        with self._guard:
+            return len(self._entries)
+
     @contextmanager
     def acquire(self, key: str) -> Iterator[None]:
         with self._guard:
@@ -53,6 +58,7 @@ class KeyedLockPool:
 
 
 _DATASET = re.compile(r"^[a-z][a-z0-9_]*$")
+_DERIVED_DATASET = re.compile(r"^[a-z][a-z0-9_-]*$")
 _OBJECT = re.compile(r"^[A-Za-z0-9_.:-]+$")
 _REQUEST_HASH = re.compile(r"^[a-f0-9]{64}$")
 
@@ -253,7 +259,7 @@ class DerivedResponseCache:
             return None
 
     def _validate_key(self, dataset: str, request_hash: str) -> None:
-        if not _DATASET.fullmatch(dataset or "") or not _REQUEST_HASH.fullmatch(request_hash or ""):
+        if not _DERIVED_DATASET.fullmatch(dataset or "") or not _REQUEST_HASH.fullmatch(request_hash or ""):
             raise InvalidCachePartition("derived cache key is invalid")
 
     def _quarantine(self, target: Path) -> None:

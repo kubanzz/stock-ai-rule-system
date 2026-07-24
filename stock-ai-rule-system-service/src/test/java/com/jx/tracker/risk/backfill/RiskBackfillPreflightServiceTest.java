@@ -145,7 +145,7 @@ class RiskBackfillPreflightServiceTest {
         properties.setBackfillEnabled(true);
         properties.setModelVersion("risk-warning-v1");
         properties.setAfterCloseCutoff(LocalTime.of(20, 0));
-        properties.setCollectionChunkSize(200);
+        properties.setCollectionChunkSize(25);
         return properties;
     }
 }

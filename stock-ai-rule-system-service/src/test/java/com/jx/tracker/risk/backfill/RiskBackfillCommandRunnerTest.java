@@ -71,17 +71,22 @@ class RiskBackfillCommandRunnerTest {
                 .select(universe, List.of(), 50);
         when(backfillService.runFiveYearBackfill(END_DATE, sample))
                 .thenReturn(Optional.of(SUCCESS_SUMMARY));
-        when(backfillService.runFiveYearBackfill(END_DATE, List.of()))
+        when(backfillService.runFiveYearBackfill(eq(END_DATE), anyList()))
                 .thenReturn(Optional.of(SUCCESS_SUMMARY));
 
         RiskBackfillCommandResult result = runner().run();
 
         assertThat(result.exitCode()).isEqualTo(RiskBackfillExitCode.SUCCESS);
         assertThat(result.report().sampleGatePassed()).isTrue();
-        assertThat(result.report().fullSummary()).isEqualTo(SUCCESS_SUMMARY);
-        assertThat(result.report().fullChunkCount()).isEqualTo(1);
+        assertThat(result.report().fullSummary()).isEqualTo(
+                new RiskWorkflowRunSummary(400, 40, 120, 1200, 0, 48, 0));
+        assertThat(result.report().fullChunkCount()).isEqualTo(4);
         verify(backfillService).runFiveYearBackfill(END_DATE, sample);
-        verify(backfillService).runFiveYearBackfill(END_DATE, List.of());
+        for (int offset = 0; offset < universe.size(); offset += 25) {
+            verify(backfillService).runFiveYearBackfill(
+                    END_DATE, universe.subList(offset, Math.min(offset + 25, universe.size())));
+        }
+        verify(backfillService, never()).runFiveYearBackfill(END_DATE, List.of());
     }
 
     @Test
@@ -222,7 +227,7 @@ class RiskBackfillCommandRunnerTest {
         properties.setBackfillEnabled(true);
         properties.setModelVersion("risk-v1");
         properties.setAfterCloseCutoff(LocalTime.of(20, 0));
-        properties.setCollectionChunkSize(200);
+        properties.setCollectionChunkSize(25);
         return properties;
     }
 }

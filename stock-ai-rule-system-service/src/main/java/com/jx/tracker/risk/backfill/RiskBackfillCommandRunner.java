@@ -167,13 +167,18 @@ public final class RiskBackfillCommandRunner {
 
     private RiskBackfillCommandResult runFull(RunState state, List<String> activeSymbols) {
         try {
-            Optional<RiskWorkflowRunSummary> result = backfillService.orElseThrow()
-                    .runFiveYearBackfill(command.getEndDate(), List.of());
-            if (result.isEmpty()) {
-                return finish(state, RiskBackfillExitCode.CONFIGURATION_ERROR,
-                        "full-execution", List.of("risk backfill service is disabled"), null);
+            RiskWorkflowRunSummary aggregate = new RiskWorkflowRunSummary(0, 0, 0, 0, 0, 0, 0);
+            for (List<String> chunk : symbolChunks(
+                    activeSymbols, warning.requiredCollectionChunkSize())) {
+                Optional<RiskWorkflowRunSummary> result = backfillService.orElseThrow()
+                        .runFiveYearBackfill(command.getEndDate(), chunk);
+                if (result.isEmpty()) {
+                    return finish(state, RiskBackfillExitCode.CONFIGURATION_ERROR,
+                            "full-execution", List.of("risk backfill service is disabled"), null);
+                }
+                aggregate = add(aggregate, result.orElseThrow());
             }
-            state.fullSummary = result.orElseThrow();
+            state.fullSummary = aggregate;
         } catch (RuntimeException exception) {
             return finish(state, RiskBackfillExitCode.FULL_EXECUTION_ERROR,
                     "full-execution", List.of("full-market backfill execution failed"), exception);
@@ -250,6 +255,29 @@ public final class RiskBackfillCommandRunner {
 
     private int chunks(int size, int chunkSize) {
         return size == 0 ? 0 : (size + chunkSize - 1) / chunkSize;
+    }
+
+    private List<List<String>> symbolChunks(List<String> symbols, int chunkSize) {
+        List<List<String>> chunks = new ArrayList<>();
+        for (int offset = 0; offset < symbols.size(); offset += chunkSize) {
+            chunks.add(List.copyOf(symbols.subList(
+                    offset, Math.min(offset + chunkSize, symbols.size()))));
+        }
+        return List.copyOf(chunks);
+    }
+
+    private RiskWorkflowRunSummary add(
+            RiskWorkflowRunSummary left,
+            RiskWorkflowRunSummary right
+    ) {
+        return new RiskWorkflowRunSummary(
+                Math.addExact(left.observationCount(), right.observationCount()),
+                Math.addExact(left.eventCount(), right.eventCount()),
+                Math.addExact(left.snapshotCount(), right.snapshotCount()),
+                Math.addExact(left.evidenceCount(), right.evidenceCount()),
+                Math.addExact(left.gateCount(), right.gateCount()),
+                Math.addExact(left.checkpointCount(), right.checkpointCount()),
+                Math.addExact(left.unavailableDatasetCount(), right.unavailableDatasetCount()));
     }
 
     private RiskBackfillMode mode() {

@@ -451,6 +451,9 @@ class MarketRiskDataProviderTest {
     void breadthAndCrossMarketExposeC2S1S2S4AndCoverageQuality() {
         List<MarketSourceRecord> breadth = List.of(new BreadthPoint(
                 MARKET, END_DATE, 60, 40, 15, 5, 70, 100,
+                "advanceDecline-250dHighLow-20dMA-v1",
+                "currentListedStocksWithObservableHistoricalBars", true,
+                "breadth-current-universe-proxy-v1", "cn-a-pit-v1",
                 END_DATE.atTime(15, 0), END_DATE.atTime(16, 0), "fixed", RiskDataQualityStatus.AVAILABLE
         ));
         MarketRiskDataProvider breadthProvider = provider(breadth, null);
@@ -464,7 +467,11 @@ class MarketRiskDataProviderTest {
                 .allSatisfy(observation -> {
                     assertThat(observation.dimension()).isEqualTo(RiskDimension.FORCED_SELLING);
                     assertThat(observation.attributes()).containsEntry("proxy", true)
-                            .containsEntry("proxyFormula", "dailyBreadthLiquidityDepth");
+                            .containsEntry("proxyFormula", "dailyBreadthLiquidityDepth")
+                            .containsEntry("breadthDefinition", "advanceDecline-250dHighLow-20dMA-v1")
+                            .containsEntry("universeDefinition", "currentListedStocksWithObservableHistoricalBars")
+                            .containsEntry("calculationVersion", "breadth-current-universe-proxy-v1")
+                            .containsEntry("availabilityPolicyVersion", "cn-a-pit-v1");
                     assertThat(observation.observedAt()).isEqualTo(END_DATE.atTime(15, 0));
                     assertThat(observation.availableAt()).isEqualTo(END_DATE.atTime(16, 0));
                 });

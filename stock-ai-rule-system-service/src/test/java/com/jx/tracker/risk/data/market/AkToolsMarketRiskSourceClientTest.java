@@ -7,6 +7,7 @@ import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
+import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -179,6 +180,15 @@ class AkToolsMarketRiskSourceClientTest {
                 Map.entry("tradeDate", "2026-07-18"),
                 Map.entry("TTM(滚动)市盈率", "20"),
                 Map.entry("riskFreeYield", "0.018"),
+                Map.entry("valuationSourceDate", "2026-06-28"),
+                Map.entry("valuationAgeSessions", 15),
+                Map.entry("stalenessPolicy", "lastPublishedWithin20AshareSessions-v1"),
+                Map.entry("proxy", true),
+                Map.entry("constituentCount", 50),
+                Map.entry("aggregateDefinition", "equalWeightEarningsYieldOfStableConstituents-v1"),
+                Map.entry("universeDefinition", "first50CurrentAshareCodesSorted-v1"),
+                Map.entry("calculationVersion", "pe-risk-premium-v2"),
+                Map.entry("availabilityPolicyVersion", "cn-a-pit-v1"),
                 Map.entry("observedAt", "2026-07-18T07:00:00+00:00"),
                 Map.entry("availableAt", "2026-07-18T08:00:00+00:00")
         ));
@@ -200,10 +210,22 @@ class AkToolsMarketRiskSourceClientTest {
         assertThat(result.records()).singleElement().satisfies(record -> {
             ValuationPoint valuation = (ValuationPoint) record;
             assertThat(valuation.peTtm()).isEqualByComparingTo("20");
+            assertThat(valuation.valuationSourceDate()).isEqualTo(LocalDate.of(2026, 6, 28));
+            assertThat(valuation.valuationAgeSessions()).isEqualTo(15);
+            assertThat(valuation.stalenessPolicy())
+                    .isEqualTo("lastPublishedWithin20AshareSessions-v1");
             assertThat(valuation.observedAt()).isEqualTo(
                     LocalDateTime.of(2026, 7, 18, 15, 0));
             assertThat(valuation.availableAt()).isEqualTo(
                     LocalDateTime.of(2026, 7, 18, 16, 0));
+            assertThat(valuation.proxy()).isTrue();
+            assertThat(valuation.constituentCount()).isEqualTo(50);
+            assertThat(valuation.aggregateDefinition())
+                    .isEqualTo("equalWeightEarningsYieldOfStableConstituents-v1");
+            assertThat(valuation.universeDefinition())
+                    .isEqualTo("first50CurrentAshareCodesSorted-v1");
+            assertThat(valuation.calculationVersion()).isEqualTo("pe-risk-premium-v2");
+            assertThat(valuation.availabilityPolicyVersion()).isEqualTo("cn-a-pit-v1");
         });
         assertThat(result.nextCheckpoint()).isNull();
     }
@@ -281,6 +303,35 @@ class AkToolsMarketRiskSourceClientTest {
         assertThat(queries).hasSize(2);
         assertThat(queries.getFirst()).doesNotContainKey("cursor");
         assertThat(queries.getLast()).containsEntry("cursor", "page-2");
+    }
+
+    @Test
+    void successfulFinalPageClearsPreviouslyPersistedCursor() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport derivedTransport = new ScriptedTransport();
+        derivedTransport.daily = List.of(Map.ofEntries(
+                Map.entry("objectType", "market"), Map.entry("objectId", "CN-A"),
+                Map.entry("tradeDate", "2026-07-18"), Map.entry("open", "100"),
+                Map.entry("close", "101"), Map.entry("volume", "1000"),
+                Map.entry("benchmarkClose", "4000"), Map.entry("leaderClose", "2800"),
+                Map.entry("benchmarkDefinition", "CSI300"),
+                Map.entry("leaderDefinition", "SSE50"), Map.entry("proxy", true),
+                Map.entry("observedAt", "2026-07-18T15:00:00"),
+                Map.entry("availableAt", "2026-07-18T15:30:00")
+        ));
+        RiskIngestionCheckpoint old = new RiskIngestionCheckpoint(
+                "market_daily", "market:CN-A", "old-page", LocalDateTime.of(2026, 7, 17, 20, 0));
+        RiskProviderRequest request = new RiskProviderRequest(
+                List.of(MARKET), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2021, 7, 18), LocalDate.of(2026, 7, 18), old);
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, derivedTransport, CLOCK);
+
+        MarketSourceBatch result = client.fetch(MarketDatasetCode.MARKET_DAILY, request);
+
+        assertThat(derivedTransport.calls).singleElement().satisfies(call ->
+                assertThat(call.query()).containsEntry("cursor", "old-page"));
+        assertThat(result.nextCheckpoint()).isNull();
     }
 
     @Test

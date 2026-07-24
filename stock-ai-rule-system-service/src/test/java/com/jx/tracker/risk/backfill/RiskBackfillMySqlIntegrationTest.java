@@ -98,6 +98,21 @@ class RiskBackfillMySqlIntegrationTest {
             assertThat(workflowRepository.findCheckpoint(
                     "a-share-market-risk", "market_daily", "stock:600519.SH"))
                     .get().extracting(RiskIngestionCheckpoint::cursor).isEqualTo("page-1");
+
+            workflowRepository.saveIngestionStatus(
+                    "a-share-market-risk", "market_daily", "stock:600519.SH", checkpoint,
+                    RiskProviderBatch.unavailable(
+                            "risk-derived-gateway", "temporary failure", AS_OF.plusMinutes(1)));
+            assertThat(workflowRepository.findCheckpoint(
+                    "a-share-market-risk", "market_daily", "stock:600519.SH"))
+                    .get().extracting(RiskIngestionCheckpoint::cursor).isEqualTo("page-1");
+
+            workflowRepository.saveIngestionStatus(
+                    "a-share-market-risk", "market_daily", "stock:600519.SH", checkpoint,
+                    RiskProviderBatch.validZero(
+                            "risk-derived-gateway", null, AS_OF.plusMinutes(2)));
+            assertThat(workflowRepository.findCheckpoint(
+                    "a-share-market-risk", "market_daily", "stock:600519.SH")).isEmpty();
         } finally {
             dropSchema(schema);
         }

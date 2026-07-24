@@ -18,7 +18,7 @@
 |---|---|---|---|
 | `cn_a_stock_master` | A 股对象、名称、上市日 | `DATA_STOCK_MASTER` | 元数据，不参与风险覆盖率 |
 | `sw1_membership` | 股票与申万一级行业有效期 | `DATA_SW1_MEMBERSHIP` | 元数据，不参与风险覆盖率 |
-| `valuation` | PE、盈利收益率、无风险收益率 | `V1` | 同时输出估值倍数与风险溢价原始观测 |
+| `valuation` | PE、盈利收益率、无风险收益率 | `V1` | 个股直接值与稳定 50 只 A 股等权盈利收益率市场代理；同时输出估值倍数与风险溢价原始观测 |
 | `market_daily` | 开收盘、成交量、基准和龙头收盘序列 | `V3`、`V4`、`C1`、`C3`、`C4`、`C5`、`A3`、`A5` | 在既有确认代理外，输出趋势/波动率降仓与目标—基准收益相关性代理 |
 | `breadth` | 上涨/下跌、新高/新低、均线上方家数 | `C2`、`A4` | 输出市场宽度分量，以及明确标注为代理的日频市场深度分量，不在 Provider 内合成最终分 |
 | `cross_market` | 领先资产收益、动态相关、独立市场确认数 | `S1`、`S2`、`S4` | 输出标准化收益、相关系数和跨市场确认比例 |
@@ -64,7 +64,7 @@
 | 申万一级目录 | `sw_index_first_info()`，无参数 | 当前目录与当前估值字段，包括 `TTM(滚动)市盈率` |
 | 申万成分 | `index_component_sw(symbol=<行业代码>)` | 当前成分；`计入日期` 可作为 `validFrom`，但没有移除历史时不能伪造历史有效期 |
 
-原生函数不接受统一的 `start_date/end_date/objects/cursor`。五年历史、对齐序列及 point-in-time 元数据必须由衍生网关提供：
+原生函数不接受统一的 `start_date/end_date/objects/cursor`。五年历史、对齐序列及 point-in-time 元数据必须由衍生网关提供。网关交易日历使用 `tool_trade_date_hist_sina()` 已公布的完整日历，因此最新交易日也能取得下一开市日，禁止以工作日猜测法替代：
 
 | 数据集 | 衍生网关路径 |
 |---|---|
@@ -90,7 +90,7 @@
 当前免费源的客观边界必须原样保留：
 
 - `stock_industry_clf_hist_sw` 依赖申万官网文件；TLS/502 或文件结构异常时不关闭证书校验，只返回带真实抓取时间的当前成分，历史请求保持不足；
-- 百度个股 PE 的长区间会降采样，不能把稀疏的“全部”序列补成逐交易日估值；PE 或 10 年国债收益率缺失时 V1 不出正式值；
+- 百度个股 PE 的“全部”长区间序列约每数周一个发布点，不做线性插值、不使用目标交易日之后的值。每个交易日只能按 point-in-time 取当时已发布的最近 PE，最多向前沿用 20 个 A 股交易日，并记录 `valuationSourceDate`、`valuationAgeSessions`和 `stalenessPolicy`；超出窗口、PE 非正或 10 年国债收益率缺失时 V1 不出正式值。市场 V1 使用按代码排序的前 50 只当前 A 股作为稳定代理池，个别成分调用失败时可跳过，但单日有效成分少于 20 只时不出市场值；记录 `proxy`、`constituentCount`、`aggregateDefinition`、`universeDefinition`、计算版本和可用性策略。历史行业估值缺少可靠历史成分时保持不足，不把缺失权重转给市场或个股；
 - ETF 免费接口只有净值、成交和申赎状态，没有历史真实申赎份额/净额，A2 固定返回 `free_source_has_no_historical_etf_redemption_fact`，不得以净值或订单流替代；
 - 跨市场篮子固定为标普 500、纳斯达克、恒生和日经 225；单源失败可在至少三个市场时继续，少于三个或 60 日相关窗口不足时返回历史不足；
 - 历史市场宽度使用“当前上市且存在当日历史行情”的股票集合，明确标记 `currentListedStocksWithObservableHistoricalBars` 和 `proxy=true`，不声称拥有已退市股票的完整历史成分。
@@ -113,9 +113,9 @@ docker build --target test -t stock-risk-data-gateway-test infra/risk-data-gatew
 docker run --rm --security-opt seccomp=unconfined stock-risk-data-gateway-test pytest -q
 ```
 
-缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务；成功原始响应由带 SHA-256 的 Parquet 长期复用，聚合响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源。同一网关进程内相同请求的冷缓存缺失会以请求哈希合并，避免重复扫描。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务。带明确过去结束日的成功原始响应作为不可变历史 Parquet 复用；代码表、交易日历、无结束日指数等当前分区默认 24 小时刷新。相同原始分区写入和相同衍生请求都在单网关进程内合并，避免固定 Parquet/manifest 交叉写入。所有衍生数据集的完整未分页响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒，后续 cursor 页面复用同一次计算。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
 
-网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次采集中消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。
+网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次有界对象块中消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。成功消费终页后会清除旧 cursor；只有失败或历史不足才保留原 checkpoint。全市场命令固定按 21～50 只股票分块，默认 25，逐块幂等落库和评分，禁止把全部股票历史一次装入内存。
 
 连接已部署的 AKTools 与网关后执行：
 

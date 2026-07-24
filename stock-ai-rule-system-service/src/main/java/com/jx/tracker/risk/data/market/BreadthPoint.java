@@ -15,6 +15,11 @@ public record BreadthPoint(
         int newLowCount,
         int aboveMovingAverageCount,
         int totalCount,
+        String breadthDefinition,
+        String universeDefinition,
+        boolean proxy,
+        String calculationVersion,
+        String availabilityPolicyVersion,
         LocalDateTime observedAt,
         LocalDateTime availableAt,
         String source,
@@ -28,5 +33,25 @@ public record BreadthPoint(
                 || newHighCount > totalCount || newLowCount > totalCount || aboveMovingAverageCount > totalCount) {
             throw new IllegalArgumentException("invalid market breadth counts");
         }
+        if (blank(breadthDefinition) || blank(universeDefinition)
+                || blank(calculationVersion) || blank(availabilityPolicyVersion)) {
+            throw new IllegalArgumentException("market breadth audit definitions are required");
+        }
+    }
+
+    public BreadthPoint(
+            RiskObjectKey object, LocalDate tradeDate,
+            int advancingCount, int decliningCount, int newHighCount, int newLowCount,
+            int aboveMovingAverageCount, int totalCount,
+            LocalDateTime observedAt, LocalDateTime availableAt,
+            String source, RiskDataQualityStatus qualityStatus
+    ) {
+        this(object, tradeDate, advancingCount, decliningCount, newHighCount, newLowCount,
+                aboveMovingAverageCount, totalCount, "unspecified", "unspecified", true,
+                "unspecified", "unspecified", observedAt, availableAt, source, qualityStatus);
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 }

@@ -78,6 +78,7 @@ class CrossMarketDataset:
                 "observedMarketCount": int(record["observedMarketCount"]),
                 "basketDefinition": BASKET_DEFINITION,
                 "proxy": True,
+                "calculationVersion": CALCULATION_VERSION,
                 "qualityStatus": "available",
                 "observedAt": record["observedAt"].isoformat(),
                 "availableAt": record["availableAt"].isoformat(),

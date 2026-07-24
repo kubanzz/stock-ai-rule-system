@@ -30,8 +30,8 @@ public final class RiskWorkflowPlanner {
         if (universeReader == null) {
             throw new IllegalArgumentException("universeReader must not be null");
         }
-        if (collectionChunkSize < 1 || collectionChunkSize > 500) {
-            throw new IllegalArgumentException("collectionChunkSize must be between 1 and 500");
+        if (collectionChunkSize < 21 || collectionChunkSize > 50) {
+            throw new IllegalArgumentException("collectionChunkSize must be between 21 and 50");
         }
         this.universeReader = universeReader;
         this.collectionChunkSize = collectionChunkSize;
@@ -50,7 +50,7 @@ public final class RiskWorkflowPlanner {
         tasks.addAll(chunkedTasks(MarketRiskDataProvider.PROVIDER_CODE,
                 MarketDatasetCode.SW1_MEMBERSHIP.code(), stocks));
         tasks.addAll(marketAndStockTasks(MarketDatasetCode.MARKET_DAILY.code(), market, stocks));
-        tasks.addAll(marketAndStockTasks(MarketDatasetCode.VALUATION.code(), market, stocks));
+        tasks.addAll(valuationTasks(market, stocks));
         tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
                 MarketDatasetCode.BREADTH.code(), List.of(market)));
         tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
@@ -84,6 +84,18 @@ public final class RiskWorkflowPlanner {
         List<RiskCollectionTask> tasks = new ArrayList<>();
         tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE, datasetCode, List.of(market)));
         tasks.addAll(chunkedTasks(MarketRiskDataProvider.PROVIDER_CODE, datasetCode, stocks));
+        return List.copyOf(tasks);
+    }
+
+    private List<RiskCollectionTask> valuationTasks(
+            RiskObjectKey market,
+            List<RiskObjectKey> stocks
+    ) {
+        List<RiskCollectionTask> tasks = new ArrayList<>();
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.VALUATION.code(), List.of(market)));
+        tasks.addAll(chunkedTasks(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.VALUATION.code(), stocks));
         return List.copyOf(tasks);
     }
 

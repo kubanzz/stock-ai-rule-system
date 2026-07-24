@@ -21,6 +21,8 @@ public record RiskBackfillReadiness(
         boolean coreDateCoverageReady,
         Map<RiskHorizon, RiskBackfillReadinessData.HorizonSnapshotStats> horizonSnapshots,
         boolean threeHorizonMarketSnapshotsReady,
+        RiskBackfillReadinessData.PopulationCoverage populationCoverage,
+        boolean populationCoverageReady,
         long totalSnapshotCount,
         long formalSnapshotCount,
         long invalidFormalSnapshotCount,
@@ -38,6 +40,9 @@ public record RiskBackfillReadiness(
         dimensionCoverage = Map.copyOf(dimensionCoverage);
         indicators = List.copyOf(indicators);
         horizonSnapshots = Map.copyOf(horizonSnapshots);
+        populationCoverage = populationCoverage == null
+                ? new RiskBackfillReadinessData.PopulationCoverage(0, 0, 0, 0)
+                : populationCoverage;
         checkpoints = List.copyOf(checkpoints);
         failures = List.copyOf(failures);
     }

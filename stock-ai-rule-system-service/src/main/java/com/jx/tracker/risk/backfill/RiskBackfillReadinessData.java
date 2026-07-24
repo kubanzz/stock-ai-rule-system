@@ -16,6 +16,7 @@ public record RiskBackfillReadinessData(
         LocalDate coreEarliestDate,
         LocalDate coreLatestDate,
         Map<RiskHorizon, HorizonSnapshotStats> horizonSnapshots,
+        PopulationCoverage populationCoverage,
         long totalSnapshotCount,
         long formalSnapshotCount,
         long invalidFormalSnapshotCount,
@@ -35,6 +36,8 @@ public record RiskBackfillReadinessData(
             snapshots.putAll(horizonSnapshots);
         }
         horizonSnapshots = Map.copyOf(snapshots);
+        populationCoverage = populationCoverage == null
+                ? new PopulationCoverage(0, 0, 0, 0) : populationCoverage;
         checkpoints = checkpoints == null ? List.of() : List.copyOf(checkpoints);
     }
 
@@ -43,7 +46,7 @@ public record RiskBackfillReadinessData(
     ) {
         return new RiskBackfillReadinessData(
                 scoreStartDate, endDate, replacement, coreEarliestDate, coreLatestDate,
-                horizonSnapshots, totalSnapshotCount, formalSnapshotCount,
+                horizonSnapshots, populationCoverage, totalSnapshotCount, formalSnapshotCount,
                 invalidFormalSnapshotCount, timestampViolationCount,
                 enforcedGateCount, checkpoints);
     }
@@ -63,6 +66,22 @@ public record RiskBackfillReadinessData(
             long marketCount,
             long formalMarketCount
     ) {
+    }
+
+    public record PopulationCoverage(
+            int requestedStockCount,
+            long marketCoreTradingDayCount,
+            long coreCoveredStockCount,
+            long formalEndDateStockCount
+    ) {
+        public PopulationCoverage {
+            if (requestedStockCount < 0 || marketCoreTradingDayCount < 0
+                    || coreCoveredStockCount < 0 || formalEndDateStockCount < 0
+                    || coreCoveredStockCount > requestedStockCount
+                    || formalEndDateStockCount > requestedStockCount) {
+                throw new IllegalArgumentException("invalid risk backfill population coverage");
+            }
+        }
     }
 
     public record CheckpointStatus(

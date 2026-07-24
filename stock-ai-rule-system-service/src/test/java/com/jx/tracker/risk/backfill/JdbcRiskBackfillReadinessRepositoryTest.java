@@ -46,6 +46,10 @@ class JdbcRiskBackfillReadinessRepositoryTest {
                 "available", "1", SCORE_START.atTime(18, 0), SCORE_START.atTime(19, 0));
         insertObservation("stock", "600519.SH", "V3", "V3", END_DATE,
                 "available", "1", END_DATE.atTime(18, 0), END_DATE.atTime(19, 0));
+        insertObservation("market", "CN-A", "V3", "V3", SCORE_START,
+                "available", "1", SCORE_START.atTime(18, 0), SCORE_START.atTime(19, 0));
+        insertObservation("market", "CN-A", "V3", "V3", END_DATE,
+                "available", "1", END_DATE.atTime(18, 0), END_DATE.atTime(19, 0));
         insertObservation("stock", "000001.SZ", "T1", "T1", END_DATE,
                 "available", "1", END_DATE.atTime(18, 0), END_DATE.atTime(19, 0));
         insertObservation("stock", "600519.SH", "A1", "A1", END_DATE,
@@ -67,6 +71,8 @@ class JdbcRiskBackfillReadinessRepositoryTest {
         assertThat(data.observedIndicators().get("C2").observationCount()).isEqualTo(3);
         assertThat(data.coreEarliestDate()).isEqualTo(SCORE_START);
         assertThat(data.coreLatestDate()).isEqualTo(END_DATE);
+        assertThat(data.populationCoverage()).isEqualTo(
+                new RiskBackfillReadinessData.PopulationCoverage(1, 2, 1, 0));
         assertThat(data.horizonSnapshots().get(RiskHorizon.SHORT_TERM))
                 .isEqualTo(new RiskBackfillReadinessData.HorizonSnapshotStats(3, 2, 1, 1));
         assertThat(data.horizonSnapshots().get(RiskHorizon.MEDIUM_TERM).formalMarketCount())

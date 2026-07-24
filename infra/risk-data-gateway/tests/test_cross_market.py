@@ -90,6 +90,9 @@ def test_cross_market_uses_only_prior_available_global_closes():
     assert row["confirmedDownMarketCount"] == 3
     assert abs(row["dynamicCorrelation"] - 0.625) < 0.02
     assert row["basketDefinition"] == "SP500,NASDAQ,HSI,NIKKEI225"
+    assert row["calculationVersion"] == "cross-market-equal-weight-correlation-v1"
+    assert row["availabilityPolicyVersion"] == "cn-a-pit-v1"
+    assert row["proxy"] is True
     assert row["availableAt"].endswith("09:00:00+08:00")
     assert response.meta.history_complete is True
 

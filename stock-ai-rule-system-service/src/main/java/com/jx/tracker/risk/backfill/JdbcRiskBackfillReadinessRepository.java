@@ -61,9 +61,18 @@ public final class JdbcRiskBackfillReadinessRepository
         List<String> stocks = normalizeStocks(stockSymbols);
         List<String> sectors = findSectors(stocks, scoreStartDate, endDate, asOf);
         List<ObjectScope> scopes = scopes(stocks, sectors);
+        ObjectScope marketScope = new ObjectScope(
+                "market", List.of(AshareRiskObjectCatalog.CN_A));
 
         Map<String, MutableObservedIndicator> indicators = new LinkedHashMap<>();
-        DateRange coreRange = new DateRange(null, null);
+        DateRange coreRange = loadCoreRange(
+                marketScope, scoreStartDate, endDate, asOf);
+        long marketCoreTradingDays = loadCoreTradingDayCount(
+                marketScope, scoreStartDate, endDate, asOf);
+        long coreCoveredStocks = loadCoreCoveredStockCount(
+                stocks, scoreStartDate, endDate, asOf, coreRange, marketCoreTradingDays);
+        long formalEndDateStocks = loadFormalEndDateStockCount(
+                stocks, modelVersion, endDate, asOf);
         Map<RiskHorizon, MutableHorizonStats> horizons = new EnumMap<>(RiskHorizon.class);
         for (RiskHorizon horizon : RiskHorizon.values()) {
             horizons.put(horizon, new MutableHorizonStats());
@@ -73,7 +82,6 @@ public final class JdbcRiskBackfillReadinessRepository
         long invalidFormalSnapshots = 0;
         for (ObjectScope scope : scopes) {
             loadIndicators(scope, scoreStartDate, endDate, asOf, indicators);
-            coreRange = coreRange.merge(loadCoreRange(scope, scoreStartDate, endDate, asOf));
             SnapshotScopeStats stats = loadSnapshots(
                     scope, modelVersion, scoreStartDate, endDate, asOf);
             totalSnapshots += stats.totalCount();
@@ -93,6 +101,9 @@ public final class JdbcRiskBackfillReadinessRepository
         return new RiskBackfillReadinessData(
                 scoreStartDate, endDate, immutableIndicators,
                 coreRange.earliest(), coreRange.latest(), immutableHorizons,
+                new RiskBackfillReadinessData.PopulationCoverage(
+                        stocks.size(), marketCoreTradingDays,
+                        coreCoveredStocks, formalEndDateStocks),
                 totalSnapshots, formalSnapshots, invalidFormalSnapshots,
                 timestampViolationCount(), enforcedGateCount(), checkpoints());
     }
@@ -146,6 +157,105 @@ public final class JdbcRiskBackfillReadinessRepository
                 : new DateRange(null, null));
     }
 
+    private long loadCoreTradingDayCount(
+            ObjectScope scope,
+            LocalDate scoreStartDate,
+            LocalDate endDate,
+            LocalDateTime asOf
+    ) {
+        MapSqlParameterSource parameters = baseParameters(scope, scoreStartDate, endDate, asOf)
+                .addValue("indicatorCodes", CORE_MARKET_DAILY_INDICATORS)
+                .addValue("source", "risk-derived-gateway");
+        Long count = namedJdbcTemplate.queryForObject("""
+                SELECT COUNT(DISTINCT trade_date)
+                FROM risk_indicator_observation
+                WHERE trade_date BETWEEN :scoreStartDate AND :endDate
+                  AND available_at <= :asOf
+                  AND indicator_value IS NOT NULL
+                  AND quality_status IN ('available', 'valid_zero')
+                  AND source = :source AND indicator_code IN (:indicatorCodes)
+                  AND object_type = :objectType AND object_id IN (:objectIds)
+                """, parameters, Long.class);
+        return count == null ? 0 : count;
+    }
+
+    private long loadCoreCoveredStockCount(
+            List<String> stocks,
+            LocalDate scoreStartDate,
+            LocalDate endDate,
+            LocalDateTime asOf,
+            DateRange marketRange,
+            long marketTradingDays
+    ) {
+        if (marketRange.earliest() == null || marketRange.latest() == null
+                || marketTradingDays <= 0) {
+            return 0;
+        }
+        long covered = 0;
+        for (List<String> chunk : chunks(stocks)) {
+            ObjectScope scope = new ObjectScope("stock", chunk);
+            MapSqlParameterSource parameters = baseParameters(
+                    scope, scoreStartDate, endDate, asOf)
+                    .addValue("indicatorCodes", CORE_MARKET_DAILY_INDICATORS)
+                    .addValue("source", "risk-derived-gateway");
+            List<CoreObjectStats> rows = namedJdbcTemplate.query("""
+                    SELECT object_id, MIN(trade_date) AS earliest_date,
+                           MAX(trade_date) AS latest_date,
+                           COUNT(DISTINCT trade_date) AS trading_day_count
+                    FROM risk_indicator_observation
+                    WHERE trade_date BETWEEN :scoreStartDate AND :endDate
+                      AND available_at <= :asOf
+                      AND indicator_value IS NOT NULL
+                      AND quality_status IN ('available', 'valid_zero')
+                      AND source = :source AND indicator_code IN (:indicatorCodes)
+                      AND object_type = :objectType AND object_id IN (:objectIds)
+                    GROUP BY object_id
+                    """, parameters, (resultSet, rowNum) -> new CoreObjectStats(
+                    resultSet.getString("object_id"),
+                    localDate(resultSet, "earliest_date"),
+                    localDate(resultSet, "latest_date"),
+                    resultSet.getLong("trading_day_count")));
+            covered += rows.stream().filter(row ->
+                    row.earliest() != null && !row.earliest().isAfter(marketRange.earliest())
+                            && row.latest() != null && !row.latest().isBefore(marketRange.latest())
+                            && row.tradingDayCount() * 100 >= marketTradingDays * 95
+            ).count();
+        }
+        return covered;
+    }
+
+    private long loadFormalEndDateStockCount(
+            List<String> stocks,
+            String modelVersion,
+            LocalDate endDate,
+            LocalDateTime asOf
+    ) {
+        long covered = 0;
+        for (List<String> chunk : chunks(stocks)) {
+            MapSqlParameterSource parameters = new MapSqlParameterSource()
+                    .addValue("stocks", chunk)
+                    .addValue("modelVersion", modelVersion)
+                    .addValue("endDate", endDate)
+                    .addValue("asOf", asOf)
+                    .addValue("horizonCount", RiskHorizon.values().length);
+            Long count = namedJdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM (
+                        SELECT object_id
+                        FROM risk_score_snapshot
+                        WHERE object_type = 'stock' AND object_id IN (:stocks)
+                          AND model_version = :modelVersion AND trade_date = :endDate
+                          AND available_at <= :asOf AND completeness >= 0.80
+                          AND total_score IS NOT NULL AND risk_level IS NOT NULL
+                          AND risk_stage IS NOT NULL AND risk_confidence IS NOT NULL
+                        GROUP BY object_id
+                        HAVING COUNT(DISTINCT horizon) = :horizonCount
+                    ) covered_stocks
+                    """, parameters, Long.class);
+            covered += count == null ? 0 : count;
+        }
+        return covered;
+    }
+
     private SnapshotScopeStats loadSnapshots(
             ObjectScope scope,
             String modelVersion,
@@ -164,6 +274,7 @@ public final class JdbcRiskBackfillReadinessRepository
                        SUM(CASE WHEN object_type = 'market' AND object_id = 'CN-A'
                                 THEN 1 ELSE 0 END) AS market_count,
                        SUM(CASE WHEN object_type = 'market' AND object_id = 'CN-A'
+                                     AND trade_date = :endDate
                                      AND completeness >= 0.80
                                      AND total_score IS NOT NULL AND risk_level IS NOT NULL
                                      AND risk_stage IS NOT NULL AND risk_confidence IS NOT NULL
@@ -330,6 +441,14 @@ public final class JdbcRiskBackfillReadinessRepository
                     ? latest : other.latest;
             return new DateRange(mergedEarliest, mergedLatest);
         }
+    }
+
+    private record CoreObjectStats(
+            String objectId,
+            LocalDate earliest,
+            LocalDate latest,
+            long tradingDayCount
+    ) {
     }
 
     private static final class MutableObservedIndicator {

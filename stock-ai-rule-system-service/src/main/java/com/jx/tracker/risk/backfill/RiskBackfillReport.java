@@ -44,6 +44,7 @@ public record RiskBackfillReport(
                 && sampleSummary.unavailableDatasetCount() == 0
                 && sampleReadiness != null
                 && sampleReadiness.ready()
+                && sampleReadiness.populationCoverageReady()
                 && expectedModelVersion != null
                 && expectedModelVersion.equals(modelVersion)
                 && expectedEndDate != null

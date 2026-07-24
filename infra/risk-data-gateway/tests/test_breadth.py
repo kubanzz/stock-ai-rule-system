@@ -66,6 +66,9 @@ def test_breadth_uses_only_observable_active_stocks():
     assert row["aboveMovingAverageCount"] == 2
     assert row["totalCount"] == 5
     assert row["breadthDefinition"] == "advanceDecline-250dHighLow-20dMA-v1"
+    assert row["universeDefinition"] == "currentListedStocksWithObservableHistoricalBars"
+    assert row["calculationVersion"] == "breadth-current-universe-proxy-v1"
+    assert row["availabilityPolicyVersion"] == "cn-a-pit-v1"
     assert row["proxy"] is True
     assert response.meta.history_complete is True
 

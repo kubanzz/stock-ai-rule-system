@@ -135,7 +135,7 @@ class JdbcRiskWorkflowRepositoryTest {
             assertThat(arguments[9]).isEqualTo("source failed");
         });
         assertThat(jdbc.updates).singleElement().asString()
-                .contains("checkpoint_value = checkpoint_value", "checkpoint_at = checkpoint_at");
+                .contains("ELSE checkpoint_value", "ELSE checkpoint_at");
     }
 
     @Test
@@ -150,6 +150,28 @@ class JdbcRiskWorkflowRepositoryTest {
 
         assertThat(jdbc.arguments).singleElement().satisfies(arguments ->
                 assertThat(arguments[3].toString()).isEqualTo("{}"));
+    }
+
+    @Test
+    void successfulTerminalStatusClearsExistingCursor() {
+        RecordingJdbcTemplate jdbc = new RecordingJdbcTemplate();
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        LocalDateTime checkpointAt = LocalDateTime.of(2026, 7, 17, 20, 0);
+        LocalDateTime completedAt = checkpointAt.plusDays(1);
+        RiskIngestionCheckpoint current = new RiskIngestionCheckpoint(
+                "dataset-a", "stock:600519.SH", "cursor-7", checkpointAt);
+
+        repository.saveIngestionStatus(
+                "provider-a", "dataset-a", "stock:600519.SH", current,
+                RiskProviderBatch.validZero("source-a", null, completedAt));
+
+        assertThat(jdbc.arguments).singleElement().satisfies(arguments -> {
+            assertThat(arguments[3].toString()).isEqualTo("{}");
+            assertThat(arguments[4]).isEqualTo(completedAt);
+        });
+        assertThat(jdbc.updates).singleElement().asString()
+                .contains("VALUES(quality_status) IN ('available', 'valid_zero')")
+                .contains("THEN VALUES(checkpoint_value)", "THEN VALUES(checkpoint_at)");
     }
 
     @Test
