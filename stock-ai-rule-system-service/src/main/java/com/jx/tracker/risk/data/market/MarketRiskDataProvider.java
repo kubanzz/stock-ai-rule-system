@@ -122,7 +122,9 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             List<IndustryExposure> industryExposures = typedIndustryExposures(dataset, eligible);
             List<RiskObservation> observations = transform(dataset, eligible, request);
             if (partialHistory) {
-                observations = auditOnly(observations, sourceBatch.failureReason());
+                observations = dataset == MarketDatasetCode.VALUATION
+                        ? annotatePartialHistory(observations, sourceBatch.failureReason())
+                        : auditOnly(observations, sourceBatch.failureReason());
             }
             if (observations.isEmpty() && industryExposures.isEmpty()) {
                 return new RiskProviderBatch(
@@ -166,6 +168,34 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                     observation.dimension(), observation.indicatorCode(), null, observation.unit(),
                     observation.observedAt(), observation.availableAt(), observation.source(),
                     RiskDataQualityStatus.INSUFFICIENT_HISTORY, attributes);
+        }).toList();
+    }
+
+    private List<RiskObservation> annotatePartialHistory(
+            List<RiskObservation> observations,
+            String partialHistoryReason
+    ) {
+        return observations.stream().map(observation -> {
+            Map<String, Object> attributes = new LinkedHashMap<>(observation.attributes());
+            attributes.put("sourceQuality", observation.qualityStatus().getCode());
+            Object metric = attributes.get("metric");
+            Object auditValue = observation.value() != null
+                    ? observation.value()
+                    : metric instanceof String name ? attributes.get(name) : null;
+            if (auditValue == null && "riskPremium".equals(metric)
+                    && attributes.get("earningsYield") instanceof BigDecimal earningsYield
+                    && attributes.get("riskFreeYield") instanceof BigDecimal riskFreeYield) {
+                auditValue = earningsYield.subtract(riskFreeYield);
+            }
+            if (auditValue != null) {
+                attributes.put("auditValue", auditValue);
+            }
+            attributes.put("partialHistoryReason", partialHistoryReason);
+            return new RiskObservation(
+                    observation.object(), observation.horizon(), observation.tradeDate(),
+                    observation.dimension(), observation.indicatorCode(), observation.value(),
+                    observation.unit(), observation.observedAt(), observation.availableAt(),
+                    observation.source(), observation.qualityStatus(), attributes);
         }).toList();
     }
 
@@ -400,6 +430,10 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                                         "constituentCount", point.constituentCount(),
                                         "aggregateDefinition", point.aggregateDefinition(),
                                         "universeDefinition", point.universeDefinition(),
+                                        "constituentUniversePointInTime",
+                                                point.constituentUniversePointInTime(),
+                                        "scoringEligible", point.scoringEligible(),
+                                        "qualityReason", point.qualityReason(),
                                         "calculationVersion", point.calculationVersion(),
                                         "availabilityPolicyVersion", point.availabilityPolicyVersion()
                                 )
@@ -420,6 +454,10 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                                         "constituentCount", point.constituentCount(),
                                         "aggregateDefinition", point.aggregateDefinition(),
                                         "universeDefinition", point.universeDefinition(),
+                                        "constituentUniversePointInTime",
+                                                point.constituentUniversePointInTime(),
+                                        "scoringEligible", point.scoringEligible(),
+                                        "qualityReason", point.qualityReason(),
                                         "calculationVersion", point.calculationVersion(),
                                         "availabilityPolicyVersion", point.availabilityPolicyVersion()
                                 )

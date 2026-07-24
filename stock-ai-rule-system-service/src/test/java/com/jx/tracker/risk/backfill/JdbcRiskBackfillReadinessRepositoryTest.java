@@ -69,10 +69,10 @@ class JdbcRiskBackfillReadinessRepositoryTest {
                 .containsExactlyInAnyOrder(
                         "advanceRatio", "newHighLowBalance", "aboveMovingAverageRatio");
         assertThat(data.observedIndicators().get("C2").observationCount()).isEqualTo(3);
-        assertThat(data.coreEarliestDate()).isEqualTo(SCORE_START);
-        assertThat(data.coreLatestDate()).isEqualTo(END_DATE);
+        assertThat(data.coreEarliestDate()).isNull();
+        assertThat(data.coreLatestDate()).isNull();
         assertThat(data.populationCoverage()).isEqualTo(
-                new RiskBackfillReadinessData.PopulationCoverage(1, 2, 1, 0));
+                new RiskBackfillReadinessData.PopulationCoverage(1, 0, 0, 0));
         assertThat(data.horizonSnapshots().get(RiskHorizon.SHORT_TERM))
                 .isEqualTo(new RiskBackfillReadinessData.HorizonSnapshotStats(3, 2, 1, 1));
         assertThat(data.horizonSnapshots().get(RiskHorizon.MEDIUM_TERM).formalMarketCount())
@@ -88,6 +88,40 @@ class JdbcRiskBackfillReadinessRepositoryTest {
             assertThat(checkpoint.datasetCode()).isEqualTo("market_daily");
             assertThat(checkpoint.qualityStatus()).isEqualTo("available");
         });
+    }
+
+    @Test
+    void countsOnlyStocksWithEveryCoreComponentOnEachCoveredTradingDay() {
+        insertCompleteCoreDay("market", "CN-A", SCORE_START);
+        insertCompleteCoreDay("market", "CN-A", END_DATE);
+        insertObservation("stock", "600519.SH", "V3", "relativeReturn", SCORE_START,
+                "available", "1", SCORE_START.atTime(18, 0), SCORE_START.atTime(19, 0));
+        insertObservation("stock", "600519.SH", "V3", "relativeReturn", END_DATE,
+                "available", "1", END_DATE.atTime(18, 0), END_DATE.atTime(19, 0));
+        insertCompleteCoreDay("000001.SZ", SCORE_START);
+        insertCompleteCoreDay("000001.SZ", END_DATE);
+
+        RiskBackfillReadinessData data = repository.load(
+                "risk-v1", SCORE_START, END_DATE, AS_OF,
+                List.of("600519.SH", "000001.SZ"));
+
+        assertThat(data.populationCoverage()).isEqualTo(
+                new RiskBackfillReadinessData.PopulationCoverage(2, 2, 1, 0));
+    }
+
+    @Test
+    void singleMarketCoreIndicatorDoesNotEstablishCompleteTradingDays() {
+        insertObservation("market", "CN-A", "V3", "relativeReturn", SCORE_START,
+                "available", "1", SCORE_START.atTime(18, 0), SCORE_START.atTime(19, 0));
+        insertObservation("market", "CN-A", "V3", "relativeReturn", END_DATE,
+                "available", "1", END_DATE.atTime(18, 0), END_DATE.atTime(19, 0));
+
+        RiskBackfillReadinessData data = repository.load(
+                "risk-v1", SCORE_START, END_DATE, AS_OF, List.of("600519.SH"));
+
+        assertThat(data.coreEarliestDate()).isNull();
+        assertThat(data.coreLatestDate()).isNull();
+        assertThat(data.populationCoverage().marketCoreTradingDayCount()).isZero();
     }
 
     private void createSchema() {
@@ -157,6 +191,37 @@ class JdbcRiskBackfillReadinessRepositoryTest {
                 INSERT INTO risk_indicator_observation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, objectType, objectId, tradeDate, code, component, value,
                 observedAt, availableAt, "risk-derived-gateway", quality);
+    }
+
+    private void insertCompleteCoreDay(String objectId, LocalDate tradeDate) {
+        insertCompleteCoreDay("stock", objectId, tradeDate);
+    }
+
+    private void insertCompleteCoreDay(
+            String objectType,
+            String objectId,
+            LocalDate tradeDate
+    ) {
+        LocalDateTime observedAt = tradeDate.atTime(18, 0);
+        LocalDateTime availableAt = tradeDate.atTime(19, 0);
+        insertObservation(objectType, objectId, "V3", "relativeReturn", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "V4", "volumeRatio", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "C1", "leaderRelativeReturn", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "C3", "downVolumeRatio", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "C4", "relativeStrength", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "C5", "trendDistance", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "C5", "openingGap", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "A3", "trendVolatilityDeleveragingProxy", tradeDate,
+                "available", "1", observedAt, availableAt);
+        insertObservation(objectType, objectId, "A5", "returnCorrelation", tradeDate,
+                "available", "1", observedAt, availableAt);
     }
 
     private void insertSnapshots() {

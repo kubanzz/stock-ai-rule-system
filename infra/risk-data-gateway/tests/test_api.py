@@ -5,7 +5,7 @@ from threading import Barrier, Lock
 import pytest
 from fastapi.testclient import TestClient
 
-from risk_gateway.app import _calendar, create_app
+from risk_gateway.app import DERIVED_REQUEST_HASH_VERSIONS, _calendar, create_app
 from risk_gateway.config import Settings
 from risk_gateway.models import GatewayResponse, RiskQuery
 
@@ -13,6 +13,10 @@ from risk_gateway.models import GatewayResponse, RiskQuery
 pytestmark = pytest.mark.filterwarnings(
     "ignore:Using `httpx` with `starlette.testclient` is deprecated"
 )
+
+
+def test_valuation_cache_namespace_excludes_pre_scoring_eligibility_payloads():
+    assert DERIVED_REQUEST_HASH_VERSIONS["valuation"] == "valuation-forward-fill-v5"
 
 
 class HealthyDependencies:

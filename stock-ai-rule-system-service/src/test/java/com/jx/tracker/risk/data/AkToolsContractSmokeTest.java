@@ -204,11 +204,13 @@ class AkToolsContractSmokeTest {
                 "start_date", compactDate, "end_date", compactDate, "objects", "stock:" + stock);
         return List.of(
                 derivedSpec("market-daily", "/api/risk/market-daily", marketQuery, false),
-                derivedSpec("valuation", "/api/risk/valuation", stockQuery, false),
+                derivedSpec("valuation", "/api/risk/valuation", stockQuery, false,
+                        List.of("scoringEligible", "constituentUniversePointInTime", "qualityReason")),
                 derivedSpec("market-valuation-proxy", "/api/risk/valuation", marketQuery, false,
                         List.of("objectType", "objectId", "proxy", "constituentCount",
                                 "aggregateDefinition", "universeDefinition", "calculationVersion",
-                                "availabilityPolicyVersion")),
+                                "availabilityPolicyVersion", "scoringEligible",
+                                "constituentUniversePointInTime", "qualityReason")),
                 derivedSpec("breadth", "/api/risk/breadth", breadthQuery, false),
                 derivedSpec("cross-market", "/api/risk/cross-market", marketQuery, false),
                 derivedSpec("sw1-membership", "/api/risk/sw1-membership", stockQuery, false),

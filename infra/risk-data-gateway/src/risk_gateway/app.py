@@ -26,7 +26,7 @@ from risk_gateway.time_policy import SHANGHAI
 
 DERIVED_REQUEST_HASH_VERSIONS = {
     # Keep immutable raw partitions, but do not reuse pre-proxy valuation responses.
-    "valuation": "valuation-forward-fill-v4",
+    "valuation": "valuation-forward-fill-v5",
 }
 
 

@@ -101,7 +101,72 @@ def test_market_only_request_uses_a_stable_auditable_constituent_universe():
     assert result.data[0]["objectType"] == "market"
     assert result.data[0]["constituentCount"] == 20
     assert result.data[0]["universeDefinition"] == "first50CurrentAshareCodesSorted-v1"
+    assert result.data[0]["constituentUniversePointInTime"] is False
+    assert result.data[0]["scoringEligible"] is False
+    assert result.data[0]["qualityStatus"] == "insufficient_history"
+    assert "point-in-time constituent" in result.data[0]["qualityReason"]
     assert result.meta.history_complete is True
+
+
+def test_unavailable_stock_valuation_does_not_discard_other_stock_records():
+    ctx = context([
+        {"日期": "2026-07-16", "中国国债收益率10年": 1.75},
+    ])
+
+    def get(function, params):
+        if function == "stock_zh_valuation_baidu":
+            if params["symbol"] == "000001":
+                raise AkToolsUnavailable("new or suspended stock has no valuation history")
+            return [{"date": "2026-07-17", "value": 20}]
+        if function == "bond_zh_us_rate":
+            return [{"日期": "2026-07-16", "中国国债收益率10年": 1.75}]
+        raise AssertionError(function)
+
+    ctx.client.get = get
+
+    result = ValuationDataset(ctx).fetch(RiskQuery.from_raw(
+        "20260717", "20260717", "stock:000001.SZ,stock:600519.SH",
+    ))
+
+    assert result.meta.history_complete is False
+    assert [row["objectId"] for row in result.data] == ["600519.SH"]
+    assert result.data[0]["qualityStatus"] == "available"
+    assert "000001.SZ" in result.meta.history_gap_reason
+
+
+def test_partial_history_stock_is_audit_only_while_complete_stock_remains_available():
+    ctx = context([
+        {"日期": "2026-07-16", "中国国债收益率10年": 1.75},
+    ])
+
+    def get(function, params):
+        if function == "stock_zh_valuation_baidu":
+            if params["symbol"] == "000001":
+                return [{"date": "2026-07-20", "value": 25}]
+            return [{"date": "2026-07-17", "value": 20}]
+        if function == "bond_zh_us_rate":
+            return [{"日期": "2026-07-16", "中国国债收益率10年": 1.75}]
+        raise AssertionError(function)
+
+    ctx.client.get = get
+
+    result = ValuationDataset(ctx).fetch(RiskQuery.from_raw(
+        "20260717", "20260720", "stock:000001.SZ,stock:600519.SH",
+    ))
+
+    complete_stock = [
+        row for row in result.data if row["objectId"] == "600519.SH"
+    ]
+    partial_stock = [
+        row for row in result.data if row["objectId"] == "000001.SZ"
+    ]
+    assert len(complete_stock) == 2
+    assert all(row["qualityStatus"] == "available" for row in complete_stock)
+    assert len(partial_stock) == 1
+    assert partial_stock[0]["qualityStatus"] == "insufficient_history"
+    assert partial_stock[0]["scoringEligible"] is False
+    assert "requested valuation window is incomplete" in partial_stock[0]["qualityReason"]
+    assert result.meta.history_complete is False
 
 
 def test_market_proxy_tolerates_unavailable_constituents_when_minimum_is_met():

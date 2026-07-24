@@ -25,6 +25,11 @@ public final class JdbcRiskBackfillReadinessRepository
     private static final int SCOPE_CHUNK_SIZE = 250;
     private static final Set<String> CORE_MARKET_DAILY_INDICATORS = Set.of(
             "V3", "V4", "C1", "C3", "C4", "C5", "A3", "A5");
+    private static final Set<String> CORE_MARKET_DAILY_COMPONENTS = Set.of(
+            "V3:relativeReturn", "V4:volumeRatio",
+            "C1:leaderRelativeReturn", "C3:downVolumeRatio",
+            "C4:relativeStrength", "C5:trendDistance", "C5:openingGap",
+            "A3:trendVolatilityDeleveragingProxy", "A5:returnCorrelation");
     private static final List<String> TIMESTAMP_TABLES = List.of(
             "risk_object_exposure", "risk_indicator_observation", "risk_event_fact",
             "risk_score_snapshot", "risk_score_evidence", "risk_gate_result",
@@ -141,16 +146,25 @@ public final class JdbcRiskBackfillReadinessRepository
     ) {
         MapSqlParameterSource parameters = baseParameters(scope, scoreStartDate, endDate, asOf)
                 .addValue("indicatorCodes", CORE_MARKET_DAILY_INDICATORS)
+                .addValue("componentKeys", CORE_MARKET_DAILY_COMPONENTS)
+                .addValue("componentCount", CORE_MARKET_DAILY_COMPONENTS.size())
                 .addValue("source", "risk-derived-gateway");
         return namedJdbcTemplate.query("""
                 SELECT MIN(trade_date) AS earliest_date, MAX(trade_date) AS latest_date
-                FROM risk_indicator_observation
-                WHERE trade_date BETWEEN :scoreStartDate AND :endDate
-                  AND available_at <= :asOf
-                  AND indicator_value IS NOT NULL
-                  AND quality_status IN ('available', 'valid_zero')
-                  AND source = :source AND indicator_code IN (:indicatorCodes)
-                  AND object_type = :objectType AND object_id IN (:objectIds)
+                FROM (
+                    SELECT object_id, trade_date
+                    FROM risk_indicator_observation
+                    WHERE trade_date BETWEEN :scoreStartDate AND :endDate
+                      AND available_at <= :asOf
+                      AND indicator_value IS NOT NULL
+                      AND quality_status IN ('available', 'valid_zero')
+                      AND source = :source AND indicator_code IN (:indicatorCodes)
+                      AND CONCAT(indicator_code, ':', component_code) IN (:componentKeys)
+                      AND object_type = :objectType AND object_id IN (:objectIds)
+                    GROUP BY object_id, trade_date
+                    HAVING COUNT(DISTINCT CONCAT(
+                            indicator_code, ':', component_code)) = :componentCount
+                ) complete_core_days
                 """, parameters, resultSet -> resultSet.next()
                 ? new DateRange(localDate(resultSet, "earliest_date"),
                         localDate(resultSet, "latest_date"))
@@ -165,16 +179,25 @@ public final class JdbcRiskBackfillReadinessRepository
     ) {
         MapSqlParameterSource parameters = baseParameters(scope, scoreStartDate, endDate, asOf)
                 .addValue("indicatorCodes", CORE_MARKET_DAILY_INDICATORS)
+                .addValue("componentKeys", CORE_MARKET_DAILY_COMPONENTS)
+                .addValue("componentCount", CORE_MARKET_DAILY_COMPONENTS.size())
                 .addValue("source", "risk-derived-gateway");
         Long count = namedJdbcTemplate.queryForObject("""
-                SELECT COUNT(DISTINCT trade_date)
-                FROM risk_indicator_observation
-                WHERE trade_date BETWEEN :scoreStartDate AND :endDate
-                  AND available_at <= :asOf
-                  AND indicator_value IS NOT NULL
-                  AND quality_status IN ('available', 'valid_zero')
-                  AND source = :source AND indicator_code IN (:indicatorCodes)
-                  AND object_type = :objectType AND object_id IN (:objectIds)
+                SELECT COUNT(*)
+                FROM (
+                    SELECT object_id, trade_date
+                    FROM risk_indicator_observation
+                    WHERE trade_date BETWEEN :scoreStartDate AND :endDate
+                      AND available_at <= :asOf
+                      AND indicator_value IS NOT NULL
+                      AND quality_status IN ('available', 'valid_zero')
+                      AND source = :source AND indicator_code IN (:indicatorCodes)
+                      AND CONCAT(indicator_code, ':', component_code) IN (:componentKeys)
+                      AND object_type = :objectType AND object_id IN (:objectIds)
+                    GROUP BY object_id, trade_date
+                    HAVING COUNT(DISTINCT CONCAT(
+                            indicator_code, ':', component_code)) = :componentCount
+                ) complete_core_days
                 """, parameters, Long.class);
         return count == null ? 0 : count;
     }
@@ -197,18 +220,27 @@ public final class JdbcRiskBackfillReadinessRepository
             MapSqlParameterSource parameters = baseParameters(
                     scope, scoreStartDate, endDate, asOf)
                     .addValue("indicatorCodes", CORE_MARKET_DAILY_INDICATORS)
+                    .addValue("componentKeys", CORE_MARKET_DAILY_COMPONENTS)
+                    .addValue("componentCount", CORE_MARKET_DAILY_COMPONENTS.size())
                     .addValue("source", "risk-derived-gateway");
             List<CoreObjectStats> rows = namedJdbcTemplate.query("""
                     SELECT object_id, MIN(trade_date) AS earliest_date,
                            MAX(trade_date) AS latest_date,
-                           COUNT(DISTINCT trade_date) AS trading_day_count
-                    FROM risk_indicator_observation
-                    WHERE trade_date BETWEEN :scoreStartDate AND :endDate
-                      AND available_at <= :asOf
-                      AND indicator_value IS NOT NULL
-                      AND quality_status IN ('available', 'valid_zero')
-                      AND source = :source AND indicator_code IN (:indicatorCodes)
-                      AND object_type = :objectType AND object_id IN (:objectIds)
+                           COUNT(*) AS trading_day_count
+                    FROM (
+                        SELECT object_id, trade_date
+                        FROM risk_indicator_observation
+                        WHERE trade_date BETWEEN :scoreStartDate AND :endDate
+                          AND available_at <= :asOf
+                          AND indicator_value IS NOT NULL
+                          AND quality_status IN ('available', 'valid_zero')
+                          AND source = :source AND indicator_code IN (:indicatorCodes)
+                          AND CONCAT(indicator_code, ':', component_code) IN (:componentKeys)
+                          AND object_type = :objectType AND object_id IN (:objectIds)
+                        GROUP BY object_id, trade_date
+                        HAVING COUNT(DISTINCT CONCAT(
+                                indicator_code, ':', component_code)) = :componentCount
+                    ) complete_core_days
                     GROUP BY object_id
                     """, parameters, (resultSet, rowNum) -> new CoreObjectStats(
                     resultSet.getString("object_id"),

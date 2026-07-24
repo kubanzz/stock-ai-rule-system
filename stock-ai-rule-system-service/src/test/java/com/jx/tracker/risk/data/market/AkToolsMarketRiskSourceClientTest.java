@@ -306,7 +306,7 @@ class AkToolsMarketRiskSourceClientTest {
     }
 
     @Test
-    void successfulFinalPageClearsPreviouslyPersistedCursor() {
+    void fullRangeDerivedRequestIgnoresPreviouslyPersistedCursorAndRestartsFromFirstPage() {
         ScriptedTransport nativeTransport = new ScriptedTransport();
         ScriptedTransport derivedTransport = new ScriptedTransport();
         derivedTransport.daily = List.of(Map.ofEntries(
@@ -330,7 +330,9 @@ class AkToolsMarketRiskSourceClientTest {
         MarketSourceBatch result = client.fetch(MarketDatasetCode.MARKET_DAILY, request);
 
         assertThat(derivedTransport.calls).singleElement().satisfies(call ->
-                assertThat(call.query()).containsEntry("cursor", "old-page"));
+                assertThat(call.query()).doesNotContainKey("cursor"));
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).hasSize(1);
         assertThat(result.nextCheckpoint()).isNull();
     }
 
@@ -357,15 +359,55 @@ class AkToolsMarketRiskSourceClientTest {
         RiskProviderBatch result = provider.fetch(
                 MarketDatasetCode.VALUATION.code(), currentRequest(List.of(MARKET)));
 
-        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.qualityStatus())
+                .as("provider error: %s", result.errorMessage())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.errorMessage()).contains("only recent valuation history");
-        assertThat(result.observations()).isNotEmpty().allSatisfy(observation -> {
+        assertThat(result.observations())
+                .as("provider error: %s", result.errorMessage())
+                .isNotEmpty().allSatisfy(observation -> {
             assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
             assertThat(observation.value()).isNull();
             assertThat(observation.attributes()).containsKeys(
                     "auditValue", "sourceQuality", "partialHistoryReason");
         });
         assertThat(result.nextCheckpoint()).isNull();
+    }
+
+    @Test
+    void partialLegacyStockValuationWithoutScoringEligibilityIsAuditOnly() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport derivedTransport = new ScriptedTransport();
+        derivedTransport.valuation = List.of(Map.ofEntries(
+                Map.entry("objectType", "stock"),
+                Map.entry("objectId", "600519.SH"),
+                Map.entry("tradeDate", "2026-07-18"),
+                Map.entry("peTtm", "20"),
+                Map.entry("riskFreeYield", "0.018"),
+                Map.entry("qualityStatus", "available"),
+                Map.entry("observedAt", "2026-07-18T15:00:00"),
+                Map.entry("availableAt", "2026-07-18T16:00:00")
+        ));
+        derivedTransport.earliestAvailableDate = LocalDate.of(2025, 1, 1);
+        derivedTransport.historyComplete = false;
+        derivedTransport.historyGapReason = "one stock has partial valuation history";
+        MarketRiskDataProvider provider = new MarketRiskDataProvider(
+                new AkToolsMarketRiskSourceClient(nativeTransport, derivedTransport, CLOCK));
+
+        RiskProviderBatch result = provider.fetch(
+                MarketDatasetCode.VALUATION.code(), currentRequest(List.of(STOCK)));
+
+        assertThat(result.observations())
+                .as("provider error: %s", result.errorMessage())
+                .isNotEmpty().allSatisfy(observation -> {
+            assertThat(observation.qualityStatus())
+                    .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(observation.value()).isNull();
+            assertThat(observation.attributes())
+                    .containsEntry("scoringEligible", false)
+                    .containsEntry("qualityReason",
+                            "valuation scoring eligibility audit metadata is missing");
+        });
     }
 
     @Test
@@ -390,7 +432,9 @@ class AkToolsMarketRiskSourceClientTest {
         RiskProviderBatch result = provider.fetch(
                 MarketDatasetCode.VALUATION.code(), currentRequest(List.of(MARKET)));
 
-        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.qualityStatus())
+                .as("provider error: %s", result.errorMessage())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.errorMessage()).contains("earliestAvailableDate");
         assertThat(result.nextCheckpoint()).isNull();
     }

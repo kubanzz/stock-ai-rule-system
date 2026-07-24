@@ -253,9 +253,6 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         query.put("objects", request.objects().stream()
                 .map(object -> object.objectType().getCode() + ":" + object.objectId())
                 .sorted().reduce((left, right) -> left + "," + right).orElse(""));
-        if (request.checkpoint() != null) {
-            query.put("cursor", request.checkpoint().cursor());
-        }
         return Map.copyOf(query);
     }
 
@@ -328,21 +325,66 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         }
         LocalDate valuationSourceDate = optionalDate(
                 row, "valuationSourceDate", "valuation_source_date");
+        boolean missingMarketProxyAudit = object.objectType() == RiskObjectType.MARKET
+                && first(row, "proxy") == null;
+        boolean proxy = booleanValue(row, false, "proxy");
+        boolean constituentUniversePointInTime = booleanValue(
+                row, !proxy,
+                "constituentUniversePointInTime", "constituent_universe_point_in_time");
+        RiskDataQualityStatus qualityStatus = quality(row);
+        boolean missingScoringEligibilityAudit = first(
+                row, "scoringEligible", "scoring_eligible") == null;
+        boolean scoringEligible = booleanValue(
+                row,
+                false,
+                "scoringEligible", "scoring_eligible");
+        String qualityReason = optionalText(row, "qualityReason", "quality_reason");
+        if (missingScoringEligibilityAudit) {
+            scoringEligible = false;
+            if (qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+                qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            }
+            qualityReason = "valuation scoring eligibility audit metadata is missing";
+        } else if (missingMarketProxyAudit) {
+            scoringEligible = false;
+            if (qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+                qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            }
+            if (qualityReason == null || qualityReason.isBlank()) {
+                qualityReason = "market valuation proxy audit metadata is missing";
+            }
+        } else if (proxy && !constituentUniversePointInTime) {
+            scoringEligible = false;
+            if (qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+                qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            }
+            if (qualityReason == null || qualityReason.isBlank()) {
+                qualityReason = "historical market proxy has no point-in-time constituent evidence";
+            }
+        } else if (!scoringEligible && qualityStatus == RiskDataQualityStatus.AVAILABLE) {
+            qualityStatus = RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+            if (qualityReason == null || qualityReason.isBlank()) {
+                qualityReason = "valuation record is explicitly audit-only";
+            }
+        }
         return new ValuationPoint(
                 object, date, peTtm, earningsYield,
                 optionalDecimal(row, "riskFreeYield", "risk_free_yield"),
                 valuationSourceDate == null ? date : valuationSourceDate,
                 integerOrDefault(row, 0, "valuationAgeSessions", "valuation_age_sessions"),
                 textOrDefault(row, "unspecified", "stalenessPolicy", "staleness_policy"),
-                booleanValue(row, false, "proxy"),
+                proxy,
                 integerOrDefault(row, 0, "constituentCount", "constituent_count"),
                 optionalText(row, "aggregateDefinition", "aggregate_definition"),
                 optionalText(row, "universeDefinition", "universe_definition"),
+                constituentUniversePointInTime,
+                scoringEligible,
+                qualityReason,
                 textOrDefault(row, "pe-risk-premium-v2", "calculationVersion"),
                 textOrDefault(row, "cn-a-pit-v1", "availabilityPolicyVersion"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
-                DERIVED_SOURCE, quality(row));
+                DERIVED_SOURCE, qualityStatus);
     }
 
     private BreadthPoint breadth(Map<String, Object> row) {

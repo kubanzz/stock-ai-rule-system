@@ -17,6 +17,9 @@ MINIMUM_AGGREGATE_CONSTITUENTS = 20
 MARKET_AGGREGATE_DEFINITION = "equalWeightEarningsYieldOfStableConstituents-v1"
 MARKET_UNIVERSE_DEFINITION = "first50CurrentAshareCodesSorted-v1"
 MARKET_UNIVERSE_SIZE = 50
+CURRENT_UNIVERSE_QUALITY_REASON = (
+    "historical market proxy has no point-in-time constituent evidence"
+)
 
 
 class ValuationDataset:
@@ -56,11 +59,13 @@ class ValuationDataset:
         for object_key in sorted(direct_stock_set | market_constituent_set):
             object_type, object_id = object_parts(object_key)
             directly_requested = object_key in direct_stock_set
+            direct_records: list[dict[str, object]] = []
             try:
                 pe = self._pe_frame(object_id)
             except (AkToolsUnavailable, AkToolsSchemaError):
                 if directly_requested:
-                    raise
+                    complete = False
+                    reasons.add(f"{object_id} valuation history is unavailable")
                 continue
 
             for trade_date in sessions:
@@ -68,7 +73,7 @@ class ValuationDataset:
                 if pe_row is None:
                     if directly_requested:
                         complete = False
-                        reasons.add("valuation or risk-free yield history is incomplete")
+                        reasons.add(f"{object_id} valuation history is incomplete")
                     continue
                 pe_ttm = float(pe_row["peTtm"])
                 if pd.isna(pe_ttm) or pe_ttm <= 0:
@@ -110,6 +115,9 @@ class ValuationDataset:
                     "valuationAgeSessions": valuation_age_sessions,
                     "stalenessPolicy": VALUATION_STALENESS_POLICY,
                     "proxy": False,
+                    "constituentUniversePointInTime": True,
+                    "scoringEligible": True,
+                    "qualityReason": None,
                     "calculationVersion": CALCULATION_VERSION,
                     "qualityStatus": "available",
                     "observedAt": max(
@@ -119,9 +127,21 @@ class ValuationDataset:
                     "availabilityPolicyVersion": TIME_POLICY_VERSION,
                 }
                 if directly_requested:
-                    result.append(record)
+                    direct_records.append(record)
                 if object_key in market_constituent_set:
                     rows_by_date[trade_date].append(record)
+            if directly_requested:
+                if len(direct_records) < len(sessions):
+                    complete = False
+                    reason = f"{object_id} requested valuation window is incomplete"
+                    reasons.add(reason)
+                    direct_records = [{
+                        **record,
+                        "scoringEligible": False,
+                        "qualityReason": reason,
+                        "qualityStatus": "insufficient_history",
+                    } for record in direct_records]
+                result.extend(direct_records)
 
         if market_requested:
             for trade_date in sessions:
@@ -156,8 +176,11 @@ class ValuationDataset:
                     "constituentCount": len(constituents),
                     "aggregateDefinition": MARKET_AGGREGATE_DEFINITION,
                     "universeDefinition": MARKET_UNIVERSE_DEFINITION,
+                    "constituentUniversePointInTime": False,
+                    "scoringEligible": False,
+                    "qualityReason": CURRENT_UNIVERSE_QUALITY_REASON,
                     "calculationVersion": CALCULATION_VERSION,
-                    "qualityStatus": "available",
+                    "qualityStatus": "insufficient_history",
                     "observedAt": max(str(row["observedAt"]) for row in constituents),
                     "availableAt": max(str(row["availableAt"]) for row in constituents),
                     "availabilityPolicyVersion": TIME_POLICY_VERSION,

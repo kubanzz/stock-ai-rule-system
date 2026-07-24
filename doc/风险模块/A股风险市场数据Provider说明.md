@@ -18,7 +18,7 @@
 |---|---|---|---|
 | `cn_a_stock_master` | A 股对象、名称、上市日 | `DATA_STOCK_MASTER` | 元数据，不参与风险覆盖率 |
 | `sw1_membership` | 股票与申万一级行业有效期 | `DATA_SW1_MEMBERSHIP` | 元数据，不参与风险覆盖率 |
-| `valuation` | PE、盈利收益率、无风险收益率 | `V1` | 个股直接值与稳定 50 只 A 股等权盈利收益率市场代理；同时输出估值倍数与风险溢价原始观测 |
+| `valuation` | PE、盈利收益率、无风险收益率 | `V1` | 个股按对象独立判断五年历史完整度；稳定 50 只当前 A 股等权市场代理仅保留审计，不参与正式评分 |
 | `market_daily` | 开收盘、成交量、基准和龙头收盘序列 | `V3`、`V4`、`C1`、`C3`、`C4`、`C5`、`A3`、`A5` | 在既有确认代理外，输出趋势/波动率降仓与目标—基准收益相关性代理 |
 | `breadth` | 上涨/下跌、新高/新低、均线上方家数 | `C2`、`A4` | 输出市场宽度分量，以及明确标注为代理的日频市场深度分量，不在 Provider 内合成最终分 |
 | `cross_market` | 领先资产收益、动态相关、独立市场确认数 | `S1`、`S2`、`S4` | 输出标准化收益、相关系数和跨市场确认比例 |
@@ -74,7 +74,7 @@
 | 历史市场宽度 | `/api/risk/breadth` |
 | 跨市场传导 | `/api/risk/cross-market` |
 
-衍生请求使用 `start_date`、`end_date`、带类型的 `objects`（如 `market:CN-A,stock:600519.SH`）及可选 `cursor`。每条响应必须显式返回 `objectType`、`objectId`、`tradeDate`、`observedAt`、`availableAt` 和数据集字段；时间戳支持本地 ISO 时间及带偏移 ISO 时间。响应 `meta` 必须保留 `historyComplete`、`insufficientHistory`、`earliestAvailableDate`、`historyGapReason` 和可选 `nextCursor`。`earliestAvailableDate` 缺失也视为历史不完整；只有 `historyComplete=true` 且最早日期覆盖请求起点时才允许推进 `nextCursor`。部分记录可以审计保存，但对应观测降为 `insufficient_history`，原始值写入 `auditValue`，正式评分只读取 `available/valid_zero`；当前申万 exposure 可继续用于当期对象映射。空数组不代表市场值为 0，而是 `insufficient_history`。
+衍生请求使用 `start_date`、`end_date`、带类型的 `objects`（如 `market:CN-A,stock:600519.SH`）及可选 `cursor`。每条响应必须显式返回 `objectType`、`objectId`、`tradeDate`、`observedAt`、`availableAt` 和数据集字段；估值还必须返回 `scoringEligible`、`constituentUniversePointInTime` 和 `qualityReason`。缺少评分资格元数据时按 fail-closed 降为审计记录。时间戳支持本地 ISO 时间及带偏移 ISO 时间。响应 `meta` 必须保留 `historyComplete`、`insufficientHistory`、`earliestAvailableDate`、`historyGapReason` 和可选 `nextCursor`。`earliestAvailableDate` 缺失也视为历史不完整。部分记录可以审计保存，但对应观测降为 `insufficient_history`，原始值写入审计属性，正式评分只读取 `available/valid_zero`；当前申万 exposure 可继续用于当期对象映射。空数组不代表市场值为 0，而是 `insufficient_history`。
 
 真实 AKTools 冒烟应在集成环境逐项确认以下官方 AKShare 函数对应端点及字段：
 
@@ -90,7 +90,7 @@
 当前免费源的客观边界必须原样保留：
 
 - `stock_industry_clf_hist_sw` 依赖申万官网文件；TLS/502 或文件结构异常时不关闭证书校验，只返回带真实抓取时间的当前成分，历史请求保持不足；
-- 百度个股 PE 的“全部”长区间序列约每数周一个发布点，不做线性插值、不使用目标交易日之后的值。每个交易日只能按 point-in-time 取当时已发布的最近 PE，最多向前沿用 20 个 A 股交易日，并记录 `valuationSourceDate`、`valuationAgeSessions`和 `stalenessPolicy`；超出窗口、PE 非正或 10 年国债收益率缺失时 V1 不出正式值。市场 V1 使用按代码排序的前 50 只当前 A 股作为稳定代理池，个别成分调用失败时可跳过，但单日有效成分少于 20 只时不出市场值；记录 `proxy`、`constituentCount`、`aggregateDefinition`、`universeDefinition`、计算版本和可用性策略。历史行业估值缺少可靠历史成分时保持不足，不把缺失权重转给市场或个股；
+- 百度个股 PE 的“全部”长区间序列约每数周一个发布点，不做线性插值、不使用目标交易日之后的值。每个交易日只能按 point-in-time 取当时已发布的最近 PE，最多向前沿用 20 个 A 股交易日，并记录 `valuationSourceDate`、`valuationAgeSessions` 和 `stalenessPolicy`；超出窗口、PE 非正或 10 年国债收益率缺失时 V1 不出正式值。个股按对象独立判断完整度：新股或停牌股历史不足只影响自身，同批其他完整股票仍可用。市场 V1 可使用按代码排序的前 50 只当前 A 股生成审计代理，个别成分调用失败时可跳过，单日有效成分少于 20 只时不出代理值；由于当前代码表不能证明历史时点成分，该代理固定为 `constituentUniversePointInTime=false`、`scoringEligible=false` 和 `insufficient_history`，不得进入正式评分。只有接入可靠 point-in-time 成分后才能启用市场估值。历史行业估值缺少可靠历史成分时同样保持不足，不把缺失权重转给市场或个股；
 - ETF 免费接口只有净值、成交和申赎状态，没有历史真实申赎份额/净额，A2 固定返回 `free_source_has_no_historical_etf_redemption_fact`，不得以净值或订单流替代；
 - 跨市场篮子固定为标普 500、纳斯达克、恒生和日经 225；单源失败可在至少三个市场时继续，少于三个或 60 日相关窗口不足时返回历史不足；
 - 历史市场宽度使用“当前上市且存在当日历史行情”的股票集合，明确标记 `currentListedStocksWithObservableHistoricalBars` 和 `proxy=true`，不声称拥有已退市股票的完整历史成分。
@@ -113,9 +113,9 @@ docker build --target test -t stock-risk-data-gateway-test infra/risk-data-gatew
 docker run --rm --security-opt seccomp=unconfined stock-risk-data-gateway-test pytest -q
 ```
 
-缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务。带明确过去结束日的成功原始响应作为不可变历史 Parquet 复用；代码表、交易日历、无结束日指数等当前分区默认 24 小时刷新。相同原始分区写入和相同衍生请求都在单网关进程内合并，避免固定 Parquet/manifest 交叉写入。所有衍生数据集的完整未分页响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒，后续 cursor 页面复用同一次计算。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
+缓存损坏会自动隔离到卷内 `quarantine`。确需全部重建时先停止网关，再备份或删除该命名卷并重新启动；缓存不是 MySQL 业务备份。历史宽度首次构建会逐只采集当前 A 股历史，属于离线预热任务。带明确过去结束日的成功原始响应作为不可变历史 Parquet 复用；代码表、交易日历、无结束日指数等当前分区默认 24 小时刷新。相同原始分区写入和相同衍生请求都在单网关进程内合并，避免固定 Parquet/manifest 交叉写入。所有衍生数据集的完整未分页响应另以带 SHA-256 的 JSON 短期缓存，默认 TTL 为 3600 秒，后续 cursor 页面复用同一次计算。不完整聚合不会永久固化，TTL 到期后会重新扫描并重试缺失源；估值评分资格契约使用 `valuation-forward-fill-v5` 命名空间，不复用缺少审计字段的旧响应。旧版 Docker Engine 运行 Python 3.12 线程时需要 Compose 中的 `seccomp:unconfined`，端口仍只绑定 `127.0.0.1`。
 
-网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次有界对象块中消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。成功消费终页后会清除旧 cursor；只有失败或历史不足才保留原 checkpoint。全市场命令固定按 21～50 只股票分块，默认 25，逐块幂等落库和评分，禁止把全部股票历史一次装入内存。
+网关分页 cursor 绑定规范化请求哈希；Java Provider 在一次有界对象块中从首页消费完所有页面，并拒绝重复 cursor，避免 11 年上下文只落入第一页。数据库里遗留的分页 checkpoint 不再作为全范围请求首屏，防止永久卡在中页；成功消费终页后会清除旧 cursor，失败或历史不足仍保留 checkpoint 供审计。全市场命令固定按 21～50 只股票分块，默认 25，逐块幂等落库和评分，禁止把全部股票历史一次装入内存。
 
 连接已部署的 AKTools 与网关后执行：
 

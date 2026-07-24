@@ -134,6 +134,63 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void currentUniverseMarketValuationProxyIsAuditOnly() {
+        ValuationPoint proxy = new ValuationPoint(
+                MARKET, END_DATE, new BigDecimal("18"), new BigDecimal("0.04"), new BigDecimal("0.005"),
+                END_DATE.minusDays(1), 1, "lastPublishedWithin20AshareSessions-v1",
+                true, 20, "equalWeightEarningsYieldOfStableConstituents-v1",
+                "first50CurrentAshareCodesSorted-v1", "pe-risk-premium-v2", "cn-a-pit-v1",
+                END_DATE.atTime(15, 0), END_DATE.atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+
+        RiskProviderBatch batch = provider(List.of(proxy), null).fetch("valuation", request(null));
+
+        assertThat(batch.observations()).isNotEmpty().allSatisfy(observation -> {
+            assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(observation.value()).isNull();
+            assertThat(observation.attributes())
+                    .containsEntry("constituentUniversePointInTime", false)
+                    .containsEntry("scoringEligible", false)
+                    .containsKey("qualityReason");
+        });
+    }
+
+    @Test
+    void partialValuationBatchKeepsValidStockObservationsAvailable() {
+        RiskObjectKey validStock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+        RiskObjectKey missingStock = new RiskObjectKey(RiskObjectType.STOCK, "000001.SZ");
+        ValuationPoint valid = new ValuationPoint(
+                validStock, END_DATE, new BigDecimal("18"), new BigDecimal("0.04"),
+                new BigDecimal("0.005"), END_DATE.atTime(15, 0), END_DATE.atTime(16, 0),
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        MarketRiskDataProvider provider = new MarketRiskDataProvider((dataset, request) ->
+                MarketSourceBatch.partialHistory(
+                        "fixed", List.of(valid), null,
+                        "000001.SZ valuation history is unavailable", FETCHED_AT
+                ));
+
+        RiskProviderBatch batch = provider.fetch(
+                "valuation", request(null, END_DATE, validStock, missingStock));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(batch.observations()).isNotEmpty().allSatisfy(observation -> {
+            assertThat(observation.object()).isEqualTo(validStock);
+            assertThat(observation.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+            assertThat(observation.value()).isNotNull();
+        });
+        assertThat(provider.coverageReport(
+                "valuation", batch, validStock, RiskHorizon.SHORT_TERM,
+                END_DATE, END_DATE.atTime(23, 59, 59)
+        ).weightedCoverageRatio()).isEqualByComparingTo("1.0000000000");
+        assertThat(provider.coverageReport(
+                "valuation", batch, missingStock, RiskHorizon.SHORT_TERM,
+                END_DATE, END_DATE.atTime(23, 59, 59)
+        ).weightedCoverageRatio()).isEqualByComparingTo(BigDecimal.ZERO.setScale(10));
+    }
+
+    @Test
     void dailySeriesProducesDocumentedProxiesAndMarksNewStockHistoryInsufficient() {
         List<MarketSourceRecord> records = dailyPoints(65);
         MarketRiskDataProvider provider = provider(records, null);
