@@ -10,7 +10,7 @@ from risk_gateway.time_policy import SHANGHAI, TIME_POLICY_VERSION, dated_value_
 
 
 SOURCE = "AKTools:stock_industry_clf_hist_sw"
-CALCULATION_VERSION = "sw1-membership-validity-v1"
+CALCULATION_VERSION = "sw1-membership-current-snapshot-v3"
 FALLBACK_REASON = "official SW1 history unavailable; current snapshot cannot be backdated"
 
 
@@ -20,13 +20,16 @@ class MembershipDataset:
 
     def fetch(self, query: RiskQuery) -> GatewayResponse:
         requested = tuple(key for key in query.object_keys if key.startswith("stock:"))
+        if query.object_keys == ("market:CN-A",):
+            return self._current_snapshot(query, ())
         if not requested:
             return self._incomplete([], "SW1 membership requires stock objects")
         try:
             official_rows = self.context.client.get("stock_industry_clf_hist_sw", {})
         except AkToolsUnavailable:
             return self._current_snapshot(query, requested)
-        return self._official(query, requested, official_rows)
+        official = self._official(query, requested, official_rows)
+        return official if official.data else self._current_snapshot(query, requested)
 
     def _official(
         self,
@@ -107,11 +110,13 @@ class MembershipDataset:
             components = self.context.client.get("index_component_sw", {"symbol": sector})
             for component in components:
                 symbol = str(component.get("证券代码") or component.get("symbol") or "").zfill(6)
-                if symbol not in requested_ids:
+                if requested_ids and symbol not in requested_ids:
                     continue
                 output.append({
                     "objectType": "stock",
-                    "objectId": normalize_object_key(requested_ids[symbol]).split(":", 1)[1],
+                    "objectId": normalize_object_key(
+                        requested_ids.get(symbol, symbol)
+                    ).split(":", 1)[1],
                     "sectorCode": sector,
                     "sectorName": sector_name,
                     "validFrom": current_session.isoformat(),
@@ -158,7 +163,7 @@ class MembershipDataset:
     @staticmethod
     def _sector(raw: object) -> str | None:
         value = str(raw or "").upper().replace("SW1:", "").replace(".SI", "").strip()
-        return value if len(value) == 6 and value.isdigit() else None
+        return value if len(value) == 6 and value.isdigit() and value.startswith("801") else None
 
     @staticmethod
     def _date(raw: object) -> date | None:

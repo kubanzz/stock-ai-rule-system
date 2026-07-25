@@ -4,6 +4,7 @@ import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
+import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.provider.RiskDataProvider;
 import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
@@ -111,7 +112,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                         sourceBatch.fetchedAt());
             }
             List<MarketSourceRecord> eligible = prepareSourceRecords(dataset, sourceBatch.records().stream()
-                    .filter(record -> eligible(record, dataset, request))
+                    .filter(record -> eligible(record, dataset, request, sourceBatch.fetchedAt()))
                     .toList());
             if (eligible.isEmpty()) {
                 return new RiskProviderBatch(
@@ -266,16 +267,32 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
     private boolean eligible(
             MarketSourceRecord record,
             MarketDatasetCode dataset,
-            RiskProviderRequest request
+            RiskProviderRequest request,
+            LocalDateTime fetchedAt
     ) {
         if (record == null || record.tradeDate().isAfter(request.endDate())) {
             return false;
         }
+        boolean marketScopedMembership = dataset == MarketDatasetCode.SW1_MEMBERSHIP
+                && request.objects().size() == 1
+                && request.objects().getFirst().objectType() == RiskObjectType.MARKET
+                && AshareRiskObjectCatalog.CN_A.equals(request.objects().getFirst().objectId());
         LocalDateTime evaluationCutoff = request.endDate().atTime(LocalTime.MAX);
+        if (marketScopedMembership && fetchedAt.isAfter(evaluationCutoff)) {
+            evaluationCutoff = fetchedAt;
+        }
+        if (marketScopedMembership
+                && record.availableAt().toLocalDate().equals(fetchedAt.toLocalDate())
+                && record.availableAt().isAfter(evaluationCutoff)) {
+            // 网关在收到请求后才生成当前快照，发布时间可能比客户端发起时间晚数百毫秒。
+            evaluationCutoff = record.availableAt();
+        }
         if (record.availableAt().isAfter(evaluationCutoff)) {
             return false;
         }
-        if ((dataset == MarketDatasetCode.CN_A_STOCK_MASTER || dataset == MarketDatasetCode.SW1_MEMBERSHIP)
+        if (!marketScopedMembership
+                && (dataset == MarketDatasetCode.CN_A_STOCK_MASTER
+                || dataset == MarketDatasetCode.SW1_MEMBERSHIP)
                 && !request.objects().contains(record.object())) {
             return false;
         }
@@ -414,7 +431,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
     ) {
         return records.stream()
                 .map(record -> cast(record, ValuationPoint.class))
-                .filter(point -> !point.tradeDate().isBefore(request.startDate()))
+                .filter(point -> !point.tradeDate().isBefore(request.resultStartDate()))
                 .flatMap(point -> request.horizons().stream().flatMap(horizon -> List.of(
                         observation(
                                 point, horizon, MarketRiskIndicator.V1.dimension(), MarketRiskIndicator.V1.code(),
@@ -483,7 +500,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             PointInTimeMarketSeries<MarketDailyPoint> series = new PointInTimeMarketSeries<>(points);
             for (int index = 0; index < series.size(); index++) {
                 LocalDate tradeDate = series.tradeDateAt(index);
-                if (tradeDate.isBefore(request.startDate())) {
+                if (tradeDate.isBefore(request.resultStartDate())) {
                     continue;
                 }
                 Optional<MarketDailyPoint> selected = series.targetAt(index);
@@ -620,7 +637,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
     ) {
         return records.stream()
                 .map(record -> cast(record, BreadthPoint.class))
-                .filter(point -> !point.tradeDate().isBefore(request.startDate()))
+                .filter(point -> !point.tradeDate().isBefore(request.resultStartDate()))
                 .flatMap(point -> request.horizons().stream().flatMap(horizon -> {
                     RiskWindowPolicy.WindowSpec windows = RiskWindowPolicy.forHorizon(horizon);
                     MarketBreadth breadth = MarketRiskCalculations.marketBreadth(
@@ -680,7 +697,7 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
             PointInTimeMarketSeries<CrossMarketPoint> series = new PointInTimeMarketSeries<>(points);
             for (int index = 0; index < series.size(); index++) {
                 LocalDate tradeDate = series.tradeDateAt(index);
-                if (tradeDate.isBefore(request.startDate())) {
+                if (tradeDate.isBefore(request.resultStartDate())) {
                     continue;
                 }
                 Optional<CrossMarketPoint> selected = series.targetAt(index);

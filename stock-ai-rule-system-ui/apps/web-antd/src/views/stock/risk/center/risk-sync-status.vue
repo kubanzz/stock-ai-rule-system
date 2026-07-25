@@ -61,11 +61,7 @@ const phaseLabels: Record<string, string> = {
       <div>
         <span class="sync-label">距最近交易日</span>
         <strong>
-          {{
-            latestDataDate
-              ? `${staleTradingDays ?? 0} 个交易日`
-              : '--'
-          }}
+          {{ latestDataDate ? `${staleTradingDays ?? 0} 个交易日` : '--' }}
         </strong>
       </div>
       <div>
@@ -87,17 +83,16 @@ const phaseLabels: Record<string, string> = {
         size="small"
         status="active"
       />
-      <span v-if="job.message" :class="{ 'sync-error': job.status === 'failed' }">
+      <span
+        v-if="job.message"
+        :class="{ 'sync-error': job.status === 'failed' }"
+      >
         {{ job.message }}
       </span>
       <span v-else-if="active">后台同步中，当前页面数据仍可正常查看。</span>
     </div>
 
-    <Button
-      :loading="active"
-      type="primary"
-      @click="emit('syncMarket')"
-    >
+    <Button :loading="active" type="primary" @click="emit('syncMarket')">
       同步最新市场数据
     </Button>
   </section>

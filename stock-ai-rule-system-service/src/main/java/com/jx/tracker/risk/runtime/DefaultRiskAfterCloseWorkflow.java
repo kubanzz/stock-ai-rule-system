@@ -61,17 +61,17 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
             throw new IllegalArgumentException("tradeDate must not be null");
         }
         RiskWorkflowPlan plan = planner.planMarket();
-        return workflow.run(plan.dailyRequest(
-                tradeDate, LocalDateTime.now(clock), List.of(), modelVersion, afterCloseCutoff));
+        return workflow.run(plan.manualMarketSyncRequest(
+                tradeDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
     }
 
     public RiskWorkflowRunSummary runManualStock(LocalDate tradeDate, String symbol) {
         if (tradeDate == null) {
             throw new IllegalArgumentException("tradeDate must not be null");
         }
-        RiskWorkflowPlan plan = planner.plan(List.of(symbol));
-        return workflow.run(plan.dailyRequest(
-                tradeDate, LocalDateTime.now(clock), List.of(), modelVersion, afterCloseCutoff));
+        RiskWorkflowPlan plan = planner.planStockSync(symbol);
+        return workflow.run(plan.manualStockSyncRequest(
+                tradeDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
     }
 
     private LocalDateTime pointInTime(LocalDate tradeDate) {

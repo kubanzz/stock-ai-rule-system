@@ -99,9 +99,7 @@ export function buildSectorMatrix(
       if (levelDelta !== 0) {
         return levelDelta;
       }
-      return (
-        (rightAssessment.score ?? -1) - (leftAssessment.score ?? -1)
-      );
+      return (rightAssessment.score ?? -1) - (leftAssessment.score ?? -1);
     });
 }
 

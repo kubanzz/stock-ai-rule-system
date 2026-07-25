@@ -43,9 +43,7 @@ const rows = computed(() =>
   }),
 );
 
-function emptyAssessment(
-  dimension: RiskDimension,
-): RiskDimensionAssessment {
+function emptyAssessment(dimension: RiskDimension): RiskDimensionAssessment {
   return {
     coverage: 0,
     dimension,

@@ -46,6 +46,52 @@ public record RiskWorkflowPlan(
         );
     }
 
+    public RiskWorkflowRequest manualMarketSyncRequest(
+            LocalDate tradeDate,
+            LocalDateTime asOf,
+            String modelVersion,
+            LocalTime afterCloseCutoff
+    ) {
+        LocalDate collectionStartDate = RiskWorkflowRequest.baselineCollectionStart(tradeDate);
+        LocalDate providerStartDate = tradeDate.minusYears(2);
+        return new RiskWorkflowRequest(
+                collectionTasks,
+                horizons,
+                collectionStartDate,
+                tradeDate,
+                tradeDate,
+                asOf,
+                List.of(),
+                modelVersion,
+                afterCloseCutoff,
+                providerStartDate,
+                tradeDate
+        );
+    }
+
+    public RiskWorkflowRequest manualStockSyncRequest(
+            LocalDate tradeDate,
+            LocalDateTime asOf,
+            String modelVersion,
+            LocalTime afterCloseCutoff
+    ) {
+        LocalDate collectionStartDate = RiskWorkflowRequest.baselineCollectionStart(tradeDate);
+        LocalDate providerStartDate = tradeDate.minusYears(2);
+        return new RiskWorkflowRequest(
+                collectionTasks,
+                horizons,
+                collectionStartDate,
+                tradeDate,
+                tradeDate,
+                asOf,
+                List.of(),
+                modelVersion,
+                afterCloseCutoff,
+                providerStartDate,
+                providerStartDate
+        );
+    }
+
     public RiskWorkflowRequest fiveYearBackfillRequest(
             LocalDate endDate,
             LocalDateTime asOf,

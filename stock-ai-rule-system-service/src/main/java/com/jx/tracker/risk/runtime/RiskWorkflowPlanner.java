@@ -68,24 +68,33 @@ public final class RiskWorkflowPlanner {
     }
 
     public RiskWorkflowPlan planMarket() {
-        List<RiskObjectKey> activeStocks = activeStocks();
         RiskObjectKey market = objectCatalog.market();
         List<RiskCollectionTask> tasks = new ArrayList<>();
-        tasks.addAll(chunkedTasks(MarketRiskDataProvider.PROVIDER_CODE,
-                MarketDatasetCode.SW1_MEMBERSHIP.code(), activeStocks));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.SW1_MEMBERSHIP.code(), List.of(market)));
         tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
                 MarketDatasetCode.MARKET_DAILY.code(), List.of(market)));
         tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
                 MarketDatasetCode.VALUATION.code(), List.of(market)));
-        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
-                MarketDatasetCode.BREADTH.code(), List.of(market)));
-        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
-                MarketDatasetCode.CROSS_MARKET.code(), List.of(market)));
         tasks.add(task(FLOW_EVENT_PROVIDER,
                 FlowEventDataset.MARGIN_FINANCING.code(), List.of(market)));
         tasks.add(task(FLOW_EVENT_PROVIDER,
                 FlowEventDataset.ETF_FUND_FLOW.code(), List.of(market)));
         return new RiskWorkflowPlan(List.of(), tasks, List.of(RiskHorizon.values()));
+    }
+
+    public RiskWorkflowPlan planStockSync(String symbol) {
+        RiskWorkflowPlan complete = plan(List.of(symbol));
+        List<RiskCollectionTask> fastTasks = complete.collectionTasks().stream()
+                .filter(task -> !deferredManualDataset(task.datasetCode()))
+                .toList();
+        return new RiskWorkflowPlan(
+                complete.stockObjects(), fastTasks, complete.horizons());
+    }
+
+    private boolean deferredManualDataset(String datasetCode) {
+        return MarketDatasetCode.BREADTH.code().equals(datasetCode)
+                || MarketDatasetCode.CROSS_MARKET.code().equals(datasetCode);
     }
 
     public String normalizeStockSymbol(String symbol) {

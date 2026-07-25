@@ -9,6 +9,7 @@ import com.jx.tracker.risk.persistence.entity.RiskScoreSnapshotEntity;
 import com.jx.tracker.risk.persistence.mapper.RiskObjectExposureMapper;
 import com.jx.tracker.risk.persistence.mapper.RiskScoreEvidenceMapper;
 import com.jx.tracker.risk.persistence.mapper.RiskScoreSnapshotMapper;
+import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskEvidence;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectDetail;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectListItem;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,9 +19,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +36,7 @@ class RiskAssessmentQueryServiceImplTest {
     private RiskScoreSnapshotMapper snapshotMapper;
     private RiskScoreEvidenceMapper evidenceMapper;
     private RiskObjectExposureMapper exposureMapper;
+    private ProvisionalRiskEvidenceProvider provisionalEvidenceProvider;
     private RiskAssessmentQueryServiceImpl service;
 
     @BeforeEach
@@ -40,7 +44,10 @@ class RiskAssessmentQueryServiceImplTest {
         snapshotMapper = mock(RiskScoreSnapshotMapper.class);
         evidenceMapper = mock(RiskScoreEvidenceMapper.class);
         exposureMapper = mock(RiskObjectExposureMapper.class);
-        service = new RiskAssessmentQueryServiceImpl(snapshotMapper, evidenceMapper, exposureMapper);
+        provisionalEvidenceProvider = mock(ProvisionalRiskEvidenceProvider.class);
+        when(provisionalEvidenceProvider.load(any())).thenReturn(Map.of());
+        service = new RiskAssessmentQueryServiceImpl(
+                snapshotMapper, evidenceMapper, exposureMapper, provisionalEvidenceProvider);
     }
 
     @Test
@@ -159,6 +166,42 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
+    void queryOnlyObservationsReplaceMissingStoredEvidenceAndExposeActualCoverage() {
+        RiskScoreSnapshotEntity market = snapshot(
+                32L, "1-5d", "0.00", "insufficient_history", null, "market", "CN-A");
+        when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
+        when(snapshotMapper.selectForOverview("1-5d", TRADE_DATE)).thenReturn(List.of(market));
+        when(evidenceMapper.selectBySnapshotIds(List.of(32L))).thenReturn(List.of(
+                evidence(321L, 32L, "V", "V3", "insufficient_history")
+        ));
+        when(provisionalEvidenceProvider.load(List.of(market))).thenReturn(Map.of(
+                32L,
+                List.of(
+                        provisionalEvidence("V3", "V", "72"),
+                        provisionalEvidence("V4", "V", "68"),
+                        provisionalEvidence("C1", "C", "60"),
+                        provisionalEvidence("C3", "C", "57"),
+                        provisionalEvidence("C4", "C", "55"),
+                        provisionalEvidence("C5", "C", "53"),
+                        provisionalEvidence("A3", "A", "50"),
+                        provisionalEvidence("A5", "A", "48")
+                )
+        ));
+
+        var snapshot = service.overview("1-5d", null).marketSnapshot();
+
+        assertThat(snapshot.conclusionStatus()).isEqualTo("provisional");
+        assertThat(snapshot.completeness()).isEqualByComparingTo("0.2700");
+        assertThat(snapshot.evidence())
+                .filteredOn(item -> item.indicatorCode().equals("V3"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.score()).isEqualByComparingTo("72");
+                    assertThat(item.details()).containsEntry("provisionalOnly", true);
+                });
+    }
+
+    @Test
     void overviewMasksStaleMarketAndExcludesStaleCriticalFromCountsAndHighRiskFilter() {
         RiskScoreSnapshotEntity staleMarket = snapshot(
                 11L, "1-5d", "0.90", "stale", "critical", "market", "CN-A");
@@ -219,12 +262,12 @@ class RiskAssessmentQueryServiceImplTest {
         medium.setObjectName("贵州茅台");
         when(snapshotMapper.selectLatestTradeDate("5-20d")).thenReturn(TRADE_DATE);
         when(snapshotMapper.countObjectPage(
-                "stock", "warning", "5-20d", TRADE_DATE, "茅台", "sector", "SW1:801120"
+                "stock", "warning", "5-20d", TRADE_DATE, "茅台", "sector", "SW1:801120", true
         ))
                 .thenReturn(2L);
         when(snapshotMapper.selectObjectPage(
                 "stock", "warning", "5-20d", TRADE_DATE, "茅台",
-                "sector", "SW1:801120", 1L, 1
+                "sector", "SW1:801120", true, 1L, 1
         )).thenReturn(List.of(medium));
 
         PageResult<RiskObjectListItem> page = service.listObjects(
@@ -242,16 +285,16 @@ class RiskAssessmentQueryServiceImplTest {
         });
         verify(snapshotMapper).selectObjectPage(
                 "stock", "warning", "5-20d", TRADE_DATE, "茅台",
-                "sector", "SW1:801120", 1L, 1
+                "sector", "SW1:801120", true, 1L, 1
         );
 
         long distantOffset = (long) (Integer.MAX_VALUE - 1) * 100;
         when(snapshotMapper.selectObjectPage(
                 "stock", "warning", "5-20d", TRADE_DATE, null,
-                null, null, distantOffset, 100
+                null, null, false, distantOffset, 100
         )).thenReturn(List.of());
         when(snapshotMapper.countObjectPage(
-                "stock", "warning", "5-20d", TRADE_DATE, null, null, null
+                "stock", "warning", "5-20d", TRADE_DATE, null, null, null, false
         ))
                 .thenReturn(2L);
         assertThat(service.listObjects(
@@ -266,11 +309,11 @@ class RiskAssessmentQueryServiceImplTest {
                 21L, "1-5d", "0.95", "stale", "critical", "stock", "600519.SH");
         when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
         when(snapshotMapper.countObjectPage(
-                "stock", null, "1-5d", TRADE_DATE, null, null, null
+                "stock", null, "1-5d", TRADE_DATE, null, null, null, true
         )).thenReturn(1L);
         when(snapshotMapper.selectObjectPage(
                 "stock", null, "1-5d", TRADE_DATE, null,
-                null, null, 0L, 20
+                null, null, true, 0L, 20
         )).thenReturn(List.of(staleCritical));
 
         PageResult<RiskObjectListItem> page = service.listObjects(
@@ -349,6 +392,20 @@ class RiskAssessmentQueryServiceImplTest {
     private RiskScoreSnapshotEntity snapshot(long id, String horizon, String completeness,
                                                String qualityStatus, String level) {
         return snapshot(id, horizon, completeness, qualityStatus, level, "stock", "600519.SH");
+    }
+
+    private RiskEvidence provisionalEvidence(String code, String dimension, String score) {
+        return new RiskEvidence(
+                dimension,
+                code,
+                new BigDecimal(score),
+                new BigDecimal(score),
+                CALCULATED_AT.minusHours(1),
+                CALCULATED_AT,
+                "risk-derived-gateway",
+                "insufficient_history",
+                Map.of("provisionalOnly", true)
+        );
     }
 
     private RiskScoreSnapshotEntity snapshot(long id, String horizon, String completeness,

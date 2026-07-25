@@ -9,8 +9,7 @@ export const RISK_API_PATHS = {
     `/risks/objects/${objectType}/${encodePathSegment(objectId)}`,
   objects: '/risks/objects',
   overview: '/risks/overview',
-  syncJob: (jobId: string) =>
-    `/risks/sync/jobs/${encodePathSegment(jobId)}`,
+  syncJob: (jobId: string) => `/risks/sync/jobs/${encodePathSegment(jobId)}`,
   syncMarket: '/risks/sync/market',
   syncStatus: '/risks/sync/status',
   syncStock: (symbol: string) =>

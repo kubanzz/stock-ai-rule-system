@@ -33,7 +33,9 @@ const statusPresentation = {
           </div>
           <div class="indicator-meta">
             <span>权重 {{ item.weight }}%</span>
-            <span v-if="item.score !== null">分数 {{ item.score.toFixed(1) }}</span>
+            <span v-if="item.score !== null">
+              分数 {{ item.score.toFixed(1) }}
+            </span>
             <span v-if="item.rawValue !== null">原值 {{ item.rawValue }}</span>
           </div>
           <div v-if="item.used" class="indicator-detail">
@@ -52,8 +54,8 @@ const statusPresentation = {
       </div>
     </template>
     <button class="indicator-trigger" type="button">
-      {{ assessment.usedCount }}/{{ assessment.totalCount }} 可用
-      · {{ Math.round(assessment.coverage * 100) }}%
+      {{ assessment.usedCount }}/{{ assessment.totalCount }} 可用 ·
+      {{ Math.round(assessment.coverage * 100) }}%
     </button>
   </Popover>
 </template>

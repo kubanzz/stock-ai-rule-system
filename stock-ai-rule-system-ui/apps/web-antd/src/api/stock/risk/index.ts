@@ -35,6 +35,7 @@ interface AjaxResult<T> {
 }
 
 const USE_STOCK_MOCK = import.meta.env.VITE_STOCK_USE_MOCK === 'true';
+const RISK_REQUEST_TIMEOUT_MS = 30_000;
 
 export async function getRiskOverview(
   params: RiskOverviewQuery = {},
@@ -44,7 +45,10 @@ export async function getRiskOverview(
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskOverview>>
-  >(RISK_API_PATHS.overview, { params });
+  >(RISK_API_PATHS.overview, {
+    params,
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 
@@ -62,7 +66,10 @@ export async function getRiskObjects(
   }
   const response = await baseRequestClient.get<
     RawResponse<StockPageResult<RiskObjectListItem>>
-  >(RISK_API_PATHS.objects, { params });
+  >(RISK_API_PATHS.objects, {
+    params,
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapStockPageResult(response.data);
 }
 
@@ -76,7 +83,10 @@ export async function getRiskObjectDetail(
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskObjectDetail>>
-  >(RISK_API_PATHS.detail(objectType, objectId), { params });
+  >(RISK_API_PATHS.detail(objectType, objectId), {
+    params,
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 
@@ -90,7 +100,10 @@ export async function getRiskObjectTrend(
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskTrendPoint[]>>
-  >(RISK_API_PATHS.trend(objectType, objectId), { params });
+  >(RISK_API_PATHS.trend(objectType, objectId), {
+    params,
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 
@@ -100,19 +113,21 @@ export async function startRiskMarketSync(): Promise<RiskSyncJob> {
   }
   const response = await baseRequestClient.post<
     RawResponse<AjaxResult<RiskSyncJob>>
-  >(RISK_API_PATHS.syncMarket);
+  >(RISK_API_PATHS.syncMarket, undefined, {
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 
-export async function startRiskStockSync(
-  symbol: string,
-): Promise<RiskSyncJob> {
+export async function startRiskStockSync(symbol: string): Promise<RiskSyncJob> {
   if (USE_STOCK_MOCK) {
     return mockSyncJob(`stock:${symbol}`);
   }
   const response = await baseRequestClient.post<
     RawResponse<AjaxResult<RiskSyncJob>>
-  >(RISK_API_PATHS.syncStock(symbol));
+  >(RISK_API_PATHS.syncStock(symbol), undefined, {
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 
@@ -122,7 +137,9 @@ export async function getRiskSyncJob(jobId: string): Promise<RiskSyncJob> {
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskSyncJob>>
-  >(RISK_API_PATHS.syncJob(jobId));
+  >(RISK_API_PATHS.syncJob(jobId), {
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 
@@ -132,7 +149,9 @@ export async function getRiskSyncStatus(): Promise<RiskSyncStatus> {
   }
   const response = await baseRequestClient.get<
     RawResponse<AjaxResult<RiskSyncStatus>>
-  >(RISK_API_PATHS.syncStatus);
+  >(RISK_API_PATHS.syncStatus, {
+    timeout: RISK_REQUEST_TIMEOUT_MS,
+  });
   return unwrapAjaxResult(response.data);
 }
 

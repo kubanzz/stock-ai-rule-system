@@ -178,6 +178,28 @@ describe('risk center interactions', () => {
     container.remove();
   });
 
+  it('keeps market and sector data visible when the stock list times out', async () => {
+    riskApi.getRiskObjects.mockImplementation((query: RiskObjectQuery) => {
+      if (query.objectType === 'stock') {
+        return Promise.reject(new Error('timeout of 10000ms exceeded'));
+      }
+      const rows = query.objectType === 'market' ? [marketItem] : [sectorItem];
+      return Promise.resolve({ rows, total: rows.length });
+    });
+    const container = document.createElement('div');
+    document.body.append(container);
+    const app = createApp(RiskCenter);
+
+    app.mount(container);
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('A 股全市场');
+    expect(container.textContent).toContain('食品饮料');
+    expect(container.querySelector('.sector-cell')).not.toBeNull();
+    app.unmount();
+    container.remove();
+  });
+
   it('starts market sync, polls the job and refreshes after completion', async () => {
     vi.useFakeTimers();
     const queuedJob = {

@@ -8,6 +8,9 @@ import com.jx.tracker.risk.sync.RiskSyncJobService;
 import com.jx.tracker.risk.sync.RiskSyncStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -16,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -71,6 +75,23 @@ class RiskSyncControllerTest {
         mockMvc.perform(get("/api/risks/sync/jobs/missing"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(404));
+    }
+
+    @Test
+    void registersControllerWhenRiskWarningIsEnabledRegardlessOfConfigurationOrder() {
+        new ApplicationContextRunner()
+                .withPropertyValues("stock-ai-rule.risk-warning.enabled=true")
+                .withUserConfiguration(RiskSyncController.class, SyncServiceConfiguration.class)
+                .run(context -> assertThat(context).hasSingleBean(RiskSyncController.class));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SyncServiceConfiguration {
+
+        @Bean
+        RiskSyncJobService riskSyncJobService() {
+            return mock(RiskSyncJobService.class);
+        }
     }
 
     private RiskSyncJob queued(String jobId, String scopeKey) {

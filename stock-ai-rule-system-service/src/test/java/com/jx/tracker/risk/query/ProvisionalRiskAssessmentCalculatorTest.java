@@ -170,6 +170,40 @@ class ProvisionalRiskAssessmentCalculatorTest {
                 });
     }
 
+    @Test
+    void provisionalOnlyEvidenceComputesItsOwnCoverageWithoutChangingFormalEligibility() {
+        Assessment result = calculator.calculate(
+                BigDecimal.ZERO,
+                null,
+                null,
+                true,
+                List.of(
+                        provisionalEvidence("V3", "V", "72"),
+                        provisionalEvidence("V4", "V", "68"),
+                        provisionalEvidence("C1", "C", "60"),
+                        provisionalEvidence("C3", "C", "57"),
+                        provisionalEvidence("C4", "C", "55"),
+                        provisionalEvidence("C5", "C", "53"),
+                        provisionalEvidence("A3", "A", "50"),
+                        provisionalEvidence("A5", "A", "48")
+                )
+        );
+
+        assertThat(result.conclusionStatus()).isEqualTo("provisional");
+        assertThat(result.evidenceCompleteness()).isEqualByComparingTo("0.2700");
+        assertThat(result.provisionalScore()).isNotNull();
+        assertThat(result.dimensions())
+                .filteredOn(item -> item.dimension().equals("V"))
+                .singleElement()
+                .satisfies(item -> assertThat(item.indicators())
+                        .filteredOn(indicator -> indicator.code().equals("V3"))
+                        .singleElement()
+                        .satisfies(indicator -> {
+                            assertThat(indicator.used()).isTrue();
+                            assertThat(indicator.status()).isEqualTo("used");
+                        }));
+    }
+
     private RiskEvidence evidence(String code, String dimension, String score) {
         return new RiskEvidence(
                 dimension,
@@ -205,6 +239,23 @@ class ProvisionalRiskAssessmentCalculatorTest {
                         "layerObjectType", layerType,
                         "layerObjectId", layerId,
                         "layerWeight", new BigDecimal(layerWeight)
+                )
+        );
+    }
+
+    private RiskEvidence provisionalEvidence(String code, String dimension, String score) {
+        return new RiskEvidence(
+                dimension,
+                code,
+                new BigDecimal(score),
+                new BigDecimal(score),
+                LocalDateTime.of(2026, 7, 24, 18, 0),
+                LocalDateTime.of(2026, 7, 24, 20, 0),
+                "risk-derived-gateway",
+                "insufficient_history",
+                Map.of(
+                        "provisionalOnly", true,
+                        "normalization", "partial_rolling_percentile"
                 )
         );
     }

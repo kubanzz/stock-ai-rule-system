@@ -107,9 +107,10 @@ public final class RiskWarningWorkflow {
                         task.providerCode(), task.datasetCode(), task.scopeKey()).orElse(null);
                 RiskIngestionCheckpoint providerCheckpoint = checkpointForProvider(
                         repositoryCheckpoint, task.objects());
-                RiskProviderBatch batch = provider.fetch(task.datasetCode(), new RiskProviderRequest(
-                        task.objects(), request.horizons(), request.collectionStartDate(), request.endDate(),
-                        providerCheckpoint));
+                RiskProviderBatch batch = provider.fetch(
+                        task.datasetCode(),
+                        providerRequest(task, request, providerCheckpoint)
+                );
                 if (batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE) {
                     unavailableDatasets++;
                     repository.saveIngestionStatus(
@@ -170,6 +171,26 @@ public final class RiskWarningWorkflow {
         return new RiskWorkflowRunSummary(
                 observationsSaved, eventsSaved, storedSnapshots.size(), evidenceCount,
                 gateCount, checkpointsSaved, unavailableDatasets);
+    }
+
+    private RiskProviderRequest providerRequest(
+            RiskCollectionTask task,
+            RiskWorkflowRequest request,
+            RiskIngestionCheckpoint checkpoint
+    ) {
+        boolean incremental = request.providerStartDate().isAfter(request.collectionStartDate());
+        boolean needsCalculationContext = MarketDatasetCode.MARKET_DAILY.code()
+                .equals(task.datasetCode());
+        LocalDate startDate = incremental && !needsCalculationContext
+                ? request.endDate()
+                : request.providerStartDate();
+        LocalDate resultStartDate = incremental && !needsCalculationContext
+                ? request.endDate()
+                : request.providerResultStartDate();
+        return new RiskProviderRequest(
+                task.objects(), request.horizons(), startDate, resultStartDate,
+                request.endDate(), checkpoint
+        );
     }
 
     private List<StoredRiskSnapshot> score(

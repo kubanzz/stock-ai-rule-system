@@ -88,6 +88,6 @@ describe('risk center UI safety contract', () => {
         ),
         'utf8',
       ),
-    ).toContain("trigger=\"click\"");
+    ).toContain('trigger="click"');
   });
 });

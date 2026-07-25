@@ -107,7 +107,16 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
                     AND exposure.parent_object_id = #{parentObjectId}
                     AND exposure.valid_from &lt;= s.trade_date
                     AND (exposure.valid_to IS NULL OR exposure.valid_to &gt;= s.trade_date)
-                    AND exposure.available_at &lt;= s.calculated_at
+                    <choose>
+                      <when test="allowPublishedParentFallback">
+                        AND (exposure.available_at &lt;= s.calculated_at
+                          OR s.completeness &lt; 0.80
+                          OR s.quality_status NOT IN ('available', 'valid_zero'))
+                      </when>
+                      <otherwise>
+                        AND exposure.available_at &lt;= s.calculated_at
+                      </otherwise>
+                    </choose>
                     AND exposure.quality_status IN ('available', 'valid_zero')
                 )
               </if>
@@ -129,7 +138,8 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             @Param("tradeDate") LocalDate tradeDate,
             @Param("keyword") String keyword,
             @Param("parentObjectType") String parentObjectType,
-            @Param("parentObjectId") String parentObjectId
+            @Param("parentObjectId") String parentObjectId,
+            @Param("allowPublishedParentFallback") boolean allowPublishedParentFallback
     );
 
     @Select("""
@@ -172,7 +182,16 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
                     AND exposure.parent_object_id = #{parentObjectId}
                     AND exposure.valid_from &lt;= s.trade_date
                     AND (exposure.valid_to IS NULL OR exposure.valid_to &gt;= s.trade_date)
-                    AND exposure.available_at &lt;= s.calculated_at
+                    <choose>
+                      <when test="allowPublishedParentFallback">
+                        AND (exposure.available_at &lt;= s.calculated_at
+                          OR s.completeness &lt; 0.80
+                          OR s.quality_status NOT IN ('available', 'valid_zero'))
+                      </when>
+                      <otherwise>
+                        AND exposure.available_at &lt;= s.calculated_at
+                      </otherwise>
+                    </choose>
                     AND exposure.quality_status IN ('available', 'valid_zero')
                 )
               </if>
@@ -200,6 +219,7 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             @Param("keyword") String keyword,
             @Param("parentObjectType") String parentObjectType,
             @Param("parentObjectId") String parentObjectId,
+            @Param("allowPublishedParentFallback") boolean allowPublishedParentFallback,
             @Param("offset") long offset,
             @Param("pageSize") int pageSize
     );
@@ -245,23 +265,50 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
 
     @Select("""
             <script>
-            SELECT s.*
-            FROM risk_score_snapshot s
-            WHERE s.object_type = #{objectType}
-              AND s.object_id = #{objectId}
-              AND s.horizon = #{horizon}
-              <if test="startDate != null">AND s.trade_date &gt;= #{startDate}</if>
-              <if test="endDate != null">AND s.trade_date &lt;= #{endDate}</if>
-              AND NOT EXISTS (
-                  SELECT 1 FROM risk_score_snapshot newer
-                  WHERE newer.object_type = s.object_type
-                    AND newer.object_id = s.object_id
-                    AND newer.horizon = s.horizon
-                    AND newer.trade_date = s.trade_date
-                    AND (newer.calculated_at &gt; s.calculated_at
-                      OR (newer.calculated_at = s.calculated_at AND newer.id &gt; s.id))
-              )
-            ORDER BY s.trade_date
+            <choose>
+              <when test="startDate == null">
+                SELECT recent.*
+                FROM (
+                  SELECT s.*
+                  FROM risk_score_snapshot s
+                  WHERE s.object_type = #{objectType}
+                    AND s.object_id = #{objectId}
+                    AND s.horizon = #{horizon}
+                    <if test="endDate != null">AND s.trade_date &lt;= #{endDate}</if>
+                    AND NOT EXISTS (
+                        SELECT 1 FROM risk_score_snapshot newer
+                        WHERE newer.object_type = s.object_type
+                          AND newer.object_id = s.object_id
+                          AND newer.horizon = s.horizon
+                          AND newer.trade_date = s.trade_date
+                          AND (newer.calculated_at &gt; s.calculated_at
+                            OR (newer.calculated_at = s.calculated_at AND newer.id &gt; s.id))
+                    )
+                  ORDER BY s.trade_date DESC
+                  LIMIT 120
+                ) recent
+                ORDER BY recent.trade_date
+              </when>
+              <otherwise>
+                SELECT s.*
+                FROM risk_score_snapshot s
+                WHERE s.object_type = #{objectType}
+                  AND s.object_id = #{objectId}
+                  AND s.horizon = #{horizon}
+                  AND s.trade_date &gt;= #{startDate}
+                  <if test="endDate != null">AND s.trade_date &lt;= #{endDate}</if>
+                  AND NOT EXISTS (
+                      SELECT 1 FROM risk_score_snapshot newer
+                      WHERE newer.object_type = s.object_type
+                        AND newer.object_id = s.object_id
+                        AND newer.horizon = s.horizon
+                        AND newer.trade_date = s.trade_date
+                        AND (newer.calculated_at &gt; s.calculated_at
+                          OR (newer.calculated_at = s.calculated_at AND newer.id &gt; s.id))
+                  )
+                ORDER BY s.trade_date
+              </otherwise>
+            </choose>
             </script>
             """)
     List<RiskScoreSnapshotEntity> selectTrend(

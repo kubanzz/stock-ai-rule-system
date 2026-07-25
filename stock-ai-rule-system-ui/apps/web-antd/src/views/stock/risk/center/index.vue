@@ -119,7 +119,8 @@ const selectedAssessment = computed(() =>
   ),
 );
 const syncActive = computed(
-  () => syncJob.value?.status === 'queued' || syncJob.value?.status === 'running',
+  () =>
+    syncJob.value?.status === 'queued' || syncJob.value?.status === 'running',
 );
 
 function resetSelection() {
@@ -211,7 +212,7 @@ async function loadCenter() {
   try {
     const queries = buildRiskObjectQueries(query, activeSectorId.value);
     const [overviewResult, marketResult, sectorResult, stockResult] =
-      await Promise.all([
+      await Promise.allSettled([
         getRiskOverview({
           horizon: query.horizon,
           tradeDate: query.tradeDate,
@@ -221,17 +222,33 @@ async function loadCenter() {
         getRiskObjects(queries.stock),
       ]);
     if (!centerRequests.isCurrent(requestId)) return;
-    overview.value = overviewResult;
-    marketRows.value = marketResult.rows;
-    sectorObjectRows.value = sectorResult.rows;
-    stockRows.value = stockResult.rows;
-    objectTotal.value = stockResult.total;
+    overview.value =
+      overviewResult.status === 'fulfilled' ? overviewResult.value : undefined;
+    marketRows.value =
+      marketResult.status === 'fulfilled' ? marketResult.value.rows : [];
+    sectorObjectRows.value =
+      sectorResult.status === 'fulfilled' ? sectorResult.value.rows : [];
+    stockRows.value =
+      stockResult.status === 'fulfilled' ? stockResult.value.rows : [];
+    objectTotal.value =
+      stockResult.status === 'fulfilled' ? stockResult.value.total : 0;
 
     const allRows = [
-      ...marketResult.rows,
-      ...sectorResult.rows,
-      ...stockResult.rows,
+      ...marketRows.value,
+      ...sectorObjectRows.value,
+      ...stockRows.value,
     ];
+    const failedSections = [
+      overviewResult.status === 'rejected' ? '总览' : '',
+      marketResult.status === 'rejected' ? '市场' : '',
+      sectorResult.status === 'rejected' ? '行业' : '',
+      stockResult.status === 'rejected' ? '个股' : '',
+    ].filter(Boolean);
+    if (failedSections.length > 0) {
+      message.warning(
+        `${failedSections.join('、')}风险数据加载超时或失败，其余可用数据已正常展示`,
+      );
+    }
 
     const preferred = selected.value
       ? allRows.find(
@@ -242,9 +259,9 @@ async function loadCenter() {
       : undefined;
     const initial =
       preferred ??
-      marketResult.rows[0] ??
-      sectorResult.rows[0] ??
-      stockResult.rows[0];
+      marketRows.value[0] ??
+      sectorObjectRows.value[0] ??
+      stockRows.value[0];
     if (initial) {
       await loadDetail(initial);
     } else {

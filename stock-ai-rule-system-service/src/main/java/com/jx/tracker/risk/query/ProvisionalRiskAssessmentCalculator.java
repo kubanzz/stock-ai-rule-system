@@ -45,6 +45,8 @@ public final class ProvisionalRiskAssessmentCalculator {
         BigDecimal normalizedCompleteness = completeness == null ? BigDecimal.ZERO : completeness;
         List<RiskEvidence> selected = selectLatest(evidence);
         List<RiskEvidence> validEvidence = validEvidence(selected);
+        BigDecimal evidenceCompleteness = evidenceCompleteness(validEvidence);
+        BigDecimal assessmentCompleteness = normalizedCompleteness.max(evidenceCompleteness);
         List<RiskDimensionAssessment> dimensions = dimensions(selected, validEvidence);
         LocalDateTime dataAsOf = validEvidence.stream()
                 .map(RiskEvidence::availableAt)
@@ -54,22 +56,27 @@ public final class ProvisionalRiskAssessmentCalculator {
 
         if (formalScore != null && formalLevel != null
                 && normalizedCompleteness.compareTo(FORMAL_THRESHOLD) >= 0) {
-            return new Assessment("formal", null, null, dimensions, dataAsOf);
+            return new Assessment(
+                    "formal", null, null, dimensions, dataAsOf, assessmentCompleteness);
         }
         if (unavailable && validEvidence.isEmpty()) {
-            return new Assessment("unavailable", null, null, dimensions, dataAsOf);
+            return new Assessment(
+                    "unavailable", null, null, dimensions, dataAsOf, assessmentCompleteness);
         }
 
         Map<RiskDimension, BigDecimal> scores = dimensionScores(dimensions);
-        if (normalizedCompleteness.compareTo(PROVISIONAL_THRESHOLD) < 0 || scores.size() < 2) {
-            return new Assessment("insufficient", null, null, dimensions, dataAsOf);
+        if (assessmentCompleteness.compareTo(PROVISIONAL_THRESHOLD) < 0 || scores.size() < 2) {
+            return new Assessment(
+                    "insufficient", null, null, dimensions, dataAsOf, assessmentCompleteness);
         }
         BigDecimal provisionalScore = provisionalScore(scores);
         String level = provisionalLevel(provisionalScore);
         if (!formalDimensionGates(dimensions) && levelRank(level) > levelRank("watch")) {
             level = "watch";
         }
-        return new Assessment("provisional", provisionalScore, level, dimensions, dataAsOf);
+        return new Assessment(
+                "provisional", provisionalScore, level, dimensions, dataAsOf,
+                assessmentCompleteness);
     }
 
     private List<RiskEvidence> selectLatest(List<RiskEvidence> evidence) {
@@ -108,8 +115,18 @@ public final class ProvisionalRiskAssessmentCalculator {
         return evidence.stream()
                 .filter(item -> item.score() != null)
                 .filter(item -> "available".equals(item.qualityStatus())
-                        || "valid_zero".equals(item.qualityStatus()))
+                        || "valid_zero".equals(item.qualityStatus())
+                        || Boolean.TRUE.equals(item.details().get("provisionalOnly")))
                 .toList();
+    }
+
+    private BigDecimal evidenceCompleteness(List<RiskEvidence> evidence) {
+        BigDecimal usedWeight = evidence.stream()
+                .map(item -> effectiveWeight(
+                        RiskIndicatorCatalog.require(item.indicatorCode()), item))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return usedWeight.divide(new BigDecimal("500"), 4, RoundingMode.HALF_UP)
+                .min(BigDecimal.ONE);
     }
 
     private List<RiskDimensionAssessment> dimensions(
@@ -296,10 +313,14 @@ public final class ProvisionalRiskAssessmentCalculator {
             BigDecimal provisionalScore,
             String provisionalLevel,
             List<RiskDimensionAssessment> dimensions,
-            LocalDateTime dataAsOf
+            LocalDateTime dataAsOf,
+            BigDecimal evidenceCompleteness
     ) {
         public Assessment {
             dimensions = dimensions == null ? List.of() : List.copyOf(dimensions);
+            evidenceCompleteness = evidenceCompleteness == null
+                    ? BigDecimal.ZERO
+                    : evidenceCompleteness;
         }
     }
 }

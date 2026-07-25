@@ -57,6 +57,37 @@ def test_membership_uses_current_snapshot_for_latest_session_without_claiming_hi
     assert response.meta.insufficient_history is True
 
 
+def test_market_membership_request_returns_the_whole_current_sw1_universe():
+    query = RiskQuery.from_raw("20260721", "20260721", "market:CN-A")
+
+    response = MembershipDataset(context(CurrentSnapshotOnly())).fetch(query)
+
+    assert response.data[0]["objectId"] == "600519.SH"
+    assert response.data[0]["sectorCode"] == "801010"
+    assert response.meta.history_complete is False
+
+
+def test_membership_does_not_treat_leaf_classification_codes_as_sw1_indices():
+    class LeafHistoryWithCurrentSnapshot(CurrentSnapshotOnly):
+        def get(self, function, params):
+            if function == "stock_industry_clf_hist_sw":
+                return [{
+                    "symbol": "600519",
+                    "industry_code": "350301",
+                    "start_date": "2021-12-13",
+                    "update_time": "2025-12-15",
+                }]
+            return super().get(function, params)
+
+    query = RiskQuery.from_raw("20260721", "20260721", "stock:600519.SH")
+
+    response = MembershipDataset(context(LeafHistoryWithCurrentSnapshot())).fetch(query)
+
+    assert response.data[0]["sectorCode"] == "801010"
+    assert response.data[0]["sectorName"] == "农林牧渔"
+    assert response.meta.history_complete is False
+
+
 def test_official_membership_derives_nonoverlapping_validity_intervals():
     class OfficialHistory:
         def get(self, function, params):
