@@ -7,6 +7,8 @@ import type {
   RiskObjectType,
   RiskOverview,
   RiskOverviewQuery,
+  RiskSyncJob,
+  RiskSyncStatus,
   RiskTrendPoint,
   RiskTrendQuery,
 } from './types';
@@ -90,6 +92,68 @@ export async function getRiskObjectTrend(
     RawResponse<AjaxResult<RiskTrendPoint[]>>
   >(RISK_API_PATHS.trend(objectType, objectId), { params });
   return unwrapAjaxResult(response.data);
+}
+
+export async function startRiskMarketSync(): Promise<RiskSyncJob> {
+  if (USE_STOCK_MOCK) {
+    return mockSyncJob('market:CN-A');
+  }
+  const response = await baseRequestClient.post<
+    RawResponse<AjaxResult<RiskSyncJob>>
+  >(RISK_API_PATHS.syncMarket);
+  return unwrapAjaxResult(response.data);
+}
+
+export async function startRiskStockSync(
+  symbol: string,
+): Promise<RiskSyncJob> {
+  if (USE_STOCK_MOCK) {
+    return mockSyncJob(`stock:${symbol}`);
+  }
+  const response = await baseRequestClient.post<
+    RawResponse<AjaxResult<RiskSyncJob>>
+  >(RISK_API_PATHS.syncStock(symbol));
+  return unwrapAjaxResult(response.data);
+}
+
+export async function getRiskSyncJob(jobId: string): Promise<RiskSyncJob> {
+  if (USE_STOCK_MOCK) {
+    return { ...mockSyncJob('market:CN-A'), jobId, status: 'succeeded' };
+  }
+  const response = await baseRequestClient.get<
+    RawResponse<AjaxResult<RiskSyncJob>>
+  >(RISK_API_PATHS.syncJob(jobId));
+  return unwrapAjaxResult(response.data);
+}
+
+export async function getRiskSyncStatus(): Promise<RiskSyncStatus> {
+  if (USE_STOCK_MOCK) {
+    return { activeJobs: [], latestMarketJob: null };
+  }
+  const response = await baseRequestClient.get<
+    RawResponse<AjaxResult<RiskSyncStatus>>
+  >(RISK_API_PATHS.syncStatus);
+  return unwrapAjaxResult(response.data);
+}
+
+function mockSyncJob(scopeKey: string): RiskSyncJob {
+  return {
+    createdAt: new Date().toISOString(),
+    eventCount: 0,
+    evidenceCount: 0,
+    finishedAt: null,
+    jobId: `mock-${Date.now()}`,
+    message: null,
+    observationCount: 0,
+    phase: 'resolving_trade_date',
+    progress: 0,
+    scopeKey,
+    snapshotCount: 0,
+    startedAt: null,
+    status: 'queued',
+    tradeDate: null,
+    unavailableDatasetCount: 0,
+  };
 }
 
 export { normalizeRiskObjectQuery, RISK_API_PATHS } from './contract';

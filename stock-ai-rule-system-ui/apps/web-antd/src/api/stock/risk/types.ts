@@ -8,6 +8,17 @@ export type RiskObjectType = 'market' | 'sector' | 'stock';
 export type RiskHorizon = '1-5d' | '5-20d' | '20-60d';
 export type RiskStage = 'easing' | 'fragile' | 'repricing' | 'stampede';
 export type RiskDimension = 'A' | 'C' | 'S' | 'T' | 'V';
+export type RiskConclusionStatus =
+  | 'formal'
+  | 'insufficient'
+  | 'provisional'
+  | 'unavailable';
+export type RiskIndicatorAvailability =
+  | 'insufficient_history'
+  | 'not_integrated'
+  | 'source_failed'
+  | 'stale'
+  | 'used';
 export type RiskDataQualityStatus =
   | 'available'
   | 'insufficient_history'
@@ -32,6 +43,30 @@ export interface RiskEvidence {
   source: string;
 }
 
+export interface RiskIndicatorStatus {
+  availableAt: null | string;
+  code: string;
+  dimension: RiskDimension;
+  name: string;
+  observedAt: null | string;
+  rawValue: null | number;
+  reason: null | string;
+  score: null | number;
+  source: null | string;
+  status: RiskIndicatorAvailability;
+  used: boolean;
+  weight: number;
+}
+
+export interface RiskDimensionAssessment {
+  coverage: number;
+  dimension: RiskDimension;
+  indicators: RiskIndicatorStatus[];
+  score: null | number;
+  totalCount: number;
+  usedCount: number;
+}
+
 export interface RiskSnapshot {
   aScore: null | number;
   cScore: null | number;
@@ -50,6 +85,12 @@ export interface RiskSnapshot {
   totalScore: null | number;
   tradeDate: string;
   vScore: null | number;
+  conclusionStatus?: RiskConclusionStatus;
+  dataAsOf?: null | string;
+  dimensions?: RiskDimensionAssessment[];
+  provisionalLevel?: null | RiskLevel;
+  provisionalScore?: null | number;
+  staleTradingDays?: number;
 }
 
 export interface RiskGateDecision {
@@ -131,4 +172,34 @@ export interface RiskTrendQuery {
   endDate?: string;
   horizon?: RiskHorizon;
   startDate?: string;
+}
+
+export type RiskSyncJobStatus =
+  | 'failed'
+  | 'partial_success'
+  | 'queued'
+  | 'running'
+  | 'succeeded';
+
+export interface RiskSyncJob {
+  createdAt: string;
+  eventCount: number;
+  evidenceCount: number;
+  finishedAt: null | string;
+  jobId: string;
+  message: null | string;
+  observationCount: number;
+  phase: string;
+  progress: number;
+  scopeKey: string;
+  snapshotCount: number;
+  startedAt: null | string;
+  status: RiskSyncJobStatus;
+  tradeDate: null | string;
+  unavailableDatasetCount: number;
+}
+
+export interface RiskSyncStatus {
+  activeJobs: RiskSyncJob[];
+  latestMarketJob: null | RiskSyncJob;
 }

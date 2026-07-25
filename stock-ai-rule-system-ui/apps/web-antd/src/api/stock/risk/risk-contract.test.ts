@@ -22,6 +22,12 @@ describe('risk api contract', () => {
     expect(RISK_API_PATHS.trend('stock', '600519.SH')).toBe(
       '/risks/objects/stock/600519.SH/trend',
     );
+    expect(RISK_API_PATHS.syncMarket).toBe('/risks/sync/market');
+    expect(RISK_API_PATHS.syncStock('600519.SH')).toBe(
+      '/risks/sync/stocks/600519.SH',
+    );
+    expect(RISK_API_PATHS.syncJob('job-1')).toBe('/risks/sync/jobs/job-1');
+    expect(RISK_API_PATHS.syncStatus).toBe('/risks/sync/status');
   });
 
   it('caps pagination at 100 and keeps camelCase query fields', () => {

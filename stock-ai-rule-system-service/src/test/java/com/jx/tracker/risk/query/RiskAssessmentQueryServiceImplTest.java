@@ -134,6 +134,7 @@ class RiskAssessmentQueryServiceImplTest {
         market.setCScore(new BigDecimal("58.1"));
         market.setAScore(null);
         when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
+        when(snapshotMapper.countOpenTradingDaysAfter(TRADE_DATE)).thenReturn(3);
         when(snapshotMapper.selectForOverview("1-5d", TRADE_DATE)).thenReturn(List.of(market));
         when(evidenceMapper.selectBySnapshotIds(List.of(31L))).thenReturn(List.of(
                 evidence(311L, 31L, "S", "S1", "available"),
@@ -154,6 +155,7 @@ class RiskAssessmentQueryServiceImplTest {
                 .singleElement()
                 .satisfies(item -> assertThat(item.usedCount()).isEqualTo(1));
         assertThat(snapshot.dataAsOf()).isEqualTo(CALCULATED_AT);
+        assertThat(snapshot.staleTradingDays()).isEqualTo(3);
     }
 
     @Test

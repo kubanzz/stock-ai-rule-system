@@ -93,14 +93,17 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 .filter(row -> "market".equals(row.getObjectType()) || hasLevel(row, "critical"))
                 .toList();
         Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(displayRows);
+        int staleTradingDays = staleTradingDays(resolvedDate);
         RiskSnapshot marketSnapshot = rows.stream()
                 .filter(row -> "market".equals(row.getObjectType()))
                 .findFirst()
-                .map(row -> toSnapshot(row, evidenceBySnapshot.getOrDefault(row.getId(), List.of())))
+                .map(row -> toSnapshot(
+                        row, evidenceBySnapshot.getOrDefault(row.getId(), List.of()), staleTradingDays))
                 .orElse(null);
         List<RiskObjectListItem> highRiskObjects = rows.stream()
                 .filter(row -> hasLevel(row, "critical"))
-                .map(row -> toListItem(row, evidenceBySnapshot.getOrDefault(row.getId(), List.of())))
+                .map(row -> toListItem(
+                        row, evidenceBySnapshot.getOrDefault(row.getId(), List.of()), staleTradingDays))
                 .toList();
         List<RiskLevelCount> counts = LEVELS.stream()
                 .map(level -> new RiskLevelCount(
@@ -159,8 +162,10 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 pageSize
         ));
         Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(rows);
+        int staleTradingDays = staleTradingDays(resolvedDate);
         List<RiskObjectListItem> items = rows.stream()
-                .map(row -> toListItem(row, evidenceBySnapshot.getOrDefault(row.getId(), List.of())))
+                .map(row -> toListItem(
+                        row, evidenceBySnapshot.getOrDefault(row.getId(), List.of()), staleTradingDays))
                 .toList();
         return PageResult.getDataTable(items, total);
     }
@@ -194,8 +199,10 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
             throw snapshotNotFound(normalizedType, normalizedId);
         }
         Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(rows);
+        int staleTradingDays = staleTradingDays(resolvedDate);
         List<RiskSnapshot> snapshots = rows.stream()
-                .map(row -> toSnapshot(row, evidenceBySnapshot.getOrDefault(row.getId(), List.of())))
+                .map(row -> toSnapshot(
+                        row, evidenceBySnapshot.getOrDefault(row.getId(), List.of()), staleTradingDays))
                 .toList();
         int selectedIndex = selectedSnapshotIndex(snapshots, normalizedHorizon);
         RiskScoreSnapshotEntity selectedRow = rows.get(selectedIndex);
@@ -252,15 +259,17 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
 
     private RiskObjectListItem toListItem(
             RiskScoreSnapshotEntity row,
-            List<RiskEvidence> evidence
+            List<RiskEvidence> evidence,
+            int staleTradingDays
     ) {
-        RiskSnapshot snapshot = toSnapshot(row, evidence);
+        RiskSnapshot snapshot = toSnapshot(row, evidence, staleTradingDays);
         return new RiskObjectListItem(objectName(row), snapshot.object(), snapshot);
     }
 
     private RiskSnapshot toSnapshot(
             RiskScoreSnapshotEntity row,
-            List<RiskEvidence> evidence
+            List<RiskEvidence> evidence,
+            int staleTradingDays
     ) {
         BigDecimal completeness = row.getCompleteness() == null ? BigDecimal.ZERO : row.getCompleteness();
         boolean unavailable = isUnavailable(row.getQualityStatus());
@@ -302,12 +311,12 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 assessment.provisionalLevel(),
                 assessment.dimensions(),
                 dataAsOf,
-                0
+                staleTradingDays
         );
     }
 
     private RiskTrendPoint toTrendPoint(RiskScoreSnapshotEntity row) {
-        RiskSnapshot snapshot = toSnapshot(row, List.of());
+        RiskSnapshot snapshot = toSnapshot(row, List.of(), 0);
         return new RiskTrendPoint(
                 snapshot.tradeDate(),
                 snapshot.vScore(),
@@ -337,6 +346,10 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                         LinkedHashMap::new,
                         Collectors.mapping(this::toEvidence, Collectors.toList())
                 ));
+    }
+
+    private int staleTradingDays(LocalDate tradeDate) {
+        return tradeDate == null ? 0 : Math.max(0, snapshotMapper.countOpenTradingDaysAfter(tradeDate));
     }
 
     private RiskEvidence toEvidence(RiskScoreEvidenceEntity row) {

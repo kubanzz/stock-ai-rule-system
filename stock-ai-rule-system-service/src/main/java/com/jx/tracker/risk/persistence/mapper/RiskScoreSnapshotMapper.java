@@ -22,6 +22,16 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
     LocalDate selectLatestTradeDate(@Param("horizon") String horizon);
 
     @Select("""
+            SELECT COUNT(*)
+            FROM trade_calendar
+            WHERE market IN ('CN', 'A股')
+              AND is_open = 1
+              AND trade_date > #{tradeDate}
+              AND trade_date <= CURRENT_DATE
+            """)
+    int countOpenTradingDaysAfter(@Param("tradeDate") LocalDate tradeDate);
+
+    @Select("""
             <script>
             SELECT MAX(trade_date)
             FROM risk_score_snapshot

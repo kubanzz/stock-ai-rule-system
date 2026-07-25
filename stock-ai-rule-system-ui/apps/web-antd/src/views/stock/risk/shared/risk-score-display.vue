@@ -5,6 +5,7 @@ import { formatRiskScore, getRiskScoreTone } from './presentation';
 
 const props = defineProps<{
   completeness?: number;
+  provisional?: boolean;
   score?: null | number;
 }>();
 const tone = computed(() => getRiskScoreTone(props.score));
@@ -15,6 +16,9 @@ const display = computed(() => formatRiskScore(props.score));
   <span class="risk-score" :class="`risk-score--${tone}`">
     {{ display }}
     <small v-if="score !== null && score !== undefined">/100</small>
+    <small v-if="provisional && score !== null && score !== undefined">
+      暂定
+    </small>
     <small v-else-if="completeness !== undefined">
       （完整度 {{ Math.round(completeness * 100) }}%）
     </small>

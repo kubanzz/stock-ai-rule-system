@@ -5,10 +5,11 @@ import type {
   RiskObjectListItem,
   RiskObjectQuery,
   RiskOverview,
+  RiskSyncJob,
   RiskTrendPoint,
 } from '#/api/stock/risk/types';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -32,7 +33,11 @@ import {
   getRiskObjects,
   getRiskObjectTrend,
   getRiskOverview,
+  getRiskSyncJob,
+  getRiskSyncStatus,
   RISK_DECISION_SUPPORT_NOTICE,
+  startRiskMarketSync,
+  startRiskStockSync,
 } from '#/api/stock/risk';
 
 import RiskAlert from '../../components/risk-alert.vue';
@@ -50,11 +55,13 @@ import {
   buildSectorMatrix,
   createRequestSequence,
   createRiskCenterQuery,
+  displayRiskAssessment,
   riskDataState,
 } from './risk-center-state';
 import RiskObjectDrilldown from './risk-object-drilldown.vue';
 import RiskOverviewPanel from './risk-overview-panel.vue';
 import RiskSectorMatrix from './risk-sector-matrix.vue';
+import RiskSyncStatus from './risk-sync-status.vue';
 import RiskTriggerTimeline from './risk-trigger-timeline.vue';
 
 const loading = ref(false);
@@ -69,10 +76,12 @@ const activeSectorId = ref<string>();
 const selected = ref<RiskObjectListItem>();
 const detail = ref<RiskObjectDetail>();
 const trend = ref<RiskTrendPoint[]>([]);
+const syncJob = ref<RiskSyncJob>();
 const query = reactive<RiskObjectQuery>(createRiskCenterQuery());
 const centerRequests = createRequestSequence();
 const detailRequests = createRequestSequence();
 const stockRequests = createRequestSequence();
+let syncPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 const horizonOptions: Array<{ label: string; value: RiskHorizon }> = [
   { label: '短期（1–5 日）', value: '1-5d' },
@@ -103,6 +112,14 @@ const activeTimeline = computed(() =>
 );
 const selectedDataState = computed(() =>
   riskDataState(detail.value?.snapshot ?? selected.value?.snapshot ?? null),
+);
+const selectedAssessment = computed(() =>
+  displayRiskAssessment(
+    detail.value?.snapshot ?? selected.value?.snapshot ?? null,
+  ),
+);
+const syncActive = computed(
+  () => syncJob.value?.status === 'queued' || syncJob.value?.status === 'running',
 );
 
 function resetSelection() {
@@ -269,7 +286,79 @@ async function search() {
   await loadCenter();
 }
 
-onMounted(loadCenter);
+function clearSyncPolling() {
+  clearTimeout(syncPollTimer);
+  syncPollTimer = undefined;
+}
+
+function scheduleSyncPolling(jobId: string) {
+  clearSyncPolling();
+  syncPollTimer = setTimeout(() => void pollSyncJob(jobId), 1500);
+}
+
+async function pollSyncJob(jobId: string) {
+  try {
+    const result = await getRiskSyncJob(jobId);
+    syncJob.value = result;
+    if (result.status === 'queued' || result.status === 'running') {
+      scheduleSyncPolling(jobId);
+      return;
+    }
+    if (result.status === 'failed') {
+      message.error(result.message || '风险数据同步失败，已保留原有数据');
+      return;
+    }
+    if (result.status === 'partial_success') {
+      message.warning(result.message || '风险数据部分同步成功');
+    } else {
+      message.success('风险数据同步完成');
+    }
+    await loadCenter();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '同步状态查询失败');
+  }
+}
+
+async function loadInitialSyncStatus() {
+  try {
+    const result = await getRiskSyncStatus();
+    const active =
+      result.activeJobs.find((job) => job.scopeKey === 'market:CN-A') ??
+      result.activeJobs[0];
+    syncJob.value = active ?? result.latestMarketJob ?? undefined;
+    if (active) {
+      scheduleSyncPolling(active.jobId);
+    }
+  } catch {
+    // 同步状态不影响风险数据的正常浏览。
+  }
+}
+
+async function beginSync(request: () => Promise<RiskSyncJob>) {
+  if (syncActive.value) return;
+  try {
+    const result = await request();
+    syncJob.value = result;
+    scheduleSyncPolling(result.jobId);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动风险同步失败');
+  }
+}
+
+async function syncLatestMarket() {
+  await beginSync(startRiskMarketSync);
+}
+
+async function syncSelectedStock() {
+  const object = detail.value?.object ?? selected.value?.object;
+  if (!object || object.objectType !== 'stock') return;
+  await beginSync(() => startRiskStockSync(object.objectId));
+}
+
+onMounted(() => {
+  void Promise.all([loadCenter(), loadInitialSyncStatus()]);
+});
+onUnmounted(clearSyncPolling);
 </script>
 
 <template>
@@ -279,6 +368,13 @@ onMounted(loadCenter);
   >
     <div class="risk-center">
       <RiskAlert :message="RISK_DECISION_SUPPORT_NOTICE" />
+
+      <RiskSyncStatus
+        :job="syncJob"
+        :latest-data-date="overview?.tradeDate"
+        :stale-trading-days="overview?.marketSnapshot?.staleTradingDays"
+        @sync-market="syncLatestMarket"
+      />
 
       <div class="toolbar">
         <Select
@@ -337,7 +433,20 @@ onMounted(loadCenter);
         <div v-if="detail" class="detail-grid">
           <Card size="small" title="对象风险详情">
             <template #extra>
-              <RiskLevelTag :level="detail.snapshot.level" />
+              <span class="detail-actions">
+                <Button
+                  v-if="detail.object.objectType === 'stock'"
+                  :loading="syncActive"
+                  size="small"
+                  @click="syncSelectedStock"
+                >
+                  同步该股票
+                </Button>
+                <Tag v-if="selectedAssessment.provisional" color="gold">
+                  暂定评估
+                </Tag>
+                <RiskLevelTag :level="selectedAssessment.level" />
+              </span>
             </template>
 
             <Alert
@@ -353,6 +462,13 @@ onMounted(loadCenter);
               message="证据包含过期数据，请勿将当前结果视为正式风险态。"
               show-icon
               type="warning"
+            />
+            <Alert
+              v-else-if="selectedDataState === 'provisional'"
+              class="detail-alert"
+              message="当前为暂定评估：结论仅基于已可用指标，缺失指标可继续同步补齐；正式风险等级与闸门仍要求覆盖率达到 80%。"
+              show-icon
+              type="info"
             />
             <Alert
               v-else-if="selectedDataState === 'insufficient'"
@@ -376,19 +492,24 @@ onMounted(loadCenter);
                 {{
                   detail.snapshot.stage
                     ? stageLabels[detail.snapshot.stage]
-                    : '数据不足'
+                    : selectedAssessment.provisional
+                      ? '暂定评估'
+                      : '数据不足'
                 }}
               </Descriptions.Item>
               <Descriptions.Item label="总分">
                 <RiskScoreDisplay
                   :completeness="detail.snapshot.completeness"
-                  :score="detail.snapshot.totalScore"
+                  :provisional="selectedAssessment.provisional"
+                  :score="selectedAssessment.score"
                 />
               </Descriptions.Item>
               <Descriptions.Item label="风险置信度">
                 {{
                   detail.snapshot.riskConfidence === null
-                    ? '数据不足'
+                    ? selectedAssessment.provisional
+                      ? '暂定结果不输出正式置信度'
+                      : '数据不足'
                     : `${Math.round(detail.snapshot.riskConfidence * 100)}%`
                 }}
               </Descriptions.Item>
@@ -397,6 +518,12 @@ onMounted(loadCenter);
               </Descriptions.Item>
               <Descriptions.Item label="模型版本">
                 {{ detail.snapshot.modelVersion }}
+              </Descriptions.Item>
+              <Descriptions.Item label="证据截至">
+                {{ detail.snapshot.dataAsOf || '--' }}
+              </Descriptions.Item>
+              <Descriptions.Item label="数据时效">
+                {{ detail.snapshot.staleTradingDays ?? 0 }} 个交易日
               </Descriptions.Item>
             </Descriptions>
 
@@ -490,6 +617,12 @@ onMounted(loadCenter);
 
 .detail-alert {
   margin-bottom: 12px;
+}
+
+.detail-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .section-title {

@@ -14,6 +14,7 @@ import {
   buildSectorMatrix,
   createRequestSequence,
   createRiskCenterQuery,
+  displayRiskAssessment,
   riskDataState,
 } from './risk-center-state';
 
@@ -269,5 +270,28 @@ describe('risk center state', () => {
         }),
       ),
     ).toBe('unavailable');
+  });
+
+  it('displays a clearly marked provisional score without making it formal', () => {
+    const provisional = snapshot({
+      completeness: 0.46,
+      conclusionStatus: 'provisional',
+      level: null,
+      provisionalLevel: 'watch',
+      provisionalScore: 54.7,
+      totalScore: null,
+    });
+
+    expect(riskDataState(provisional)).toBe('provisional');
+    expect(displayRiskAssessment(provisional)).toEqual({
+      level: 'watch',
+      provisional: true,
+      score: 54.7,
+    });
+    expect(displayRiskAssessment(snapshot())).toEqual({
+      level: 'warning',
+      provisional: false,
+      score: 63.4,
+    });
   });
 });
