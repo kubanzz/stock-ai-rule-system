@@ -24,7 +24,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,7 +47,7 @@ class RiskAssessmentQueryServiceImplTest {
         evidenceMapper = mock(RiskScoreEvidenceMapper.class);
         exposureMapper = mock(RiskObjectExposureMapper.class);
         provisionalEvidenceProvider = mock(ProvisionalRiskEvidenceProvider.class);
-        when(provisionalEvidenceProvider.load(any())).thenReturn(Map.of());
+        when(provisionalEvidenceProvider.load(any(), anyBoolean())).thenReturn(Map.of());
         service = new RiskAssessmentQueryServiceImpl(
                 snapshotMapper, evidenceMapper, exposureMapper, provisionalEvidenceProvider);
     }
@@ -174,7 +176,7 @@ class RiskAssessmentQueryServiceImplTest {
         when(evidenceMapper.selectBySnapshotIds(List.of(32L))).thenReturn(List.of(
                 evidence(321L, 32L, "V", "V3", "insufficient_history")
         ));
-        when(provisionalEvidenceProvider.load(List.of(market))).thenReturn(Map.of(
+        when(provisionalEvidenceProvider.load(List.of(market), true)).thenReturn(Map.of(
                 32L,
                 List.of(
                         provisionalEvidence("V3", "V", "72"),
@@ -373,6 +375,9 @@ class RiskAssessmentQueryServiceImplTest {
                     .containsEntry("auditId", "audit-41");
         });
         assertThat(detail.snapshots()).singleElement();
+        verify(exposureMapper, never()).selectLatestPublishedParents(
+                "stock", "600519.SH", TRADE_DATE);
+        verify(provisionalEvidenceProvider).load(List.of(longTerm), false);
 
         LocalDate start = LocalDate.of(2026, 7, 1);
         when(snapshotMapper.selectTrend("stock", "600519.SH", "20-60d", start, TRADE_DATE))

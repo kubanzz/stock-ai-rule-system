@@ -36,7 +36,7 @@ class JdbcProvisionalRiskEvidenceProviderTest {
                 new JdbcProvisionalRiskEvidenceProvider(mapper, exposureMapper);
 
         RiskScoreSnapshotEntity snapshot = snapshot(1L, "market", "CN-A");
-        List<RiskEvidence> evidence = provider.load(List.of(snapshot)).get(1L);
+        List<RiskEvidence> evidence = provider.load(List.of(snapshot), false).get(1L);
 
         assertThat(evidence).singleElement().satisfies(item -> {
             assertThat(item.indicatorCode()).isEqualTo("V3");
@@ -70,7 +70,7 @@ class JdbcProvisionalRiskEvidenceProviderTest {
                 new JdbcProvisionalRiskEvidenceProvider(mapper, exposureMapper);
 
         RiskScoreSnapshotEntity snapshot = snapshot(2L, "sector", "SW1:801120");
-        List<RiskEvidence> evidence = provider.load(List.of(snapshot)).get(2L);
+        List<RiskEvidence> evidence = provider.load(List.of(snapshot), false).get(2L);
 
         assertThat(evidence).singleElement().satisfies(item -> {
             assertThat(item.score()).isEqualByComparingTo("100.0000");

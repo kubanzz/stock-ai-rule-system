@@ -9,9 +9,12 @@ import java.util.Map;
 @FunctionalInterface
 public interface ProvisionalRiskEvidenceProvider {
 
-    Map<Long, List<RiskEvidence>> load(List<RiskScoreSnapshotEntity> snapshots);
+    Map<Long, List<RiskEvidence>> load(
+            List<RiskScoreSnapshotEntity> snapshots,
+            boolean allowPublishedExposureFallback
+    );
 
     static ProvisionalRiskEvidenceProvider empty() {
-        return ignored -> Map.of();
+        return (ignored, allowPublishedExposureFallback) -> Map.of();
     }
 }

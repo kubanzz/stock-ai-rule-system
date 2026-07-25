@@ -47,7 +47,10 @@ public class JdbcProvisionalRiskEvidenceProvider implements ProvisionalRiskEvide
     }
 
     @Override
-    public Map<Long, List<RiskEvidence>> load(List<RiskScoreSnapshotEntity> snapshots) {
+    public Map<Long, List<RiskEvidence>> load(
+            List<RiskScoreSnapshotEntity> snapshots,
+            boolean allowPublishedExposureFallback
+    ) {
         if (snapshots == null || snapshots.isEmpty()) {
             return Map.of();
         }
@@ -69,7 +72,8 @@ public class JdbcProvisionalRiskEvidenceProvider implements ProvisionalRiskEvide
                             key.horizon(), key.tradeDate(), key.asOf()))
             );
             List<RiskEvidence> evidence = new ArrayList<>();
-            for (LayerTarget layer : layers(snapshot)) {
+            for (LayerTarget layer : layers(
+                    snapshot, allowPublishedExposureFallback)) {
                 List<RiskProvisionalObservationRow> history = safeList(
                         observationMapper.selectHistory(
                                 layer.objectType(),
@@ -90,7 +94,10 @@ public class JdbcProvisionalRiskEvidenceProvider implements ProvisionalRiskEvide
         return Map.copyOf(result);
     }
 
-    private List<LayerTarget> layers(RiskScoreSnapshotEntity snapshot) {
+    private List<LayerTarget> layers(
+            RiskScoreSnapshotEntity snapshot,
+            boolean allowPublishedExposureFallback
+    ) {
         if (!"stock".equals(snapshot.getObjectType())) {
             return List.of(new LayerTarget(
                     snapshot.getObjectType(), snapshot.getObjectId(), BigDecimal.ONE));
@@ -103,7 +110,7 @@ public class JdbcProvisionalRiskEvidenceProvider implements ProvisionalRiskEvide
                 snapshot.getTradeDate(),
                 snapshot.getCalculatedAt()
         ));
-        if (parents.isEmpty()) {
+        if (parents.isEmpty() && allowPublishedExposureFallback) {
             parents = safeList(exposureMapper.selectLatestPublishedParents(
                     snapshot.getObjectType(),
                     snapshot.getObjectId(),

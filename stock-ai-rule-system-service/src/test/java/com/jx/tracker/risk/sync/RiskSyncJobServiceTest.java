@@ -14,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -75,6 +76,27 @@ class RiskSyncJobServiceTest {
                 .extracting(RiskSyncJob::status)
                 .isEqualTo("succeeded");
         verify(workflow).runManualStock(TRADE_DATE, "600519.SH");
+    }
+
+    @Test
+    void rejectsAnotherScopeWhileSharedRiskDataSyncIsActive() {
+        DefaultRiskAfterCloseWorkflow workflow = mock(
+                DefaultRiskAfterCloseWorkflow.class);
+        RiskTradeDateResolver tradeDateResolver = mock(
+                RiskTradeDateResolver.class);
+        when(workflow.normalizeStockSymbol("600519"))
+                .thenReturn("600519.SH");
+        QueuedExecutor executor = new QueuedExecutor();
+        RiskSyncJobService service = new RiskSyncJobService(
+                workflow, tradeDateResolver, executor, CLOCK);
+
+        RiskSyncJob marketJob = service.startMarketSync();
+
+        assertThatThrownBy(() -> service.startStockSync("600519"))
+                .isInstanceOf(com.jx.tracker.exception.ServiceException.class)
+                .hasMessageContaining("风险数据同步任务");
+        assertThat(service.startMarketSync().jobId())
+                .isEqualTo(marketJob.jobId());
     }
 
     private static final class QueuedExecutor implements TaskExecutor {

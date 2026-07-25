@@ -40,7 +40,10 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
     }
 
     @Override
-    public RiskWorkflowRunSummary runDaily(LocalDate tradeDate, List<String> symbols) {
+    public synchronized RiskWorkflowRunSummary runDaily(
+            LocalDate tradeDate,
+            List<String> symbols
+    ) {
         if (tradeDate == null) {
             throw new IllegalArgumentException("tradeDate must not be null");
         }
@@ -56,7 +59,7 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
         return planner.normalizeStockSymbol(symbol);
     }
 
-    public RiskWorkflowRunSummary runManualMarket(LocalDate tradeDate) {
+    public synchronized RiskWorkflowRunSummary runManualMarket(LocalDate tradeDate) {
         if (tradeDate == null) {
             throw new IllegalArgumentException("tradeDate must not be null");
         }
@@ -65,7 +68,10 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
                 tradeDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
     }
 
-    public RiskWorkflowRunSummary runManualStock(LocalDate tradeDate, String symbol) {
+    public synchronized RiskWorkflowRunSummary runManualStock(
+            LocalDate tradeDate,
+            String symbol
+    ) {
         if (tradeDate == null) {
             throw new IllegalArgumentException("tradeDate must not be null");
         }

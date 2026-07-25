@@ -95,7 +95,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
         List<RiskScoreSnapshotEntity> displayRows = rows.stream()
                 .filter(row -> "market".equals(row.getObjectType()) || hasLevel(row, "critical"))
                 .toList();
-        Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(displayRows);
+        Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(
+                displayRows, tradeDate == null);
         int staleTradingDays = staleTradingDays(resolvedDate);
         RiskSnapshot marketSnapshot = rows.stream()
                 .filter(row -> "market".equals(row.getObjectType()))
@@ -166,7 +167,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 offset,
                 pageSize
         ));
-        Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(rows);
+        Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(
+                rows, allowPublishedParentFallback);
         int staleTradingDays = staleTradingDays(resolvedDate);
         List<RiskObjectListItem> items = rows.stream()
                 .map(row -> toListItem(
@@ -203,7 +205,9 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
         if (rows.isEmpty()) {
             throw snapshotNotFound(normalizedType, normalizedId);
         }
-        Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(rows);
+        boolean allowPublishedParentFallback = tradeDate == null;
+        Map<Long, List<RiskEvidence>> evidenceBySnapshot = loadEvidence(
+                rows, allowPublishedParentFallback);
         int staleTradingDays = staleTradingDays(resolvedDate);
         List<RiskSnapshot> snapshots = rows.stream()
                 .map(row -> toSnapshot(
@@ -225,7 +229,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                         selectedRow.getTradeDate(),
                         selectedRow.getCalculatedAt()
                 ));
-        if (parentRows.isEmpty()
+        if (allowPublishedParentFallback
+                && parentRows.isEmpty()
                 && !"formal".equals(selectedSnapshot.conclusionStatus())) {
             parentRows = safeList(exposureMapper.selectLatestPublishedParents(
                     normalizedType, normalizedId, selectedRow.getTradeDate()));
@@ -343,7 +348,10 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
         );
     }
 
-    private Map<Long, List<RiskEvidence>> loadEvidence(List<RiskScoreSnapshotEntity> snapshots) {
+    private Map<Long, List<RiskEvidence>> loadEvidence(
+            List<RiskScoreSnapshotEntity> snapshots,
+            boolean allowPublishedExposureFallback
+    ) {
         List<Long> ids = snapshots.stream()
                 .map(RiskScoreSnapshotEntity::getId)
                 .filter(Objects::nonNull)
@@ -360,7 +368,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                         LinkedHashMap::new,
                         Collectors.mapping(this::toEvidence, Collectors.toList())
                 ));
-        Map<Long, List<RiskEvidence>> provisional = provisionalEvidenceProvider.load(snapshots);
+        Map<Long, List<RiskEvidence>> provisional = provisionalEvidenceProvider.load(
+                snapshots, allowPublishedExposureFallback);
         Map<Long, RiskScoreSnapshotEntity> snapshotsById = snapshots.stream()
                 .filter(snapshot -> snapshot.getId() != null)
                 .collect(Collectors.toMap(

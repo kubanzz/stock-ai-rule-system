@@ -35,8 +35,7 @@ public final class RiskLayerComposer {
                 .filter(layer -> isConfirmed(layer.snapshot()))
                 .toList();
 
-        BigDecimal coverage = layers.stream()
-                .filter(layer -> layer.snapshot() != null)
+        BigDecimal coverage = confirmedLayers.stream()
                 .map(layer -> layer.snapshot().completeness().multiply(layer.weight()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(4, RoundingMode.HALF_UP);

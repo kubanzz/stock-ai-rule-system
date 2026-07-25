@@ -28,7 +28,7 @@ public final class RiskSyncJobService {
     private final TaskExecutor taskExecutor;
     private final Clock clock;
     private final Map<String, RiskSyncJob> jobs = new ConcurrentHashMap<>();
-    private final Map<String, String> activeJobIds = new ConcurrentHashMap<>();
+    private String activeJobId;
 
     public RiskSyncJobService(
             DefaultRiskAfterCloseWorkflow workflow,
@@ -79,10 +79,12 @@ public final class RiskSyncJobService {
     }
 
     private synchronized RiskSyncJob start(String scopeKey, String symbol) {
-        String activeId = activeJobIds.get(scopeKey);
-        RiskSyncJob active = activeId == null ? null : jobs.get(activeId);
+        RiskSyncJob active = activeJobId == null ? null : jobs.get(activeJobId);
         if (active != null && active.active()) {
-            return active;
+            if (scopeKey.equals(active.scopeKey())) {
+                return active;
+            }
+            throw new ServiceException("已有风险数据同步任务正在运行，请稍后再试", 409);
         }
         String jobId = UUID.randomUUID().toString();
         LocalDateTime createdAt = LocalDateTime.now(clock);
@@ -92,8 +94,14 @@ public final class RiskSyncJobService {
                 createdAt, null, null
         );
         jobs.put(jobId, queued);
-        activeJobIds.put(scopeKey, jobId);
-        taskExecutor.execute(() -> run(jobId, symbol));
+        activeJobId = jobId;
+        try {
+            taskExecutor.execute(() -> run(jobId, symbol));
+        } catch (RuntimeException exception) {
+            jobs.remove(jobId);
+            activeJobId = null;
+            throw exception;
+        }
         return queued;
     }
 
@@ -116,7 +124,13 @@ public final class RiskSyncJobService {
         } catch (RuntimeException exception) {
             update(jobId, "failed", "completed", 100, null, clean(exception), LocalDateTime.now(clock));
         } finally {
-            activeJobIds.remove(queued.scopeKey(), jobId);
+            clearActiveJob(jobId);
+        }
+    }
+
+    private synchronized void clearActiveJob(String jobId) {
+        if (jobId.equals(activeJobId)) {
+            activeJobId = null;
         }
     }
 
