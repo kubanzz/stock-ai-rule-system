@@ -23,6 +23,7 @@ import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectRef;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskOverview;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskSnapshot;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskTrendPoint;
+import com.jx.tracker.risk.query.ProvisionalRiskAssessmentCalculator.Assessment;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -49,6 +50,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
     private final RiskScoreSnapshotMapper snapshotMapper;
     private final RiskScoreEvidenceMapper evidenceMapper;
     private final RiskObjectExposureMapper exposureMapper;
+    private final ProvisionalRiskAssessmentCalculator provisionalCalculator =
+            new ProvisionalRiskAssessmentCalculator();
 
     public RiskAssessmentQueryServiceImpl(
             RiskScoreSnapshotMapper snapshotMapper,
@@ -263,16 +266,29 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
         boolean unavailable = isUnavailable(row.getQualityStatus());
         boolean formal = !unavailable
                 && completeness.compareTo(FORMAL_CONCLUSION_THRESHOLD) >= 0;
+        boolean dimensionUnavailable = RiskDataQualityStatus.UNAVAILABLE.getCode()
+                .equals(row.getQualityStatus())
+                || RiskDataQualityStatus.STALE.getCode().equals(row.getQualityStatus());
+        Assessment assessment = provisionalCalculator.calculate(
+                completeness,
+                formal ? row.getTotalScore() : null,
+                formal ? row.getRiskLevel() : null,
+                dimensionUnavailable,
+                evidence
+        );
+        java.time.LocalDateTime dataAsOf = assessment.dataAsOf() != null
+                ? assessment.dataAsOf()
+                : row.getAvailableAt() != null ? row.getAvailableAt() : row.getCalculatedAt();
         return new RiskSnapshot(
                 new RiskObjectRef(row.getObjectType(), row.getObjectId()),
                 row.getHorizon(),
                 row.getTradeDate(),
-                unavailable ? null : row.getVScore(),
-                unavailable ? null : row.getTScore(),
-                unavailable ? null : row.getSScore(),
-                unavailable ? null : row.getCScore(),
-                unavailable ? null : row.getAScore(),
-                unavailable ? null : row.getMScore(),
+                dimensionUnavailable ? null : row.getVScore(),
+                dimensionUnavailable ? null : row.getTScore(),
+                dimensionUnavailable ? null : row.getSScore(),
+                dimensionUnavailable ? null : row.getCScore(),
+                dimensionUnavailable ? null : row.getAScore(),
+                dimensionUnavailable ? null : row.getMScore(),
                 formal ? row.getTotalScore() : null,
                 formal ? row.getRiskLevel() : null,
                 formal ? row.getRiskStage() : null,
@@ -280,7 +296,13 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 formal ? row.getRiskConfidence() : null,
                 List.copyOf(evidence),
                 row.getModelVersion(),
-                row.getCalculatedAt()
+                row.getCalculatedAt(),
+                assessment.conclusionStatus(),
+                assessment.provisionalScore(),
+                assessment.provisionalLevel(),
+                assessment.dimensions(),
+                dataAsOf,
+                0
         );
     }
 

@@ -125,6 +125,38 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
+    void incompleteMarketKeepsAvailableDimensionsAndReturnsProvisionalAssessment() {
+        RiskScoreSnapshotEntity market = snapshot(
+                31L, "1-5d", "0.41", "insufficient_history", null, "market", "CN-A");
+        market.setVScore(null);
+        market.setTScore(null);
+        market.setSScore(new BigDecimal("62.6"));
+        market.setCScore(new BigDecimal("58.1"));
+        market.setAScore(null);
+        when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
+        when(snapshotMapper.selectForOverview("1-5d", TRADE_DATE)).thenReturn(List.of(market));
+        when(evidenceMapper.selectBySnapshotIds(List.of(31L))).thenReturn(List.of(
+                evidence(311L, 31L, "S", "S1", "available"),
+                evidence(312L, 31L, "C", "C1", "available")
+        ));
+
+        var snapshot = service.overview("1-5d", null).marketSnapshot();
+
+        assertThat(snapshot.sScore()).isEqualByComparingTo("62.6");
+        assertThat(snapshot.cScore()).isEqualByComparingTo("58.1");
+        assertThat(snapshot.totalScore()).isNull();
+        assertThat(snapshot.level()).isNull();
+        assertThat(snapshot.conclusionStatus()).isEqualTo("provisional");
+        assertThat(snapshot.provisionalScore()).isNotNull();
+        assertThat(snapshot.provisionalLevel()).isEqualTo("watch");
+        assertThat(snapshot.dimensions())
+                .filteredOn(item -> item.dimension().equals("S"))
+                .singleElement()
+                .satisfies(item -> assertThat(item.usedCount()).isEqualTo(1));
+        assertThat(snapshot.dataAsOf()).isEqualTo(CALCULATED_AT);
+    }
+
+    @Test
     void overviewMasksStaleMarketAndExcludesStaleCriticalFromCountsAndHighRiskFilter() {
         RiskScoreSnapshotEntity staleMarket = snapshot(
                 11L, "1-5d", "0.90", "stale", "critical", "market", "CN-A");
