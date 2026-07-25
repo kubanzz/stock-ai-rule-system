@@ -35,14 +35,26 @@ public final class RiskLayerComposer {
                 .filter(layer -> isConfirmed(layer.snapshot()))
                 .toList();
 
-        BigDecimal coverage = confirmedLayers.stream()
-                .map(WeightedLayer::weight)
+        BigDecimal coverage = layers.stream()
+                .filter(layer -> layer.snapshot() != null)
+                .map(layer -> layer.snapshot().completeness().multiply(layer.weight()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(4, RoundingMode.HALF_UP);
+        List<RiskEvidence> evidence = new ArrayList<>();
+        for (WeightedLayer layer : layers) {
+            if (layer.snapshot() == null) {
+                continue;
+            }
+            layer.snapshot().evidence().stream()
+                    .filter(item -> !isInheritedTransmission(item))
+                    .map(item -> RiskEvidenceProvenance.withLayer(
+                            item, layer.snapshot().object(), layer.weight()))
+                    .forEach(evidence::add);
+        }
         if (confirmedLayers.isEmpty()) {
             return new RiskLayerComposition(
                     null, null, null, null, null, null,
-                    coverage, null, List.of()
+                    coverage, null, evidence
             );
         }
 
@@ -54,14 +66,6 @@ public final class RiskLayerComposer {
                 .map(layer -> layer.snapshot().riskConfidence().multiply(layer.weight()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(4, RoundingMode.HALF_UP);
-        List<RiskEvidence> evidence = new ArrayList<>();
-        for (WeightedLayer layer : confirmedLayers) {
-            layer.snapshot().evidence().stream()
-                    .filter(item -> !isInheritedTransmission(item))
-                    .map(item -> RiskEvidenceProvenance.withLayer(item, layer.snapshot().object()))
-                    .forEach(evidence::add);
-        }
-
         return new RiskLayerComposition(
                 weightedScore(confirmedLayers, RiskSnapshot::vScore),
                 weightedScore(confirmedLayers, RiskSnapshot::tScore),

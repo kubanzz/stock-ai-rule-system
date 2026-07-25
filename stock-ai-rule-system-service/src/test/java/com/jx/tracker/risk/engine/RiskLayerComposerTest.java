@@ -83,6 +83,23 @@ class RiskLayerComposerTest {
     }
 
     @Test
+    void retainsEvidenceAndWeightedCoverageForIncompleteLayers() {
+        RiskLayerComposition composition = composer.compose(
+                incompleteSnapshot(RiskObjectType.MARKET, "CN-A", "0.41", "V3"),
+                incompleteSnapshot(RiskObjectType.SECTOR, "SW1:801120", "0.46", "C1"),
+                incompleteSnapshot(RiskObjectType.STOCK, "600519.SH", "0.28", "A3")
+        );
+
+        assertThat(composition.coverage()).isEqualByComparingTo("0.3755");
+        assertThat(composition.evidence()).hasSize(3);
+        assertThat(composition.evidence()).allSatisfy(item ->
+                assertThat(item.details())
+                        .containsKeys("layerObjectType", "layerObjectId", "layerWeight"));
+        assertThat(composition.riskConfidence()).isNull();
+        assertThat(composition.vScore()).isNull();
+    }
+
+    @Test
     void keepsMissingSubstituteDimensionAtZeroContributionAcrossFixedLayers() {
         RiskSnapshot market = snapshotWithDimensions(
                 RiskObjectType.MARKET, "CN-A", "80", null, "80", "80", "60");
@@ -228,6 +245,33 @@ class RiskLayerComposerTest {
                 BigDecimal.ZERO,
                 null,
                 List.of(),
+                "risk-engine-test-v1",
+                LocalDateTime.of(2026, 7, 18, 16, 0)
+        );
+    }
+
+    private RiskSnapshot incompleteSnapshot(
+            RiskObjectType objectType,
+            String objectId,
+            String completeness,
+            String indicatorCode
+    ) {
+        RiskDimension dimension = RiskIndicatorCatalog.require(indicatorCode).dimension();
+        return new RiskSnapshot(
+                new RiskObjectKey(objectType, objectId),
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                null, null, null, null, null,
+                BigDecimal.ONE,
+                null, null, null,
+                new BigDecimal(completeness),
+                null,
+                List.of(new RiskEvidence(
+                        dimension, indicatorCode, new BigDecimal("60"), new BigDecimal("60"),
+                        LocalDateTime.of(2026, 7, 18, 15, 0),
+                        LocalDateTime.of(2026, 7, 18, 16, 0),
+                        "source-a", RiskDataQualityStatus.AVAILABLE, Map.of()
+                )),
                 "risk-engine-test-v1",
                 LocalDateTime.of(2026, 7, 18, 16, 0)
         );

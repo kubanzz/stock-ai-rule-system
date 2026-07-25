@@ -147,6 +147,29 @@ class ProvisionalRiskAssessmentCalculatorTest {
         assertThat(result.conclusionStatus()).isEqualTo("unavailable");
     }
 
+    @Test
+    void appliesFixedLayerWeightsToProvisionalDimensionScore() {
+        Assessment result = calculator.calculate(
+                new BigDecimal("0.35"),
+                null,
+                null,
+                false,
+                List.of(
+                        layerEvidence("V3", "V", "20", "market", "CN-A", "0.25"),
+                        layerEvidence("V4", "V", "80", "stock", "600519.SH", "0.40"),
+                        layerEvidence("S1", "S", "60", "market", "CN-A", "0.25")
+                )
+        );
+
+        assertThat(result.dimensions())
+                .filteredOn(item -> item.dimension().equals("V"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.score()).isEqualByComparingTo("60.8511");
+                    assertThat(item.coverage()).isEqualByComparingTo("0.1175");
+                });
+    }
+
     private RiskEvidence evidence(String code, String dimension, String score) {
         return new RiskEvidence(
                 dimension,
@@ -158,6 +181,31 @@ class ProvisionalRiskAssessmentCalculatorTest {
                 "fixture",
                 "available",
                 Map.of()
+        );
+    }
+
+    private RiskEvidence layerEvidence(
+            String code,
+            String dimension,
+            String score,
+            String layerType,
+            String layerId,
+            String layerWeight
+    ) {
+        return new RiskEvidence(
+                dimension,
+                code,
+                new BigDecimal(score),
+                new BigDecimal(score),
+                LocalDateTime.of(2026, 7, 24, 18, 0),
+                LocalDateTime.of(2026, 7, 24, 20, 0),
+                "fixture",
+                "available",
+                Map.of(
+                        "layerObjectType", layerType,
+                        "layerObjectId", layerId,
+                        "layerWeight", new BigDecimal(layerWeight)
+                )
         );
     }
 }

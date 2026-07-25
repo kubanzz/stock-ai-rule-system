@@ -14,8 +14,10 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 查询层暂定评估。该结果只用于解释已有证据，不写入正式快照，也不参与风险闸门。
@@ -42,9 +44,9 @@ public final class ProvisionalRiskAssessmentCalculator {
     ) {
         BigDecimal normalizedCompleteness = completeness == null ? BigDecimal.ZERO : completeness;
         List<RiskEvidence> selected = selectLatest(evidence);
-        Map<String, RiskEvidence> validByCode = validByCode(selected);
-        List<RiskDimensionAssessment> dimensions = dimensions(selected, validByCode);
-        LocalDateTime dataAsOf = validByCode.values().stream()
+        List<RiskEvidence> validEvidence = validEvidence(selected);
+        List<RiskDimensionAssessment> dimensions = dimensions(selected, validEvidence);
+        LocalDateTime dataAsOf = validEvidence.stream()
                 .map(RiskEvidence::availableAt)
                 .filter(java.util.Objects::nonNull)
                 .max(LocalDateTime::compareTo)
@@ -54,7 +56,7 @@ public final class ProvisionalRiskAssessmentCalculator {
                 && normalizedCompleteness.compareTo(FORMAL_THRESHOLD) >= 0) {
             return new Assessment("formal", null, null, dimensions, dataAsOf);
         }
-        if (unavailable && validByCode.isEmpty()) {
+        if (unavailable && validEvidence.isEmpty()) {
             return new Assessment("unavailable", null, null, dimensions, dataAsOf);
         }
 
@@ -81,7 +83,7 @@ public final class ProvisionalRiskAssessmentCalculator {
             } catch (IllegalArgumentException ignored) {
                 continue;
             }
-            selected.merge(item.indicatorCode(), item, this::newest);
+            selected.merge(evidenceKey(item), item, this::newest);
         }
         return List.copyOf(selected.values());
     }
@@ -96,54 +98,90 @@ public final class ProvisionalRiskAssessmentCalculator {
         return left.availableAt().isBefore(right.availableAt()) ? right : left;
     }
 
-    private Map<String, RiskEvidence> validByCode(List<RiskEvidence> evidence) {
-        Map<String, RiskEvidence> valid = new HashMap<>();
-        for (RiskEvidence item : evidence) {
-            if (item.score() != null && ("available".equals(item.qualityStatus())
-                    || "valid_zero".equals(item.qualityStatus()))) {
-                valid.put(item.indicatorCode(), item);
-            }
-        }
-        return valid;
+    private String evidenceKey(RiskEvidence evidence) {
+        Object layerType = evidence.details().getOrDefault("layerObjectType", "object");
+        Object layerId = evidence.details().getOrDefault("layerObjectId", "self");
+        return layerType + ":" + layerId + ":" + evidence.indicatorCode();
+    }
+
+    private List<RiskEvidence> validEvidence(List<RiskEvidence> evidence) {
+        return evidence.stream()
+                .filter(item -> item.score() != null)
+                .filter(item -> "available".equals(item.qualityStatus())
+                        || "valid_zero".equals(item.qualityStatus()))
+                .toList();
     }
 
     private List<RiskDimensionAssessment> dimensions(
             List<RiskEvidence> selected,
-            Map<String, RiskEvidence> validByCode
+            List<RiskEvidence> validEvidence
     ) {
         Map<String, RiskEvidence> selectedByCode = new HashMap<>();
-        selected.forEach(item -> selectedByCode.put(item.indicatorCode(), item));
+        selected.forEach(item -> selectedByCode.merge(
+                item.indicatorCode(), item, this::newest));
         List<RiskDimensionAssessment> result = new ArrayList<>();
         for (RiskDimension dimension : RiskDimension.values()) {
             List<RiskIndicatorDefinition> definitions = RiskIndicatorCatalog.forDimension(dimension);
-            int usedWeight = definitions.stream()
-                    .filter(definition -> validByCode.containsKey(definition.code()))
-                    .mapToInt(RiskIndicatorDefinition::weight)
-                    .sum();
-            BigDecimal score = usedWeight == 0
+            Map<String, RiskIndicatorDefinition> definitionsByCode = definitions.stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            RiskIndicatorDefinition::code,
+                            definition -> definition
+                    ));
+            List<RiskEvidence> dimensionEvidence = validEvidence.stream()
+                    .filter(item -> definitionsByCode.containsKey(item.indicatorCode()))
+                    .toList();
+            BigDecimal usedWeight = dimensionEvidence.stream()
+                    .map(item -> effectiveWeight(
+                            definitionsByCode.get(item.indicatorCode()), item))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal score = usedWeight.signum() == 0
                     ? null
-                    : definitions.stream()
-                            .filter(definition -> validByCode.containsKey(definition.code()))
-                            .map(definition -> validByCode.get(definition.code()).score()
-                                    .multiply(BigDecimal.valueOf(definition.weight())))
+                    : dimensionEvidence.stream()
+                            .map(item -> item.score().multiply(effectiveWeight(
+                                    definitionsByCode.get(item.indicatorCode()), item)))
                             .reduce(BigDecimal.ZERO, BigDecimal::add)
-                            .divide(BigDecimal.valueOf(usedWeight), 4, RoundingMode.HALF_UP);
+                            .divide(usedWeight, 4, RoundingMode.HALF_UP);
+            Set<String> usedCodes = new HashSet<>();
+            dimensionEvidence.forEach(item -> usedCodes.add(item.indicatorCode()));
             List<RiskIndicatorStatus> indicators = definitions.stream()
                     .map(definition -> indicatorStatus(
                             definition, selectedByCode.get(definition.code()),
-                            validByCode.containsKey(definition.code())))
+                            usedCodes.contains(definition.code())))
                     .toList();
             result.add(new RiskDimensionAssessment(
                     dimension.getCode(),
                     score,
-                    BigDecimal.valueOf(usedWeight)
-                            .divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP),
-                    (int) indicators.stream().filter(RiskIndicatorStatus::used).count(),
+                    usedWeight.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP),
+                    usedCodes.size(),
                     definitions.size(),
                     indicators
             ));
         }
         return List.copyOf(result);
+    }
+
+    private BigDecimal effectiveWeight(
+            RiskIndicatorDefinition definition,
+            RiskEvidence evidence
+    ) {
+        return BigDecimal.valueOf(definition.weight()).multiply(layerWeight(evidence));
+    }
+
+    private BigDecimal layerWeight(RiskEvidence evidence) {
+        Object raw = evidence.details().get("layerWeight");
+        if (raw == null) {
+            return BigDecimal.ONE;
+        }
+        try {
+            BigDecimal value = raw instanceof BigDecimal decimal
+                    ? decimal
+                    : new BigDecimal(String.valueOf(raw));
+            return value.signum() > 0 && value.compareTo(BigDecimal.ONE) <= 0
+                    ? value
+                    : BigDecimal.ONE;
+        } catch (NumberFormatException ignored) {
+            return BigDecimal.ONE;
+        }
     }
 
     private RiskIndicatorStatus indicatorStatus(
