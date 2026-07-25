@@ -57,6 +57,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -138,6 +142,71 @@ class RiskWarningWorkflowTest {
             assertThat(batch.errorMessage()).isEqualTo("source failed");
         });
         assertThat(repository.gates).isEmpty();
+    }
+
+    @Test
+    void serializesSharedPersistenceAcrossAllRunModes() throws Exception {
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch secondEntered = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger active = new AtomicInteger();
+        AtomicInteger maximumActive = new AtomicInteger();
+        RiskDataProvider blockingProvider = new RiskDataProvider() {
+            @Override
+            public String providerCode() {
+                return "provider-a";
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return true;
+            }
+
+            @Override
+            public RiskProviderBatch fetch(
+                    String datasetCode,
+                    RiskProviderRequest request
+            ) {
+                int currentActive = active.incrementAndGet();
+                maximumActive.accumulateAndGet(currentActive, Math::max);
+                int invocation = calls.incrementAndGet();
+                try {
+                    if (invocation == 1) {
+                        firstEntered.countDown();
+                        secondEntered.await(500, TimeUnit.MILLISECONDS);
+                    } else {
+                        secondEntered.countDown();
+                    }
+                    return RiskProviderBatch.unavailable(
+                            "source-a", "fixture unavailable", AS_OF);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                } finally {
+                    active.decrementAndGet();
+                }
+            }
+        };
+        RiskWarningWorkflow workflow = workflow(
+                new InMemoryRepository(), blockingProvider);
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "all", List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> workflow.run(request));
+            assertThat(firstEntered.await(1, TimeUnit.SECONDS)).isTrue();
+            var second = executor.submit(() -> workflow.run(request));
+
+            first.get(2, TimeUnit.SECONDS);
+            second.get(2, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(maximumActive).hasValue(1);
     }
 
     @Test

@@ -85,7 +85,7 @@ public final class RiskWarningWorkflow {
         this.requestObjectLimit = requestObjectLimit;
     }
 
-    public RiskWorkflowRunSummary run(RiskWorkflowRequest request) {
+    public synchronized RiskWorkflowRunSummary run(RiskWorkflowRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
