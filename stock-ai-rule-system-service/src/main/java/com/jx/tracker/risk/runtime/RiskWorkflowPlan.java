@@ -21,7 +21,7 @@ public record RiskWorkflowPlan(
         stockObjects = stockObjects == null ? List.of() : List.copyOf(stockObjects);
         collectionTasks = collectionTasks == null ? List.of() : List.copyOf(collectionTasks);
         horizons = horizons == null ? List.of() : List.copyOf(horizons);
-        if (stockObjects.isEmpty() || collectionTasks.isEmpty() || horizons.isEmpty()) {
+        if (collectionTasks.isEmpty() || horizons.isEmpty()) {
             throw new IllegalArgumentException("risk workflow plan must not be empty");
         }
     }

@@ -350,6 +350,31 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void marketOnlyPlanExpandsAllCurrentSectorsWithoutScoringMembershipStocks() {
+        InMemoryRepository repository = new InMemoryRepository();
+        IndustryExposure current = exposure(
+                SECTOR, DATE, null, AS_OF.minusHours(2), AS_OF.minusHours(1),
+                RiskDataQualityStatus.AVAILABLE);
+        TwoStageMarketProvider provider = new TwoStageMarketProvider(List.of(current), false);
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(
+                        task(MarketDatasetCode.SW1_MEMBERSHIP, List.of(STOCK)),
+                        task(MarketDatasetCode.MARKET_DAILY, List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        workflow(repository, provider).run(request);
+
+        assertThat(provider.requests(MarketDatasetCode.MARKET_DAILY))
+                .singleElement()
+                .satisfies(actual -> assertThat(actual.objects()).containsExactly(MARKET, SECTOR));
+        assertThat(repository.snapshots.values()).extracting(StoredRiskSnapshot::snapshot)
+                .extracting(RiskSnapshot::object)
+                .contains(MARKET, SECTOR)
+                .doesNotContain(STOCK);
+    }
+
+    @Test
     void olderMembershipRevisionArrivingLastCannotRollbackCurrentRunExposure() {
         IndustryExposure older = exposure(
                 SECTOR, DATE.minusYears(1), DATE.minusDays(1),
@@ -1435,6 +1460,7 @@ class RiskWarningWorkflowTest {
                         id BIGINT AUTO_INCREMENT PRIMARY KEY,
                         object_type VARCHAR(16), object_id VARCHAR(64),
                         parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                        parent_object_name VARCHAR(128),
                         exposure_weight DECIMAL(8, 6), valid_from DATE, valid_to DATE,
                         observed_at TIMESTAMP, available_at TIMESTAMP,
                         source VARCHAR(64), quality_status VARCHAR(32), metadata_json VARCHAR(1024),

@@ -52,6 +52,28 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
                 tradeDate, asOf, signals, modelVersion, afterCloseCutoff));
     }
 
+    public String normalizeStockSymbol(String symbol) {
+        return planner.normalizeStockSymbol(symbol);
+    }
+
+    public RiskWorkflowRunSummary runManualMarket(LocalDate tradeDate) {
+        if (tradeDate == null) {
+            throw new IllegalArgumentException("tradeDate must not be null");
+        }
+        RiskWorkflowPlan plan = planner.planMarket();
+        return workflow.run(plan.dailyRequest(
+                tradeDate, LocalDateTime.now(clock), List.of(), modelVersion, afterCloseCutoff));
+    }
+
+    public RiskWorkflowRunSummary runManualStock(LocalDate tradeDate, String symbol) {
+        if (tradeDate == null) {
+            throw new IllegalArgumentException("tradeDate must not be null");
+        }
+        RiskWorkflowPlan plan = planner.plan(List.of(symbol));
+        return workflow.run(plan.dailyRequest(
+                tradeDate, LocalDateTime.now(clock), List.of(), modelVersion, afterCloseCutoff));
+    }
+
     private LocalDateTime pointInTime(LocalDate tradeDate) {
         LocalDateTime configuredCutoff = tradeDate.atTime(afterCloseCutoff);
         LocalDateTime now = LocalDateTime.now(clock);

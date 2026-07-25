@@ -89,6 +89,25 @@ class RiskWorkflowPlannerTest {
     }
 
     @Test
+    void marketPlanCollectsAllMembershipsButDoesNotScoreMetadataStocks() {
+        RiskWorkflowPlan plan = planner().planMarket();
+
+        assertThat(plan.stockObjects()).isEmpty();
+        assertThat(plan.collectionTasks()).hasSize(7);
+        assertThat(plan.collectionTasks().stream()
+                .filter(task -> task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code()))
+                .flatMap(task -> task.objects().stream()))
+                .extracting(RiskObjectKey::objectId)
+                .containsExactly("000001.SZ", "600519.SH", "920992.BJ");
+        assertThat(plan.collectionTasks().stream()
+                .filter(task -> !task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code()))
+                .flatMap(task -> task.objects().stream()))
+                .containsOnly(market());
+        assertThat(plan.collectionTasks()).noneMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.CN_A_STOCK_MASTER.code()));
+    }
+
+    @Test
     void planBuildsDailyRequestWithConfiguredModelAndCutoff() {
         RiskWorkflowPlan plan = planner().plan(List.of("600519.SH"));
 

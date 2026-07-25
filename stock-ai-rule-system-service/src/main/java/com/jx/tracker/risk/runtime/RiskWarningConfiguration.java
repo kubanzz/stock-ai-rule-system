@@ -12,6 +12,7 @@ import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.engine.RiskScoringEngine;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
+import com.jx.tracker.risk.sync.RiskSyncJobService;
 import com.jx.tracker.risk.workflow.DefaultRiskSnapshotEvaluator;
 import com.jx.tracker.risk.workflow.PercentileRiskEvidenceAssembler;
 import com.jx.tracker.risk.workflow.RiskWarningWorkflow;
@@ -22,6 +23,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.RestClient;
 
@@ -168,6 +173,11 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
+        JdbcRiskTradeDateResolver riskTradeDateResolver(JdbcTemplate jdbcTemplate) {
+            return new JdbcRiskTradeDateResolver(jdbcTemplate);
+        }
+
+        @Bean
         RiskWorkflowPlanner riskWorkflowPlanner(
                 JdbcRiskUniverseReader universeReader,
                 RiskWarningProperties properties
@@ -185,6 +195,18 @@ public class RiskWarningConfiguration {
         ) {
             return new DefaultRiskAfterCloseWorkflow(
                     planner, candidateReader, workflow, clock, properties);
+        }
+
+        @Bean
+        RiskSyncJobService riskSyncJobService(
+                DefaultRiskAfterCloseWorkflow workflow,
+                JdbcRiskTradeDateResolver tradeDateResolver,
+                @Qualifier("applicationTaskExecutor") ObjectProvider<TaskExecutor> taskExecutor,
+                Clock clock
+        ) {
+            return new RiskSyncJobService(
+                    workflow, tradeDateResolver,
+                    taskExecutor.getIfAvailable(SyncTaskExecutor::new), clock);
         }
 
         @Bean

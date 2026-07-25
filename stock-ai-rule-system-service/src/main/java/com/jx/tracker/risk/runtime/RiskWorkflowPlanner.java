@@ -38,10 +38,7 @@ public final class RiskWorkflowPlanner {
     }
 
     public RiskWorkflowPlan plan(List<String> requestedSymbols) {
-        List<RiskObjectKey> activeStocks = normalize(universeReader.activeAshareSymbols());
-        if (activeStocks.isEmpty()) {
-            throw new IllegalStateException("active A-share universe must not be empty");
-        }
+        List<RiskObjectKey> activeStocks = activeStocks();
         List<RiskObjectKey> stocks = selectStocks(activeStocks, requestedSymbols);
         RiskObjectKey market = objectCatalog.market();
         List<RiskCollectionTask> tasks = new ArrayList<>();
@@ -68,6 +65,40 @@ public final class RiskWorkflowPlanner {
         tasks.addAll(chunkedTasks(FLOW_EVENT_PROVIDER,
                 FlowEventDataset.SHARE_REDUCTION.code(), stocks));
         return new RiskWorkflowPlan(stocks, tasks, List.of(RiskHorizon.values()));
+    }
+
+    public RiskWorkflowPlan planMarket() {
+        List<RiskObjectKey> activeStocks = activeStocks();
+        RiskObjectKey market = objectCatalog.market();
+        List<RiskCollectionTask> tasks = new ArrayList<>();
+        tasks.addAll(chunkedTasks(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.SW1_MEMBERSHIP.code(), activeStocks));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.MARKET_DAILY.code(), List.of(market)));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.VALUATION.code(), List.of(market)));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.BREADTH.code(), List.of(market)));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.CROSS_MARKET.code(), List.of(market)));
+        tasks.add(task(FLOW_EVENT_PROVIDER,
+                FlowEventDataset.MARGIN_FINANCING.code(), List.of(market)));
+        tasks.add(task(FLOW_EVENT_PROVIDER,
+                FlowEventDataset.ETF_FUND_FLOW.code(), List.of(market)));
+        return new RiskWorkflowPlan(List.of(), tasks, List.of(RiskHorizon.values()));
+    }
+
+    public String normalizeStockSymbol(String symbol) {
+        List<RiskObjectKey> selected = selectStocks(activeStocks(), List.of(symbol));
+        return selected.getFirst().objectId();
+    }
+
+    private List<RiskObjectKey> activeStocks() {
+        List<RiskObjectKey> activeStocks = normalize(universeReader.activeAshareSymbols());
+        if (activeStocks.isEmpty()) {
+            throw new IllegalStateException("active A-share universe must not be empty");
+        }
+        return activeStocks;
     }
 
     private List<RiskCollectionTask> marketAndStockTasks(

@@ -63,8 +63,8 @@ jx:
 
 stock-ai-rule:
   risk-warning:
-    # 风险模块与五年回填默认关闭；影子闸门没有自动执行开关。
-    enabled: ${RISK_WARNING_ENABLED:false}
+    # 风险查询和手动同步默认可用；五年回填、自动调度与正式闸门仍分别保持关闭。
+    enabled: ${RISK_WARNING_ENABLED:true}
     backfill-enabled: ${RISK_WARNING_BACKFILL_ENABLED:false}
     # 为空时复用 market-data.provider.ak-tools-base-url。
     ak-tools-base-url: ${RISK_WARNING_AKTOOLS_BASE_URL:}

@@ -78,6 +78,31 @@ class RiskRuntimeWorkflowTest {
     }
 
     @Test
+    void manualMarketSyncUsesTheRealCurrentAsOfAndMarketPlan() {
+        RiskSignalCandidateReader candidateReader = mock(RiskSignalCandidateReader.class);
+        RiskWarningWorkflow coreWorkflow = mock(RiskWarningWorkflow.class);
+        when(coreWorkflow.run(any())).thenReturn(SUMMARY);
+        DefaultRiskAfterCloseWorkflow workflow = new DefaultRiskAfterCloseWorkflow(
+                planner(), candidateReader, coreWorkflow, clockAt(DATE.plusDays(1).atTime(10, 0)),
+                properties(false));
+
+        RiskWorkflowRunSummary result = workflow.runManualMarket(DATE);
+
+        assertThat(result).isEqualTo(SUMMARY);
+        ArgumentCaptor<RiskWorkflowRequest> requestCaptor =
+                ArgumentCaptor.forClass(RiskWorkflowRequest.class);
+        verify(coreWorkflow).run(requestCaptor.capture());
+        assertThat(requestCaptor.getValue()).satisfies(request -> {
+            assertThat(request.asOf()).isEqualTo(DATE.plusDays(1).atTime(10, 0));
+            assertThat(request.collectionTasks()).hasSize(7);
+            assertThat(request.collectionTasks().stream()
+                    .flatMap(task -> task.objects().stream()))
+                    .anyMatch(object -> object.objectId().equals("CN-A"));
+        });
+        verifyNoInteractions(candidateReader);
+    }
+
+    @Test
     void explicitlyEnabledBackfillScoresTheFullFiveYearWindow() {
         RiskSignalCandidateReader candidateReader = mock(RiskSignalCandidateReader.class);
         RiskWarningWorkflow coreWorkflow = mock(RiskWarningWorkflow.class);
