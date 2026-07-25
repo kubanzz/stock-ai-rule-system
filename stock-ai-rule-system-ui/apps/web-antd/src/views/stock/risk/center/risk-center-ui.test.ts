@@ -51,13 +51,14 @@ describe('risk center UI safety contract', () => {
     'risk-sector-matrix.vue',
     'risk-object-drilldown.vue',
   ])(
-    'suppresses formal score and level through riskDataState in %s',
+    'selects formal or provisional display through riskDataState in %s',
     (file) => {
       const component = centerFile(file);
 
       expect(component).toContain('riskDataState');
       expect(component).toContain('RISK_DATA_STATE_LABELS');
-      expect(component).toContain("=== 'ready'");
+      expect(component).toContain("'formal', 'provisional'");
+      expect(component).toContain('displayRiskAssessment');
     },
   );
 
@@ -67,8 +68,26 @@ describe('risk center UI safety contract', () => {
     expect(state).toContain('数据不足');
     expect(state).toContain('数据过期');
     expect(state).toContain('数据不可用');
+    expect(state).toContain('暂定评估');
     expect(centerFile('index.vue')).toContain(
       "selectedDataState === 'unavailable'",
     );
+  });
+
+  it('renders sync status and clickable indicator details', () => {
+    const page = centerFile('index.vue');
+
+    expect(page).toContain('RiskSyncStatus');
+    expect(page).toContain('syncSelectedStock');
+    expect(centerFile('risk-sync-status.vue')).toContain('同步最新市场数据');
+    expect(
+      readFileSync(
+        resolve(
+          process.cwd(),
+          'apps/web-antd/src/views/stock/risk/shared/risk-indicator-popover.vue',
+        ),
+        'utf8',
+      ),
+    ).toContain('trigger="click"');
   });
 });

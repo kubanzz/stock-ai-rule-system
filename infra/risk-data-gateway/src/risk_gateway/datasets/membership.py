@@ -10,7 +10,7 @@ from risk_gateway.time_policy import SHANGHAI, TIME_POLICY_VERSION, dated_value_
 
 
 SOURCE = "AKTools:stock_industry_clf_hist_sw"
-CALCULATION_VERSION = "sw1-membership-validity-v1"
+CALCULATION_VERSION = "sw1-membership-current-snapshot-v3"
 FALLBACK_REASON = "official SW1 history unavailable; current snapshot cannot be backdated"
 
 
@@ -20,13 +20,16 @@ class MembershipDataset:
 
     def fetch(self, query: RiskQuery) -> GatewayResponse:
         requested = tuple(key for key in query.object_keys if key.startswith("stock:"))
+        if query.object_keys == ("market:CN-A",):
+            return self._current_snapshot(query, ())
         if not requested:
             return self._incomplete([], "SW1 membership requires stock objects")
         try:
             official_rows = self.context.client.get("stock_industry_clf_hist_sw", {})
         except AkToolsUnavailable:
             return self._current_snapshot(query, requested)
-        return self._official(query, requested, official_rows)
+        official = self._official(query, requested, official_rows)
+        return official if official.data else self._current_snapshot(query, requested)
 
     def _official(
         self,
@@ -82,7 +85,14 @@ class MembershipDataset:
         )
 
     def _current_snapshot(self, query: RiskQuery, requested: tuple[str, ...]) -> GatewayResponse:
-        if query.end_date < self.context.fetched_at.date():
+        current_session = max(
+            (
+                session for session in self.context.a_share_sessions
+                if session <= self.context.fetched_at.date()
+            ),
+            default=None,
+        )
+        if current_session is None or query.end_date < current_session:
             return self._incomplete([], FALLBACK_REASON)
         requested_ids = {key.split(":", 1)[1].split(".", 1)[0]: key for key in requested}
         sectors = self.context.client.get("sw_index_first_info", {})
@@ -91,21 +101,27 @@ class MembershipDataset:
             sector = self._sector(sector_row.get("行业代码") or sector_row.get("index_code"))
             if not sector:
                 continue
+            sector_name = str(
+                sector_row.get("行业名称")
+                or sector_row.get("index_name")
+                or sector_row.get("名称")
+                or ""
+            ).strip() or None
             components = self.context.client.get("index_component_sw", {"symbol": sector})
             for component in components:
                 symbol = str(component.get("证券代码") or component.get("symbol") or "").zfill(6)
-                if symbol not in requested_ids:
+                if requested_ids and symbol not in requested_ids:
                     continue
-                valid_from = self._date(component.get("计入日期") or component.get("start_date"))
-                if valid_from is None:
-                    valid_from = self.context.fetched_at.date()
                 output.append({
                     "objectType": "stock",
-                    "objectId": normalize_object_key(requested_ids[symbol]).split(":", 1)[1],
+                    "objectId": normalize_object_key(
+                        requested_ids.get(symbol, symbol)
+                    ).split(":", 1)[1],
                     "sectorCode": sector,
-                    "validFrom": valid_from.isoformat(),
+                    "sectorName": sector_name,
+                    "validFrom": current_session.isoformat(),
                     "validTo": None,
-                    "qualityStatus": "insufficient_history",
+                    "qualityStatus": "available",
                     "observedAt": self.context.fetched_at.isoformat(),
                     "availableAt": self.context.fetched_at.isoformat(),
                     "availabilityPolicyVersion": TIME_POLICY_VERSION,
@@ -147,7 +163,7 @@ class MembershipDataset:
     @staticmethod
     def _sector(raw: object) -> str | None:
         value = str(raw or "").upper().replace("SW1:", "").replace(".SI", "").strip()
-        return value if len(value) == 6 and value.isdigit() else None
+        return value if len(value) == 6 and value.isdigit() and value.startswith("801") else None
 
     @staticmethod
     def _date(raw: object) -> date | None:

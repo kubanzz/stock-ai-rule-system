@@ -4,7 +4,11 @@ import type { RiskObjectListItem } from '#/api/stock/risk/types';
 import { Card, Empty, Tag } from 'ant-design-vue';
 
 import { RiskLevelTag, RiskScoreDisplay } from '../shared';
-import { RISK_DATA_STATE_LABELS, riskDataState } from './risk-center-state';
+import {
+  displayRiskAssessment,
+  RISK_DATA_STATE_LABELS,
+  riskDataState,
+} from './risk-center-state';
 
 defineProps<{
   loading: boolean;
@@ -26,13 +30,30 @@ const emit = defineEmits<{
         type="button"
         @click="emit('select', item)"
       >
-        <span class="sector-name">{{ item.name }}</span>
-        <template v-if="riskDataState(item.snapshot) === 'ready'">
+        <span class="sector-identity">
+          <strong>{{ item.name }}</strong>
+          <small>{{ item.object.objectId }}</small>
+          <small>数据日 {{ item.snapshot.tradeDate }}</small>
+        </span>
+        <template
+          v-if="
+            ['formal', 'provisional'].includes(riskDataState(item.snapshot))
+          "
+        >
           <RiskScoreDisplay
             :completeness="item.snapshot.completeness"
-            :score="item.snapshot.totalScore"
+            :provisional="displayRiskAssessment(item.snapshot).provisional"
+            :score="displayRiskAssessment(item.snapshot).score"
           />
-          <RiskLevelTag :level="item.snapshot.level" />
+          <span class="sector-status">
+            <RiskLevelTag :level="displayRiskAssessment(item.snapshot).level" />
+            <Tag
+              v-if="displayRiskAssessment(item.snapshot).provisional"
+              color="gold"
+            >
+              暂定
+            </Tag>
+          </span>
         </template>
         <Tag v-else color="default">
           {{ RISK_DATA_STATE_LABELS[riskDataState(item.snapshot)] }}
@@ -52,7 +73,7 @@ const emit = defineEmits<{
 
 .sector-cell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   padding: 12px;
@@ -67,10 +88,25 @@ const emit = defineEmits<{
   border-color: hsl(var(--primary) / 60%);
 }
 
-.sector-name {
+.sector-identity {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 600;
   white-space: nowrap;
+}
+
+.sector-identity strong,
+.sector-identity small {
+  display: block;
+}
+
+.sector-identity small {
+  margin-top: 2px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.sector-status {
+  display: inline-flex;
+  gap: 4px;
 }
 </style>

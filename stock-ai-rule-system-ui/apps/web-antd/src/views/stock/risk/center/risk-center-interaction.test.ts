@@ -16,6 +16,10 @@ const riskApi = vi.hoisted(() => ({
   getRiskObjects: vi.fn(),
   getRiskObjectTrend: vi.fn(),
   getRiskOverview: vi.fn(),
+  getRiskSyncJob: vi.fn(),
+  getRiskSyncStatus: vi.fn(),
+  startRiskMarketSync: vi.fn(),
+  startRiskStockSync: vi.fn(),
 }));
 
 vi.mock('#/api/stock/risk', () => ({
@@ -124,6 +128,10 @@ describe('risk center interactions', () => {
       },
     );
     riskApi.getRiskObjectTrend.mockResolvedValue([]);
+    riskApi.getRiskSyncStatus.mockResolvedValue({
+      activeJobs: [],
+      latestMarketJob: null,
+    });
   });
 
   it('reloads stocks with the clicked sector stable id', async () => {
@@ -168,5 +176,79 @@ describe('risk center interactions', () => {
     expect(container.querySelector('.object-row.selected')).toBeNull();
     app.unmount();
     container.remove();
+  });
+
+  it('keeps market and sector data visible when the stock list times out', async () => {
+    riskApi.getRiskObjects.mockImplementation((query: RiskObjectQuery) => {
+      if (query.objectType === 'stock') {
+        return Promise.reject(new Error('timeout of 10000ms exceeded'));
+      }
+      const rows = query.objectType === 'market' ? [marketItem] : [sectorItem];
+      return Promise.resolve({ rows, total: rows.length });
+    });
+    const container = document.createElement('div');
+    document.body.append(container);
+    const app = createApp(RiskCenter);
+
+    app.mount(container);
+    await flushAsyncWork();
+
+    expect(container.textContent).toContain('A 股全市场');
+    expect(container.textContent).toContain('食品饮料');
+    expect(container.querySelector('.sector-cell')).not.toBeNull();
+    app.unmount();
+    container.remove();
+  });
+
+  it('starts market sync, polls the job and refreshes after completion', async () => {
+    vi.useFakeTimers();
+    const queuedJob = {
+      createdAt: '2026-07-25T10:00:00+08:00',
+      eventCount: 0,
+      evidenceCount: 0,
+      finishedAt: null,
+      jobId: 'market-job',
+      message: null,
+      observationCount: 0,
+      phase: 'syncing_market',
+      progress: 20,
+      scopeKey: 'market:CN-A',
+      snapshotCount: 0,
+      startedAt: '2026-07-25T10:00:01+08:00',
+      status: 'running',
+      tradeDate: '2026-07-24',
+      unavailableDatasetCount: 0,
+    } as const;
+    riskApi.startRiskMarketSync.mockResolvedValue(queuedJob);
+    riskApi.getRiskSyncJob.mockResolvedValue({
+      ...queuedJob,
+      finishedAt: '2026-07-25T10:01:00+08:00',
+      message: '同步完成',
+      phase: 'completed',
+      progress: 100,
+      status: 'succeeded',
+    });
+    const container = document.createElement('div');
+    document.body.append(container);
+    const app = createApp(RiskCenter);
+    app.mount(container);
+    await flushAsyncWork();
+    riskApi.getRiskOverview.mockClear();
+
+    const syncButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('同步最新市场数据'),
+    );
+    syncButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushAsyncWork();
+    expect(riskApi.startRiskMarketSync).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(1500);
+    await flushAsyncWork();
+    expect(riskApi.getRiskSyncJob).toHaveBeenCalledWith('market-job');
+    expect(riskApi.getRiskOverview).toHaveBeenCalled();
+
+    app.unmount();
+    container.remove();
+    vi.useRealTimers();
   });
 });

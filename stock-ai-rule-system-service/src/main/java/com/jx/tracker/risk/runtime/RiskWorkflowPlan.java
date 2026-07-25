@@ -21,7 +21,7 @@ public record RiskWorkflowPlan(
         stockObjects = stockObjects == null ? List.of() : List.copyOf(stockObjects);
         collectionTasks = collectionTasks == null ? List.of() : List.copyOf(collectionTasks);
         horizons = horizons == null ? List.of() : List.copyOf(horizons);
-        if (stockObjects.isEmpty() || collectionTasks.isEmpty() || horizons.isEmpty()) {
+        if (collectionTasks.isEmpty() || horizons.isEmpty()) {
             throw new IllegalArgumentException("risk workflow plan must not be empty");
         }
     }
@@ -43,6 +43,52 @@ public record RiskWorkflowPlan(
                 signals,
                 modelVersion,
                 afterCloseCutoff
+        );
+    }
+
+    public RiskWorkflowRequest manualMarketSyncRequest(
+            LocalDate tradeDate,
+            LocalDateTime asOf,
+            String modelVersion,
+            LocalTime afterCloseCutoff
+    ) {
+        LocalDate collectionStartDate = RiskWorkflowRequest.baselineCollectionStart(tradeDate);
+        LocalDate providerStartDate = tradeDate.minusYears(2);
+        return new RiskWorkflowRequest(
+                collectionTasks,
+                horizons,
+                collectionStartDate,
+                tradeDate,
+                tradeDate,
+                asOf,
+                List.of(),
+                modelVersion,
+                afterCloseCutoff,
+                providerStartDate,
+                tradeDate
+        );
+    }
+
+    public RiskWorkflowRequest manualStockSyncRequest(
+            LocalDate tradeDate,
+            LocalDateTime asOf,
+            String modelVersion,
+            LocalTime afterCloseCutoff
+    ) {
+        LocalDate collectionStartDate = RiskWorkflowRequest.baselineCollectionStart(tradeDate);
+        LocalDate providerStartDate = tradeDate.minusYears(2);
+        return new RiskWorkflowRequest(
+                collectionTasks,
+                horizons,
+                collectionStartDate,
+                tradeDate,
+                tradeDate,
+                asOf,
+                List.of(),
+                modelVersion,
+                afterCloseCutoff,
+                providerStartDate,
+                providerStartDate
         );
     }
 

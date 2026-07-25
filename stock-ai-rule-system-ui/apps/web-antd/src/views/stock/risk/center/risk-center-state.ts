@@ -2,6 +2,7 @@ import type {
   RiskDataQualityStatus,
   RiskEvidence,
   RiskHorizon,
+  RiskLevel,
   RiskObjectDetail,
   RiskObjectListItem,
   RiskObjectQuery,
@@ -11,11 +12,17 @@ import type {
 
 import { riskEvidenceKey } from '../shared/presentation';
 
-export type RiskDataState = 'insufficient' | 'ready' | 'stale' | 'unavailable';
+export type RiskDataState =
+  | 'formal'
+  | 'insufficient'
+  | 'provisional'
+  | 'stale'
+  | 'unavailable';
 
 export const RISK_DATA_STATE_LABELS: Record<RiskDataState, string> = {
+  formal: '正式评估',
   insufficient: '数据不足',
-  ready: '数据有效',
+  provisional: '暂定评估',
   stale: '数据过期',
   unavailable: '数据不可用',
 };
@@ -84,15 +91,15 @@ export function buildSectorMatrix(
   return rows
     .filter((item) => item.object.objectType === 'sector')
     .toSorted((left, right) => {
+      const leftAssessment = displayRiskAssessment(left.snapshot);
+      const rightAssessment = displayRiskAssessment(right.snapshot);
       const levelDelta =
-        (right.snapshot.level ? LEVEL_RANK[right.snapshot.level] : 0) -
-        (left.snapshot.level ? LEVEL_RANK[left.snapshot.level] : 0);
+        (rightAssessment.level ? LEVEL_RANK[rightAssessment.level] : 0) -
+        (leftAssessment.level ? LEVEL_RANK[leftAssessment.level] : 0);
       if (levelDelta !== 0) {
         return levelDelta;
       }
-      return (
-        (right.snapshot.totalScore ?? -1) - (left.snapshot.totalScore ?? -1)
-      );
+      return (rightAssessment.score ?? -1) - (leftAssessment.score ?? -1);
     });
 }
 
@@ -167,6 +174,15 @@ export function buildRiskTriggerTimeline(
 }
 
 export function riskDataState(snapshot: null | RiskSnapshot): RiskDataState {
+  if (snapshot?.conclusionStatus === 'formal') {
+    return 'formal';
+  }
+  if (snapshot?.conclusionStatus === 'provisional') {
+    return 'provisional';
+  }
+  if (snapshot?.conclusionStatus === 'unavailable') {
+    return 'unavailable';
+  }
   if (snapshot?.evidence.some((item) => item.qualityStatus === 'unavailable')) {
     return 'unavailable';
   }
@@ -183,5 +199,28 @@ export function riskDataState(snapshot: null | RiskSnapshot): RiskDataState {
   ) {
     return 'insufficient';
   }
-  return 'ready';
+  return 'formal';
+}
+
+export function displayRiskAssessment(snapshot: null | RiskSnapshot): {
+  level: null | RiskLevel;
+  provisional: boolean;
+  score: null | number;
+} {
+  const state = riskDataState(snapshot);
+  if (state === 'formal') {
+    return {
+      level: snapshot?.level ?? null,
+      provisional: false,
+      score: snapshot?.totalScore ?? null,
+    };
+  }
+  if (state === 'provisional') {
+    return {
+      level: snapshot?.provisionalLevel ?? null,
+      provisional: true,
+      score: snapshot?.provisionalScore ?? null,
+    };
+  }
+  return { level: null, provisional: false, score: null };
 }

@@ -19,6 +19,10 @@ def test_valuation_cache_namespace_excludes_pre_scoring_eligibility_payloads():
     assert DERIVED_REQUEST_HASH_VERSIONS["valuation"] == "valuation-forward-fill-v5"
 
 
+def test_membership_cache_namespace_excludes_empty_pre_snapshot_payloads():
+    assert DERIVED_REQUEST_HASH_VERSIONS["sw1-membership"] == "sw1-membership-current-snapshot-v3"
+
+
 class HealthyDependencies:
     def aktools_status(self):
         return "up"

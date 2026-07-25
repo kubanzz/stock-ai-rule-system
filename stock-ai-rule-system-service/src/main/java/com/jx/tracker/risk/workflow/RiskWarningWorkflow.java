@@ -85,7 +85,7 @@ public final class RiskWarningWorkflow {
         this.requestObjectLimit = requestObjectLimit;
     }
 
-    public RiskWorkflowRunSummary run(RiskWorkflowRequest request) {
+    public synchronized RiskWorkflowRunSummary run(RiskWorkflowRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
@@ -107,9 +107,10 @@ public final class RiskWarningWorkflow {
                         task.providerCode(), task.datasetCode(), task.scopeKey()).orElse(null);
                 RiskIngestionCheckpoint providerCheckpoint = checkpointForProvider(
                         repositoryCheckpoint, task.objects());
-                RiskProviderBatch batch = provider.fetch(task.datasetCode(), new RiskProviderRequest(
-                        task.objects(), request.horizons(), request.collectionStartDate(), request.endDate(),
-                        providerCheckpoint));
+                RiskProviderBatch batch = provider.fetch(
+                        task.datasetCode(),
+                        providerRequest(task, request, providerCheckpoint)
+                );
                 if (batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE) {
                     unavailableDatasets++;
                     repository.saveIngestionStatus(
@@ -172,6 +173,26 @@ public final class RiskWarningWorkflow {
                 gateCount, checkpointsSaved, unavailableDatasets);
     }
 
+    private RiskProviderRequest providerRequest(
+            RiskCollectionTask task,
+            RiskWorkflowRequest request,
+            RiskIngestionCheckpoint checkpoint
+    ) {
+        boolean incremental = request.providerStartDate().isAfter(request.collectionStartDate());
+        boolean needsCalculationContext = MarketDatasetCode.MARKET_DAILY.code()
+                .equals(task.datasetCode());
+        LocalDate startDate = incremental && !needsCalculationContext
+                ? request.endDate()
+                : request.providerStartDate();
+        LocalDate resultStartDate = incremental && !needsCalculationContext
+                ? request.endDate()
+                : request.providerResultStartDate();
+        return new RiskProviderRequest(
+                task.objects(), request.horizons(), startDate, resultStartDate,
+                request.endDate(), checkpoint
+        );
+    }
+
     private List<StoredRiskSnapshot> score(
             RiskWorkflowRequest request,
             List<RiskObservation> observations,
@@ -180,7 +201,9 @@ public final class RiskWarningWorkflow {
             List<RiskSnapshot> loadedHistory
     ) {
         Set<RiskObjectKey> objects = new LinkedHashSet<>();
-        request.collectionTasks().forEach(task -> objects.addAll(task.objects()));
+        request.collectionTasks().stream()
+                .filter(this::scoringTask)
+                .forEach(task -> objects.addAll(task.objects()));
         request.signals().forEach(signal -> objects.addAll(signal.relevantRiskObjects()));
         addLayerObjects(objects, exposures, request);
 
@@ -419,13 +442,16 @@ public final class RiskWarningWorkflow {
         List<RiskObjectKey> stocks = task.objects().stream()
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
                 .toList();
-        if (stocks.isEmpty()) {
+        boolean marketWideDaily = stocks.isEmpty()
+                && task.datasetCode().equals(MarketDatasetCode.MARKET_DAILY.code())
+                && task.objects().contains(CN_A);
+        if (stocks.isEmpty() && !marketWideDaily) {
             return partitionTasks(task, task.objects());
         }
         Set<RiskObjectKey> stockSet = Set.copyOf(stocks);
         Set<RiskObjectKey> expanded = new LinkedHashSet<>(task.objects());
         exposures.stream()
-                .filter(exposure -> stockSet.contains(exposure.stock()))
+                .filter(exposure -> marketWideDaily || stockSet.contains(exposure.stock()))
                 .filter(exposure -> eligible(exposure, request))
                 .map(IndustryExposure::sector)
                 .filter(this::canonicalSector)
@@ -451,6 +477,11 @@ public final class RiskWarningWorkflow {
     private boolean canonicalSector(RiskObjectKey object) {
         return object.objectType() == RiskObjectType.SECTOR
                 && object.objectId().matches("^SW1:\\d{6}$");
+    }
+
+    private boolean scoringTask(RiskCollectionTask task) {
+        return !task.datasetCode().equals(MarketDatasetCode.CN_A_STOCK_MASTER.code())
+                && !task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code());
     }
 
     private RiskIngestionCheckpoint checkpointForProvider(
@@ -547,6 +578,15 @@ public final class RiskWarningWorkflow {
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (stocks.isEmpty()) {
+            if (objects.contains(CN_A)) {
+                exposures.stream()
+                        .filter(exposure -> eligible(exposure, request))
+                        .filter(exposure -> formalScoreQuality(exposure.qualityStatus()))
+                        .map(IndustryExposure::sector)
+                        .filter(this::canonicalSector)
+                        .sorted(Comparator.comparing(RiskObjectKey::objectId))
+                        .forEach(objects::add);
+            }
             return;
         }
         addLayerObjectsFromStockSet(objects, stocks, exposures, request);

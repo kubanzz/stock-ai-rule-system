@@ -4,7 +4,11 @@ import type { RiskObjectListItem, RiskOverview } from '#/api/stock/risk/types';
 import { Card, Empty, Statistic, Tag } from 'ant-design-vue';
 
 import { RiskLevelTag, RiskScoreDisplay } from '../shared';
-import { RISK_DATA_STATE_LABELS, riskDataState } from './risk-center-state';
+import {
+  displayRiskAssessment,
+  RISK_DATA_STATE_LABELS,
+  riskDataState,
+} from './risk-center-state';
 
 defineProps<{
   loading: boolean;
@@ -39,12 +43,23 @@ const levelLabels = {
         "
       >
         <span class="overview-label">市场风险</span>
-        <template v-if="riskDataState(overview.marketSnapshot) === 'ready'">
+        <template
+          v-if="
+            ['formal', 'provisional'].includes(
+              riskDataState(overview.marketSnapshot),
+            )
+          "
+        >
           <RiskScoreDisplay
             :completeness="overview.marketSnapshot.completeness"
-            :score="overview.marketSnapshot.totalScore"
+            :provisional="
+              displayRiskAssessment(overview.marketSnapshot).provisional
+            "
+            :score="displayRiskAssessment(overview.marketSnapshot).score"
           />
-          <RiskLevelTag :level="overview.marketSnapshot.level" />
+          <RiskLevelTag
+            :level="displayRiskAssessment(overview.marketSnapshot).level"
+          />
         </template>
         <Tag v-else color="default">
           {{ RISK_DATA_STATE_LABELS[riskDataState(overview.marketSnapshot)] }}
@@ -69,10 +84,19 @@ const levelLabels = {
         @click="emit('select', item)"
       >
         {{ item.name }}
-        <RiskLevelTag
-          v-if="riskDataState(item.snapshot) === 'ready'"
-          :level="item.snapshot.level"
-        />
+        <template
+          v-if="
+            ['formal', 'provisional'].includes(riskDataState(item.snapshot))
+          "
+        >
+          <RiskLevelTag :level="displayRiskAssessment(item.snapshot).level" />
+          <Tag
+            v-if="displayRiskAssessment(item.snapshot).provisional"
+            color="gold"
+          >
+            暂定
+          </Tag>
+        </template>
         <Tag v-else color="default">
           {{ RISK_DATA_STATE_LABELS[riskDataState(item.snapshot)] }}
         </Tag>

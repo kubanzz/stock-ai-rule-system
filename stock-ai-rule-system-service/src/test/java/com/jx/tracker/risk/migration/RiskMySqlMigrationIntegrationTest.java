@@ -70,7 +70,7 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult first = flyway.migrate();
             MigrateResult repeated = flyway.migrate();
 
-            assertThat(first.migrationsExecuted).isEqualTo(2);
+            assertThat(first.migrationsExecuted).isEqualTo(3);
             assertThat(repeated.migrationsExecuted).isZero();
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
@@ -85,7 +85,7 @@ class RiskMySqlMigrationIntegrationTest {
     }
 
     @Test
-    void explicitlyBaselinesExistingVersionOneBeforeApplyingVersionTwo() throws Exception {
+    void explicitlyBaselinesExistingVersionOneBeforeApplyingLaterMigrations() throws Exception {
         String schema = schemaName();
         createSchema(schema);
         try {
@@ -117,8 +117,8 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult upgraded = flyway.migrate();
             LocalDateTime migrationFinishedAt = databaseNow(schema);
 
-            assertThat(upgraded.migrationsExecuted).isEqualTo(1);
-            assertThat(currentVersion(schema)).isEqualTo("2");
+            assertThat(upgraded.migrationsExecuted).isEqualTo(2);
+            assertThat(currentVersion(schema)).isEqualTo("3");
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
             assertObservationCorrectionsRemainPointInTime(schema);

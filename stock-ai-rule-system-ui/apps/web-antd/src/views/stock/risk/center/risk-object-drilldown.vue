@@ -6,7 +6,11 @@ import type { RiskObjectListItem } from '#/api/stock/risk/types';
 import { Card, Empty, Tag } from 'ant-design-vue';
 
 import { RiskLevelTag, RiskScoreDisplay } from '../shared';
-import { RISK_DATA_STATE_LABELS, riskDataState } from './risk-center-state';
+import {
+  displayRiskAssessment,
+  RISK_DATA_STATE_LABELS,
+  riskDataState,
+} from './risk-center-state';
 
 defineProps<{
   hierarchy: RiskHierarchy;
@@ -46,12 +50,19 @@ const columns: Array<{
               <strong>{{ item.name }}</strong>
               <small>{{ item.object.objectId }}</small>
             </span>
-            <template v-if="riskDataState(item.snapshot) === 'ready'">
+            <template
+              v-if="
+                ['formal', 'provisional'].includes(riskDataState(item.snapshot))
+              "
+            >
               <RiskScoreDisplay
                 :completeness="item.snapshot.completeness"
-                :score="item.snapshot.totalScore"
+                :provisional="displayRiskAssessment(item.snapshot).provisional"
+                :score="displayRiskAssessment(item.snapshot).score"
               />
-              <RiskLevelTag :level="item.snapshot.level" />
+              <RiskLevelTag
+                :level="displayRiskAssessment(item.snapshot).level"
+              />
             </template>
             <Tag v-else color="default">
               {{ RISK_DATA_STATE_LABELS[riskDataState(item.snapshot)] }}

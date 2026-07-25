@@ -89,6 +89,41 @@ class RiskWorkflowPlannerTest {
     }
 
     @Test
+    void marketPlanCollectsTheCurrentMembershipUniverseInOnePagedRequest() {
+        RiskWorkflowPlan plan = planner().planMarket();
+
+        assertThat(plan.stockObjects()).isEmpty();
+        assertThat(plan.collectionTasks()).hasSize(5);
+        assertThat(plan.collectionTasks().stream()
+                .filter(task -> task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code()))
+                .flatMap(task -> task.objects().stream()))
+                .containsOnly(market());
+        assertThat(plan.collectionTasks().stream()
+                .flatMap(task -> task.objects().stream()))
+                .containsOnly(market());
+        assertThat(plan.collectionTasks()).noneMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.CN_A_STOCK_MASTER.code()));
+        assertThat(plan.collectionTasks()).noneMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.BREADTH.code()));
+        assertThat(plan.collectionTasks()).noneMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.CROSS_MARKET.code()));
+    }
+
+    @Test
+    void manualStockSyncDefersTheSlowWholeMarketBreadthRebuild() {
+        RiskWorkflowPlan plan = planner().planStockSync("600519.SH");
+
+        assertThat(plan.stockObjects()).extracting(RiskObjectKey::objectId)
+                .containsExactly("600519.SH");
+        assertThat(plan.collectionTasks()).noneMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.BREADTH.code()));
+        assertThat(plan.collectionTasks()).anyMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code()));
+        assertThat(plan.collectionTasks()).noneMatch(task ->
+                task.datasetCode().equals(MarketDatasetCode.CROSS_MARKET.code()));
+    }
+
+    @Test
     void planBuildsDailyRequestWithConfiguredModelAndCutoff() {
         RiskWorkflowPlan plan = planner().plan(List.of("600519.SH"));
 
@@ -101,6 +136,33 @@ class RiskWorkflowPlannerTest {
         assertThat(request.asOf()).isEqualTo(AS_OF);
         assertThat(request.modelVersion()).isEqualTo("risk-runtime-v1");
         assertThat(request.afterCloseCutoff()).isEqualTo(LocalTime.of(19, 0));
+    }
+
+    @Test
+    void manualMarketSyncReadsTheFormalBaselineButOnlyPublishesTheLatestDay() {
+        RiskWorkflowPlan plan = planner().planMarket();
+
+        var request = plan.manualMarketSyncRequest(
+                TRADE_DATE, AS_OF, "risk-runtime-v1", LocalTime.of(19, 0));
+
+        assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(6));
+        assertThat(request.providerStartDate()).isEqualTo(TRADE_DATE.minusYears(2));
+        assertThat(request.providerResultStartDate()).isEqualTo(TRADE_DATE);
+        assertThat(request.scoreStartDate()).isEqualTo(TRADE_DATE);
+        assertThat(request.endDate()).isEqualTo(TRADE_DATE);
+    }
+
+    @Test
+    void manualStockSyncKeepsTwoYearsOfContextForIncrementalProvisionalScoring() {
+        RiskWorkflowPlan plan = planner().planStockSync("600519.SH");
+
+        var request = plan.manualStockSyncRequest(
+                TRADE_DATE, AS_OF, "risk-runtime-v1", LocalTime.of(19, 0));
+
+        assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(6));
+        assertThat(request.providerStartDate()).isEqualTo(TRADE_DATE.minusYears(2));
+        assertThat(request.providerResultStartDate()).isEqualTo(TRADE_DATE.minusYears(2));
+        assertThat(request.scoreStartDate()).isEqualTo(TRADE_DATE);
     }
 
     @Test

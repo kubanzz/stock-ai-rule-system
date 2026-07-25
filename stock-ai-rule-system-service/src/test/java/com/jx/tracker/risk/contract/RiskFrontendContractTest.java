@@ -66,7 +66,9 @@ class RiskFrontendContractTest {
         assertFields(objectMapper.valueToTree(snapshot),
                 "aScore", "cScore", "calculatedAt", "completeness", "evidence", "horizon",
                 "level", "mScore", "modelVersion", "object", "riskConfidence", "sScore",
-                "stage", "tScore", "totalScore", "tradeDate", "vScore");
+                "stage", "tScore", "totalScore", "tradeDate", "vScore",
+                "conclusionStatus", "provisionalScore", "provisionalLevel", "dimensions",
+                "dataAsOf", "staleTradingDays");
         assertFields(objectMapper.valueToTree(overview),
                 "highRiskObjects", "horizon", "levelCounts", "marketSnapshot",
                 "riskDisclaimer", "tradeDate");

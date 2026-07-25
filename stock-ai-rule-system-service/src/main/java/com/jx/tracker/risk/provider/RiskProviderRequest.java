@@ -10,6 +10,7 @@ public record RiskProviderRequest(
         List<RiskObjectKey> objects,
         List<RiskHorizon> horizons,
         LocalDate startDate,
+        LocalDate resultStartDate,
         LocalDate endDate,
         RiskIngestionCheckpoint checkpoint
 ) {
@@ -23,11 +24,23 @@ public record RiskProviderRequest(
         if (horizons.isEmpty()) {
             throw new IllegalArgumentException("horizons must not be empty");
         }
-        if (startDate == null || endDate == null) {
-            throw new IllegalArgumentException("startDate and endDate must not be null");
+        if (startDate == null || resultStartDate == null || endDate == null) {
+            throw new IllegalArgumentException(
+                    "startDate, resultStartDate and endDate must not be null");
         }
-        if (endDate.isBefore(startDate)) {
-            throw new IllegalArgumentException("endDate must not be before startDate");
+        if (resultStartDate.isBefore(startDate) || endDate.isBefore(resultStartDate)) {
+            throw new IllegalArgumentException(
+                    "dates must satisfy startDate <= resultStartDate <= endDate");
         }
+    }
+
+    public RiskProviderRequest(
+            List<RiskObjectKey> objects,
+            List<RiskHorizon> horizons,
+            LocalDate startDate,
+            LocalDate endDate,
+            RiskIngestionCheckpoint checkpoint
+    ) {
+        this(objects, horizons, startDate, startDate, endDate, checkpoint);
     }
 }

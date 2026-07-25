@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.runtime;
 
 import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
+import com.jx.tracker.risk.data.market.MarketDatasetCode;
 import com.jx.tracker.risk.workflow.RiskWarningWorkflow;
 import com.jx.tracker.risk.workflow.RiskWorkflowRequest;
 import com.jx.tracker.risk.workflow.RiskWorkflowRunSummary;
@@ -75,6 +76,38 @@ class RiskRuntimeWorkflowTest {
 
         assertThat(result).isEmpty();
         verifyNoInteractions(candidateReader, coreWorkflow);
+    }
+
+    @Test
+    void manualMarketSyncUsesTheRealCurrentAsOfAndMarketPlan() {
+        RiskSignalCandidateReader candidateReader = mock(RiskSignalCandidateReader.class);
+        RiskWarningWorkflow coreWorkflow = mock(RiskWarningWorkflow.class);
+        when(coreWorkflow.run(any())).thenReturn(SUMMARY);
+        DefaultRiskAfterCloseWorkflow workflow = new DefaultRiskAfterCloseWorkflow(
+                planner(), candidateReader, coreWorkflow, clockAt(DATE.plusDays(1).atTime(10, 0)),
+                properties(false));
+
+        RiskWorkflowRunSummary result = workflow.runManualMarket(DATE);
+
+        assertThat(result).isEqualTo(SUMMARY);
+        ArgumentCaptor<RiskWorkflowRequest> requestCaptor =
+                ArgumentCaptor.forClass(RiskWorkflowRequest.class);
+        verify(coreWorkflow).run(requestCaptor.capture());
+        assertThat(requestCaptor.getValue()).satisfies(request -> {
+            assertThat(request.asOf()).isEqualTo(DATE.plusDays(1).atTime(10, 0));
+            assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(6));
+            assertThat(request.providerStartDate()).isEqualTo(DATE.minusYears(2));
+            assertThat(request.providerResultStartDate()).isEqualTo(DATE);
+            assertThat(request.collectionTasks()).hasSize(5);
+            assertThat(request.collectionTasks()).noneMatch(task ->
+                    task.datasetCode().equals(MarketDatasetCode.BREADTH.code()));
+            assertThat(request.collectionTasks()).noneMatch(task ->
+                    task.datasetCode().equals(MarketDatasetCode.CROSS_MARKET.code()));
+            assertThat(request.collectionTasks().stream()
+                    .flatMap(task -> task.objects().stream()))
+                    .anyMatch(object -> object.objectId().equals("CN-A"));
+        });
+        verifyNoInteractions(candidateReader);
     }
 
     @Test

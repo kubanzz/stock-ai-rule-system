@@ -30,6 +30,32 @@ public final class RiskAssessmentDto {
     ) {
     }
 
+    public record RiskIndicatorStatus(
+            String code,
+            String name,
+            String dimension,
+            int weight,
+            String status,
+            boolean used,
+            BigDecimal score,
+            BigDecimal rawValue,
+            String source,
+            LocalDateTime observedAt,
+            LocalDateTime availableAt,
+            String reason
+    ) {
+    }
+
+    public record RiskDimensionAssessment(
+            String dimension,
+            BigDecimal score,
+            BigDecimal coverage,
+            int usedCount,
+            int totalCount,
+            List<RiskIndicatorStatus> indicators
+    ) {
+    }
+
     public record RiskSnapshot(
             RiskObjectRef object,
             String horizon,
@@ -47,8 +73,40 @@ public final class RiskAssessmentDto {
             BigDecimal riskConfidence,
             List<RiskEvidence> evidence,
             String modelVersion,
-            LocalDateTime calculatedAt
+            LocalDateTime calculatedAt,
+            String conclusionStatus,
+            BigDecimal provisionalScore,
+            String provisionalLevel,
+            List<RiskDimensionAssessment> dimensions,
+            LocalDateTime dataAsOf,
+            int staleTradingDays
     ) {
+        public RiskSnapshot(
+                RiskObjectRef object,
+                String horizon,
+                LocalDate tradeDate,
+                BigDecimal vScore,
+                BigDecimal tScore,
+                BigDecimal sScore,
+                BigDecimal cScore,
+                BigDecimal aScore,
+                BigDecimal mScore,
+                BigDecimal totalScore,
+                String level,
+                String stage,
+                BigDecimal completeness,
+                BigDecimal riskConfidence,
+                List<RiskEvidence> evidence,
+                String modelVersion,
+                LocalDateTime calculatedAt
+        ) {
+            this(
+                    object, horizon, tradeDate, vScore, tScore, sScore, cScore, aScore, mScore,
+                    totalScore, level, stage, completeness, riskConfidence, evidence, modelVersion,
+                    calculatedAt, totalScore == null ? "insufficient" : "formal",
+                    null, null, List.of(), calculatedAt, 0
+            );
+        }
     }
 
     public record RiskLevelCount(String level, long count) {

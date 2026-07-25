@@ -10,6 +10,7 @@ import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.engine.RiskScoringEngine;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
 import com.jx.tracker.risk.provider.RiskDataProvider;
+import com.jx.tracker.risk.sync.RiskSyncJobService;
 import com.jx.tracker.risk.workflow.DefaultRiskSnapshotEvaluator;
 import com.jx.tracker.risk.workflow.PercentileRiskEvidenceAssembler;
 import com.jx.tracker.risk.workflow.RiskAfterCloseWorkflow;
@@ -70,10 +71,12 @@ class RiskWarningConfigurationTest {
             assertThat(context).hasSingleBean(RiskWarningWorkflow.class);
             assertThat(context).hasSingleBean(JdbcRiskUniverseReader.class);
             assertThat(context).hasSingleBean(JdbcRiskSignalCandidateReader.class);
+            assertThat(context).hasSingleBean(JdbcRiskTradeDateResolver.class);
             assertThat(context).hasSingleBean(RiskWorkflowPlanner.class);
             assertThat(context).hasSingleBean(DefaultRiskAfterCloseWorkflow.class);
             assertThat(context).hasSingleBean(RiskAfterCloseWorkflow.class);
             assertThat(context).hasSingleBean(RiskBackfillService.class);
+            assertThat(context).hasSingleBean(RiskSyncJobService.class);
         });
     }
 

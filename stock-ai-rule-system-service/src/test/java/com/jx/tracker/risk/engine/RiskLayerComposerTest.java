@@ -83,6 +83,53 @@ class RiskLayerComposerTest {
     }
 
     @Test
+    void retainsEvidenceButExcludesIncompleteLayersFromFormalCoverage() {
+        RiskLayerComposition composition = composer.compose(
+                incompleteSnapshot(RiskObjectType.MARKET, "CN-A", "0.41", "V3"),
+                incompleteSnapshot(RiskObjectType.SECTOR, "SW1:801120", "0.46", "C1"),
+                incompleteSnapshot(RiskObjectType.STOCK, "600519.SH", "0.28", "A3")
+        );
+
+        assertThat(composition.coverage()).isEqualByComparingTo("0.0000");
+        assertThat(composition.evidence()).hasSize(3);
+        assertThat(composition.evidence()).allSatisfy(item ->
+                assertThat(item.details())
+                        .containsKeys("layerObjectType", "layerObjectId", "layerWeight"));
+        assertThat(composition.riskConfidence()).isNull();
+        assertThat(composition.vScore()).isNull();
+    }
+
+    @Test
+    void incompleteLayerCannotRaiseFormalCoverageAboveConfirmedLayerWeights() {
+        RiskSnapshot market = snapshot(
+                RiskObjectType.MARKET, "CN-A", "80", "1.05", "1.00");
+        RiskSnapshot sector = snapshot(
+                RiskObjectType.SECTOR, "SW1:801120", "60", "1.10", "1.00");
+        RiskSnapshot incompleteStock = incompleteSnapshot(
+                RiskObjectType.STOCK, "600519.SH", "0.50", "A3");
+
+        RiskLayerComposition composition = composer.compose(
+                market, sector, incompleteStock);
+        RiskScoreResult result = new RiskScoringEngine().scoreLayers(
+                new RiskLayerScoreRequest(
+                        incompleteStock.object(), incompleteStock.horizon(),
+                        incompleteStock.tradeDate(),
+                        incompleteStock.tradeDate().minusDays(1),
+                        incompleteStock.calculatedAt(), composition, List.of(),
+                        new ExtremeRiskConfirmation(
+                                new BigDecimal("99"), true, true),
+                        "risk-engine-test-v1"
+                ));
+
+        assertThat(composition.coverage()).isEqualByComparingTo("0.6000");
+        assertThat(result.snapshot().totalScore()).isNull();
+        assertThat(result.snapshot().level()).isNull();
+        assertThat(result.snapshot().riskConfidence()).isNull();
+        assertThat(result.missingReasons())
+                .contains("LAYER_COVERAGE_BELOW_80_PERCENT");
+    }
+
+    @Test
     void keepsMissingSubstituteDimensionAtZeroContributionAcrossFixedLayers() {
         RiskSnapshot market = snapshotWithDimensions(
                 RiskObjectType.MARKET, "CN-A", "80", null, "80", "80", "60");
@@ -228,6 +275,33 @@ class RiskLayerComposerTest {
                 BigDecimal.ZERO,
                 null,
                 List.of(),
+                "risk-engine-test-v1",
+                LocalDateTime.of(2026, 7, 18, 16, 0)
+        );
+    }
+
+    private RiskSnapshot incompleteSnapshot(
+            RiskObjectType objectType,
+            String objectId,
+            String completeness,
+            String indicatorCode
+    ) {
+        RiskDimension dimension = RiskIndicatorCatalog.require(indicatorCode).dimension();
+        return new RiskSnapshot(
+                new RiskObjectKey(objectType, objectId),
+                RiskHorizon.SHORT_TERM,
+                LocalDate.of(2026, 7, 18),
+                null, null, null, null, null,
+                BigDecimal.ONE,
+                null, null, null,
+                new BigDecimal(completeness),
+                null,
+                List.of(new RiskEvidence(
+                        dimension, indicatorCode, new BigDecimal("60"), new BigDecimal("60"),
+                        LocalDateTime.of(2026, 7, 18, 15, 0),
+                        LocalDateTime.of(2026, 7, 18, 16, 0),
+                        "source-a", RiskDataQualityStatus.AVAILABLE, Map.of()
+                )),
                 "risk-engine-test-v1",
                 LocalDateTime.of(2026, 7, 18, 16, 0)
         );

@@ -256,6 +256,36 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void contextWindowCalculatesLatestIndicatorsWithoutRepublishingContextRows() {
+        LocalDate contextStart = END_DATE.minusYears(2);
+        RiskProviderRequest incremental = new RiskProviderRequest(
+                List.of(MARKET),
+                List.of(RiskHorizon.SHORT_TERM, RiskHorizon.MEDIUM_TERM, RiskHorizon.LONG_TERM),
+                contextStart,
+                END_DATE,
+                END_DATE,
+                null
+        );
+
+        RiskProviderBatch batch = provider(volatileDailyPoints(300), null)
+                .fetch("market_daily", incremental);
+
+        assertThat(batch.observations()).isNotEmpty()
+                .allSatisfy(observation ->
+                        assertThat(observation.tradeDate()).isEqualTo(END_DATE));
+        assertThat(batch.observations())
+                .filteredOn(observation ->
+                        observation.horizon() == RiskHorizon.LONG_TERM
+                                && observation.indicatorCode().equals("V3"))
+                .singleElement()
+                .satisfies(observation -> {
+                    assertThat(observation.qualityStatus())
+                            .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+                    assertThat(observation.value()).isNotNull();
+                });
+    }
+
+    @Test
     void marketDailyObservationsDeclareExplicitTradingDayPriceProvenance() {
         RiskProviderBatch batch = provider(dailyPoints(30), null)
                 .fetch("market_daily", request(null));
@@ -630,6 +660,35 @@ class MarketRiskDataProviderTest {
                     assertThat(observation.indicatorCode()).isEqualTo("DATA_SW1_MEMBERSHIP");
                 });
         assertThat(batch.observations()).extracting(RiskObservation::object).doesNotContain(unknown);
+    }
+
+    @Test
+    void marketScopedMembershipPublishesTheWholeCurrentExposureUniverse() {
+        AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
+        LocalDateTime fetchedNextMorning = END_DATE.plusDays(1).atTime(10, 30);
+        LocalDateTime gatewayPublishedAt = fetchedNextMorning.plusNanos(250_000_000);
+        IndustryExposure first = new IndustryExposure(
+                catalog.stock("000001.SZ"), catalog.sector("801780"), END_DATE, null,
+                gatewayPublishedAt, gatewayPublishedAt,
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        IndustryExposure second = new IndustryExposure(
+                catalog.stock("600519.SH"), catalog.sector("801120"), END_DATE, null,
+                gatewayPublishedAt, gatewayPublishedAt,
+                "fixed", RiskDataQualityStatus.AVAILABLE
+        );
+        MarketRiskDataProvider currentSnapshotProvider = new MarketRiskDataProvider(
+                (dataset, request) -> MarketSourceBatch.partialHistory(
+                        "fixed", List.of(first, second), null,
+                        "current snapshot cannot be backdated", fetchedNextMorning)
+        );
+
+        RiskProviderBatch batch = currentSnapshotProvider
+                .fetch("sw1_membership", request(null, END_DATE, MARKET));
+
+        assertThat(batch.industryExposures()).containsExactly(first, second);
+        assertThat(batch.observations()).extracting(RiskObservation::object)
+                .contains(first.stock(), second.stock());
     }
 
     @Test

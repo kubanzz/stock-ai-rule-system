@@ -17,7 +17,9 @@ public record RiskWorkflowRequest(
         LocalDateTime asOf,
         List<RiskSignalCandidate> signals,
         String modelVersion,
-        LocalTime afterCloseCutoff
+        LocalTime afterCloseCutoff,
+        LocalDate providerStartDate,
+        LocalDate providerResultStartDate
 ) {
 
     public static final LocalTime DEFAULT_AFTER_CLOSE_CUTOFF = LocalTime.of(20, 0);
@@ -31,11 +33,19 @@ public record RiskWorkflowRequest(
         if (collectionTasks.isEmpty() || horizons.isEmpty()) {
             throw new IllegalArgumentException("collectionTasks and horizons must not be empty");
         }
-        if (collectionStartDate == null || scoreStartDate == null || endDate == null || asOf == null) {
+        if (collectionStartDate == null || scoreStartDate == null || endDate == null || asOf == null
+                || providerStartDate == null || providerResultStartDate == null) {
             throw new IllegalArgumentException("workflow dates and asOf are required");
         }
         if (scoreStartDate.isBefore(collectionStartDate) || endDate.isBefore(scoreStartDate)) {
             throw new IllegalArgumentException("dates must satisfy collectionStart <= scoreStart <= end");
+        }
+        if (providerStartDate.isBefore(collectionStartDate)
+                || providerResultStartDate.isBefore(providerStartDate)
+                || endDate.isBefore(providerResultStartDate)) {
+            throw new IllegalArgumentException(
+                    "provider dates must stay inside collectionStart <= providerStart"
+                            + " <= providerResultStart <= end");
         }
         if (modelVersion == null || modelVersion.isBlank()) {
             throw new IllegalArgumentException("modelVersion must not be blank");
@@ -51,10 +61,27 @@ public record RiskWorkflowRequest(
             LocalDate endDate,
             LocalDateTime asOf,
             List<RiskSignalCandidate> signals,
+            String modelVersion,
+            LocalTime afterCloseCutoff
+    ) {
+        this(collectionTasks, horizons, collectionStartDate, scoreStartDate, endDate,
+                asOf, signals, modelVersion, afterCloseCutoff,
+                collectionStartDate, collectionStartDate);
+    }
+
+    public RiskWorkflowRequest(
+            List<RiskCollectionTask> collectionTasks,
+            List<RiskHorizon> horizons,
+            LocalDate collectionStartDate,
+            LocalDate scoreStartDate,
+            LocalDate endDate,
+            LocalDateTime asOf,
+            List<RiskSignalCandidate> signals,
             String modelVersion
     ) {
         this(collectionTasks, horizons, collectionStartDate, scoreStartDate, endDate,
-                asOf, signals, modelVersion, DEFAULT_AFTER_CLOSE_CUTOFF);
+                asOf, signals, modelVersion, DEFAULT_AFTER_CLOSE_CUTOFF,
+                collectionStartDate, collectionStartDate);
     }
 
     public static RiskWorkflowRequest daily(

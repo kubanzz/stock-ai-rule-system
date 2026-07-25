@@ -27,6 +27,8 @@ from risk_gateway.time_policy import SHANGHAI
 DERIVED_REQUEST_HASH_VERSIONS = {
     # Keep immutable raw partitions, but do not reuse pre-proxy valuation responses.
     "valuation": "valuation-forward-fill-v5",
+    # Current SW1 snapshots must not reuse the former cached empty fallback.
+    "sw1-membership": "sw1-membership-current-snapshot-v3",
 }
 
 
