@@ -413,6 +413,7 @@ class JdbcRiskWorkflowRepositoryTest {
                 CREATE TABLE risk_object_exposure (
                     object_type VARCHAR(16), object_id VARCHAR(64),
                     parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                    parent_object_name VARCHAR(128),
                     valid_from DATE, valid_to DATE, observed_at TIMESTAMP, available_at TIMESTAMP,
                     source VARCHAR(64), quality_status VARCHAR(32))
                 """);
@@ -420,9 +421,9 @@ class JdbcRiskWorkflowRepositoryTest {
         LocalDateTime asOf = date.atTime(20, 0);
         jdbc.update("""
                 INSERT INTO risk_object_exposure VALUES
-                ('stock', '600519.SH', 'sector', 'SW1:801780', ?, NULL, ?, ?, 'source-a', 'available'),
-                ('stock', '000001.SZ', 'sector', 'SW1:801010', ?, NULL, ?, ?, 'source-a', 'available'),
-                ('stock', '600519.SH', 'sector', 'SW1:801790', ?, NULL, ?, ?, 'source-a', 'available')
+                ('stock', '600519.SH', 'sector', 'SW1:801780', '银行', ?, NULL, ?, ?, 'source-a', 'available'),
+                ('stock', '000001.SZ', 'sector', 'SW1:801010', '农林牧渔', ?, NULL, ?, ?, 'source-a', 'available'),
+                ('stock', '600519.SH', 'sector', 'SW1:801790', '非银金融', ?, NULL, ?, ?, 'source-a', 'available')
                 """,
                 date.minusYears(1), date.atTime(18, 0), date.atTime(19, 0),
                 date.minusYears(1), date.atTime(18, 0), date.atTime(19, 0),
@@ -440,6 +441,7 @@ class JdbcRiskWorkflowRepositoryTest {
         assertThat(exposures).singleElement().satisfies(exposure -> {
             assertThat(exposure.stock().objectId()).isEqualTo("600519.SH");
             assertThat(exposure.sector().objectId()).isEqualTo("SW1:801780");
+            assertThat(exposure.sectorName()).isEqualTo("银行");
             assertThat(exposure.availableAt()).isBeforeOrEqualTo(asOf);
         });
     }
@@ -454,6 +456,7 @@ class JdbcRiskWorkflowRepositoryTest {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     object_type VARCHAR(16), object_id VARCHAR(64),
                     parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                    parent_object_name VARCHAR(128),
                     exposure_weight DECIMAL(8, 6), valid_from DATE, valid_to DATE,
                     observed_at TIMESTAMP, available_at TIMESTAMP,
                     source VARCHAR(64), quality_status VARCHAR(32), metadata_json VARCHAR(1024),
@@ -463,11 +466,11 @@ class JdbcRiskWorkflowRepositoryTest {
         RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
         RiskObjectKey sector = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780");
         IndustryExposure original = new IndustryExposure(
-                stock, sector, date.minusYears(1), null,
+                stock, sector, "银行", date.minusYears(1), null,
                 date.minusYears(1).atTime(18, 0), date.minusYears(1).atTime(19, 0),
                 "aktools", RiskDataQualityStatus.AVAILABLE);
         IndustryExposure revised = new IndustryExposure(
-                stock, sector, date.minusYears(1), date.minusDays(1),
+                stock, sector, "银行业", date.minusYears(1), date.minusDays(1),
                 date.atTime(18, 0), date.atTime(19, 0),
                 "aktools", RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
@@ -475,14 +478,14 @@ class JdbcRiskWorkflowRepositoryTest {
         repository.saveIndustryExposure(original);
         repository.saveIndustryExposure(revised);
         Map<String, Object> forward = jdbc.queryForMap("""
-                SELECT valid_to, observed_at, available_at, quality_status
+                SELECT parent_object_name, valid_to, observed_at, available_at, quality_status
                 FROM risk_object_exposure
                 """);
         jdbc.update("DELETE FROM risk_object_exposure");
         repository.saveIndustryExposure(revised);
         repository.saveIndustryExposure(original);
         Map<String, Object> reverse = jdbc.queryForMap("""
-                SELECT valid_to, observed_at, available_at, quality_status
+                SELECT parent_object_name, valid_to, observed_at, available_at, quality_status
                 FROM risk_object_exposure
                 """);
 
@@ -490,6 +493,7 @@ class JdbcRiskWorkflowRepositoryTest {
         assertThat(reverse).isEqualTo(forward);
         assertThat(jdbc.queryForMap("SELECT * FROM risk_object_exposure")).satisfies(row -> {
             assertThat(row.get("exposure_weight").toString()).startsWith("1");
+            assertThat(row.get("parent_object_name")).isEqualTo("银行业");
             assertThat(row.get("valid_to").toString()).isEqualTo(date.minusDays(1).toString());
             assertThat(((java.sql.Timestamp) row.get("observed_at")).toLocalDateTime())
                     .isEqualTo(date.atTime(18, 0));

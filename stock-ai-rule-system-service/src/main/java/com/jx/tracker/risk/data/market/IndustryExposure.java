@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public record IndustryExposure(
         RiskObjectKey stock,
         RiskObjectKey sector,
+        String sectorName,
         LocalDate validFrom,
         LocalDate validTo,
         LocalDateTime observedAt,
@@ -17,6 +18,19 @@ public record IndustryExposure(
         String source,
         RiskDataQualityStatus qualityStatus
 ) implements MarketSourceRecord {
+    public IndustryExposure(
+            RiskObjectKey stock,
+            RiskObjectKey sector,
+            LocalDate validFrom,
+            LocalDate validTo,
+            LocalDateTime observedAt,
+            LocalDateTime availableAt,
+            String source,
+            RiskDataQualityStatus qualityStatus
+    ) {
+        this(stock, sector, null, validFrom, validTo, observedAt, availableAt, source, qualityStatus);
+    }
+
     public IndustryExposure {
         MarketSourceValidation.common(stock, validFrom, observedAt, availableAt, source, qualityStatus);
         if (stock.objectType() != RiskObjectType.STOCK || sector == null || sector.objectType() != RiskObjectType.SECTOR) {
@@ -25,6 +39,7 @@ public record IndustryExposure(
         if (validTo != null && validTo.isBefore(validFrom)) {
             throw new IllegalArgumentException("validTo must not be before validFrom");
         }
+        sectorName = sectorName == null || sectorName.isBlank() ? null : sectorName.trim();
     }
 
     @Override

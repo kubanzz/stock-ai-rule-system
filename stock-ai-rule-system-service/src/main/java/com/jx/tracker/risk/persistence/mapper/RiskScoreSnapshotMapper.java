@@ -36,7 +36,17 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
     );
 
     @Select("""
-            SELECT s.*, COALESCE(NULLIF(sb.name, ''), s.object_id) AS object_name
+            SELECT s.*, COALESCE(
+                NULLIF(sb.name, ''),
+                NULLIF((
+                    SELECT MAX(name_exposure.parent_object_name)
+                    FROM risk_object_exposure name_exposure
+                    WHERE s.object_type = 'sector'
+                      AND name_exposure.parent_object_type = 'sector'
+                      AND name_exposure.parent_object_id = s.object_id
+                ), ''),
+                s.object_id
+            ) AS object_name
             FROM risk_score_snapshot s
             LEFT JOIN stock_base sb ON s.object_type = 'stock' AND sb.symbol = s.object_id
             WHERE s.horizon = #{horizon}
@@ -68,7 +78,15 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             """ + FORMAL_LEVEL_FILTER + """
               <if test="keyword != null">
                 AND (s.object_id LIKE CONCAT('%', #{keyword}, '%')
-                  OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%'))
+                  OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%')
+                  OR EXISTS (
+                    SELECT 1 FROM risk_object_exposure name_exposure
+                    WHERE s.object_type = 'sector'
+                      AND name_exposure.parent_object_type = 'sector'
+                      AND name_exposure.parent_object_id = s.object_id
+                      AND COALESCE(name_exposure.parent_object_name, '')
+                          LIKE CONCAT('%', #{keyword}, '%')
+                  ))
               </if>
               <if test="parentObjectType != null and parentObjectId != null">
                 AND EXISTS (
@@ -106,7 +124,17 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
 
     @Select("""
             <script>
-            SELECT s.*, COALESCE(NULLIF(sb.name, ''), s.object_id) AS object_name
+            SELECT s.*, COALESCE(
+                NULLIF(sb.name, ''),
+                NULLIF((
+                    SELECT MAX(name_exposure.parent_object_name)
+                    FROM risk_object_exposure name_exposure
+                    WHERE s.object_type = 'sector'
+                      AND name_exposure.parent_object_type = 'sector'
+                      AND name_exposure.parent_object_id = s.object_id
+                ), ''),
+                s.object_id
+            ) AS object_name
             FROM risk_score_snapshot s
             LEFT JOIN stock_base sb ON s.object_type = 'stock' AND sb.symbol = s.object_id
             WHERE s.horizon = #{horizon}
@@ -115,7 +143,15 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
             """ + FORMAL_LEVEL_FILTER + """
               <if test="keyword != null">
                 AND (s.object_id LIKE CONCAT('%', #{keyword}, '%')
-                  OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%'))
+                  OR COALESCE(sb.name, '') LIKE CONCAT('%', #{keyword}, '%')
+                  OR EXISTS (
+                    SELECT 1 FROM risk_object_exposure name_exposure
+                    WHERE s.object_type = 'sector'
+                      AND name_exposure.parent_object_type = 'sector'
+                      AND name_exposure.parent_object_id = s.object_id
+                      AND COALESCE(name_exposure.parent_object_name, '')
+                          LIKE CONCAT('%', #{keyword}, '%')
+                  ))
               </if>
               <if test="parentObjectType != null and parentObjectId != null">
                 AND EXISTS (
@@ -160,7 +196,17 @@ public interface RiskScoreSnapshotMapper extends BaseMapper<RiskScoreSnapshotEnt
 
     @Select("""
             <script>
-            SELECT s.*, COALESCE(NULLIF(sb.name, ''), s.object_id) AS object_name
+            SELECT s.*, COALESCE(
+                NULLIF(sb.name, ''),
+                NULLIF((
+                    SELECT MAX(name_exposure.parent_object_name)
+                    FROM risk_object_exposure name_exposure
+                    WHERE s.object_type = 'sector'
+                      AND name_exposure.parent_object_type = 'sector'
+                      AND name_exposure.parent_object_id = s.object_id
+                ), ''),
+                s.object_id
+            ) AS object_name
             FROM risk_score_snapshot s
             LEFT JOIN stock_base sb ON s.object_type = 'stock' AND sb.symbol = s.object_id
             WHERE s.object_type = #{objectType}

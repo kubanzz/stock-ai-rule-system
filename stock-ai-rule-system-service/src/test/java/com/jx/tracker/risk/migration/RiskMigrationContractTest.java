@@ -55,6 +55,17 @@ class RiskMigrationContractTest {
     }
 
     @Test
+    void currentIndustryMetadataMigrationAddsTheDisplayNameWithoutRewritingHistory() throws IOException {
+        String migration = resource("/db/migration/V3__risk_current_industry_metadata.sql");
+
+        assertThat(migration).contains(
+                "ALTER TABLE risk_object_exposure",
+                "ADD COLUMN parent_object_name VARCHAR(128) NULL"
+        );
+        assertThat(migration).doesNotContain("UPDATE risk_object_exposure");
+    }
+
+    @Test
     void scheduledEventsMayBecomeEffectiveAfterTheyAreObserved() throws IOException {
         String migration = resource("/db/migration/V2__risk_warning_foundation.sql");
         String eventTable = between(

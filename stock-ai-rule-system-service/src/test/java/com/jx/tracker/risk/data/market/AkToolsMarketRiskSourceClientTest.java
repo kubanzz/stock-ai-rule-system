@@ -93,6 +93,7 @@ class AkToolsMarketRiskSourceClientTest {
             assertThat(exposure.stock()).isEqualTo(STOCK);
             assertThat(exposure.sector()).isEqualTo(
                     new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780"));
+            assertThat(exposure.sectorName()).isEqualTo("银行");
             assertThat(exposure.validFrom()).isEqualTo(LocalDate.of(2024, 7, 1));
             assertThat(exposure.observedAt()).isEqualTo(LocalDateTime.of(2026, 7, 18, 10, 0));
             assertThat(exposure.availableAt()).isEqualTo(exposure.observedAt());
@@ -129,6 +130,7 @@ class AkToolsMarketRiskSourceClientTest {
                     .containsEntry("sourceQuality", "available");
         });
         assertThat(result.industryExposures()).singleElement().satisfies(exposure -> {
+            assertThat(exposure.sectorName()).isEqualTo("银行");
             assertThat(exposure.validFrom()).isEqualTo(LocalDate.of(2024, 7, 1));
             assertThat(exposure.validTo()).isNull();
             assertThat(exposure.availableAt()).isEqualTo(LocalDateTime.of(2026, 7, 18, 10, 0));

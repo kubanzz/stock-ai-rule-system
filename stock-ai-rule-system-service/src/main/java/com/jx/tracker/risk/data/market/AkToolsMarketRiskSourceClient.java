@@ -105,19 +105,20 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         List<Map<String, Object>> sectors = cached(
                 "sw1-catalog:" + fetchedAt.toLocalDate(), nativeTransport,
                 SW1_CATALOG_ENDPOINT, Map.of(), fetchedAt);
-        List<String> sectorCodes = sectors.stream()
-                .map(row -> text(row, "行业代码"))
-                .map(this::normalizeSectorCode)
+        List<SectorDescriptor> sectorDescriptors = sectors.stream()
+                .map(row -> new SectorDescriptor(
+                        normalizeSectorCode(text(row, "行业代码")),
+                        optionalText(row, "行业名称", "index_name", "名称")))
                 .distinct()
-                .sorted()
+                .sorted(java.util.Comparator.comparing(SectorDescriptor::code))
                 .toList();
         List<MarketSourceRecord> records = new ArrayList<>();
-        for (String sectorCode : sectorCodes) {
+        for (SectorDescriptor sector : sectorDescriptors) {
             List<Map<String, Object>> components = cached(
-                    "sw1-components:" + fetchedAt.toLocalDate() + ":" + sectorCode,
-                    nativeTransport, SW1_COMPONENT_ENDPOINT, Map.of("symbol", sectorCode), fetchedAt);
+                    "sw1-components:" + fetchedAt.toLocalDate() + ":" + sector.code(),
+                    nativeTransport, SW1_COMPONENT_ENDPOINT, Map.of("symbol", sector.code()), fetchedAt);
             components.stream()
-                    .map(row -> nativeMembership(row, sectorCode, fetchedAt))
+                    .map(row -> nativeMembership(row, sector, fetchedAt))
                     .filter(exposure -> request.objects().contains(exposure.stock()))
                     .forEach(records::add);
         }
@@ -265,11 +266,11 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
 
     private IndustryExposure nativeMembership(
             Map<String, Object> row,
-            String sectorCode,
+            SectorDescriptor sector,
             LocalDateTime fetchedAt
     ) {
         return new IndustryExposure(
-                catalog.stock(text(row, "证券代码")), catalog.sector(sectorCode),
+                catalog.stock(text(row, "证券代码")), catalog.sector(sector.code()), sector.name(),
                 date(row, "计入日期"), null, fetchedAt, fetchedAt, SOURCE, quality(row));
     }
 
@@ -292,7 +293,8 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         String rawSector = text(row, "sectorCode", "indexCode", "行业代码");
         LocalDate validFrom = date(row, "validFrom", "计入日期");
         return new IndustryExposure(
-                stock, catalog.sector(normalizeSectorCode(rawSector)), validFrom,
+                stock, catalog.sector(normalizeSectorCode(rawSector)),
+                optionalText(row, "sectorName", "indexName", "行业名称"), validFrom,
                 optionalDate(row, "validTo", "移除日期"),
                 requiredDateTime(row, "observedAt", "observed_at"),
                 requiredDateTime(row, "availableAt", "available_at"),
@@ -563,5 +565,8 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
     }
 
     private record CachedRows(List<Map<String, Object>> rows, LocalDateTime cachedAt) {
+    }
+
+    private record SectorDescriptor(String code, String name) {
     }
 }

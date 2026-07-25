@@ -19,6 +19,7 @@ public class RiskObjectExposureEntity {
     private String objectId;
     private String parentObjectType;
     private String parentObjectId;
+    private String parentObjectName;
     private BigDecimal exposureWeight;
     private LocalDate validFrom;
     private LocalDate validTo;

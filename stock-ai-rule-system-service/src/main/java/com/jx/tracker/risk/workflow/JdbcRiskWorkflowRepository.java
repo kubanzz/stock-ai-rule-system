@@ -132,27 +132,27 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         jdbcTemplate.update("""
                 INSERT INTO risk_object_exposure (
                     object_type, object_id, parent_object_type, parent_object_id,
-                    exposure_weight, valid_from, valid_to, observed_at, available_at,
+                    parent_object_name, exposure_weight, valid_from, valid_to, observed_at, available_at,
                     source, quality_status, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     id = id
                 """,
                 exposure.stock().objectType().getCode(), exposure.stock().objectId(),
                 exposure.sector().objectType().getCode(), exposure.sector().objectId(),
-                BigDecimal.ONE, exposure.validFrom(), exposure.validTo(),
+                exposure.sectorName(), BigDecimal.ONE, exposure.validFrom(), exposure.validTo(),
                 exposure.observedAt(), exposure.availableAt(), exposure.source(),
                 exposure.qualityStatus().getCode(), json(Map.of()));
         jdbcTemplate.update("""
                 UPDATE risk_object_exposure
-                SET exposure_weight = ?, valid_to = ?, observed_at = ?, available_at = ?,
+                SET parent_object_name = ?, exposure_weight = ?, valid_to = ?, observed_at = ?, available_at = ?,
                     quality_status = ?, metadata_json = ?
                 WHERE object_type = ? AND object_id = ?
                   AND parent_object_type = ? AND parent_object_id = ?
                   AND valid_from = ? AND source = ?
                   AND (available_at < ? OR (available_at = ? AND observed_at < ?))
                 """,
-                BigDecimal.ONE, exposure.validTo(), exposure.observedAt(), exposure.availableAt(),
+                exposure.sectorName(), BigDecimal.ONE, exposure.validTo(), exposure.observedAt(), exposure.availableAt(),
                 exposure.qualityStatus().getCode(), json(Map.of()),
                 exposure.stock().objectType().getCode(), exposure.stock().objectId(),
                 exposure.sector().objectType().getCode(), exposure.sector().objectId(),
@@ -285,7 +285,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     .addValue("asOf", request.asOf());
             exposures.addAll(namedJdbcTemplate.query("""
                     SELECT object_type, object_id, parent_object_type, parent_object_id,
-                           valid_from, valid_to, observed_at, available_at, source, quality_status
+                           parent_object_name, valid_from, valid_to, observed_at, available_at, source, quality_status
                     FROM risk_object_exposure
                     WHERE object_type = :stockObjectType AND object_id IN (:stockObjectIds)
                       AND valid_from <= :endDate AND (valid_to IS NULL OR valid_to >= :startDate)
@@ -465,6 +465,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 new RiskObjectKey(
                         RiskObjectType.fromCode(resultSet.getString("parent_object_type")),
                         resultSet.getString("parent_object_id")),
+                resultSet.getString("parent_object_name"),
                 resultSet.getObject("valid_from", LocalDate.class),
                 resultSet.getObject("valid_to", LocalDate.class),
                 resultSet.getTimestamp("observed_at").toLocalDateTime(),
