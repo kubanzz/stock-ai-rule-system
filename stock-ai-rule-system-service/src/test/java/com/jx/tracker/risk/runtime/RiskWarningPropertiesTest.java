@@ -57,6 +57,16 @@ class RiskWarningPropertiesTest {
     }
 
     @Test
+    void failsFastWhenTushareIsPrimaryButTheSourceSwitchIsDisabled() {
+        RiskWarningProperties properties = new RiskWarningProperties();
+        properties.getSource().setPrimary("tushare");
+
+        assertThatThrownBy(() -> properties.validateSource("test-token"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("risk warning TuShare must be enabled when it is the primary source");
+    }
+
+    @Test
     void keepsLocalConfigurationOutsideMavenResourcesAndActivatesItsProfileByDefault() throws IOException {
         YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
         yaml.setResources(new ClassPathResource("application.yml"));
@@ -66,6 +76,12 @@ class RiskWarningPropertiesTest {
 
         assertThat(application).isNotNull();
         assertThat(application.getProperty("spring.profiles.active")).isEqualTo("${SPRING_PROFILES_ACTIVE:dev,local}");
+        assertThat(application.getProperty("stock-ai-rule.risk-warning.source.primary"))
+                .isEqualTo("${RISK_WARNING_PRIMARY_SOURCE:aktools}");
+        assertThat(application.getProperty("stock-ai-rule.risk-warning.source.tushare-enabled"))
+                .isEqualTo("${RISK_WARNING_TUSHARE_ENABLED:false}");
+        assertThat(application.getProperty("stock-ai-rule.risk-warning.source.cninfo-announcement-fallback-enabled"))
+                .isEqualTo("${RISK_WARNING_CNINFO_ANNOUNCEMENT_FALLBACK_ENABLED:true}");
         assertThat(gitignore)
                 .contains("/stock-ai-rule-system-service/config/application-local.yml")
                 .doesNotContain("/stock-ai-rule-system-service/src/main/resources/application-local.yml");
