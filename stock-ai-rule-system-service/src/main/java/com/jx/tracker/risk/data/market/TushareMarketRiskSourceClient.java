@@ -206,21 +206,37 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             RiskProviderRequest request,
             LocalDateTime fetchedAt
     ) {
+        List<RiskObjectKey> stocks = request.objects().stream()
+                .filter(object -> object.objectType() == RiskObjectType.STOCK)
+                .toList();
+        if (stocks.isEmpty()) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "daily_basic cannot provide point-in-time constituent aggregation "
+                            + "for market/sector valuation",
+                    fetchedAt);
+        }
+        Map<LocalDate, BigDecimal> riskFreeYields = shiborByDate(request);
         List<MarketSourceRecord> records = new ArrayList<>();
-        boolean incomplete = false;
-        for (RiskObjectKey object : request.objects()) {
-            if (object.objectType() != RiskObjectType.STOCK) {
-                incomplete = true;
-                continue;
-            }
+        boolean incomplete = stocks.size() != request.objects().size();
+        boolean missingExactDateShibor = false;
+        List<String> missingDailyBasicCodes = new ArrayList<>();
+        for (RiskObjectKey object : stocks) {
             TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
                     "daily_basic",
                     withCode(dateWindow(request), object.objectId()),
                     "ts_code,trade_date,pe_ttm"));
-            if (response.rows().isEmpty()) {
+            List<Map<String, Object>> matchingRows = response.rows().stream()
+                    .filter(row -> hasExpectedCode(row, object.objectId()))
+                    .toList();
+            if (matchingRows.size() != response.rows().size()) {
                 incomplete = true;
             }
-            for (Map<String, Object> row : response.rows()) {
+            if (matchingRows.isEmpty()) {
+                incomplete = true;
+                missingDailyBasicCodes.add(object.objectId());
+            }
+            for (Map<String, Object> row : matchingRows) {
                 LocalDate tradeDate = date(row, "trade_date");
                 if (tradeDate.isBefore(request.startDate())
                         || tradeDate.isAfter(request.endDate())) {
@@ -231,12 +247,21 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                     incomplete = true;
                     continue;
                 }
+                BigDecimal riskFreeYield = riskFreeYields.get(tradeDate);
+                boolean scoringEligible = riskFreeYield != null;
+                String qualityReason = scoringEligible
+                        ? null
+                        : "shibor 1y is missing for exact trade date " + tradeDate;
+                if (!scoringEligible) {
+                    incomplete = true;
+                    missingExactDateShibor = true;
+                }
                 records.add(new ValuationPoint(
                         stock(text(row, "ts_code")),
                         tradeDate,
                         peTtm,
                         BigDecimal.ONE.divide(peTtm, 10, RoundingMode.HALF_UP),
-                        null,
+                        riskFreeYield,
                         tradeDate,
                         0,
                         "exact-trade-date-no-forward-fill-v1",
@@ -245,27 +270,61 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         null,
                         null,
                         true,
-                        true,
-                        null,
+                        scoringEligible,
+                        qualityReason,
                         "tushare-daily-basic-pe-ttm-v1",
-                        "tushare-cn-daily-close-available-1800-v1",
+                        "tushare-cn-close-shibor-same-date-available-1800-v1",
                         observedAt(tradeDate),
                         availableAt(tradeDate),
                         SOURCE,
-                        RiskDataQualityStatus.AVAILABLE));
+                        scoringEligible
+                                ? RiskDataQualityStatus.AVAILABLE
+                                : RiskDataQualityStatus.INSUFFICIENT_HISTORY));
             }
         }
-        String reason = "daily_basic cannot provide point-in-time constituent aggregation "
-                + "for market/sector valuation";
         if (records.isEmpty()) {
+            String reason = missingDailyBasicCodes.isEmpty()
+                    ? "daily_basic returned no usable valuation rows"
+                    : "daily_basic returned no matching rows for requested stocks "
+                            + missingDailyBasicCodes;
             return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
         }
         if (incomplete) {
+            String reason = missingExactDateShibor
+                    ? "shibor 1y is missing for one or more exact trade dates"
+                    : "daily_basic returned incomplete rows for one or more requested stocks";
             return MarketSourceBatch.partialHistory(
-                    SOURCE, records, request.checkpoint(), reason, fetchedAt);
+                    SOURCE, records, null, reason, fetchedAt);
         }
         return new MarketSourceBatch(
                 SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private Map<LocalDate, BigDecimal> shiborByDate(
+            RiskProviderRequest request
+    ) {
+        TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
+                "shibor",
+                dateWindow(request),
+                "date,1y"));
+        Map<LocalDate, BigDecimal> yields = new LinkedHashMap<>();
+        for (Map<String, Object> row : response.rows()) {
+            LocalDate date = date(row, "date");
+            if (date.isBefore(request.startDate())
+                    || date.isAfter(request.endDate())) {
+                continue;
+            }
+            if (optionalText(row, "1y") == null) {
+                continue;
+            }
+            BigDecimal previous = yields.put(
+                    date, decimal(row, "1y").movePointLeft(2));
+            if (previous != null) {
+                throw new IllegalArgumentException(
+                        "shibor returned duplicate date");
+            }
+        }
+        return Map.copyOf(yields);
     }
 
     private MarketSourceBatch marketDaily(

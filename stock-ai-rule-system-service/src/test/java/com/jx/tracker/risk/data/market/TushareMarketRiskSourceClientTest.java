@@ -686,14 +686,25 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
-    void dailyBasicMapsDirectStockPeTtmWithoutInventingARiskFreeYield() {
+    void dailyBasicAlignsTheExactDateShiborYieldForFormalScoring() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
-        when(httpClient.query(any())).thenReturn(response(
-                "daily_basic",
-                Map.of(
-                        "ts_code", "600519.SH",
-                        "trade_date", "20260718",
-                        "pe_ttm", new BigDecimal("25.00"))));
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "daily_basic" -> response(
+                        "daily_basic",
+                        Map.of(
+                                "ts_code", "600519.SH",
+                                "trade_date", "20260718",
+                                "pe_ttm", new BigDecimal("25.00")));
+                case "shibor" -> response(
+                        "shibor",
+                        Map.of(
+                                "date", "20260718",
+                                "1y", new BigDecimal("1.8500")));
+                default -> response(query.apiName());
+            };
+        });
         TushareMarketRiskSourceClient client =
                 new TushareMarketRiskSourceClient(httpClient, CLOCK);
 
@@ -707,28 +718,117 @@ class TushareMarketRiskSourceClientTest {
             assertThat(point.object()).isEqualTo(STOCK);
             assertThat(point.peTtm()).isEqualByComparingTo("25.00");
             assertThat(point.earningsYield()).isEqualByComparingTo("0.0400000000");
-            assertThat(point.riskFreeYield()).isNull();
+            assertThat(point.riskFreeYield()).isEqualByComparingTo("0.018500");
             assertThat(point.proxy()).isFalse();
             assertThat(point.constituentCount()).isZero();
             assertThat(point.constituentUniversePointInTime()).isTrue();
             assertThat(point.scoringEligible()).isTrue();
             assertThat(point.calculationVersion()).isEqualTo("tushare-daily-basic-pe-ttm-v1");
             assertThat(point.availabilityPolicyVersion())
-                    .isEqualTo("tushare-cn-daily-close-available-1800-v1");
+                    .isEqualTo("tushare-cn-close-shibor-same-date-available-1800-v1");
             assertThat(point.observedAt()).isEqualTo(TODAY.atTime(15, 0));
             assertThat(point.availableAt()).isEqualTo(TODAY.atTime(18, 0));
         });
         ArgumentCaptor<TushareRiskRequest> requestCaptor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient).query(requestCaptor.capture());
-        assertThat(requestCaptor.getValue()).satisfies(query -> {
-            assertThat(query.apiName()).isEqualTo("daily_basic");
-            assertThat(query.params())
-                    .containsEntry("ts_code", "600519.SH")
-                    .containsEntry("start_date", "20260718")
-                    .containsEntry("end_date", "20260718");
-            assertThat(query.fields()).isEqualTo("ts_code,trade_date,pe_ttm");
+        verify(httpClient, org.mockito.Mockito.times(2)).query(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues())
+                .filteredOn(query -> query.apiName().equals("daily_basic"))
+                .singleElement()
+                .satisfies(query -> {
+                    assertThat(query.params())
+                            .containsEntry("ts_code", "600519.SH")
+                            .containsEntry("start_date", "20260718")
+                            .containsEntry("end_date", "20260718");
+                    assertThat(query.fields()).isEqualTo("ts_code,trade_date,pe_ttm");
+                });
+        assertThat(requestCaptor.getAllValues())
+                .filteredOn(query -> query.apiName().equals("shibor"))
+                .singleElement()
+                .satisfies(query -> {
+                    assertThat(query.params())
+                            .containsEntry("start_date", "20260718")
+                            .containsEntry("end_date", "20260718");
+                    assertThat(query.fields()).isEqualTo("date,1y");
+                });
+    }
+
+    @Test
+    void valuationKeepsAnAuditOnlyPointWhenTheExactDateShiborRateIsMissing() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "daily_basic" -> response(
+                        "daily_basic",
+                        Map.of(
+                                "ts_code", "600519.SH",
+                                "trade_date", "20260718",
+                                "pe_ttm", new BigDecimal("25.00")));
+                case "shibor" -> response(
+                        "shibor",
+                        Map.of("date", "20260718"));
+                default -> response(query.apiName());
+            };
         });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.VALUATION,
+                request(List.of(STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason()).contains("shibor", "exact trade date");
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            ValuationPoint point = (ValuationPoint) record;
+            assertThat(point.riskFreeYield()).isNull();
+            assertThat(point.scoringEligible()).isFalse();
+            assertThat(point.qualityStatus())
+                    .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(point.qualityReason()).contains("shibor", "2026-07-18");
+        });
+        ArgumentCaptor<TushareRiskRequest> requestCaptor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(2)).query(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues())
+                .extracting(TushareRiskRequest::apiName)
+                .containsExactlyInAnyOrder("daily_basic", "shibor");
+    }
+
+    @Test
+    void valuationRejectsDailyBasicRowsForAnotherRequestedCode() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "daily_basic" -> response(
+                        "daily_basic",
+                        Map.of(
+                                "ts_code", "000001.SZ",
+                                "trade_date", "20260718",
+                                "pe_ttm", new BigDecimal("10.00")));
+                case "shibor" -> response(
+                        "shibor",
+                        Map.of(
+                                "date", "20260718",
+                                "1y", new BigDecimal("1.8500")));
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.VALUATION,
+                request(List.of(STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).isEmpty();
+        assertThat(result.failureReason()).contains("daily_basic", "600519.SH");
     }
 
     @Test
