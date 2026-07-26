@@ -5,7 +5,11 @@ import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
+import com.jx.tracker.risk.data.market.FallbackMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
+import com.jx.tracker.risk.data.market.MarketRiskSourceClient;
+import com.jx.tracker.risk.data.market.TushareMarketRiskSourceClient;
+import com.jx.tracker.risk.data.tushare.TushareRiskHttpClient;
 import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.engine.RiskScoringEngine;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
@@ -20,11 +24,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.time.Clock;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -61,6 +68,9 @@ class RiskWarningConfigurationTest {
             assertThat(context).hasNotFailed();
             assertThat(context).hasSingleBean(Clock.class);
             assertThat(context).hasSingleBean(AkToolsMarketRiskSourceClient.class);
+            assertThat(context).doesNotHaveBean(TushareRiskHttpClient.class);
+            assertThat(context).doesNotHaveBean(TushareMarketRiskSourceClient.class);
+            assertThat(context).doesNotHaveBean(FallbackMarketRiskSourceClient.class);
             assertThat(context).hasSingleBean(AkToolsFlowEventSourceClient.class);
             assertThat(context).hasSingleBean(MarketRiskDataProvider.class);
             assertThat(context).hasSingleBean(FlowEventRiskDataProvider.class);
@@ -142,6 +152,47 @@ class RiskWarningConfigurationTest {
                 "stock-ai-rule.risk-warning.source.tushare-enabled=true",
                 "stock-ai-rule.market-data.provider.token=" + TEST_TUSHARE_TOKEN
         ).run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void tusharePrimaryWiresAnAuditableFallbackAndConfiguredHttpTimeouts() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.primary=tushare",
+                "stock-ai-rule.risk-warning.source.tushare-enabled=true",
+                "stock-ai-rule.market-data.provider.token=" + TEST_TUSHARE_TOKEN,
+                "stock-ai-rule.market-data.provider.connect-timeout=2s",
+                "stock-ai-rule.market-data.provider.read-timeout=17s"
+        ).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(AkToolsMarketRiskSourceClient.class);
+            assertThat(context).hasSingleBean(TushareRiskHttpClient.class);
+            assertThat(context).hasSingleBean(TushareMarketRiskSourceClient.class);
+            assertThat(context).hasSingleBean(FallbackMarketRiskSourceClient.class);
+
+            MarketRiskSourceClient selected = context.getBean(MarketRiskSourceClient.class);
+            FallbackMarketRiskSourceClient fallback =
+                    context.getBean(FallbackMarketRiskSourceClient.class);
+            assertThat(selected).isSameAs(fallback);
+            assertThat(ReflectionTestUtils.getField(fallback, "primary"))
+                    .isSameAs(context.getBean(TushareMarketRiskSourceClient.class));
+            assertThat(ReflectionTestUtils.getField(fallback, "fallback"))
+                    .isSameAs(context.getBean(AkToolsMarketRiskSourceClient.class));
+            assertThat(ReflectionTestUtils.getField(
+                    context.getBean(MarketRiskDataProvider.class), "sourceClient"))
+                    .isSameAs(fallback);
+
+            TushareRiskHttpClient riskHttpClient =
+                    context.getBean(TushareRiskHttpClient.class);
+            Object restClient = ReflectionTestUtils.getField(riskHttpClient, "restClient");
+            Object requestFactory =
+                    ReflectionTestUtils.getField(restClient, "clientRequestFactory");
+            assertThat(requestFactory).isInstanceOf(JdkClientHttpRequestFactory.class);
+            HttpClient javaHttpClient = (HttpClient) ReflectionTestUtils.getField(
+                    requestFactory, "httpClient");
+            assertThat(javaHttpClient.connectTimeout()).contains(Duration.ofSeconds(2));
+            assertThat(ReflectionTestUtils.getField(requestFactory, "readTimeout"))
+                    .isEqualTo(Duration.ofSeconds(17));
+        });
     }
 
     @Test

@@ -5,8 +5,12 @@ import com.jx.tracker.market.data.provider.MarketDataProviderProperties;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
+import com.jx.tracker.risk.data.market.FallbackMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
+import com.jx.tracker.risk.data.market.MarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.RestClientMarketRiskHttpTransport;
+import com.jx.tracker.risk.data.market.TushareMarketRiskSourceClient;
+import com.jx.tracker.risk.data.tushare.TushareRiskHttpClient;
 import com.jx.tracker.risk.backfill.RiskBackfillCommandConfiguration;
 import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.engine.RiskNormalizer;
@@ -23,14 +27,18 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -101,7 +109,64 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
-        MarketRiskDataProvider riskMarketDataProvider(AkToolsMarketRiskSourceClient sourceClient) {
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        TushareRiskHttpClient tushareRiskHttpClient(
+                MarketDataProviderProperties marketDataProperties,
+                ValidatedRiskSource validatedRiskSource,
+                RestClient.Builder restClientBuilder,
+                ObjectMapper objectMapper
+        ) {
+            Duration connectTimeout = positiveDuration(
+                    marketDataProperties.getConnectTimeout(), "connectTimeout");
+            Duration readTimeout = positiveDuration(
+                    marketDataProperties.getReadTimeout(), "readTimeout");
+            HttpClient javaHttpClient = HttpClient.newBuilder()
+                    .connectTimeout(connectTimeout)
+                    .build();
+            JdkClientHttpRequestFactory requestFactory =
+                    new JdkClientHttpRequestFactory(javaHttpClient);
+            requestFactory.setReadTimeout(readTimeout);
+            return new TushareRiskHttpClient(
+                    marketDataProperties.getToken(),
+                    marketDataProperties.getApiUrl(),
+                    restClientBuilder.clone().requestFactory(requestFactory),
+                    objectMapper
+            );
+        }
+
+        @Bean
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        TushareMarketRiskSourceClient tushareMarketRiskSourceClient(
+                TushareRiskHttpClient httpClient,
+                Clock clock
+        ) {
+            return new TushareMarketRiskSourceClient(httpClient, clock);
+        }
+
+        @Bean
+        @Primary
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        FallbackMarketRiskSourceClient fallbackMarketRiskSourceClient(
+                TushareMarketRiskSourceClient primary,
+                AkToolsMarketRiskSourceClient fallback
+        ) {
+            return new FallbackMarketRiskSourceClient(primary, fallback);
+        }
+
+        @Bean
+        MarketRiskDataProvider riskMarketDataProvider(MarketRiskSourceClient sourceClient) {
             return new MarketRiskDataProvider(sourceClient);
         }
 
@@ -130,6 +195,14 @@ public class RiskWarningConfiguration {
 
         private enum ValidatedRiskSource {
             INSTANCE
+        }
+
+        private Duration positiveDuration(Duration value, String field) {
+            if (value == null || value.isZero() || value.isNegative()) {
+                throw new IllegalStateException(
+                        "market data provider " + field + " must be positive");
+            }
+            return value;
         }
 
         @Bean
