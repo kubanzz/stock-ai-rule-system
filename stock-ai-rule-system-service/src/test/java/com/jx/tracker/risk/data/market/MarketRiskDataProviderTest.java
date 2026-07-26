@@ -193,7 +193,8 @@ class MarketRiskDataProviderTest {
     @Test
     void fallbackReasonIsCopiedIntoEveryObservationForPersistenceAudit() {
         String fallbackReason =
-                "primary[tushare]: shibor missing; fallback[aktools]: quality=available";
+                "primary[tushare]: yc_cb 10Y treasury yield missing; "
+                        + "fallback[aktools]: quality=available";
         MarketRiskDataProvider provider = new MarketRiskDataProvider((dataset, request) ->
                 new MarketSourceBatch(
                         "tushare->aktools",
