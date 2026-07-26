@@ -142,13 +142,18 @@ class TushareFlowEventSourceClientTest {
     }
 
     @Test
-    void ordinaryPerStockForecastUsesAnnouncementAvailabilityAndStrictCodeFiltering() {
+    void forecastVipSlicesByQuarterAndUsesAnnouncementAvailabilityWithStrictCodeFiltering() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
-        when(httpClient.query(any())).thenReturn(response("forecast",
-                forecastRow("600519.SH", "-50", "-30",
-                        "预计净利润下降", "需求波动"),
-                forecastRow("000001.SZ", "-80", "-60",
-                        "wrong object", "wrong object")));
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return "20260630".equals(query.params().get("period"))
+                    ? response("forecast_vip",
+                            forecastRow("600519.SH", "-50", "-30",
+                                    "预计净利润下降", "需求波动"),
+                            forecastRow("000001.SZ", "-80", "-60",
+                                    "wrong object", "wrong object"))
+                    : response("forecast_vip");
+        });
 
         FlowEventSourceBatch result =
                 new TushareFlowEventSourceClient(httpClient, CLOCK)
@@ -160,6 +165,7 @@ class TushareFlowEventSourceClientTest {
             assertThat(record.availableAt())
                     .isEqualTo(LocalDateTime.of(2026, 7, 17, 0, 0));
             assertThat(record.attributes())
+                    .containsEntry("sourceApi", "forecast_vip")
                     .containsEntry("formulaVersion", "forecast-range-midpoint-v1")
                     .containsEntry("pChangeMin", new BigDecimal("-50"))
                     .containsEntry("pChangeMax", new BigDecimal("-30"))
@@ -167,12 +173,17 @@ class TushareFlowEventSourceClientTest {
         });
         ArgumentCaptor<TushareRiskRequest> captor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient).query(captor.capture());
-        assertThat(captor.getValue().apiName()).isEqualTo("forecast");
-        assertThat(captor.getValue().params())
-                .containsEntry("ts_code", "600519.SH")
-                .containsEntry("start_date", "20260701")
-                .containsEntry("end_date", "20260718");
+        verify(httpClient, org.mockito.Mockito.times(3))
+                .query(captor.capture());
+        assertThat(captor.getAllValues())
+                .allSatisfy(query -> {
+                    assertThat(query.apiName()).isEqualTo("forecast_vip");
+                    assertThat(query.params())
+                            .containsOnlyKeys("period")
+                            .doesNotContainKeys("ts_code", "start_date", "end_date");
+                })
+                .extracting(query -> query.params().get("period"))
+                .containsExactly("20260630", "20260930", "20261231");
     }
 
     @Test
@@ -229,7 +240,7 @@ class TushareFlowEventSourceClientTest {
     @Test
     void successfulEmptyEventQueryIsValidZeroAndDoesNotInventRecords() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
-        when(httpClient.query(any())).thenReturn(response("forecast"));
+        when(httpClient.query(any())).thenReturn(response("forecast_vip"));
 
         FlowEventSourceBatch result =
                 new TushareFlowEventSourceClient(httpClient, CLOCK)
@@ -239,6 +250,40 @@ class TushareFlowEventSourceClientTest {
         assertThat(result.historyComplete()).isTrue();
         assertThat(result.records()).isEmpty();
         assertThat(result.nextCursor()).isEqualTo("earnings_forecast:2026-07-18");
+    }
+
+    @Test
+    void forecastVipQuarterAtRowLimitIsPartialWithoutCheckpoint() {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int index = 0; index < 2000; index++) {
+            rows.add(forecastRow(
+                    "600519.SH", "-50", "-30",
+                    "预计净利润下降", "需求波动"));
+        }
+        TushareRiskHttpClient httpClient =
+                mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return "20260630".equals(query.params().get("period"))
+                    ? new TushareRiskResponse(
+                            "forecast_vip", List.of(), rows)
+                    : response("forecast_vip");
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(httpClient, CLOCK)
+                        .fetch(request(
+                                FlowEventDataset.EARNINGS_FORECAST,
+                                List.of(STOCK)));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.historyComplete()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.failureReason())
+                .contains("forecast_vip")
+                .contains("20260630")
+                .contains("2000");
     }
 
     @Test
@@ -326,7 +371,7 @@ class TushareFlowEventSourceClientTest {
     void permissionFailureIsSanitizedAndAnnouncementNeverCallsTushare() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenThrow(
-                failure(TushareRiskException.Category.PERMISSION, "forecast"));
+                failure(TushareRiskException.Category.PERMISSION, "forecast_vip"));
         TushareFlowEventSourceClient client =
                 new TushareFlowEventSourceClient(httpClient, CLOCK);
 
@@ -335,7 +380,7 @@ class TushareFlowEventSourceClientTest {
 
         assertThat(failed.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
         assertThat(failed.failureReason())
-                .isEqualTo("forecast permission failure")
+                .isEqualTo("forecast_vip permission failure")
                 .doesNotContain("raw response", "token");
 
         TushareRiskHttpClient announcementHttpClient =

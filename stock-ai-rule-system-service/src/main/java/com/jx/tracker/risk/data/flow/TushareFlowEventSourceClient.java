@@ -36,6 +36,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final RiskObjectKey CN_A =
             new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
     private static final int FUND_ROW_LIMIT = 2_000;
+    private static final int FORECAST_VIP_ROW_LIMIT = 2_000;
     private static final int HOLDER_TRADE_ROW_LIMIT = 3_000;
     private static final int MARGIN_ROW_LIMIT = 4_000;
     private static final int MARKET_DETAIL_ROW_LIMIT = 6_000;
@@ -369,21 +370,35 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         List<FlowEventSourceRecord> records = new ArrayList<>();
         List<String> gaps = new ArrayList<>();
         LocalDate earliest = null;
-        for (RiskObjectKey object : sortedStocks(request)) {
+        Map<String, RiskObjectKey> requestedStocks =
+                request.objects().stream()
+                        .filter(object -> object.objectType()
+                                == RiskObjectType.STOCK)
+                        .collect(java.util.stream.Collectors.toMap(
+                                RiskObjectKey::objectId,
+                                object -> object,
+                                (left, right) -> left,
+                                LinkedHashMap::new));
+        for (LocalDate period : forecastPeriods(
+                request.startDate(), request.endDate())) {
             TushareRiskResponse response = query(
-                    "forecast",
-                    withCode(dateWindow(request), object.objectId()),
+                    "forecast_vip",
+                    Map.of("period", compact(period)),
                     "ts_code,ann_date,end_date,type,p_change_min,"
                             + "p_change_max,net_profit_min,"
                             + "net_profit_max,last_parent_net,"
                             + "first_ann_date,summary,change_reason");
-            if (response.rows().size() >= FUND_ROW_LIMIT) {
-                gaps.add("forecast " + object.objectId()
-                        + " reached " + FUND_ROW_LIMIT + "-row boundary");
+            if (response.rows().size()
+                    >= FORECAST_VIP_ROW_LIMIT) {
+                gaps.add("forecast_vip period=" + compact(period)
+                        + " reached "
+                        + FORECAST_VIP_ROW_LIMIT
+                        + "-row boundary");
             }
             for (Map<String, Object> row : response.rows()) {
-                if (!object.objectId().equals(
-                        normalizedCode(row, "ts_code"))) {
+                String code = normalizedCode(row, "ts_code");
+                RiskObjectKey object = requestedStocks.get(code);
+                if (object == null) {
                     continue;
                 }
                 LocalDate announcementDate = date(row, "ann_date");
@@ -405,8 +420,16 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 BigDecimal value = midpoint(minimum, maximum);
                 String type = text(row, "type");
                 LocalDate reportPeriod = date(row, "end_date");
+                if (!reportPeriod.equals(period)) {
+                    gaps.add("forecast_vip " + object.objectId()
+                            + " returned mismatched report period "
+                            + reportPeriod + " for slice "
+                            + period);
+                    continue;
+                }
                 Map<String, Object> attributes =
                         new LinkedHashMap<>();
+                attributes.put("sourceApi", "forecast_vip");
                 attributes.put("economicMeaning", "cash_flow");
                 attributes.put("announcementCategory",
                         "earnings_warning");
@@ -750,7 +773,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             case MARGIN_FINANCING -> "margin,margin_detail";
             case ETF_FUND_FLOW ->
                     "fund_share,fund_nav,fund_daily";
-            case EARNINGS_FORECAST -> "forecast";
+            case EARNINGS_FORECAST -> "forecast_vip";
             case STOCK_ANNOUNCEMENT -> "cninfo/aktools";
             case SHARE_UNLOCK -> "share_float";
             case SHARE_REDUCTION -> "stk_holdertrade";
@@ -795,6 +818,33 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private String compact(LocalDate date) {
         return date.format(COMPACT_DATE);
+    }
+
+    private List<LocalDate> forecastPeriods(
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        LocalDate first = quarterEnd(startDate.minusMonths(3));
+        LocalDate last = LocalDate.of(
+                endDate.getYear(), 12, 31);
+        List<LocalDate> periods = new ArrayList<>();
+        for (LocalDate period = first;
+             !period.isAfter(last);
+             period = period.plusMonths(3)
+                     .with(java.time.temporal.TemporalAdjusters
+                             .lastDayOfMonth())) {
+            periods.add(period);
+        }
+        return List.copyOf(periods);
+    }
+
+    private LocalDate quarterEnd(LocalDate date) {
+        int quarterEndMonth =
+                ((date.getMonthValue() - 1) / 3 + 1) * 3;
+        return LocalDate.of(
+                date.getYear(), quarterEndMonth, 1)
+                .with(java.time.temporal.TemporalAdjusters
+                        .lastDayOfMonth());
     }
 
     private LocalDate date(
