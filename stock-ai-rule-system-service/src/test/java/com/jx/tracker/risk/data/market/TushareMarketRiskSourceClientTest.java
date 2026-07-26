@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -1136,6 +1137,94 @@ class TushareMarketRiskSourceClientTest {
         assertThat(result.failureReason())
                 .contains("stock_basic", category.name().toLowerCase())
                 .doesNotContain("test-token-not-secret", "raw response");
+    }
+
+    @Test
+    void malformedRowsExposeOnlySanitizedDatasetApiAndFieldContext() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(response(
+                "stock_basic",
+                Map.of(
+                        "ts_code", "600519.SH",
+                        "list_date", "20010827")));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.CN_A_STOCK_MASTER,
+                request(List.of(MARKET), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(result.failureReason())
+                .contains(
+                        "dataset=cn_a_stock_master",
+                        "api=stock_basic",
+                        "field=name",
+                        "mapping failed")
+                .doesNotContain("test-token-not-secret", "raw response");
+    }
+
+    @Test
+    void dateTimeParseFailuresBecomeSanitizedMappingFallbacks() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(response(
+                "stock_basic",
+                Map.of(
+                        "ts_code", "600519.SH",
+                        "name", "贵州茅台",
+                        "list_date", "raw-response-test-token-not-secret")));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.CN_A_STOCK_MASTER,
+                request(List.of(MARKET), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(result.failureReason())
+                .contains(
+                        "dataset=cn_a_stock_master",
+                        "api=stock_basic",
+                        "field=list_date",
+                        "mapping failed")
+                .doesNotContain("test-token-not-secret", "raw-response");
+    }
+
+    @Test
+    void unexpectedRuntimeFailuresBecomeSanitizedUnavailableBatches() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenThrow(new IllegalStateException(
+                "raw response token=test-token-not-secret"));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.CN_A_STOCK_MASTER,
+                request(List.of(MARKET), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(result.failureReason())
+                .contains(
+                        "dataset=cn_a_stock_master",
+                        "api=stock_basic",
+                        "runtime failure")
+                .doesNotContain("test-token-not-secret", "raw response");
+    }
+
+    @Test
+    void configurationFailuresAreNeverDowngradedToUnavailable() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        TushareRiskException failure = failure(
+                TushareRiskException.Category.CONFIGURATION,
+                "stock_basic");
+        when(httpClient.query(any())).thenThrow(failure);
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        assertThatThrownBy(() -> client.fetch(
+                MarketDatasetCode.CN_A_STOCK_MASTER,
+                request(List.of(MARKET), TODAY, TODAY, TODAY)))
+                .isSameAs(failure);
     }
 
     private static TushareRiskHttpClient marketDailyWindowClient(

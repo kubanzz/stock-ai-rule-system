@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -22,6 +23,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Maps TuShare structured responses into the market-risk source contract. */
 public final class TushareMarketRiskSourceClient implements MarketRiskSourceClient {
@@ -42,6 +45,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private static final int DAILY_ROW_LIMIT = 6_000;
     private static final Duration BREADTH_REQUEST_DELAY =
             Duration.ofMillis(125);
+    private static final Pattern SAFE_MAPPING_FIELD = Pattern.compile(
+            "(?:field|duplicate)\\s+([A-Za-z0-9_]+)$");
     private static final List<String> GLOBAL_LEADING_MARKETS =
             List.of("SPX", "IXIC", "HSI", "N225");
     private static final RiskObjectKey CN_A_MARKET =
@@ -104,9 +109,45 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                     fetchedAt);
         } catch (IllegalArgumentException exception) {
             return unavailable(
-                    dataset.code() + " TuShare response mapping failed",
+                    mappingFailureReason(dataset, exception),
+                    fetchedAt);
+        } catch (RuntimeException exception) {
+            return unavailable(
+                    "dataset=" + dataset.code()
+                            + " api=" + datasetApis(dataset)
+                            + " runtime failure",
                     fetchedAt);
         }
+    }
+
+    private String mappingFailureReason(
+            MarketDatasetCode dataset,
+            IllegalArgumentException exception
+    ) {
+        String reason = "dataset=" + dataset.code()
+                + " api=" + datasetApis(dataset)
+                + " mapping failed";
+        String message = exception.getMessage();
+        if (message == null) {
+            return reason;
+        }
+        Matcher matcher = SAFE_MAPPING_FIELD.matcher(message);
+        return matcher.find()
+                ? reason + " field=" + matcher.group(1)
+                : reason;
+    }
+
+    private String datasetApis(MarketDatasetCode dataset) {
+        return switch (dataset) {
+            case CN_A_STOCK_MASTER -> "stock_basic";
+            case SW1_MEMBERSHIP -> "index_member_all";
+            case MARKET_DAILY ->
+                    "trade_cal,daily,adj_factor,index_daily";
+            case VALUATION -> "shibor,daily_basic";
+            case BREADTH -> "trade_cal,daily";
+            case CROSS_MARKET ->
+                    "trade_cal,index_global,index_daily";
+        };
     }
 
     private MarketSourceBatch unavailable(String reason, LocalDateTime fetchedAt) {
@@ -919,17 +960,29 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
 
     private LocalDate date(Map<String, Object> row, String key) {
         String value = text(row, key);
-        return value.matches("^\\d{8}$")
-                ? LocalDate.parse(value, COMPACT_DATE)
-                : LocalDate.parse(value);
+        try {
+            return value.matches("^\\d{8}$")
+                    ? LocalDate.parse(value, COMPACT_DATE)
+                    : LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException(
+                    "invalid TuShare date field " + key);
+        }
     }
 
     private LocalDate optionalDate(Map<String, Object> row, String key) {
         String value = optionalText(row, key);
-        return value == null ? null
-                : value.matches("^\\d{8}$")
-                        ? LocalDate.parse(value, COMPACT_DATE)
-                        : LocalDate.parse(value);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return value.matches("^\\d{8}$")
+                    ? LocalDate.parse(value, COMPACT_DATE)
+                    : LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException(
+                    "invalid TuShare date field " + key);
+        }
     }
 
     private BigDecimal decimal(Map<String, Object> row, String key) {

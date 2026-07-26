@@ -155,6 +155,20 @@ class RiskWarningConfigurationTest {
     }
 
     @Test
+    void tusharePrimaryConditionTrimsAndNormalizesCase() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.primary= TuShArE ",
+                "stock-ai-rule.risk-warning.source.tushare-enabled=true",
+                "stock-ai-rule.market-data.provider.token=" + TEST_TUSHARE_TOKEN
+        ).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(TushareRiskHttpClient.class);
+            assertThat(context).hasSingleBean(TushareMarketRiskSourceClient.class);
+            assertThat(context).hasSingleBean(FallbackMarketRiskSourceClient.class);
+        });
+    }
+
+    @Test
     void tusharePrimaryWiresAnAuditableFallbackAndConfiguredHttpTimeouts() {
         enabledRunner().withPropertyValues(
                 "stock-ai-rule.risk-warning.source.primary=tushare",
