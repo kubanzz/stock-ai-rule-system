@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -183,6 +184,36 @@ class CompositeFlowEventSourceClientTest {
                 FlowEventDataset.EARNINGS_FORECAST, object));
 
         assertThat(result.records()).containsExactly(primaryRecord);
+    }
+
+    @Test
+    void blockedDatasetNeverFallsThroughToSupplements() {
+        AtomicInteger supplementCalls = new AtomicInteger();
+        CompositeFlowEventSourceClient client =
+                new CompositeFlowEventSourceClient(
+                        request -> FlowEventSourceBatch.unavailable(
+                                "tushare",
+                                "stock_announcement is not supported",
+                                FETCHED_AT),
+                        List.of(supplementCalls(
+                                supplementCalls,
+                                FlowEventSourceBatch.validZero(
+                                        "aktools/cninfo",
+                                        "announcement:2026-07-18",
+                                        FETCHED_AT))),
+                        Map.of(),
+                        Set.of(FlowEventDataset
+                                .STOCK_ANNOUNCEMENT.code()));
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.STOCK_ANNOUNCEMENT,
+                new RiskObjectKey(
+                        RiskObjectType.STOCK, "600519.SH")));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(result.source()).isEqualTo("tushare");
+        assertThat(supplementCalls).hasValue(0);
     }
 
     private static FlowEventSupplementProvider supplementCalls(

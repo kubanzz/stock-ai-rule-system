@@ -247,6 +247,10 @@ class RiskWarningConfigurationTest {
                     context.getBean(CompositeFlowEventSourceClient.class);
             assertThat((java.util.Map<?, ?>) ReflectionTestUtils.getField(
                     composite, "directRoutes")).isEmpty();
+            assertThat((Object) ReflectionTestUtils.getField(
+                    composite, "blockedFallbackDatasets"))
+                    .isEqualTo(java.util.Set.of(
+                            "stock_announcement"));
         });
     }
 

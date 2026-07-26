@@ -226,8 +226,17 @@ public class RiskWarningConfiguration {
                                             .code(),
                                     fallback)
                             : Map.of();
+            java.util.Set<String> blockedFallbackDatasets =
+                    properties.getSource()
+                            .isCninfoAnnouncementFallbackEnabled()
+                            ? java.util.Set.of()
+                            : java.util.Set.of(
+                                    FlowEventDataset
+                                            .STOCK_ANNOUNCEMENT
+                                            .code());
             return new CompositeFlowEventSourceClient(
-                    primary, fallback, directRoutes);
+                    primary, fallback, directRoutes,
+                    blockedFallbackDatasets);
         }
 
         @Bean

@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 主源只在不可用或历史不足时切换补源，成功零值不会触发切换。 */
 public final class CompositeFlowEventSourceClient implements FlowEventSourceClient {
@@ -15,18 +16,28 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
     private final FlowEventSourceClient primary;
     private final List<FlowEventSupplementProvider> supplements;
     private final Map<String, FlowEventSourceClient> directRoutes;
+    private final Set<String> blockedFallbackDatasets;
 
     public CompositeFlowEventSourceClient(
             FlowEventSourceClient primary,
             List<FlowEventSupplementProvider> supplements
     ) {
-        this(primary, supplements, Map.of());
+        this(primary, supplements, Map.of(), Set.of());
     }
 
     public CompositeFlowEventSourceClient(
             FlowEventSourceClient primary,
             List<FlowEventSupplementProvider> supplements,
             Map<String, FlowEventSourceClient> directRoutes
+    ) {
+        this(primary, supplements, directRoutes, Set.of());
+    }
+
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            List<FlowEventSupplementProvider> supplements,
+            Map<String, FlowEventSourceClient> directRoutes,
+            Set<String> blockedFallbackDatasets
     ) {
         if (primary == null) {
             throw new IllegalArgumentException("primary source is required");
@@ -36,6 +47,10 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
                 .sorted(Comparator.comparingInt(FlowEventSupplementProvider::priority))
                 .toList();
         this.directRoutes = directRoutes == null ? Map.of() : Map.copyOf(directRoutes);
+        this.blockedFallbackDatasets =
+                blockedFallbackDatasets == null
+                        ? Set.of()
+                        : Set.copyOf(blockedFallbackDatasets);
     }
 
     public CompositeFlowEventSourceClient(
@@ -47,6 +62,17 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
                 supplement(fallback)), directRoutes);
     }
 
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            FlowEventSourceClient fallback,
+            Map<String, FlowEventSourceClient> directRoutes,
+            Set<String> blockedFallbackDatasets
+    ) {
+        this(primary, fallback == null ? List.of() : List.of(
+                        supplement(fallback)),
+                directRoutes, blockedFallbackDatasets);
+    }
+
     @Override
     public FlowEventSourceBatch fetch(FlowEventSourceRequest request) {
         FlowEventSourceClient direct = directRoutes.get(request.dataset().code());
@@ -54,6 +80,10 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
             return direct.fetch(request);
         }
         FlowEventSourceBatch primaryBatch = primary.fetch(request);
+        if (blockedFallbackDatasets.contains(
+                request.dataset().code())) {
+            return primaryBatch;
+        }
         if (!requiresFallback(primaryBatch)) {
             return primaryBatch;
         }
