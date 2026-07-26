@@ -38,6 +38,15 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         this.directRoutes = directRoutes == null ? Map.of() : Map.copyOf(directRoutes);
     }
 
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            FlowEventSourceClient fallback,
+            Map<String, FlowEventSourceClient> directRoutes
+    ) {
+        this(primary, fallback == null ? List.of() : List.of(
+                supplement(fallback)), directRoutes);
+    }
+
     @Override
     public FlowEventSourceBatch fetch(FlowEventSourceRequest request) {
         FlowEventSourceClient direct = directRoutes.get(request.dataset().code());
@@ -63,6 +72,14 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
             fetchedAt = fetchedAt.isAfter(candidate.fetchedAt()) ? fetchedAt : candidate.fetchedAt();
             if (!requiresFallback(candidate)) {
                 if (primaryBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE) {
+                    if (candidate.qualityStatus()
+                            == RiskDataQualityStatus.VALID_ZERO) {
+                        return primaryBatch.withFallbackReason(
+                                primaryReason + "; "
+                                        + candidate.source()
+                                        + " valid_zero did not prove "
+                                        + "the missing history");
+                    }
                     return merge(primaryBatch, candidate, primaryReason, fetchedAt);
                 }
                 return candidate.withFallbackReason(primaryReason);
@@ -135,5 +152,31 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         return batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE
                 || batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
                 || !batch.historyComplete();
+    }
+
+    private static FlowEventSupplementProvider supplement(
+            FlowEventSourceClient fallback
+    ) {
+        return new FlowEventSupplementProvider() {
+            @Override
+            public String providerCode() {
+                return "fallback";
+            }
+
+            @Override
+            public int priority() {
+                return 100;
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return true;
+            }
+
+            @Override
+            public FlowEventSourceBatch fetch(FlowEventSourceRequest request) {
+                return fallback.fetch(request);
+            }
+        };
     }
 }

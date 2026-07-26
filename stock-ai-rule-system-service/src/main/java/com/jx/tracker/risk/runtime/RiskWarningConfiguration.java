@@ -3,7 +3,11 @@ package com.jx.tracker.risk.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.market.data.provider.MarketDataProviderProperties;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.CompositeFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
+import com.jx.tracker.risk.data.flow.FlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.TushareFlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.FlowEventDataset;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.FallbackMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
@@ -41,6 +45,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({
@@ -189,7 +194,46 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
-        FlowEventRiskDataProvider riskFlowEventDataProvider(AkToolsFlowEventSourceClient sourceClient) {
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        TushareFlowEventSourceClient tushareFlowEventSourceClient(
+                TushareRiskHttpClient httpClient,
+                Clock clock
+        ) {
+            return new TushareFlowEventSourceClient(httpClient, clock);
+        }
+
+        @Bean
+        @Primary
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        CompositeFlowEventSourceClient compositeFlowEventSourceClient(
+                TushareFlowEventSourceClient primary,
+                AkToolsFlowEventSourceClient fallback,
+                RiskWarningProperties properties
+        ) {
+            Map<String, FlowEventSourceClient> directRoutes =
+                    properties.getSource()
+                            .isCninfoAnnouncementFallbackEnabled()
+                            ? Map.of(
+                                    FlowEventDataset.STOCK_ANNOUNCEMENT
+                                            .code(),
+                                    fallback)
+                            : Map.of();
+            return new CompositeFlowEventSourceClient(
+                    primary, fallback, directRoutes);
+        }
+
+        @Bean
+        FlowEventRiskDataProvider riskFlowEventDataProvider(
+                FlowEventSourceClient sourceClient
+        ) {
             return new FlowEventRiskDataProvider(sourceClient);
         }
 

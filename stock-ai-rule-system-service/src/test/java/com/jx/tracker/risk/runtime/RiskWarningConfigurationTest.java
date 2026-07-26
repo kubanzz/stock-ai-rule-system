@@ -3,7 +3,10 @@ package com.jx.tracker.risk.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.CompositeFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
+import com.jx.tracker.risk.data.flow.FlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.TushareFlowEventSourceClient;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.FallbackMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
@@ -72,6 +75,10 @@ class RiskWarningConfigurationTest {
             assertThat(context).doesNotHaveBean(TushareMarketRiskSourceClient.class);
             assertThat(context).doesNotHaveBean(FallbackMarketRiskSourceClient.class);
             assertThat(context).hasSingleBean(AkToolsFlowEventSourceClient.class);
+            assertThat(context).doesNotHaveBean(TushareFlowEventSourceClient.class);
+            assertThat(context).doesNotHaveBean(CompositeFlowEventSourceClient.class);
+            assertThat(context.getBean(FlowEventSourceClient.class))
+                    .isSameAs(context.getBean(AkToolsFlowEventSourceClient.class));
             assertThat(context).hasSingleBean(MarketRiskDataProvider.class);
             assertThat(context).hasSingleBean(FlowEventRiskDataProvider.class);
             assertThat(context.getBeansOfType(RiskDataProvider.class)).hasSize(2);
@@ -165,6 +172,8 @@ class RiskWarningConfigurationTest {
             assertThat(context).hasSingleBean(TushareRiskHttpClient.class);
             assertThat(context).hasSingleBean(TushareMarketRiskSourceClient.class);
             assertThat(context).hasSingleBean(FallbackMarketRiskSourceClient.class);
+            assertThat(context).hasSingleBean(TushareFlowEventSourceClient.class);
+            assertThat(context).hasSingleBean(CompositeFlowEventSourceClient.class);
         });
     }
 
@@ -182,6 +191,8 @@ class RiskWarningConfigurationTest {
             assertThat(context).hasSingleBean(TushareRiskHttpClient.class);
             assertThat(context).hasSingleBean(TushareMarketRiskSourceClient.class);
             assertThat(context).hasSingleBean(FallbackMarketRiskSourceClient.class);
+            assertThat(context).hasSingleBean(TushareFlowEventSourceClient.class);
+            assertThat(context).hasSingleBean(CompositeFlowEventSourceClient.class);
 
             MarketRiskSourceClient selected = context.getBean(MarketRiskSourceClient.class);
             FallbackMarketRiskSourceClient fallback =
@@ -195,6 +206,20 @@ class RiskWarningConfigurationTest {
                     context.getBean(MarketRiskDataProvider.class), "sourceClient"))
                     .isSameAs(fallback);
 
+            FlowEventSourceClient selectedFlow =
+                    context.getBean(FlowEventSourceClient.class);
+            CompositeFlowEventSourceClient composite =
+                    context.getBean(CompositeFlowEventSourceClient.class);
+            assertThat(selectedFlow).isSameAs(composite);
+            assertThat(ReflectionTestUtils.getField(composite, "primary"))
+                    .isSameAs(context.getBean(TushareFlowEventSourceClient.class));
+            assertThat((java.util.Map<Object, Object>) ReflectionTestUtils.getField(
+                    composite, "directRoutes"))
+                    .containsKey("stock_announcement");
+            assertThat(ReflectionTestUtils.getField(
+                    context.getBean(FlowEventRiskDataProvider.class), "sourceClient"))
+                    .isSameAs(composite);
+
             TushareRiskHttpClient riskHttpClient =
                     context.getBean(TushareRiskHttpClient.class);
             Object restClient = ReflectionTestUtils.getField(riskHttpClient, "restClient");
@@ -206,6 +231,22 @@ class RiskWarningConfigurationTest {
             assertThat(javaHttpClient.connectTimeout()).contains(Duration.ofSeconds(2));
             assertThat(ReflectionTestUtils.getField(requestFactory, "readTimeout"))
                     .isEqualTo(Duration.ofSeconds(17));
+        });
+    }
+
+    @Test
+    void tusharePrimaryCanDisableTheDirectCninfoAnnouncementRoute() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.primary=tushare",
+                "stock-ai-rule.risk-warning.source.tushare-enabled=true",
+                "stock-ai-rule.risk-warning.source.cninfo-announcement-fallback-enabled=false",
+                "stock-ai-rule.market-data.provider.token=" + TEST_TUSHARE_TOKEN
+        ).run(context -> {
+            assertThat(context).hasNotFailed();
+            CompositeFlowEventSourceClient composite =
+                    context.getBean(CompositeFlowEventSourceClient.class);
+            assertThat((java.util.Map<?, ?>) ReflectionTestUtils.getField(
+                    composite, "directRoutes")).isEmpty();
         });
     }
 

@@ -87,6 +87,71 @@ class CompositeFlowEventSourceClientTest {
         assertThat(supplementCalls).hasValue(0);
     }
 
+    @Test
+    void supplementValidZeroDoesNotUpgradePartialPrimaryRecords() {
+        FlowEventSourceRecord partialRecord = new FlowEventSourceRecord(
+                "forecast-partial",
+                "2026-07-17T00:00|forecast-partial",
+                new RiskObjectKey(RiskObjectType.STOCK, "600519.SH"),
+                LocalDate.of(2026, 7, 16),
+                LocalDateTime.of(2026, 7, 16, 0, 0),
+                LocalDateTime.of(2026, 7, 16, 0, 0),
+                LocalDateTime.of(2026, 7, 17, 0, 0),
+                java.math.BigDecimal.valueOf(-30),
+                "percent",
+                "forecast_change",
+                "预减",
+                Map.of("economicMeaning", "cash_flow"));
+        FlowEventSourceBatch primary = new FlowEventSourceBatch(
+                "tushare", List.of(partialRecord),
+                RiskDataQualityStatus.AVAILABLE,
+                "forecast history is partial", null,
+                LocalDate.of(2026, 7, 16), false, FETCHED_AT, null);
+        FlowEventSupplementProvider validZeroSupplement =
+                new FlowEventSupplementProvider() {
+                    @Override
+                    public String providerCode() {
+                        return "aktools";
+                    }
+
+                    @Override
+                    public int priority() {
+                        return 100;
+                    }
+
+                    @Override
+                    public boolean supports(String datasetCode) {
+                        return true;
+                    }
+
+                    @Override
+                    public FlowEventSourceBatch fetch(
+                            FlowEventSourceRequest request
+                    ) {
+                        return FlowEventSourceBatch.validZero(
+                                "aktools", "forecast:2026-07-18",
+                                FETCHED_AT.plusMinutes(1));
+                    }
+                };
+        CompositeFlowEventSourceClient client =
+                new CompositeFlowEventSourceClient(
+                        request -> primary,
+                        List.of(validZeroSupplement));
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.EARNINGS_FORECAST,
+                new RiskObjectKey(RiskObjectType.STOCK, "600519.SH")));
+
+        assertThat(result.records()).containsExactly(partialRecord);
+        assertThat(result.historyComplete()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.failureReason())
+                .isEqualTo("forecast history is partial");
+        assertThat(result.fallbackReason())
+                .contains("forecast history is partial")
+                .contains("aktools valid_zero");
+    }
+
     private static FlowEventSourceRequest request(
             FlowEventDataset dataset,
             RiskObjectKey object

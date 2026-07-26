@@ -37,6 +37,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
     private static final int FUND_ROW_LIMIT = 2_000;
     private static final int HOLDER_TRADE_ROW_LIMIT = 3_000;
+    private static final int MARGIN_ROW_LIMIT = 4_000;
     private static final int MARKET_DETAIL_ROW_LIMIT = 6_000;
     private static final BigDecimal SHARE_UNIT_MULTIPLIER =
             new BigDecimal("10000");
@@ -113,9 +114,6 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         TushareRiskResponse aggregateResponse = query(
                 "margin", dateWindow(request),
                 "exchange_id,trade_date,rzye,rqye,rzmre,rzche,rzrqye");
-        TushareRiskResponse detailResponse = query(
-                "margin_detail", dateWindow(request),
-                "trade_date,ts_code,rzye,rqye,rzmre,rzche,rzrqye");
         Map<LocalDate, MarginAggregate> byDate = new LinkedHashMap<>();
         for (Map<String, Object> row : aggregateResponse.rows()) {
             String exchange = text(row, "exchange_id");
@@ -130,14 +128,27 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     .add(row);
         }
         Map<LocalDate, MarginDetailAggregate> details = new LinkedHashMap<>();
-        for (Map<String, Object> row : detailResponse.rows()) {
-            stock(text(row, "ts_code"));
-            LocalDate tradeDate = date(row, "trade_date");
-            if (!inTradeWindow(request, tradeDate)) {
-                continue;
+        boolean detailTruncated = false;
+        for (LocalDate requestedTradeDate :
+                byDate.keySet().stream().sorted().toList()) {
+            TushareRiskResponse detailResponse = query(
+                    "margin_detail",
+                    Map.of("trade_date", compact(requestedTradeDate)),
+                    "trade_date,ts_code,rzye,rqye,rzmre,rzche,rzrqye");
+            if (detailResponse.rows().size()
+                    >= MARKET_DETAIL_ROW_LIMIT) {
+                detailTruncated = true;
             }
-            details.computeIfAbsent(
-                    tradeDate, ignored -> new MarginDetailAggregate()).add();
+            for (Map<String, Object> row : detailResponse.rows()) {
+                stock(text(row, "ts_code"));
+                LocalDate tradeDate = date(row, "trade_date");
+                if (!tradeDate.equals(requestedTradeDate)) {
+                    continue;
+                }
+                details.computeIfAbsent(
+                        tradeDate,
+                        ignored -> new MarginDetailAggregate()).add();
+            }
         }
         List<FlowEventSourceRecord> records = new ArrayList<>();
         BigDecimal previousBalance = null;
@@ -170,26 +181,26 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     "balance", "融资余额", attributes));
             previousBalance = aggregate.financingBalance;
         }
-        boolean truncated =
-                aggregateResponse.rows().size() >= MARKET_DETAIL_ROW_LIMIT
-                        || detailResponse.rows().size()
-                                >= MARKET_DETAIL_ROW_LIMIT;
+        boolean aggregateTruncated =
+                aggregateResponse.rows().size() >= MARGIN_ROW_LIMIT;
+        boolean truncated = aggregateTruncated || detailTruncated;
+        String truncationReason = aggregateTruncated
+                ? "margin reached documented " + MARGIN_ROW_LIMIT
+                        + "-row boundary"
+                : "margin_detail reached documented "
+                        + MARKET_DETAIL_ROW_LIMIT
+                        + "-row boundary";
         if (records.isEmpty()) {
             return FlowEventSourceBatch.insufficientHistory(
                     SOURCE,
                     truncated
-                            ? "margin/margin_detail reached documented "
-                                    + MARKET_DETAIL_ROW_LIMIT
-                                    + "-row boundary"
+                            ? truncationReason
                             : "margin returned no matching rows",
                     earliest(byDate.keySet()), fetchedAt);
         }
         if (truncated) {
             return partial(
-                    records,
-                    "margin/margin_detail reached documented "
-                            + MARKET_DETAIL_ROW_LIMIT
-                            + "-row boundary",
+                    records, truncationReason,
                     earliest(byDate.keySet()), fetchedAt);
         }
         return available(records, earliest(byDate.keySet()), fetchedAt);

@@ -85,6 +85,14 @@ class TushareFlowEventSourceClientTest {
             assertThat(record.availableAt())
                     .isEqualTo(LocalDateTime.of(2026, 7, 18, 8, 30));
         });
+        ArgumentCaptor<TushareRiskRequest> captor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(3))
+                .query(captor.capture());
+        assertThat(captor.getAllValues()).filteredOn(
+                        query -> query.apiName().equals("margin_detail"))
+                .extracting(query -> query.params().get("trade_date"))
+                .containsExactlyInAnyOrder("20260716", "20260717");
     }
 
     @Test
@@ -255,6 +263,63 @@ class TushareFlowEventSourceClientTest {
         assertThat(result.failureReason())
                 .contains("stk_holdertrade")
                 .contains("3000");
+    }
+
+    @Test
+    void fundAndMarginDetailBoundariesAlsoFailClosed() {
+        List<Map<String, Object>> fundRows = new ArrayList<>();
+        for (int index = 0; index < 2000; index++) {
+            fundRows.add(Map.of(
+                    "ts_code", "510300.SH",
+                    "trade_date", "20260717",
+                    "fd_share", new BigDecimal("100")));
+        }
+        TushareRiskHttpClient fundHttpClient =
+                mock(TushareRiskHttpClient.class);
+        when(fundHttpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return "fund_share".equals(query.apiName())
+                    ? new TushareRiskResponse(
+                            "fund_share", List.of(), fundRows)
+                    : response(query.apiName());
+        });
+        FlowEventSourceBatch fundResult =
+                new TushareFlowEventSourceClient(
+                        fundHttpClient, CLOCK).fetch(request(
+                        FlowEventDataset.ETF_FUND_FLOW,
+                        List.of(MARKET)));
+        assertThat(fundResult.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(fundResult.nextCursor()).isNull();
+        assertThat(fundResult.failureReason()).contains("2000");
+
+        List<Map<String, Object>> detailRows = new ArrayList<>();
+        for (int index = 0; index < 6000; index++) {
+            detailRows.add(marginDetailRow(
+                    "600519.SH", "20260717",
+                    "1", "1", "1", "1", "2"));
+        }
+        TushareRiskHttpClient marginHttpClient =
+                mock(TushareRiskHttpClient.class);
+        when(marginHttpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return "margin".equals(query.apiName())
+                    ? response("margin", marginRow(
+                            "SSE", "20260717",
+                            "100", "20", "15", "5", "120"))
+                    : new TushareRiskResponse(
+                            "margin_detail", List.of(), detailRows);
+        });
+        FlowEventSourceBatch marginResult =
+                new TushareFlowEventSourceClient(
+                        marginHttpClient, CLOCK).fetch(request(
+                        FlowEventDataset.MARGIN_FINANCING,
+                        List.of(MARKET)));
+        assertThat(marginResult.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(marginResult.historyComplete()).isFalse();
+        assertThat(marginResult.nextCursor()).isNull();
+        assertThat(marginResult.failureReason()).contains("6000");
     }
 
     @Test
