@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -150,6 +151,85 @@ class CompositeFlowEventSourceClientTest {
         assertThat(result.fallbackReason())
                 .contains("forecast history is partial")
                 .contains("aktools valid_zero");
+    }
+
+    @Test
+    void mergesTheSameBusinessEventOnlyOnceAcrossSources() {
+        RiskObjectKey object = new RiskObjectKey(
+                RiskObjectType.STOCK, "600519.SH");
+        FlowEventSourceRecord primaryRecord = forecastRecord(
+                "tushare-row-17", object,
+                LocalDateTime.of(2026, 7, 17, 0, 0));
+        FlowEventSourceRecord supplementRecord = forecastRecord(
+                "aktools-row-91", object,
+                LocalDateTime.of(2026, 7, 18, 0, 0));
+        FlowEventSourceBatch primary = new FlowEventSourceBatch(
+                "tushare", List.of(primaryRecord),
+                RiskDataQualityStatus.AVAILABLE,
+                "forecast history is partial", null,
+                LocalDate.of(2026, 7, 16), false,
+                FETCHED_AT, null);
+        FlowEventSupplementProvider supplement = supplementCalls(
+                new AtomicInteger(), new FlowEventSourceBatch(
+                        "aktools", List.of(supplementRecord),
+                        RiskDataQualityStatus.AVAILABLE,
+                        null, null, LocalDate.of(2026, 7, 1),
+                        true, FETCHED_AT.plusMinutes(1), null));
+        CompositeFlowEventSourceClient client =
+                new CompositeFlowEventSourceClient(
+                        request -> primary, List.of(supplement));
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.EARNINGS_FORECAST, object));
+
+        assertThat(result.records()).containsExactly(primaryRecord);
+    }
+
+    private static FlowEventSupplementProvider supplementCalls(
+            AtomicInteger calls,
+            FlowEventSourceBatch batch
+    ) {
+        return new FlowEventSupplementProvider() {
+            @Override
+            public String providerCode() {
+                return "aktools";
+            }
+
+            @Override
+            public int priority() {
+                return 100;
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return true;
+            }
+
+            @Override
+            public FlowEventSourceBatch fetch(
+                    FlowEventSourceRequest request
+            ) {
+                calls.incrementAndGet();
+                return batch;
+            }
+        };
+    }
+
+    private static FlowEventSourceRecord forecastRecord(
+            String recordId,
+            RiskObjectKey object,
+            LocalDateTime availableAt
+    ) {
+        LocalDate announcementDate = LocalDate.of(2026, 7, 16);
+        return new FlowEventSourceRecord(
+                recordId, availableAt + "|" + recordId, object,
+                announcementDate, announcementDate.atStartOfDay(),
+                announcementDate.atStartOfDay(), availableAt,
+                BigDecimal.valueOf(-30), "percent",
+                "forecast_change", "预减",
+                Map.of(
+                        "reportPeriod", LocalDate.of(2026, 6, 30),
+                        "forecastType", "预减"));
     }
 
     private static FlowEventSourceRequest request(

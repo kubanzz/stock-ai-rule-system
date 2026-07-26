@@ -117,8 +117,58 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
     }
 
     private String recordKey(FlowEventSourceRecord record) {
+        if (isCrossSourceBusinessEvent(record.eventCode())) {
+            return businessEventKey(record);
+        }
         return record.object().objectType().getCode() + ":" + record.object().objectId()
                 + ":" + record.recordId() + ":" + record.availableAt();
+    }
+
+    private boolean isCrossSourceBusinessEvent(String eventCode) {
+        return "forecast_change".equals(eventCode)
+                || "share_unlock".equals(eventCode)
+                || "share_reduction".equals(eventCode);
+    }
+
+    private String businessEventKey(FlowEventSourceRecord record) {
+        String eventIdentity = switch (record.eventCode()) {
+            case "forecast_change" -> attributes(
+                    record, "reportPeriod", "forecastType");
+            case "share_unlock" -> attributes(
+                    record, "holderName", "shareType",
+                    "listingBatch");
+            case "share_reduction" -> attributes(
+                    record, "shareholder", "direction",
+                    "changeStartDate");
+            default -> "";
+        };
+        return record.eventCode() + ":"
+                + record.object().objectType().getCode() + ":"
+                + record.object().objectId() + ":"
+                + record.tradeDate() + ":"
+                + record.observedAt().toLocalDate() + ":"
+                + normalizedValue(record) + ":"
+                + eventIdentity;
+    }
+
+    private String attributes(
+            FlowEventSourceRecord record,
+            String... names
+    ) {
+        StringBuilder result = new StringBuilder();
+        for (String name : names) {
+            result.append(name).append('=')
+                    .append(record.attributes().get(name))
+                    .append(';');
+        }
+        return result.toString();
+    }
+
+    private String normalizedValue(FlowEventSourceRecord record) {
+        return record.value() == null
+                ? "null:" + record.unit()
+                : record.value().stripTrailingZeros().toPlainString()
+                + ":" + record.unit();
     }
 
     private String maxCursor(String left, String right) {
