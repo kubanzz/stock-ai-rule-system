@@ -598,8 +598,6 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 LEADER_CODE);
         List<MarketSourceRecord> records = new ArrayList<>();
         List<String> gaps = new ArrayList<>();
-        recordCoverageGap(gaps, "index_daily " + BENCHMARK_CODE, benchmark.keySet(), openDates);
-        recordCoverageGap(gaps, "index_daily " + LEADER_CODE, leader.keySet(), openDates);
         for (RiskObjectKey object : request.objects()) {
             String expectedCode;
             Map<LocalDate, DailyValues> target;
@@ -633,23 +631,28 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             String targetDefinition = object.objectType() == RiskObjectType.STOCK
                     ? "daily/adj_factor " + expectedCode
                     : "index_daily " + expectedCode;
-            recordCoverageGap(gaps, targetDefinition, target.keySet(), openDates);
-            for (Map.Entry<LocalDate, DailyValues> entry : target.entrySet()) {
-                LocalDate tradeDate = entry.getKey();
-                BigDecimal benchmarkClose = benchmark.get(tradeDate);
-                BigDecimal leaderClose = leader.get(tradeDate);
-                if (benchmarkClose == null || leaderClose == null) {
-                    continue;
-                }
-                DailyValues values = entry.getValue();
+            Set<LocalDate> joinedDates = openDates.stream()
+                    .filter(target::containsKey)
+                    .filter(benchmark::containsKey)
+                    .filter(leader::containsKey)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            recordCoverageGap(
+                    gaps,
+                    "joined " + targetDefinition
+                            + " + index_daily " + BENCHMARK_CODE
+                            + " + index_daily " + LEADER_CODE,
+                    joinedDates,
+                    openDates);
+            for (LocalDate tradeDate : joinedDates.stream().sorted().toList()) {
+                DailyValues values = target.get(tradeDate);
                 records.add(new MarketDailyPoint(
                         object,
                         tradeDate,
                         values.open(),
                         values.close(),
                         values.volume(),
-                        benchmarkClose,
-                        leaderClose,
+                        benchmark.get(tradeDate),
+                        leader.get(tradeDate),
                         BENCHMARK_DEFINITION,
                         LEADER_DEFINITION,
                         true,

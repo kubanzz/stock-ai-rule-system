@@ -504,6 +504,63 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
+    void marketDailyChecksCoverageAfterTargetBenchmarkAndLeaderDateIntersection() {
+        List<LocalDate> openDates = datesEndingToday(20);
+        List<LocalDate> targetDates = openDates.subList(0, 19);
+        List<LocalDate> benchmarkDates = openDates.subList(1, 20);
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "trade_cal:null" -> responseRows(
+                        "trade_cal",
+                        openDates.stream()
+                                .map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+                case "daily:000001.SZ" -> responseRows(
+                        "daily",
+                        targetDates.stream().map(date -> dailyRow(
+                                "000001.SZ", date, "10", "11", "1000"))
+                                .toList());
+                case "adj_factor:000001.SZ" -> responseRows(
+                        "adj_factor",
+                        targetDates.stream().map(date ->
+                                adjFactorRow("000001.SZ", date, "1"))
+                                .toList());
+                case "index_daily:000300.SH" -> responseRows(
+                        "index_daily",
+                        benchmarkDates.stream().map(date ->
+                                closeRow("000300.SH", date, "4000"))
+                                .toList());
+                case "index_daily:000016.SH" -> responseRows(
+                        "index_daily",
+                        openDates.stream().map(date ->
+                                closeRow("000016.SH", date, "1500"))
+                                .toList());
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(
+                        List.of(OTHER_STOCK),
+                        openDates.getFirst(),
+                        openDates.getFirst(),
+                        openDates.getLast()));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).hasSize(18);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason())
+                .contains("joined", "000001.SZ", "coverage=90%");
+    }
+
+    @Test
     void marketDailyFiltersMismatchedTargetRowsBeforeMappingTheRequestedStock() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenAnswer(invocation -> {
