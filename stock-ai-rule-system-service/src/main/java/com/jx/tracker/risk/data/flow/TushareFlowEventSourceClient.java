@@ -45,8 +45,6 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final int MARKET_DETAIL_ROW_LIMIT = 6_000;
     private static final BigDecimal SHARE_UNIT_MULTIPLIER =
             new BigDecimal("10000");
-    private static final LocalDate BSE_LAUNCH_DATE =
-            LocalDate.of(2021, 11, 15);
     private static final List<String> MARGIN_METRICS =
             List.of("rzye", "rqye", "rzmre", "rzche", "rzrqye");
 
@@ -126,6 +124,13 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             TradingCalendar calendar
     ) {
         List<String> gaps = new ArrayList<>();
+        List<LocalDate> missingCalendarDates =
+                calendar.missingDates(
+                        request.startDate(), request.endDate());
+        if (!missingCalendarDates.isEmpty()) {
+            gaps.add("trade_cal missing natural dates "
+                    + missingCalendarDates);
+        }
         LocalDate warmupDate =
                 calendar.previousOpenBefore(request.startDate());
         if (warmupDate == null) {
@@ -158,10 +163,9 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         Map<LocalDate, MarginDetailAggregate> details = new LinkedHashMap<>();
         List<LocalDate> detailDates =
                 calendar.openDays(warmupDate, request.endDate());
-        for (int index = 0; index < detailDates.size(); index += 2) {
+        for (int index = 0; index < detailDates.size(); index++) {
             LocalDate sliceStart = detailDates.get(index);
-            LocalDate sliceEnd = detailDates.get(
-                    Math.min(index + 1, detailDates.size() - 1));
+            LocalDate sliceEnd = sliceStart;
             TushareRiskResponse detailResponse = query(
                     "margin_detail",
                     dateWindow(sliceStart, sliceEnd),
@@ -196,11 +200,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         + compact(openDate));
                 continue;
             }
-            List<String> exchanges = new ArrayList<>(
-                    List.of("SSE", "SZSE"));
-            if (!openDate.isBefore(BSE_LAUNCH_DATE)) {
-                exchanges.add("BSE");
-            }
+            List<String> exchanges = List.of("SSE", "SZSE");
             MarginDetailAggregate detail = details.get(openDate);
             for (String exchange : exchanges) {
                 if (!aggregate.hasExchange(exchange)) {
@@ -298,12 +298,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         "start_date", compact(start),
                         "end_date", compact(end)),
                 "exchange,cal_date,is_open,pretrade_date");
+        List<LocalDate> calendarDays = response.rows().stream()
+                .map(row -> date(row, "cal_date"))
+                .distinct().sorted().toList();
         List<LocalDate> openDays = response.rows().stream()
                 .filter(row -> "1".equals(
                         optionalText(row, "is_open")))
                 .map(row -> date(row, "cal_date"))
                 .distinct().sorted().toList();
-        return new TradingCalendar(openDays);
+        return new TradingCalendar(calendarDays, openDays);
     }
 
     private String exchangeForStockCode(String code) {
@@ -1338,9 +1341,14 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         }
     }
 
-    private record TradingCalendar(List<LocalDate> openDays) {
+    private record TradingCalendar(
+            List<LocalDate> calendarDays,
+            List<LocalDate> openDays
+    ) {
 
         private TradingCalendar {
+            calendarDays = calendarDays == null
+                    ? List.of() : List.copyOf(calendarDays);
             openDays = openDays == null
                     ? List.of() : List.copyOf(openDays);
         }
@@ -1372,6 +1380,21 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     .filter(date -> !date.isBefore(start)
                             && !date.isAfter(end))
                     .toList();
+        }
+
+        private List<LocalDate> missingDates(
+                LocalDate start,
+                LocalDate end
+        ) {
+            List<LocalDate> missing = new ArrayList<>();
+            for (LocalDate date = start;
+                 !date.isAfter(end);
+                 date = date.plusDays(1)) {
+                if (!calendarDays.contains(date)) {
+                    missing.add(date);
+                }
+            }
+            return List.copyOf(missing);
         }
     }
 
