@@ -4,6 +4,7 @@ import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
+import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.junit.jupiter.api.Test;
 
@@ -134,6 +135,42 @@ class FallbackMarketRiskSourceClientTest {
         assertThat(result.failureReason()).isNull();
         assertThat(result.fallbackReason())
                 .contains("stock_basic is a current snapshot", "aktools");
+    }
+
+    @Test
+    void validZeroFallbackCannotPromotePartialPrimaryRecordsToAvailable() {
+        MarketSourceRecord primaryRecord = stockMaster(
+                STOCK, "tushare", "主源名称", RiskDataQualityStatus.AVAILABLE);
+        RiskIngestionCheckpoint fallbackCheckpoint = new RiskIngestionCheckpoint(
+                MarketDatasetCode.CN_A_STOCK_MASTER.code(),
+                "cn-a",
+                "fallback-complete",
+                FETCHED_AT);
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> MarketSourceBatch.partialHistory(
+                        "tushare",
+                        List.of(primaryRecord),
+                        null,
+                        "primary history is incomplete",
+                        FETCHED_AT),
+                (dataset, request) -> new MarketSourceBatch(
+                        "aktools",
+                        List.of(),
+                        fallbackCheckpoint,
+                        FETCHED_AT,
+                        RiskDataQualityStatus.VALID_ZERO,
+                        null));
+
+        MarketSourceBatch result =
+                client.fetch(MarketDatasetCode.CN_A_STOCK_MASTER, REQUEST);
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).containsExactly(primaryRecord);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason())
+                .contains("primary history is incomplete", "valid_zero");
+        assertThat(result.fallbackReason()).isEqualTo(result.failureReason());
     }
 
     @Test

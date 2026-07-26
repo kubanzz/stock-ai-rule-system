@@ -39,7 +39,7 @@ public final class FallbackMarketRiskSourceClient implements MarketRiskSourceCli
         return new MarketSourceBatch(
                 combinedSource(primaryBatch, fallbackBatch),
                 mergedRecords,
-                fallbackComplete ? fallbackBatch.nextCheckpoint() : null,
+                formal(qualityStatus) ? fallbackBatch.nextCheckpoint() : null,
                 fallbackBatch.fetchedAt(),
                 qualityStatus,
                 formal(qualityStatus) ? null : auditReason,
@@ -76,9 +76,10 @@ public final class FallbackMarketRiskSourceClient implements MarketRiskSourceCli
             boolean fallbackComplete
     ) {
         if (fallbackComplete) {
-            if (fallbackBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
-                    && mergedRecords.isEmpty()) {
-                return RiskDataQualityStatus.VALID_ZERO;
+            if (fallbackBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO) {
+                return mergedRecords.isEmpty()
+                        ? RiskDataQualityStatus.VALID_ZERO
+                        : RiskDataQualityStatus.INSUFFICIENT_HISTORY;
             }
             return RiskDataQualityStatus.AVAILABLE;
         }
