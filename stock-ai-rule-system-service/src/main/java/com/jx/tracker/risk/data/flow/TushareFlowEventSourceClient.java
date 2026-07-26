@@ -115,8 +115,17 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             FlowEventSourceRequest request,
             LocalDateTime fetchedAt
     ) {
+        TradingCalendar calendar = tradingCalendar(request);
+        List<String> gaps = new ArrayList<>();
+        LocalDate warmupDate =
+                calendar.previousOpenBefore(request.startDate());
+        if (warmupDate == null) {
+            gaps.add("trade_cal has no previous open day before "
+                    + request.startDate());
+            warmupDate = request.startDate();
+        }
         TushareRiskResponse aggregateResponse = query(
-                "margin", dateWindow(request),
+                "margin", dateWindow(warmupDate, request.endDate()),
                 "exchange_id,trade_date,rzye,rqye,rzmre,rzche,rzrqye");
         Map<LocalDate, MarginAggregate> byDate = new LinkedHashMap<>();
         for (Map<String, Object> row : aggregateResponse.rows()) {
@@ -125,33 +134,93 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 continue;
             }
             LocalDate tradeDate = date(row, "trade_date");
-            if (!inTradeWindow(request, tradeDate)) {
+            if (tradeDate.isBefore(warmupDate)
+                    || tradeDate.isAfter(request.endDate())) {
+                continue;
+            }
+            if (!calendar.isOpen(tradeDate)) {
+                gaps.add("margin returned closed trade date "
+                        + compact(tradeDate));
                 continue;
             }
             byDate.computeIfAbsent(tradeDate, ignored -> new MarginAggregate())
-                    .add(row);
+                    .add(exchange, row);
         }
         Map<LocalDate, MarginDetailAggregate> details = new LinkedHashMap<>();
-        boolean detailTruncated = false;
-        for (LocalDate requestedTradeDate :
-                byDate.keySet().stream().sorted().toList()) {
+        List<LocalDate> detailDates =
+                calendar.openDays(warmupDate, request.endDate());
+        for (int index = 0; index < detailDates.size(); index += 2) {
+            LocalDate sliceStart = detailDates.get(index);
+            LocalDate sliceEnd = detailDates.get(
+                    Math.min(index + 1, detailDates.size() - 1));
             TushareRiskResponse detailResponse = query(
                     "margin_detail",
-                    Map.of("trade_date", compact(requestedTradeDate)),
+                    dateWindow(sliceStart, sliceEnd),
                     "trade_date,ts_code,rzye,rqye,rzmre,rzche,rzrqye");
             if (detailResponse.rows().size()
                     >= MARKET_DETAIL_ROW_LIMIT) {
-                detailTruncated = true;
+                gaps.add("margin_detail "
+                        + compact(sliceStart) + "-"
+                        + compact(sliceEnd)
+                        + " reached documented "
+                        + MARKET_DETAIL_ROW_LIMIT
+                        + "-row boundary");
             }
             for (Map<String, Object> row : detailResponse.rows()) {
-                stock(text(row, "ts_code"));
+                String code = normalizedCode(row, "ts_code");
                 LocalDate tradeDate = date(row, "trade_date");
-                if (!tradeDate.equals(requestedTradeDate)) {
+                if (tradeDate.isBefore(sliceStart)
+                        || tradeDate.isAfter(sliceEnd)
+                        || !calendar.isOpen(tradeDate)) {
                     continue;
                 }
                 details.computeIfAbsent(
                         tradeDate,
-                        ignored -> new MarginDetailAggregate()).add();
+                        ignored -> new MarginDetailAggregate())
+                        .add(exchangeForStockCode(code), row);
+            }
+        }
+        LocalDate firstBseDate = byDate.entrySet().stream()
+                .filter(entry -> entry.getValue()
+                        .hasExchange("BSE"))
+                .map(Map.Entry::getKey)
+                .min(LocalDate::compareTo).orElse(null);
+        for (LocalDate openDate : detailDates) {
+            MarginAggregate aggregate = byDate.get(openDate);
+            if (aggregate == null) {
+                gaps.add("margin missing open day "
+                        + compact(openDate));
+                continue;
+            }
+            List<String> exchanges = new ArrayList<>(
+                    List.of("SSE", "SZSE"));
+            if (firstBseDate != null
+                    && !openDate.isBefore(firstBseDate)) {
+                exchanges.add("BSE");
+            }
+            MarginDetailAggregate detail = details.get(openDate);
+            for (String exchange : exchanges) {
+                if (!aggregate.hasExchange(exchange)) {
+                    gaps.add("margin " + compact(openDate)
+                            + " missing exchange " + exchange);
+                    continue;
+                }
+                if (detail == null
+                        || detail.count(exchange) == 0) {
+                    gaps.add("margin_detail "
+                            + compact(openDate)
+                            + " missing exchange " + exchange);
+                    continue;
+                }
+                if (detail.financingBalance(exchange)
+                        .compareTo(aggregate.financingBalance(
+                                exchange)) != 0) {
+                    gaps.add("margin_detail "
+                            + compact(openDate) + " "
+                            + exchange
+                            + " financing balance does not match "
+                            + "margin aggregate");
+                }
             }
         }
         List<FlowEventSourceRecord> records = new ArrayList<>();
@@ -161,6 +230,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         .sorted(Map.Entry.comparingByKey()).toList()) {
             LocalDate tradeDate = entry.getKey();
             MarginAggregate aggregate = entry.getValue();
+            if (tradeDate.isBefore(request.startDate())) {
+                previousBalance = aggregate.financingBalance;
+                continue;
+            }
             Map<String, Object> attributes = new LinkedHashMap<>();
             if (previousBalance != null) {
                 attributes.put("previousBalance", previousBalance);
@@ -173,7 +246,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             attributes.put("combinedBalance", aggregate.combinedBalance);
             attributes.put("detailRowCount",
                     details.getOrDefault(
-                            tradeDate, new MarginDetailAggregate()).count);
+                            tradeDate,
+                            new MarginDetailAggregate()).count());
             attributes.put("formulaVersion", "margin-market-sum-rzye-v1");
             LocalDateTime observedAt = tradeDate.atTime(15, 0);
             LocalDateTime availableAt =
@@ -187,27 +261,58 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         }
         boolean aggregateTruncated =
                 aggregateResponse.rows().size() >= MARGIN_ROW_LIMIT;
-        boolean truncated = aggregateTruncated || detailTruncated;
-        String truncationReason = aggregateTruncated
-                ? "margin reached documented " + MARGIN_ROW_LIMIT
-                        + "-row boundary"
-                : "margin_detail reached documented "
-                        + MARKET_DETAIL_ROW_LIMIT
-                        + "-row boundary";
+        if (aggregateTruncated) {
+            gaps.add("margin reached documented "
+                    + MARGIN_ROW_LIMIT + "-row boundary");
+        }
         if (records.isEmpty()) {
             return FlowEventSourceBatch.insufficientHistory(
                     SOURCE,
-                    truncated
-                            ? truncationReason
-                            : "margin returned no matching rows",
+                    gaps.isEmpty()
+                            ? "margin returned no matching rows"
+                            : String.join("; ", gaps),
                     earliest(byDate.keySet()), fetchedAt);
         }
-        if (truncated) {
+        if (!gaps.isEmpty()) {
             return partial(
-                    records, truncationReason,
+                    records, String.join("; ", gaps),
                     earliest(byDate.keySet()), fetchedAt);
         }
         return available(records, earliest(byDate.keySet()), fetchedAt);
+    }
+
+    private TradingCalendar tradingCalendar(
+            FlowEventSourceRequest request
+    ) {
+        LocalDate start = request.startDate().minusDays(14);
+        LocalDate end = request.endDate().plusDays(14);
+        TushareRiskResponse response = query(
+                "trade_cal",
+                Map.of(
+                        "exchange", "SSE",
+                        "start_date", compact(start),
+                        "end_date", compact(end)),
+                "exchange,cal_date,is_open,pretrade_date");
+        List<LocalDate> openDays = response.rows().stream()
+                .filter(row -> "1".equals(
+                        optionalText(row, "is_open")))
+                .map(row -> date(row, "cal_date"))
+                .distinct().sorted().toList();
+        return new TradingCalendar(openDays);
+    }
+
+    private String exchangeForStockCode(String code) {
+        if (code.endsWith(".SH")) {
+            return "SSE";
+        }
+        if (code.endsWith(".SZ")) {
+            return "SZSE";
+        }
+        if (code.endsWith(".BJ")) {
+            return "BSE";
+        }
+        throw new IllegalArgumentException(
+                "unsupported exchange suffix in ts_code");
     }
 
     private FlowEventSourceBatch etfFlow(
@@ -1097,10 +1202,17 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         private BigDecimal financingBuy = BigDecimal.ZERO;
         private BigDecimal financingRepay = BigDecimal.ZERO;
         private BigDecimal combinedBalance = BigDecimal.ZERO;
+        private final Map<String, BigDecimal>
+                financingBalanceByExchange = new LinkedHashMap<>();
 
-        private void add(Map<String, Object> row) {
-            financingBalance = financingBalance.add(
-                    number(row, "rzye"));
+        private void add(
+                String exchange,
+                Map<String, Object> row
+        ) {
+            BigDecimal exchangeBalance = number(row, "rzye");
+            financingBalance = financingBalance.add(exchangeBalance);
+            financingBalanceByExchange.merge(
+                    exchange, exchangeBalance, BigDecimal::add);
             securitiesLendingBalance =
                     securitiesLendingBalance.add(
                             number(row, "rqye"));
@@ -1110,6 +1222,14 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     number(row, "rzche"));
             combinedBalance = combinedBalance.add(
                     number(row, "rzrqye"));
+        }
+
+        private boolean hasExchange(String exchange) {
+            return financingBalanceByExchange.containsKey(exchange);
+        }
+
+        private BigDecimal financingBalance(String exchange) {
+            return financingBalanceByExchange.get(exchange);
         }
 
         private static BigDecimal number(
@@ -1133,10 +1253,62 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     }
 
     private static final class MarginDetailAggregate {
-        private int count;
+        private final Map<String, Integer> countByExchange =
+                new LinkedHashMap<>();
+        private final Map<String, BigDecimal>
+                financingBalanceByExchange = new LinkedHashMap<>();
 
-        private void add() {
-            count++;
+        private void add(
+                String exchange,
+                Map<String, Object> row
+        ) {
+            countByExchange.merge(exchange, 1, Integer::sum);
+            financingBalanceByExchange.merge(
+                    exchange,
+                    MarginAggregate.number(row, "rzye"),
+                    BigDecimal::add);
+        }
+
+        private int count(String exchange) {
+            return countByExchange.getOrDefault(exchange, 0);
+        }
+
+        private int count() {
+            return countByExchange.values().stream()
+                    .mapToInt(Integer::intValue).sum();
+        }
+
+        private BigDecimal financingBalance(String exchange) {
+            return financingBalanceByExchange.getOrDefault(
+                    exchange, BigDecimal.ZERO);
+        }
+    }
+
+    private record TradingCalendar(List<LocalDate> openDays) {
+
+        private TradingCalendar {
+            openDays = openDays == null
+                    ? List.of() : List.copyOf(openDays);
+        }
+
+        private boolean isOpen(LocalDate date) {
+            return openDays.contains(date);
+        }
+
+        private LocalDate previousOpenBefore(LocalDate date) {
+            return openDays.stream()
+                    .filter(openDay -> openDay.isBefore(date))
+                    .max(LocalDate::compareTo).orElse(null);
+        }
+
+        private List<LocalDate> openDays(
+                LocalDate start,
+                LocalDate end
+        ) {
+            return openDays.stream()
+                    .filter(date -> !date.isBefore(start)
+                            && !date.isAfter(end))
+                    .toList();
         }
     }
 
