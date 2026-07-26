@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** Maps TuShare structured responses into the market-risk source contract. */
 public final class TushareMarketRiskSourceClient implements MarketRiskSourceClient {
@@ -33,6 +34,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             "CSI300:000300.SH:index_daily:close";
     private static final String LEADER_DEFINITION =
             "SSE50:000016.SH:index_daily:close";
+    private static final BigDecimal FORMAL_OPEN_DAY_COVERAGE =
+            new BigDecimal("0.95");
     private static final List<String> GLOBAL_LEADING_MARKETS =
             List.of("SPX", "IXIC", "HSI", "N225");
 
@@ -247,6 +250,13 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             LocalDateTime fetchedAt
     ) {
         Map<String, Object> window = dateWindow(request);
+        Set<LocalDate> openDates = openTradingDates(request);
+        if (openDates.isEmpty()) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "trade_cal did not confirm any SSE open dates in the request window",
+                    fetchedAt);
+        }
         Map<LocalDate, BigDecimal> benchmark = closeByDate(httpClient.query(
                 new TushareRiskRequest(
                         "index_daily",
@@ -260,50 +270,57 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         "ts_code,trade_date,close")),
                 LEADER_CODE);
         List<MarketSourceRecord> records = new ArrayList<>();
-        boolean incomplete = benchmark.isEmpty() || leader.isEmpty();
+        List<String> gaps = new ArrayList<>();
+        recordCoverageGap(gaps, "index_daily " + BENCHMARK_CODE, benchmark.keySet(), openDates);
+        recordCoverageGap(gaps, "index_daily " + LEADER_CODE, leader.keySet(), openDates);
         for (RiskObjectKey object : request.objects()) {
-            TushareRiskResponse response;
             String expectedCode;
+            Map<LocalDate, DailyValues> target;
             if (object.objectType() == RiskObjectType.STOCK) {
                 expectedCode = object.objectId();
-                response = httpClient.query(new TushareRiskRequest(
+                TushareRiskResponse daily = httpClient.query(new TushareRiskRequest(
                         "daily",
                         withCode(window, expectedCode),
                         "ts_code,trade_date,open,close,vol"));
+                TushareRiskResponse adjustments = httpClient.query(new TushareRiskRequest(
+                        "adj_factor",
+                        withCode(window, expectedCode),
+                        "ts_code,trade_date,adj_factor"));
+                target = adjustedDailyByDate(
+                        daily, adjustments, expectedCode, request, openDates);
             } else if (object.objectType() == RiskObjectType.MARKET
                     && "CN-A".equalsIgnoreCase(object.objectId())) {
                 expectedCode = BROAD_MARKET_CODE;
-                response = httpClient.query(new TushareRiskRequest(
-                        "index_daily",
-                        withCode(window, expectedCode),
-                        "ts_code,trade_date,open,close,vol"));
+                target = dailyByDate(
+                        httpClient.query(new TushareRiskRequest(
+                                "index_daily",
+                                withCode(window, expectedCode),
+                                "ts_code,trade_date,open,close,vol")),
+                        expectedCode,
+                        request,
+                        openDates);
             } else {
-                incomplete = true;
+                gaps.add("unsupported market daily object " + object.objectId());
                 continue;
             }
-            boolean hasExpectedRowInWindow = false;
-            for (Map<String, Object> row : response.rows()) {
-                if (!hasExpectedCode(row, expectedCode)) {
-                    continue;
-                }
-                LocalDate tradeDate = date(row, "trade_date");
-                if (tradeDate.isBefore(request.startDate())
-                        || tradeDate.isAfter(request.endDate())) {
-                    continue;
-                }
-                hasExpectedRowInWindow = true;
+            String targetDefinition = object.objectType() == RiskObjectType.STOCK
+                    ? "daily/adj_factor " + expectedCode
+                    : "index_daily " + expectedCode;
+            recordCoverageGap(gaps, targetDefinition, target.keySet(), openDates);
+            for (Map.Entry<LocalDate, DailyValues> entry : target.entrySet()) {
+                LocalDate tradeDate = entry.getKey();
                 BigDecimal benchmarkClose = benchmark.get(tradeDate);
                 BigDecimal leaderClose = leader.get(tradeDate);
                 if (benchmarkClose == null || leaderClose == null) {
-                    incomplete = true;
                     continue;
                 }
+                DailyValues values = entry.getValue();
                 records.add(new MarketDailyPoint(
                         object,
                         tradeDate,
-                        decimal(row, "open"),
-                        decimal(row, "close"),
-                        decimal(row, "vol"),
+                        values.open(),
+                        values.close(),
+                        values.volume(),
                         benchmarkClose,
                         leaderClose,
                         BENCHMARK_DEFINITION,
@@ -314,21 +331,175 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         SOURCE,
                         RiskDataQualityStatus.AVAILABLE));
             }
-            if (!hasExpectedRowInWindow) {
-                incomplete = true;
-            }
         }
-        String reason = "daily/index_daily requires complete trade_date joins for benchmark "
-                + BENCHMARK_CODE + " and leader " + LEADER_CODE;
+        String reason = gaps.isEmpty()
+                ? null
+                : String.join("; ", gaps);
         if (records.isEmpty()) {
-            return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE,
+                    reason == null
+                            ? "daily/index_daily produced no complete open-date joins"
+                            : reason,
+                    fetchedAt);
         }
-        if (incomplete) {
+        if (!gaps.isEmpty()) {
             return MarketSourceBatch.partialHistory(
-                    SOURCE, records, request.checkpoint(), reason, fetchedAt);
+                    SOURCE, records, null, reason, fetchedAt);
         }
         return new MarketSourceBatch(
                 SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private Set<LocalDate> openTradingDates(RiskProviderRequest request) {
+        TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
+                "trade_cal",
+                Map.of(
+                        "exchange", "SSE",
+                        "start_date", request.startDate().format(COMPACT_DATE),
+                        "end_date", request.endDate().format(COMPACT_DATE)),
+                "exchange,cal_date,is_open"));
+        Map<LocalDate, Boolean> calendar = new LinkedHashMap<>();
+        for (Map<String, Object> row : response.rows()) {
+            if (!"SSE".equalsIgnoreCase(text(row, "exchange"))) {
+                continue;
+            }
+            LocalDate calendarDate = date(row, "cal_date");
+            if (calendarDate.isBefore(request.startDate())
+                    || calendarDate.isAfter(request.endDate())) {
+                continue;
+            }
+            String openFlag = text(row, "is_open");
+            if (!"0".equals(openFlag) && !"1".equals(openFlag)) {
+                throw new IllegalArgumentException("invalid TuShare field is_open");
+            }
+            if (calendar.put(calendarDate, "1".equals(openFlag)) != null) {
+                throw new IllegalArgumentException(
+                        "trade_cal returned duplicate cal_date");
+            }
+        }
+        long expectedCalendarDays = java.time.temporal.ChronoUnit.DAYS.between(
+                request.startDate(), request.endDate()) + 1;
+        if (calendar.size() != expectedCalendarDays) {
+            return Set.of();
+        }
+        return calendar.entrySet().stream()
+                .filter(Map.Entry::getValue)
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private Map<LocalDate, DailyValues> adjustedDailyByDate(
+            TushareRiskResponse dailyResponse,
+            TushareRiskResponse adjustmentResponse,
+            String expectedCode,
+            RiskProviderRequest request,
+            Set<LocalDate> openDates
+    ) {
+        Map<LocalDate, DailyValues> daily = dailyByDate(
+                dailyResponse, expectedCode, request, openDates);
+        Map<LocalDate, BigDecimal> adjustments = adjustmentByDate(
+                adjustmentResponse, expectedCode, request, openDates);
+        Map<LocalDate, DailyValues> adjusted = new LinkedHashMap<>();
+        daily.forEach((tradeDate, values) -> {
+            BigDecimal factor = adjustments.get(tradeDate);
+            if (factor != null) {
+                adjusted.put(
+                        tradeDate,
+                        new DailyValues(
+                                values.open().multiply(factor),
+                                values.close().multiply(factor),
+                                values.volume()));
+            }
+        });
+        return Map.copyOf(adjusted);
+    }
+
+    private Map<LocalDate, DailyValues> dailyByDate(
+            TushareRiskResponse response,
+            String expectedCode,
+            RiskProviderRequest request,
+            Set<LocalDate> openDates
+    ) {
+        Map<LocalDate, DailyValues> daily = new LinkedHashMap<>();
+        for (Map<String, Object> row : response.rows()) {
+            if (!hasExpectedCode(row, expectedCode)) {
+                continue;
+            }
+            LocalDate tradeDate = date(row, "trade_date");
+            if (tradeDate.isBefore(request.startDate())
+                    || tradeDate.isAfter(request.endDate())
+                    || !openDates.contains(tradeDate)) {
+                continue;
+            }
+            DailyValues previous = daily.put(
+                    tradeDate,
+                    new DailyValues(
+                            decimal(row, "open"),
+                            decimal(row, "close"),
+                            decimal(row, "vol")));
+            if (previous != null) {
+                throw new IllegalArgumentException(
+                        response.apiName() + " returned duplicate trade_date");
+            }
+        }
+        return Map.copyOf(daily);
+    }
+
+    private Map<LocalDate, BigDecimal> adjustmentByDate(
+            TushareRiskResponse response,
+            String expectedCode,
+            RiskProviderRequest request,
+            Set<LocalDate> openDates
+    ) {
+        Map<LocalDate, BigDecimal> adjustments = new LinkedHashMap<>();
+        for (Map<String, Object> row : response.rows()) {
+            if (!hasExpectedCode(row, expectedCode)) {
+                continue;
+            }
+            LocalDate tradeDate = date(row, "trade_date");
+            if (tradeDate.isBefore(request.startDate())
+                    || tradeDate.isAfter(request.endDate())
+                    || !openDates.contains(tradeDate)) {
+                continue;
+            }
+            BigDecimal factor = decimal(row, "adj_factor");
+            if (factor.signum() <= 0) {
+                throw new IllegalArgumentException(
+                        "invalid TuShare decimal field adj_factor");
+            }
+            if (adjustments.put(tradeDate, factor) != null) {
+                throw new IllegalArgumentException(
+                        response.apiName() + " returned duplicate trade_date");
+            }
+        }
+        return Map.copyOf(adjustments);
+    }
+
+    private void recordCoverageGap(
+            List<String> gaps,
+            String series,
+            Set<LocalDate> availableDates,
+            Set<LocalDate> openDates
+    ) {
+        long covered = openDates.stream()
+                .filter(availableDates::contains)
+                .count();
+        BigDecimal coverage = BigDecimal.valueOf(covered)
+                .divide(BigDecimal.valueOf(openDates.size()), 4, RoundingMode.HALF_UP);
+        if (coverage.compareTo(FORMAL_OPEN_DAY_COVERAGE) < 0) {
+            gaps.add(series + " open-day coverage="
+                    + coverage.multiply(BigDecimal.valueOf(100))
+                            .stripTrailingZeros().toPlainString()
+                    + "% below 95%");
+        }
+    }
+
+    private record DailyValues(
+            BigDecimal open,
+            BigDecimal close,
+            BigDecimal volume
+    ) {
     }
 
     private Map<String, Object> dateWindow(RiskProviderRequest request) {
