@@ -14,10 +14,19 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
 
     private final FlowEventSourceClient primary;
     private final List<FlowEventSupplementProvider> supplements;
+    private final Map<String, FlowEventSourceClient> directRoutes;
 
     public CompositeFlowEventSourceClient(
             FlowEventSourceClient primary,
             List<FlowEventSupplementProvider> supplements
+    ) {
+        this(primary, supplements, Map.of());
+    }
+
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            List<FlowEventSupplementProvider> supplements,
+            Map<String, FlowEventSourceClient> directRoutes
     ) {
         if (primary == null) {
             throw new IllegalArgumentException("primary source is required");
@@ -26,10 +35,15 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         this.supplements = supplements == null ? List.of() : supplements.stream()
                 .sorted(Comparator.comparingInt(FlowEventSupplementProvider::priority))
                 .toList();
+        this.directRoutes = directRoutes == null ? Map.of() : Map.copyOf(directRoutes);
     }
 
     @Override
     public FlowEventSourceBatch fetch(FlowEventSourceRequest request) {
+        FlowEventSourceClient direct = directRoutes.get(request.dataset().code());
+        if (direct != null) {
+            return direct.fetch(request);
+        }
         FlowEventSourceBatch primaryBatch = primary.fetch(request);
         if (!requiresFallback(primaryBatch)) {
             return primaryBatch;
