@@ -387,11 +387,23 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         normalizedCode(row, "ts_code"))) {
                     continue;
                 }
-                navByDate.put(
-                        date(row, "nav_date"),
-                        new NavPoint(
-                                decimal(row, "unit_nav"),
-                                date(row, "ann_date")));
+                LocalDate navDate = date(row, "nav_date");
+                NavPoint candidate = new NavPoint(
+                        decimal(row, "unit_nav"),
+                        date(row, "ann_date"));
+                NavPoint existing = navByDate.get(navDate);
+                if (existing == null
+                        || candidate.announcementDate().isBefore(
+                                existing.announcementDate())) {
+                    navByDate.put(navDate, candidate);
+                } else if (candidate.announcementDate().equals(
+                        existing.announcementDate())
+                        && candidate.unitNav().compareTo(
+                                existing.unitNav()) != 0) {
+                    gaps.add("conflicting fund_nav " + fundCode
+                            + " " + navDate + " announced "
+                            + candidate.announcementDate());
+                }
             }
             Map<LocalDate, BigDecimal> closeByDate =
                     new LinkedHashMap<>();
@@ -400,9 +412,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         normalizedCode(row, "ts_code"))) {
                     continue;
                 }
-                closeByDate.put(
-                        date(row, "trade_date"),
-                        decimal(row, "close"));
+                LocalDate tradeDate = date(row, "trade_date");
+                BigDecimal close = decimal(row, "close");
+                BigDecimal existing = closeByDate.putIfAbsent(
+                        tradeDate, close);
+                if (existing != null
+                        && existing.compareTo(close) != 0) {
+                    gaps.add("conflicting fund_daily "
+                            + fundCode + " " + tradeDate);
+                }
             }
             List<SharePoint> rawShares = new ArrayList<>();
             for (Map<String, Object> row : shareResponse.rows()) {
@@ -451,7 +469,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                                 current.tradeDate(),
                                 ignored -> new EtfAggregate())
                                 .add(
-                                        netFlow, referenceAssets, close,
+                                        fundCode, netFlow,
+                                        referenceAssets, close,
+                                        nav.unitNav(),
+                                        nav.announcementDate(),
                                         later(
                                                 calendar
                                                         .requiredNextOpenAfter(
@@ -490,9 +511,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                                     SHARE_UNIT_MULTIPLIER),
                             Map.entry(
                                     "fundDailyClose",
-                                    aggregate.lastClose),
+                                    aggregate.weightedClose()),
+                            Map.entry(
+                                    "fundDailyCloseWeightedAverage",
+                                    aggregate.weightedClose()),
                             Map.entry(
                                     "fundCount", aggregate.fundCount),
+                            Map.entry(
+                                    "fundContributions",
+                                    aggregate.contributions()),
                             Map.entry(
                                     "universeFundCount",
                                     confirmedFundCount),
@@ -634,6 +661,9 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 putIfNotNull(
                         attributes, "netProfitMax",
                         optionalDecimal(row, "net_profit_max"));
+                putIfNotNull(
+                        attributes, "last_parent_net",
+                        optionalDecimal(row, "last_parent_net"));
                 putIfNotNull(
                         attributes, "summary",
                         optionalText(row, "summary"));
@@ -900,16 +930,6 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         return Map.of(
                 "start_date", compact(startDate),
                 "end_date", compact(endDate));
-    }
-
-    private Map<String, Object> withCode(
-            Map<String, Object> params,
-            String code
-    ) {
-        Map<String, Object> result =
-                new LinkedHashMap<>(params);
-        result.put("ts_code", code);
-        return result;
     }
 
     private List<RiskObjectKey> sortedStocks(
@@ -1340,27 +1360,57 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final class EtfAggregate {
         private BigDecimal netFlow = BigDecimal.ZERO;
         private BigDecimal referenceAssets = BigDecimal.ZERO;
-        private BigDecimal lastClose = BigDecimal.ZERO;
+        private BigDecimal closeWeightedAssets = BigDecimal.ZERO;
+        private final List<Map<String, Object>> fundContributions =
+                new ArrayList<>();
         private int fundCount;
         private LocalDateTime availableAt =
                 LocalDateTime.MIN;
 
         private void add(
+                String fundCode,
                 BigDecimal flow,
                 BigDecimal assets,
                 BigDecimal close,
+                BigDecimal unitNav,
+                LocalDate navAnnouncementDate,
                 LocalDateTime availability
         ) {
             netFlow = netFlow.add(flow);
             referenceAssets = referenceAssets.add(assets);
-            lastClose = close;
+            closeWeightedAssets =
+                    closeWeightedAssets.add(close.multiply(assets));
+            fundContributions.add(Map.of(
+                    "fundCode", fundCode,
+                    "netFlow", flow,
+                    "referenceAssets", assets,
+                    "close", close,
+                    "unitNav", unitNav,
+                    "navAnnouncementDate",
+                    navAnnouncementDate));
             fundCount++;
             availableAt = availableAt.isAfter(availability)
                     ? availableAt : availability;
         }
-    }
 
-    private record FundDate(String code, LocalDate tradeDate) {
+        private BigDecimal weightedClose() {
+            if (referenceAssets.signum() == 0) {
+                return BigDecimal.ZERO;
+            }
+            return closeWeightedAssets.divide(
+                    referenceAssets, 8,
+                    RoundingMode.HALF_UP)
+                    .stripTrailingZeros();
+        }
+
+        private List<Map<String, Object>> contributions() {
+            return fundContributions.stream()
+                    .sorted(Comparator.comparing(
+                            contribution -> contribution
+                                    .get("fundCode").toString()))
+                    .map(Map::copyOf)
+                    .toList();
+        }
     }
 
     private record NavPoint(

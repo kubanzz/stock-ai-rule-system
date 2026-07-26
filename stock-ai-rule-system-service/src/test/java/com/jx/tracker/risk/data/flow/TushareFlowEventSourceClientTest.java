@@ -201,10 +201,14 @@ class TushareFlowEventSourceClientTest {
                         Map.of("ts_code", "510300.SH", "ann_date", "20260717",
                                 "nav_date", "20260716", "unit_nav", new BigDecimal("1.10")),
                         Map.of("ts_code", "510300.SH", "ann_date", "20260718",
-                                "nav_date", "20260717", "unit_nav", new BigDecimal("1.20")));
+                                "nav_date", "20260717", "unit_nav", new BigDecimal("1.20")),
+                        Map.of("ts_code", "510300.SH", "ann_date", "20260720",
+                                "nav_date", "20260717", "unit_nav", new BigDecimal("9.99")));
                 case "fund_daily" -> response("fund_daily",
                         Map.of("ts_code", "510300.SH", "trade_date", "20260716",
                                 "close", new BigDecimal("1.11")),
+                        Map.of("ts_code", "510300.SH", "trade_date", "20260717",
+                                "close", new BigDecimal("1.22")),
                         Map.of("ts_code", "510300.SH", "trade_date", "20260717",
                                 "close", new BigDecimal("1.22")));
                 default -> throw new AssertionError(query.apiName());
@@ -227,9 +231,129 @@ class TushareFlowEventSourceClientTest {
                     .containsEntry("referenceAssets", new BigDecimal("1320000"))
                     .containsEntry("shareUnitMultiplier", new BigDecimal("10000"))
                     .containsEntry("fundDailyClose", new BigDecimal("1.22"))
+                    .containsEntry(
+                            "fundDailyCloseWeightedAverage",
+                            new BigDecimal("1.22"))
                     .containsEntry("formulaVersion", "fund-share-delta-times-unit-nav-v1")
-                    .containsEntry("secondaryMarketAmountUsed", false);
+                    .containsEntry("secondaryMarketAmountUsed", false)
+                    .containsKey("fundContributions");
         });
+    }
+
+    @Test
+    void etfCloseAuditIsDeterministicAndAssetWeighted() {
+        TushareRiskHttpClient httpClient =
+                mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            if ("trade_cal".equals(query.apiName())) {
+                return standardTradeCalendar();
+            }
+            if ("fund_basic".equals(query.apiName())) {
+                return response("fund_basic",
+                        fundBasicRow("510500.SH", "中证500ETF"),
+                        fundBasicRow("510300.SH", "沪深300ETF"));
+            }
+            String code = query.params().get("ts_code").toString();
+            BigDecimal nav = "510300.SH".equals(code)
+                    ? BigDecimal.ONE : new BigDecimal("2");
+            BigDecimal close = "510300.SH".equals(code)
+                    ? BigDecimal.ONE : new BigDecimal("3");
+            return switch (query.apiName()) {
+                case "fund_share" -> response("fund_share",
+                        Map.of("ts_code", code,
+                                "trade_date", "20260716",
+                                "fd_share", new BigDecimal("100")),
+                        Map.of("ts_code", code,
+                                "trade_date", "20260717",
+                                "fd_share", new BigDecimal("110")));
+                case "fund_nav" -> response("fund_nav",
+                        Map.of("ts_code", code,
+                                "ann_date", "20260718",
+                                "nav_date", "20260717",
+                                "unit_nav", nav));
+                case "fund_daily" -> response("fund_daily",
+                        Map.of("ts_code", code,
+                                "trade_date", "20260717",
+                                "close", close));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(
+                        httpClient, CLOCK).fetch(request(
+                        FlowEventDataset.ETF_FUND_FLOW,
+                        List.of(MARKET)));
+
+        assertThat(result.records()).singleElement()
+                .satisfies(record -> {
+                    assertThat(record.value())
+                            .isEqualByComparingTo("300000");
+                    assertThat(record.attributes().get(
+                            "fundDailyCloseWeightedAverage"))
+                            .isEqualTo(new BigDecimal("2.33333333"));
+                    assertThat(((List<?>) record.attributes().get(
+                            "fundContributions")).stream()
+                            .map(value -> ((Map<?, ?>) value)
+                                    .get("fundCode").toString())
+                            .toList())
+                            .containsExactly(
+                                    "510300.SH", "510500.SH");
+                });
+    }
+
+    @Test
+    void etfDuplicateNavOrDailyConflictFailsClosed() {
+        TushareRiskHttpClient httpClient =
+                mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> standardTradeCalendar();
+                case "fund_basic" -> response(
+                        "fund_basic", fundBasicRow(
+                                "510300.SH", "沪深300ETF"));
+                case "fund_share" -> response("fund_share",
+                        Map.of("ts_code", "510300.SH",
+                                "trade_date", "20260716",
+                                "fd_share", new BigDecimal("100")),
+                        Map.of("ts_code", "510300.SH",
+                                "trade_date", "20260717",
+                                "fd_share", new BigDecimal("110")));
+                case "fund_nav" -> response("fund_nav",
+                        Map.of("ts_code", "510300.SH",
+                                "ann_date", "20260718",
+                                "nav_date", "20260717",
+                                "unit_nav", new BigDecimal("1.2")),
+                        Map.of("ts_code", "510300.SH",
+                                "ann_date", "20260718",
+                                "nav_date", "20260717",
+                                "unit_nav", new BigDecimal("1.3")));
+                case "fund_daily" -> response("fund_daily",
+                        Map.of("ts_code", "510300.SH",
+                                "trade_date", "20260717",
+                                "close", new BigDecimal("1.2")),
+                        Map.of("ts_code", "510300.SH",
+                                "trade_date", "20260717",
+                                "close", new BigDecimal("1.3")));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(
+                        httpClient, CLOCK).fetch(request(
+                        FlowEventDataset.ETF_FUND_FLOW,
+                        List.of(MARKET)));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.historyComplete()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.failureReason())
+                .contains("conflicting fund_nav")
+                .contains("conflicting fund_daily");
     }
 
     @Test
@@ -406,6 +530,9 @@ class TushareFlowEventSourceClientTest {
                     .containsEntry("formulaVersion", "forecast-range-midpoint-v1")
                     .containsEntry("pChangeMin", new BigDecimal("-50"))
                     .containsEntry("pChangeMax", new BigDecimal("-30"))
+                    .containsEntry(
+                            "last_parent_net",
+                            new BigDecimal("900"))
                     .containsEntry("adverse", true);
         });
         ArgumentCaptor<TushareRiskRequest> captor =
@@ -861,6 +988,7 @@ class TushareFlowEventSourceClientTest {
                 Map.entry("p_change_max", new BigDecimal(maximumChange)),
                 Map.entry("net_profit_min", new BigDecimal("1000")),
                 Map.entry("net_profit_max", new BigDecimal("1200")),
+                Map.entry("last_parent_net", new BigDecimal("900")),
                 Map.entry("first_ann_date", "20260715"),
                 Map.entry("summary", summary),
                 Map.entry("change_reason", reason));
