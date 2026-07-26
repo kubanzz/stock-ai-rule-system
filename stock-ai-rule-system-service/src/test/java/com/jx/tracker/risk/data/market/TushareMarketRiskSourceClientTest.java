@@ -1148,8 +1148,9 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
-    void breadthRetryResumesFromTheFailedDateWithoutRefetchingSuccessfulDates() {
-        List<LocalDate> dates = datesEndingToday(3);
+    void breadthRetryKeepsSixScoringYearsPlusWarmupInProcess() {
+        int supportedOpenDays = 6 * 252 + 252;
+        List<LocalDate> dates = datesEndingToday(supportedOpenDays);
         Map<LocalDate, AtomicInteger> dailyCalls = new java.util.LinkedHashMap<>();
         AtomicInteger permits = new AtomicInteger();
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
@@ -1188,13 +1189,14 @@ class TushareMarketRiskSourceClientTest {
         assertThat(failed.qualityStatus())
                 .isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
         assertThat(resumed.qualityStatus())
-                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
-        assertThat(dailyCalls)
-                .extractingByKeys(
-                        dates.getFirst(), dates.get(1), dates.getLast())
-                .extracting(AtomicInteger::get)
-                .containsExactly(1, 1, 2);
-        assertThat(permits).hasValue(4);
+                .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        List<LocalDate> refetchedSuccessfulDates =
+                dates.subList(0, dates.size() - 1).stream()
+                        .filter(date -> dailyCalls.get(date).get() != 1)
+                        .toList();
+        assertThat(refetchedSuccessfulDates).isEmpty();
+        assertThat(dailyCalls.get(dates.getLast())).hasValue(2);
+        assertThat(permits).hasValue(supportedOpenDays + 1);
     }
 
     @Test

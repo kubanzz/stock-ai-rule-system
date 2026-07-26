@@ -44,7 +44,15 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private static final BigDecimal FORMAL_OPEN_DAY_COVERAGE =
             new BigDecimal("0.95");
     private static final int STOCK_MASTER_CACHE_DATES = 32;
-    private static final int BREADTH_DAILY_CACHE_DATES = 512;
+    private static final int BREADTH_SIX_YEAR_SCORING_AND_WARMUP_OPEN_DAYS =
+            6 * 252 + 252;
+    /**
+     * Same-process breadth resume supports at most 2048 open dates. This covers
+     * six 252-session scoring years plus the 252-session rolling warmup (1764
+     * dates) with margin; the cache is intentionally not persisted on restart.
+     */
+    private static final int BREADTH_IN_PROCESS_RESUME_MAX_OPEN_DAYS =
+            Math.max(2_048, BREADTH_SIX_YEAR_SCORING_AND_WARMUP_OPEN_DAYS);
     private static final int INDEX_MEMBER_ALL_ROW_LIMIT = 2_000;
     private static final int DAILY_ROW_LIMIT = 6_000;
     private static final Duration BREADTH_REQUEST_DELAY =
@@ -343,7 +351,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         BreadthDailySlice loaded = new BreadthDailySlice(
                 bars, response.rows().size() >= DAILY_ROW_LIMIT);
         breadthDailyCache.put(openDate, loaded);
-        while (breadthDailyCache.size() > BREADTH_DAILY_CACHE_DATES) {
+        while (breadthDailyCache.size()
+                > BREADTH_IN_PROCESS_RESUME_MAX_OPEN_DAYS) {
             LocalDate earliestDate = breadthDailyCache.keySet().stream()
                     .min(LocalDate::compareTo)
                     .orElseThrow();
