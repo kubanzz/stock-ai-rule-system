@@ -170,9 +170,16 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
     }
 
     private String normalizedValue(FlowEventSourceRecord record) {
-        return record.value() == null
-                ? "null:" + record.unit()
-                : record.value().stripTrailingZeros().toPlainString()
+        if (record.value() == null) {
+            return "null:" + record.unit();
+        }
+        if ("tenThousandShares".equals(record.unit())) {
+            return record.value()
+                    .multiply(java.math.BigDecimal.valueOf(10_000))
+                    .stripTrailingZeros().toPlainString()
+                    + ":shares";
+        }
+        return record.value().stripTrailingZeros().toPlainString()
                 + ":" + record.unit();
     }
 

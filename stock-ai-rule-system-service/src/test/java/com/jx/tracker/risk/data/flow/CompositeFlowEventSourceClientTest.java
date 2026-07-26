@@ -216,6 +216,54 @@ class CompositeFlowEventSourceClientTest {
         assertThat(supplementCalls).hasValue(0);
     }
 
+    @Test
+    void normalizesShareUnitsInCrossSourceBusinessKey() {
+        RiskObjectKey object = new RiskObjectKey(
+                RiskObjectType.STOCK, "600519.SH");
+        LocalDate eventDate = LocalDate.of(2026, 7, 14);
+        LocalDateTime observedAt =
+                LocalDateTime.of(2026, 7, 15, 0, 0);
+        FlowEventSourceRecord primaryRecord =
+                new FlowEventSourceRecord(
+                        "tushare-reduction", "primary-cursor",
+                        object, eventDate,
+                        eventDate.atTime(15, 0), observedAt,
+                        observedAt.plusDays(1),
+                        new BigDecimal("30000"), "shares",
+                        "share_reduction", "股东减持",
+                        Map.of("direction", "DE"));
+        FlowEventSourceRecord supplementRecord =
+                new FlowEventSourceRecord(
+                        "aktools-reduction", "fallback-cursor",
+                        object, eventDate,
+                        eventDate.atTime(15, 0), observedAt,
+                        observedAt.plusDays(2),
+                        new BigDecimal("3"), "tenThousandShares",
+                        "share_reduction", "减持",
+                        Map.of("direction", "减持"));
+        FlowEventSourceBatch primary = new FlowEventSourceBatch(
+                "tushare", List.of(primaryRecord),
+                RiskDataQualityStatus.AVAILABLE,
+                "partial", null, eventDate, false,
+                FETCHED_AT, null);
+        FlowEventSourceBatch supplement =
+                new FlowEventSourceBatch(
+                        "aktools", List.of(supplementRecord),
+                        RiskDataQualityStatus.AVAILABLE,
+                        null, null, eventDate, true,
+                        FETCHED_AT.plusMinutes(1), null);
+        CompositeFlowEventSourceClient client =
+                new CompositeFlowEventSourceClient(
+                        request -> primary,
+                        List.of(supplementCalls(
+                                new AtomicInteger(), supplement)));
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.SHARE_REDUCTION, object));
+
+        assertThat(result.records()).containsExactly(primaryRecord);
+    }
+
     private static FlowEventSupplementProvider supplementCalls(
             AtomicInteger calls,
             FlowEventSourceBatch batch
