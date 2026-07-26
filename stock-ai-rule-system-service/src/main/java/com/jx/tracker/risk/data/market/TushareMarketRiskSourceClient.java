@@ -34,6 +34,9 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private static final String BROAD_MARKET_CODE = "000985.CSI";
     private static final String BENCHMARK_CODE = "000300.SH";
     private static final String LEADER_CODE = "000016.SH";
+    private static final String TREASURY_CURVE_CODE = "1001.CB";
+    private static final String TREASURY_CURVE_TYPE = "0";
+    private static final String TREASURY_CURVE_TERM = "10";
     private static final String BENCHMARK_DEFINITION =
             "CSI300:000300.SH:index_daily:close";
     private static final String LEADER_DEFINITION =
@@ -143,7 +146,7 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             case SW1_MEMBERSHIP -> "index_member_all";
             case MARKET_DAILY ->
                     "trade_cal,daily,adj_factor,index_daily";
-            case VALUATION -> "shibor,daily_basic";
+            case VALUATION -> "yc_cb,daily_basic";
             case BREADTH -> "trade_cal,daily";
             case CROSS_MARKET ->
                     "trade_cal,index_global,index_daily";
@@ -431,10 +434,11 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                             + "for market/sector valuation",
                     fetchedAt);
         }
-        Map<LocalDate, BigDecimal> riskFreeYields = shiborByDate(request);
+        Map<LocalDate, BigDecimal> riskFreeYields =
+                treasuryYieldByDate(request);
         List<MarketSourceRecord> records = new ArrayList<>();
         boolean incomplete = stocks.size() != request.objects().size();
-        boolean missingExactDateShibor = false;
+        boolean missingExactDateTreasuryYield = false;
         List<String> missingDailyBasicCodes = new ArrayList<>();
         for (RiskObjectKey object : stocks) {
             TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
@@ -466,10 +470,12 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 boolean scoringEligible = riskFreeYield != null;
                 String qualityReason = scoringEligible
                         ? null
-                        : "shibor 1y is missing for exact trade date " + tradeDate;
+                        : "yc_cb " + TREASURY_CURVE_CODE
+                                + " 10Y treasury yield is missing for exact trade date "
+                                + tradeDate;
                 if (!scoringEligible) {
                     incomplete = true;
-                    missingExactDateShibor = true;
+                    missingExactDateTreasuryYield = true;
                 }
                 records.add(new ValuationPoint(
                         stock(text(row, "ts_code")),
@@ -487,8 +493,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         true,
                         scoringEligible,
                         qualityReason,
-                        "tushare-daily-basic-pe-ttm-v1",
-                        "tushare-cn-close-shibor-same-date-available-1800-v1",
+                        "tushare-daily-basic-pe-ttm-yc-cb-10y-v1",
+                        "tushare-cn-close-yc-cb-10y-same-date-available-1800-v1",
                         observedAt(tradeDate),
                         availableAt(tradeDate),
                         SOURCE,
@@ -505,8 +511,9 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
         }
         if (incomplete) {
-            String reason = missingExactDateShibor
-                    ? "shibor 1y is missing for one or more exact trade dates"
+            String reason = missingExactDateTreasuryYield
+                    ? "yc_cb 1001.CB 10Y treasury yield is missing "
+                            + "for one or more exact trade dates"
                     : "daily_basic returned incomplete rows for one or more requested stocks";
             return MarketSourceBatch.partialHistory(
                     SOURCE, records, null, reason, fetchedAt);
@@ -515,31 +522,54 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 SOURCE, records, request.checkpoint(), fetchedAt);
     }
 
-    private Map<LocalDate, BigDecimal> shiborByDate(
+    private Map<LocalDate, BigDecimal> treasuryYieldByDate(
             RiskProviderRequest request
     ) {
+        Map<String, Object> params = new LinkedHashMap<>(dateWindow(request));
+        params.put("ts_code", TREASURY_CURVE_CODE);
+        params.put("curve_type", TREASURY_CURVE_TYPE);
+        params.put("curve_term", TREASURY_CURVE_TERM);
         TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
-                "shibor",
-                dateWindow(request),
-                "date,1y"));
+                "yc_cb",
+                Map.copyOf(params),
+                "trade_date,ts_code,curve_name,curve_type,curve_term,yield"));
         Map<LocalDate, BigDecimal> yields = new LinkedHashMap<>();
         for (Map<String, Object> row : response.rows()) {
-            LocalDate date = date(row, "date");
+            if (!hasExpectedCode(row, TREASURY_CURVE_CODE)
+                    || !TREASURY_CURVE_TYPE.equals(
+                            optionalText(row, "curve_type"))
+                    || !matchesTreasuryCurveTerm(row)) {
+                continue;
+            }
+            LocalDate date = date(row, "trade_date");
             if (date.isBefore(request.startDate())
                     || date.isAfter(request.endDate())) {
                 continue;
             }
-            if (optionalText(row, "1y") == null) {
+            if (optionalText(row, "yield") == null) {
                 continue;
             }
             BigDecimal previous = yields.put(
-                    date, decimal(row, "1y").movePointLeft(2));
+                    date, decimal(row, "yield").movePointLeft(2));
             if (previous != null) {
                 throw new IllegalArgumentException(
-                        "shibor returned duplicate date");
+                        "yc_cb returned duplicate trade_date");
             }
         }
         return Map.copyOf(yields);
+    }
+
+    private boolean matchesTreasuryCurveTerm(Map<String, Object> row) {
+        String value = optionalText(row, "curve_term");
+        if (value == null) {
+            return false;
+        }
+        try {
+            return new BigDecimal(value)
+                    .compareTo(new BigDecimal(TREASURY_CURVE_TERM)) == 0;
+        } catch (NumberFormatException exception) {
+            return false;
+        }
     }
 
     private MarketSourceBatch marketDaily(

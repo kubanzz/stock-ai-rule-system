@@ -688,7 +688,7 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
-    void dailyBasicAlignsTheExactDateShiborYieldForFormalScoring() {
+    void dailyBasicAlignsTheExactDateTenYearTreasuryCurveForFormalScoring() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
@@ -699,11 +699,20 @@ class TushareMarketRiskSourceClientTest {
                                 "ts_code", "600519.SH",
                                 "trade_date", "20260718",
                                 "pe_ttm", new BigDecimal("25.00")));
-                case "shibor" -> response(
-                        "shibor",
+                case "yc_cb" -> response(
+                        "yc_cb",
                         Map.of(
-                                "date", "20260718",
-                                "1y", new BigDecimal("1.8500")));
+                                "trade_date", "20260718",
+                                "ts_code", "1001.CB",
+                                "curve_name", "中债国债收益率曲线",
+                                "curve_type", "0",
+                                "curve_term", "10",
+                                "yield", new BigDecimal("2.3500")),
+                        treasuryCurveRow("1002.CB", "0", "10", TODAY, "99"),
+                        treasuryCurveRow("1001.CB", "1", "10", TODAY, "99"),
+                        treasuryCurveRow("1001.CB", "0", "5", TODAY, "99"),
+                        treasuryCurveRow(
+                                "1001.CB", "0", "10", TODAY.minusDays(1), "99"));
                 default -> response(query.apiName());
             };
         });
@@ -720,14 +729,15 @@ class TushareMarketRiskSourceClientTest {
             assertThat(point.object()).isEqualTo(STOCK);
             assertThat(point.peTtm()).isEqualByComparingTo("25.00");
             assertThat(point.earningsYield()).isEqualByComparingTo("0.0400000000");
-            assertThat(point.riskFreeYield()).isEqualByComparingTo("0.018500");
+            assertThat(point.riskFreeYield()).isEqualByComparingTo("0.023500");
             assertThat(point.proxy()).isFalse();
             assertThat(point.constituentCount()).isZero();
             assertThat(point.constituentUniversePointInTime()).isTrue();
             assertThat(point.scoringEligible()).isTrue();
-            assertThat(point.calculationVersion()).isEqualTo("tushare-daily-basic-pe-ttm-v1");
+            assertThat(point.calculationVersion())
+                    .isEqualTo("tushare-daily-basic-pe-ttm-yc-cb-10y-v1");
             assertThat(point.availabilityPolicyVersion())
-                    .isEqualTo("tushare-cn-close-shibor-same-date-available-1800-v1");
+                    .isEqualTo("tushare-cn-close-yc-cb-10y-same-date-available-1800-v1");
             assertThat(point.observedAt()).isEqualTo(TODAY.atTime(15, 0));
             assertThat(point.availableAt()).isEqualTo(TODAY.atTime(18, 0));
         });
@@ -743,20 +753,24 @@ class TushareMarketRiskSourceClientTest {
                             .containsEntry("start_date", "20260718")
                             .containsEntry("end_date", "20260718");
                     assertThat(query.fields()).isEqualTo("ts_code,trade_date,pe_ttm");
-                });
+        });
         assertThat(requestCaptor.getAllValues())
-                .filteredOn(query -> query.apiName().equals("shibor"))
+                .filteredOn(query -> query.apiName().equals("yc_cb"))
                 .singleElement()
                 .satisfies(query -> {
                     assertThat(query.params())
+                            .containsEntry("ts_code", "1001.CB")
+                            .containsEntry("curve_type", "0")
+                            .containsEntry("curve_term", "10")
                             .containsEntry("start_date", "20260718")
                             .containsEntry("end_date", "20260718");
-                    assertThat(query.fields()).isEqualTo("date,1y");
+                    assertThat(query.fields()).isEqualTo(
+                            "trade_date,ts_code,curve_name,curve_type,curve_term,yield");
                 });
     }
 
     @Test
-    void valuationKeepsAnAuditOnlyPointWhenTheExactDateShiborRateIsMissing() {
+    void valuationKeepsAnAuditOnlyPointWhenTheExactDateTreasuryYieldIsMissing() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
@@ -767,9 +781,13 @@ class TushareMarketRiskSourceClientTest {
                                 "ts_code", "600519.SH",
                                 "trade_date", "20260718",
                                 "pe_ttm", new BigDecimal("25.00")));
-                case "shibor" -> response(
-                        "shibor",
-                        Map.of("date", "20260718"));
+                case "yc_cb" -> response(
+                        "yc_cb",
+                        Map.of(
+                                "trade_date", "20260718",
+                                "ts_code", "1001.CB",
+                                "curve_type", "0",
+                                "curve_term", "10"));
                 default -> response(query.apiName());
             };
         });
@@ -783,21 +801,22 @@ class TushareMarketRiskSourceClientTest {
         assertThat(result.qualityStatus())
                 .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.nextCheckpoint()).isNull();
-        assertThat(result.failureReason()).contains("shibor", "exact trade date");
+        assertThat(result.failureReason()).contains("yc_cb", "exact trade date");
         assertThat(result.records()).singleElement().satisfies(record -> {
             ValuationPoint point = (ValuationPoint) record;
             assertThat(point.riskFreeYield()).isNull();
             assertThat(point.scoringEligible()).isFalse();
             assertThat(point.qualityStatus())
                     .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
-            assertThat(point.qualityReason()).contains("shibor", "2026-07-18");
+            assertThat(point.qualityReason())
+                    .contains("yc_cb", "1001.CB", "10Y", "2026-07-18");
         });
         ArgumentCaptor<TushareRiskRequest> requestCaptor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
         verify(httpClient, org.mockito.Mockito.times(2)).query(requestCaptor.capture());
         assertThat(requestCaptor.getAllValues())
                 .extracting(TushareRiskRequest::apiName)
-                .containsExactlyInAnyOrder("daily_basic", "shibor");
+                .containsExactlyInAnyOrder("daily_basic", "yc_cb");
     }
 
     @Test
@@ -812,11 +831,10 @@ class TushareMarketRiskSourceClientTest {
                                 "ts_code", "000001.SZ",
                                 "trade_date", "20260718",
                                 "pe_ttm", new BigDecimal("10.00")));
-                case "shibor" -> response(
-                        "shibor",
-                        Map.of(
-                                "date", "20260718",
-                                "1y", new BigDecimal("1.8500")));
+                case "yc_cb" -> response(
+                        "yc_cb",
+                        treasuryCurveRow(
+                                "1001.CB", "0", "10", TODAY, "2.3500"));
                 default -> response(query.apiName());
             };
         });
@@ -831,6 +849,47 @@ class TushareMarketRiskSourceClientTest {
                 .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.records()).isEmpty();
         assertThat(result.failureReason()).contains("daily_basic", "600519.SH");
+    }
+
+    @Test
+    void treasuryCurvePermissionFailureFailsClosedAndLetsFallbackSupplyValuation() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            if ("yc_cb".equals(query.apiName())) {
+                throw failure(TushareRiskException.Category.PERMISSION, "yc_cb");
+            }
+            return response(query.apiName());
+        });
+        TushareMarketRiskSourceClient primary =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+        ValuationPoint fallbackPoint = new ValuationPoint(
+                STOCK,
+                TODAY,
+                new BigDecimal("25"),
+                new BigDecimal("0.04"),
+                new BigDecimal("0.0235"),
+                TODAY.atTime(15, 0),
+                TODAY.atTime(18, 0),
+                "aktools",
+                RiskDataQualityStatus.AVAILABLE);
+        FallbackMarketRiskSourceClient client =
+                new FallbackMarketRiskSourceClient(
+                        primary,
+                        (dataset, request) -> new MarketSourceBatch(
+                                "aktools",
+                                List.of(fallbackPoint),
+                                null,
+                                TODAY.atTime(20, 0)));
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.VALUATION,
+                request(List.of(STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).containsExactly(fallbackPoint);
+        assertThat(result.source()).isEqualTo("tushare->aktools");
+        assertThat(result.fallbackReason()).contains("yc_cb", "permission");
     }
 
     @Test
@@ -1364,6 +1423,22 @@ class TushareMarketRiskSourceClientTest {
                 "trade_date", compact(tradeDate),
                 "close", close,
                 "pre_close", previousClose);
+    }
+
+    private static Map<String, Object> treasuryCurveRow(
+            String code,
+            String curveType,
+            String curveTerm,
+            LocalDate tradeDate,
+            String yield
+    ) {
+        return Map.of(
+                "trade_date", compact(tradeDate),
+                "ts_code", code,
+                "curve_name", "中债国债收益率曲线",
+                "curve_type", curveType,
+                "curve_term", curveTerm,
+                "yield", new BigDecimal(yield));
     }
 
     private static Map<String, Object> openDayRow(LocalDate date) {
