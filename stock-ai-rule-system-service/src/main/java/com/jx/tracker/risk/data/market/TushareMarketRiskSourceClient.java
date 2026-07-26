@@ -434,31 +434,41 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                             + "for market/sector valuation",
                     fetchedAt);
         }
+        Set<LocalDate> openDates = openTradingDates(request);
+        if (openDates.isEmpty()) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "trade_cal did not confirm the valuation history window",
+                    fetchedAt);
+        }
         Map<LocalDate, BigDecimal> riskFreeYields =
                 treasuryYieldByDate(request);
         List<MarketSourceRecord> records = new ArrayList<>();
         boolean incomplete = stocks.size() != request.objects().size();
         boolean missingExactDateTreasuryYield = false;
         List<String> missingDailyBasicCodes = new ArrayList<>();
+        List<String> gaps = new ArrayList<>();
         for (RiskObjectKey object : stocks) {
             TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
                     "daily_basic",
                     withCode(dateWindow(request), object.objectId()),
                     "ts_code,trade_date,pe_ttm"));
-            List<Map<String, Object>> matchingRows = response.rows().stream()
-                    .filter(row -> hasExpectedCode(row, object.objectId()))
-                    .toList();
-            if (matchingRows.size() != response.rows().size()) {
+            if (response.rows().size() >= 2_000) {
+                gaps.add("daily_basic " + object.objectId()
+                        + " reached documented 2000-row limit and may be truncated");
                 incomplete = true;
             }
-            if (matchingRows.isEmpty()) {
-                incomplete = true;
-                missingDailyBasicCodes.add(object.objectId());
-            }
-            for (Map<String, Object> row : matchingRows) {
+            Map<LocalDate, BigDecimal> peByDate = new LinkedHashMap<>();
+            int matchingRowCount = 0;
+            for (Map<String, Object> row : response.rows()) {
+                if (!hasExpectedCode(row, object.objectId())) {
+                    continue;
+                }
+                matchingRowCount++;
                 LocalDate tradeDate = date(row, "trade_date");
                 if (tradeDate.isBefore(request.startDate())
-                        || tradeDate.isAfter(request.endDate())) {
+                        || tradeDate.isAfter(request.endDate())
+                        || !openDates.contains(tradeDate)) {
                     continue;
                 }
                 BigDecimal peTtm = decimal(row, "pe_ttm");
@@ -466,6 +476,32 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                     incomplete = true;
                     continue;
                 }
+                if (peByDate.put(tradeDate, peTtm) != null) {
+                    throw new IllegalArgumentException(
+                            "daily_basic returned duplicate trade_date");
+                }
+            }
+            if (matchingRowCount != response.rows().size()) {
+                incomplete = true;
+                gaps.add("daily_basic " + object.objectId()
+                        + " returned mismatched ts_code rows");
+            }
+            if (peByDate.isEmpty()) {
+                incomplete = true;
+                missingDailyBasicCodes.add(object.objectId());
+            }
+            int gapCountBeforeCoverage = gaps.size();
+            recordCoverageGap(
+                    gaps,
+                    "daily_basic " + object.objectId(),
+                    peByDate.keySet(),
+                    openDates);
+            if (gaps.size() != gapCountBeforeCoverage) {
+                incomplete = true;
+            }
+            for (Map.Entry<LocalDate, BigDecimal> entry : peByDate.entrySet()) {
+                LocalDate tradeDate = entry.getKey();
+                BigDecimal peTtm = entry.getValue();
                 BigDecimal riskFreeYield = riskFreeYields.get(tradeDate);
                 boolean scoringEligible = riskFreeYield != null;
                 String qualityReason = scoringEligible
@@ -478,7 +514,7 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                     missingExactDateTreasuryYield = true;
                 }
                 records.add(new ValuationPoint(
-                        stock(text(row, "ts_code")),
+                        object,
                         tradeDate,
                         peTtm,
                         BigDecimal.ONE.divide(peTtm, 10, RoundingMode.HALF_UP),
@@ -504,19 +540,25 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             }
         }
         if (records.isEmpty()) {
-            String reason = missingDailyBasicCodes.isEmpty()
-                    ? "daily_basic returned no usable valuation rows"
-                    : "daily_basic returned no matching rows for requested stocks "
-                            + missingDailyBasicCodes;
+            String reason = !gaps.isEmpty()
+                    ? String.join("; ", gaps)
+                    : missingDailyBasicCodes.isEmpty()
+                            ? "daily_basic returned no usable valuation rows"
+                            : "daily_basic returned no matching rows for requested stocks "
+                                    + missingDailyBasicCodes;
             return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
         }
         if (incomplete) {
-            String reason = missingExactDateTreasuryYield
-                    ? "yc_cb 1001.CB 10Y treasury yield is missing "
-                            + "for one or more exact trade dates"
-                    : "daily_basic returned incomplete rows for one or more requested stocks";
+            if (missingExactDateTreasuryYield) {
+                gaps.add("yc_cb 1001.CB 10Y treasury yield is missing "
+                        + "for one or more exact trade dates");
+            }
+            if (gaps.isEmpty()) {
+                gaps.add("daily_basic returned incomplete rows for one or more "
+                        + "requested stocks");
+            }
             return MarketSourceBatch.partialHistory(
-                    SOURCE, records, null, reason, fetchedAt);
+                    SOURCE, records, null, String.join("; ", gaps), fetchedAt);
         }
         return new MarketSourceBatch(
                 SOURCE, records, request.checkpoint(), fetchedAt);

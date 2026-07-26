@@ -750,6 +750,7 @@ class TushareMarketRiskSourceClientTest {
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
             return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal", openDayRow(TODAY));
                 case "daily_basic" -> response(
                         "daily_basic",
                         Map.of(
@@ -800,7 +801,7 @@ class TushareMarketRiskSourceClientTest {
         });
         ArgumentCaptor<TushareRiskRequest> requestCaptor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient, org.mockito.Mockito.times(2)).query(requestCaptor.capture());
+        verify(httpClient, org.mockito.Mockito.times(3)).query(requestCaptor.capture());
         assertThat(requestCaptor.getAllValues())
                 .filteredOn(query -> query.apiName().equals("daily_basic"))
                 .singleElement()
@@ -832,6 +833,7 @@ class TushareMarketRiskSourceClientTest {
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
             return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal", openDayRow(TODAY));
                 case "daily_basic" -> response(
                         "daily_basic",
                         Map.of(
@@ -870,10 +872,10 @@ class TushareMarketRiskSourceClientTest {
         });
         ArgumentCaptor<TushareRiskRequest> requestCaptor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient, org.mockito.Mockito.times(2)).query(requestCaptor.capture());
+        verify(httpClient, org.mockito.Mockito.times(3)).query(requestCaptor.capture());
         assertThat(requestCaptor.getAllValues())
                 .extracting(TushareRiskRequest::apiName)
-                .containsExactlyInAnyOrder("daily_basic", "yc_cb");
+                .containsExactlyInAnyOrder("trade_cal", "daily_basic", "yc_cb");
     }
 
     @Test
@@ -882,6 +884,7 @@ class TushareMarketRiskSourceClientTest {
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
             return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal", openDayRow(TODAY));
                 case "daily_basic" -> response(
                         "daily_basic",
                         Map.of(
@@ -909,10 +912,118 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
+    void valuationChecksDailyBasicCoverageIndependentlyForEveryStock() {
+        List<LocalDate> openDates = datesEndingToday(20);
+        List<LocalDate> incompleteDates = openDates.subList(0, 18);
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "trade_cal:null" -> responseRows(
+                        "trade_cal",
+                        openDates.stream()
+                                .map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+                case "yc_cb:1001.CB" -> responseRows(
+                        "yc_cb",
+                        openDates.stream().map(date -> treasuryCurveRow(
+                                "1001.CB", "0", "10", date, "2.35"))
+                                .toList());
+                case "daily_basic:600519.SH" -> responseRows(
+                        "daily_basic",
+                        openDates.stream().map(date -> dailyBasicRow(
+                                "600519.SH", date, "25"))
+                                .toList());
+                case "daily_basic:000001.SZ" -> responseRows(
+                        "daily_basic",
+                        incompleteDates.stream().map(date -> dailyBasicRow(
+                                "000001.SZ", date, "12"))
+                                .toList());
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.VALUATION,
+                request(
+                        List.of(STOCK, OTHER_STOCK),
+                        openDates.getFirst(),
+                        openDates.getFirst(),
+                        openDates.getLast()));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).hasSize(38);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason())
+                .contains("daily_basic 000001.SZ", "coverage=90%")
+                .doesNotContain("daily_basic 600519.SH coverage");
+        ArgumentCaptor<TushareRiskRequest> captor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(4)).query(captor.capture());
+        assertThat(captor.getAllValues())
+                .filteredOn(query -> query.apiName().equals("trade_cal"))
+                .singleElement();
+    }
+
+    @Test
+    void valuationTreatsExactlyTwoThousandDailyBasicRowsAsTruncated() {
+        List<LocalDate> openDates = datesEndingToday(20);
+        List<Map<String, Object>> rows = new java.util.ArrayList<>(
+                openDates.stream().map(date ->
+                        dailyBasicRow("600519.SH", date, "25")).toList());
+        IntStream.range(0, 1980).forEach(index -> rows.add(dailyBasicRow(
+                "600519.SH",
+                openDates.getFirst().minusDays(index + 1L),
+                "25")));
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> responseRows(
+                        "trade_cal",
+                        openDates.stream()
+                                .map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+                case "yc_cb" -> responseRows(
+                        "yc_cb",
+                        openDates.stream().map(date -> treasuryCurveRow(
+                                "1001.CB", "0", "10", date, "2.35"))
+                                .toList());
+                case "daily_basic" -> responseRows("daily_basic", rows);
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.VALUATION,
+                request(
+                        List.of(STOCK),
+                        openDates.getFirst(),
+                        openDates.getFirst(),
+                        openDates.getLast()));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).hasSize(20);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason())
+                .contains("daily_basic", "600519.SH", "2000", "truncated");
+    }
+
+    @Test
     void treasuryCurvePermissionFailureFailsClosedAndLetsFallbackSupplyValuation() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
+            if ("trade_cal".equals(query.apiName())) {
+                return response("trade_cal", openDayRow(TODAY));
+            }
             if ("yc_cb".equals(query.apiName())) {
                 throw failure(TushareRiskException.Category.PERMISSION, "yc_cb");
             }
@@ -1496,6 +1607,17 @@ class TushareMarketRiskSourceClientTest {
                 "curve_type", curveType,
                 "curve_term", curveTerm,
                 "yield", new BigDecimal(yield));
+    }
+
+    private static Map<String, Object> dailyBasicRow(
+            String code,
+            LocalDate tradeDate,
+            String peTtm
+    ) {
+        return Map.of(
+                "ts_code", code,
+                "trade_date", compact(tradeDate),
+                "pe_ttm", new BigDecimal(peTtm));
     }
 
     private static Map<String, Object> openDayRow(LocalDate date) {
