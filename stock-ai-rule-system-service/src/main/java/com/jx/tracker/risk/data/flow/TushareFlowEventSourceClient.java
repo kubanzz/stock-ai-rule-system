@@ -10,6 +10,9 @@ import com.jx.tracker.risk.model.RiskObjectType;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -23,6 +26,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.HexFormat;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * TuShare structured flow/event adapter. Announcements deliberately remain on
@@ -36,6 +42,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final RiskObjectKey CN_A =
             new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
     private static final int FUND_BASIC_ROW_LIMIT = 15_000;
+    private static final int ETF_BASIC_ROW_LIMIT = 5_000;
     private static final int FUND_SHARE_ROW_LIMIT = 2_000;
     private static final int FUND_NAV_ROW_LIMIT = 2_000;
     private static final int FUND_DAILY_ROW_LIMIT = 5_000;
@@ -50,6 +57,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private final TushareRiskHttpClient httpClient;
     private final Clock clock;
+    private final ConcurrentMap<EtfCatalogWindow, EtfCatalog>
+            etfCatalogCache = new ConcurrentHashMap<>();
 
     public TushareFlowEventSourceClient(
             TushareRiskHttpClient httpClient,
@@ -329,25 +338,19 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             TradingCalendar calendar
     ) {
         LocalDate historyStart = request.startDate().minusYears(1);
-        TushareRiskResponse basicResponse = query(
-                "fund_basic", Map.of("market", "E"),
-                "ts_code,name,fund_type,type,status,list_date,"
-                        + "delist_date,market");
-        List<String> fundCodes = basicResponse.rows().stream()
-                .filter(row -> confirmedEtf(
-                        row, historyStart, request.endDate()))
-                .map(row -> normalizedCode(row, "ts_code"))
-                .distinct().sorted().toList();
+        EtfCatalog catalog = etfCatalogCache.computeIfAbsent(
+                new EtfCatalogWindow(
+                        historyStart, request.endDate()),
+                this::loadEtfCatalog);
+        List<String> fundCodes = catalog.fundCodes();
         Map<String, List<SharePoint>> sharesByFund =
                 new LinkedHashMap<>();
         Map<LocalDate, EtfAggregate> byDate = new LinkedHashMap<>();
-        List<String> gaps = new ArrayList<>();
-        if (basicResponse.rows().size() >= FUND_BASIC_ROW_LIMIT) {
-            gaps.add("fund_basic reached documented "
-                    + FUND_BASIC_ROW_LIMIT + "-row boundary");
-        }
+        List<String> gaps =
+                new ArrayList<>(catalog.gaps());
         if (fundCodes.isEmpty()) {
-            gaps.add("fund_basic returned no confirmed ETF universe");
+            gaps.add("etf_basic/fund_basic returned no "
+                    + "PIT-effective ETF universe");
         }
         int coveredFundCount = 0;
         for (String fundCode : fundCodes) {
@@ -393,9 +396,13 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 NavPoint candidate = new NavPoint(
                         decimal(row, "unit_nav"),
                         date(row, "ann_date"));
+                if (candidate.announcementDate().isAfter(
+                        request.endDate())) {
+                    continue;
+                }
                 NavPoint existing = navByDate.get(navDate);
                 if (existing == null
-                        || candidate.announcementDate().isBefore(
+                        || candidate.announcementDate().isAfter(
                                 existing.announcementDate())) {
                     navByDate.put(navDate, candidate);
                 } else if (candidate.announcementDate().equals(
@@ -520,8 +527,14 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                             Map.entry(
                                     "fundCount", aggregate.fundCount),
                             Map.entry(
-                                    "fundContributions",
-                                    aggregate.contributions()),
+                                    "fundContributionCount",
+                                    aggregate.contributionCount()),
+                            Map.entry(
+                                    "fundContributionHash",
+                                    aggregate.contributionHash()),
+                            Map.entry(
+                                    "fundContributionTop",
+                                    aggregate.topContributions()),
                             Map.entry(
                                     "universeFundCount",
                                     confirmedFundCount),
@@ -564,22 +577,83 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 records, earliestShareDate(sharesByFund), fetchedAt);
     }
 
-    private boolean confirmedEtf(
-            Map<String, Object> row,
-            LocalDate historyStart,
-            LocalDate endDate
+    private EtfCatalog loadEtfCatalog(
+            EtfCatalogWindow window
     ) {
-        String name = defaultText(row, "name", "");
-        String type = defaultText(row, "type", "");
-        if (!name.toUpperCase(Locale.ROOT).contains("ETF")
-                && !type.toUpperCase(Locale.ROOT).contains("ETF")) {
-            return false;
+        Map<String, String> catalogStatuses =
+                new LinkedHashMap<>();
+        List<String> gaps = new ArrayList<>();
+        for (String status : List.of("L", "D", "P")) {
+            TushareRiskResponse response = query(
+                    "etf_basic", Map.of("list_status", status),
+                    "ts_code,csname,extname,cname,index_code,"
+                            + "index_name,setup_date,list_date,"
+                            + "list_status,exchange,etf_type");
+            if (response.rows().size()
+                    >= ETF_BASIC_ROW_LIMIT) {
+                gaps.add("etf_basic list_status=" + status
+                        + " reached documented "
+                        + ETF_BASIC_ROW_LIMIT
+                        + "-row boundary");
+            }
+            for (Map<String, Object> row : response.rows()) {
+                String code = normalizedCode(row, "ts_code");
+                catalogStatuses.put(
+                        code, defaultText(
+                                row, "list_status", status));
+            }
         }
-        LocalDate listDate = optionalDate(row, "list_date");
-        LocalDate delistDate = optionalDate(row, "delist_date");
-        return (listDate == null || !listDate.isAfter(endDate))
-                && (delistDate == null
-                        || !delistDate.isBefore(historyStart));
+        TushareRiskResponse fundBasic = query(
+                "fund_basic", Map.of("market", "E"),
+                "ts_code,name,fund_type,status,list_date,"
+                        + "delist_date,market");
+        if (fundBasic.rows().size() >= FUND_BASIC_ROW_LIMIT) {
+            gaps.add("fund_basic reached documented "
+                    + FUND_BASIC_ROW_LIMIT + "-row boundary");
+        }
+        Map<String, Map<String, Object>> metadataByCode =
+                new LinkedHashMap<>();
+        for (Map<String, Object> row : fundBasic.rows()) {
+            metadataByCode.put(
+                    normalizedCode(row, "ts_code"), row);
+        }
+        List<String> effectiveCodes = new ArrayList<>();
+        for (Map.Entry<String, String> entry :
+                catalogStatuses.entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .toList()) {
+            String code = entry.getKey();
+            Map<String, Object> metadata =
+                    metadataByCode.get(code);
+            if (metadata == null) {
+                gaps.add("ETF " + code
+                        + " missing fund_basic date metadata");
+                continue;
+            }
+            LocalDate listDate =
+                    optionalDate(metadata, "list_date");
+            LocalDate delistDate =
+                    optionalDate(metadata, "delist_date");
+            if (listDate == null
+                    || ("D".equals(entry.getValue())
+                    && delistDate == null)) {
+                gaps.add("ETF " + code
+                        + " missing fund_basic list/delist metadata");
+                continue;
+            }
+            if (!listDate.isAfter(window.endDate())
+                    && (delistDate == null
+                    || !delistDate.isBefore(
+                            window.historyStart()))) {
+                effectiveCodes.add(code);
+            }
+        }
+        if (catalogStatuses.isEmpty()) {
+            gaps.add("etf_basic returned no ETF catalog rows");
+        }
+        return new EtfCatalog(
+                List.copyOf(effectiveCodes),
+                List.copyOf(gaps));
     }
 
     private FlowEventSourceBatch forecasts(
@@ -990,7 +1064,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         return switch (dataset) {
             case MARGIN_FINANCING -> "margin,margin_detail";
             case ETF_FUND_FLOW ->
-                    "fund_share,fund_nav,fund_daily";
+                    "etf_basic,fund_basic,fund_share,"
+                            + "fund_nav,fund_daily";
             case EARNINGS_FORECAST -> "forecast_vip";
             case STOCK_ANNOUNCEMENT -> "cninfo/aktools";
             case SHARE_UNLOCK -> "share_float";
@@ -1402,7 +1477,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         private BigDecimal netFlow = BigDecimal.ZERO;
         private BigDecimal referenceAssets = BigDecimal.ZERO;
         private BigDecimal closeWeightedAssets = BigDecimal.ZERO;
-        private final List<Map<String, Object>> fundContributions =
+        private final List<EtfContribution> fundContributions =
                 new ArrayList<>();
         private int fundCount;
         private LocalDateTime availableAt =
@@ -1421,14 +1496,9 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             referenceAssets = referenceAssets.add(assets);
             closeWeightedAssets =
                     closeWeightedAssets.add(close.multiply(assets));
-            fundContributions.add(Map.of(
-                    "fundCode", fundCode,
-                    "netFlow", flow,
-                    "referenceAssets", assets,
-                    "close", close,
-                    "unitNav", unitNav,
-                    "navAnnouncementDate",
-                    navAnnouncementDate));
+            fundContributions.add(new EtfContribution(
+                    fundCode, flow, assets, close,
+                    unitNav, navAnnouncementDate));
             fundCount++;
             availableAt = availableAt.isAfter(availability)
                     ? availableAt : availability;
@@ -1444,14 +1514,86 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     .stripTrailingZeros();
         }
 
-        private List<Map<String, Object>> contributions() {
+        private int contributionCount() {
+            return fundContributions.size();
+        }
+
+        private String contributionHash() {
+            String canonical = sortedContributions().stream()
+                    .map(EtfContribution::canonical)
+                    .collect(java.util.stream.Collectors
+                            .joining("|"));
+            try {
+                return HexFormat.of().formatHex(
+                        MessageDigest.getInstance("SHA-256")
+                                .digest(canonical.getBytes(
+                                        StandardCharsets.UTF_8)));
+            } catch (NoSuchAlgorithmException exception) {
+                throw new IllegalStateException(
+                        "SHA-256 unavailable", exception);
+            }
+        }
+
+        private List<Map<String, Object>> topContributions() {
             return fundContributions.stream()
-                    .sorted(Comparator.comparing(
-                            contribution -> contribution
-                                    .get("fundCode").toString()))
-                    .map(Map::copyOf)
+                    .sorted(Comparator
+                            .comparing(
+                                    (EtfContribution item) ->
+                                            item.netFlow().abs())
+                            .reversed()
+                            .thenComparing(
+                                    EtfContribution::fundCode))
+                    .limit(5)
+                    .map(EtfContribution::auditMap)
                     .toList();
         }
+
+        private List<EtfContribution> sortedContributions() {
+            return fundContributions.stream()
+                    .sorted(Comparator.comparing(
+                            EtfContribution::fundCode))
+                    .toList();
+        }
+    }
+
+    private record EtfContribution(
+            String fundCode,
+            BigDecimal netFlow,
+            BigDecimal referenceAssets,
+            BigDecimal close,
+            BigDecimal unitNav,
+            LocalDate navAnnouncementDate
+    ) {
+        private String canonical() {
+            return fundCode + ":" + netFlow.toPlainString()
+                    + ":" + referenceAssets.toPlainString()
+                    + ":" + close.toPlainString()
+                    + ":" + unitNav.toPlainString()
+                    + ":" + navAnnouncementDate;
+        }
+
+        private Map<String, Object> auditMap() {
+            return Map.of(
+                    "fundCode", fundCode,
+                    "netFlow", netFlow,
+                    "referenceAssets", referenceAssets,
+                    "close", close,
+                    "unitNav", unitNav,
+                    "navAnnouncementDate",
+                    navAnnouncementDate);
+        }
+    }
+
+    private record EtfCatalogWindow(
+            LocalDate historyStart,
+            LocalDate endDate
+    ) {
+    }
+
+    private record EtfCatalog(
+            List<String> fundCodes,
+            List<String> gaps
+    ) {
     }
 
     private record NavPoint(
