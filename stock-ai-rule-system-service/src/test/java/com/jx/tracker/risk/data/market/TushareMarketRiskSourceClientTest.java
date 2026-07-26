@@ -9,6 +9,7 @@ import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
+import com.jx.tracker.risk.provider.RiskProviderBatch;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -86,6 +87,29 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
+    void stockBasicIsCachedByFetchedDate() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(response(
+                "stock_basic",
+                Map.of(
+                        "ts_code", "600519.SH",
+                        "name", "贵州茅台",
+                        "list_date", "20010827")));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+        RiskProviderRequest request =
+                request(List.of(STOCK), TODAY, TODAY, TODAY);
+
+        MarketSourceBatch first = client.fetch(
+                MarketDatasetCode.CN_A_STOCK_MASTER, request);
+        MarketSourceBatch second = client.fetch(
+                MarketDatasetCode.CN_A_STOCK_MASTER, request);
+
+        assertThat(first.records()).isEqualTo(second.records());
+        verify(httpClient).query(any());
+    }
+
+    @Test
     void stockBasicDoesNotBackdateTheCurrentSnapshot() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         TushareMarketRiskSourceClient client =
@@ -142,8 +166,8 @@ class TushareMarketRiskSourceClientTest {
             assertThat(exposure.sectorName()).isEqualTo("食品饮料");
             assertThat(exposure.validFrom()).isEqualTo(LocalDate.of(2021, 7, 1));
             assertThat(exposure.validTo()).isEqualTo(LocalDate.of(2026, 12, 31));
-            assertThat(exposure.observedAt()).isEqualTo(LocalDateTime.of(2026, 7, 18, 20, 0));
-            assertThat(exposure.availableAt()).isEqualTo(exposure.observedAt());
+            assertThat(exposure.observedAt()).isEqualTo(LocalDateTime.of(2021, 7, 1, 0, 0));
+            assertThat(exposure.availableAt()).isEqualTo(LocalDateTime.of(2021, 7, 1, 20, 0));
         });
         ArgumentCaptor<TushareRiskRequest> requestCaptor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
@@ -154,6 +178,100 @@ class TushareMarketRiskSourceClientTest {
             assertThat(query.fields())
                     .isEqualTo("l1_code,l1_name,ts_code,in_date,out_date");
         });
+    }
+
+    @Test
+    void membershipQueriesOncePerRequestedStockAndFiltersEachResponseCode() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String requestedCode = (String) query.params().get("ts_code");
+            String otherCode = STOCK.objectId().equals(requestedCode)
+                    ? OTHER_STOCK.objectId() : STOCK.objectId();
+            return response(
+                    "index_member_all",
+                    membershipRow(requestedCode, "801120.SI", "食品饮料"),
+                    membershipRow(otherCode, "801780.SI", "银行"));
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.SW1_MEMBERSHIP,
+                request(
+                        List.of(STOCK, OTHER_STOCK),
+                        LocalDate.of(2021, 7, 1),
+                        TODAY,
+                        TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).hasSize(2)
+                .extracting(record -> record.object().objectId())
+                .containsExactlyInAnyOrder("600519.SH", "000001.SZ");
+        ArgumentCaptor<TushareRiskRequest> requestCaptor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(2)).query(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues())
+                .extracting(query -> query.params().get("ts_code"))
+                .containsExactlyInAnyOrder("600519.SH", "000001.SZ");
+    }
+
+    @Test
+    void historicalMembershipIsVisibleAtAPastEndDateAfterItsEffectiveDay() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(response(
+                "index_member_all",
+                membershipRow("600519.SH", "801120.SI", "食品饮料")));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+        MarketRiskDataProvider provider = new MarketRiskDataProvider(client);
+        LocalDate pastEndDate = LocalDate.of(2022, 7, 18);
+
+        RiskProviderBatch result = provider.fetch(
+                MarketDatasetCode.SW1_MEMBERSHIP.code(),
+                request(
+                        List.of(STOCK),
+                        LocalDate.of(2021, 7, 1),
+                        pastEndDate,
+                        pastEndDate));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.industryExposures()).singleElement().satisfies(exposure -> {
+            assertThat(exposure.observedAt())
+                    .isEqualTo(LocalDate.of(2021, 7, 1).atStartOfDay());
+            assertThat(exposure.availableAt())
+                    .isEqualTo(LocalDate.of(2021, 7, 1).atTime(20, 0));
+        });
+        assertThat(result.observations()).isNotEmpty();
+    }
+
+    @Test
+    void marketWideMembershipAtTheDocumentedRowLimitIsPartial() {
+        List<Map<String, Object>> rows = IntStream.rangeClosed(1, 2000)
+                .mapToObj(index -> membershipRow(
+                        String.format("%06d.SZ", index),
+                        "801120.SI",
+                        "食品饮料"))
+                .toList();
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(responseRows(
+                "index_member_all", rows));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.SW1_MEMBERSHIP,
+                request(
+                        List.of(MARKET),
+                        LocalDate.of(2021, 7, 1),
+                        TODAY,
+                        TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).hasSize(2000);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason()).contains("index_member_all", "2000");
     }
 
     @Test
@@ -866,6 +984,19 @@ class TushareMarketRiskSourceClientTest {
                 "exchange", "SSE",
                 "cal_date", compact(date),
                 "is_open", "1");
+    }
+
+    private static Map<String, Object> membershipRow(
+            String stockCode,
+            String sectorCode,
+            String sectorName
+    ) {
+        return Map.of(
+                "ts_code", stockCode,
+                "l1_code", sectorCode,
+                "l1_name", sectorName,
+                "in_date", "20210701",
+                "out_date", "20261231");
     }
 
     private static List<LocalDate> datesEndingToday(int size) {

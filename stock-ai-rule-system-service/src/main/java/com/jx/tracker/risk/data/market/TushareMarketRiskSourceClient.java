@@ -36,11 +36,15 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             "SSE50:000016.SH:index_daily:close";
     private static final BigDecimal FORMAL_OPEN_DAY_COVERAGE =
             new BigDecimal("0.95");
+    private static final int STOCK_MASTER_CACHE_DATES = 32;
+    private static final int INDEX_MEMBER_ALL_ROW_LIMIT = 2_000;
     private static final List<String> GLOBAL_LEADING_MARKETS =
             List.of("SPX", "IXIC", "HSI", "N225");
 
     private final TushareRiskHttpClient httpClient;
     private final Clock clock;
+    private final Map<LocalDate, List<MarketSourceRecord>> stockMasterCache =
+            new LinkedHashMap<>();
 
     public TushareMarketRiskSourceClient(TushareRiskHttpClient httpClient, Clock clock) {
         if (httpClient == null || clock == null) {
@@ -102,6 +106,23 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                     "stock_basic is a current snapshot and cannot be backdated",
                     fetchedAt);
         }
+        List<MarketSourceRecord> records = stockMasterRecords(fetchedAt);
+        if (records.isEmpty()) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE, "stock_basic returned no rows", fetchedAt);
+        }
+        return new MarketSourceBatch(
+                SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private synchronized List<MarketSourceRecord> stockMasterRecords(
+            LocalDateTime fetchedAt
+    ) {
+        LocalDate fetchedDate = fetchedAt.toLocalDate();
+        List<MarketSourceRecord> cached = stockMasterCache.get(fetchedDate);
+        if (cached != null) {
+            return cached;
+        }
         TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
                 "stock_basic",
                 Map.of("list_status", "L"),
@@ -109,7 +130,7 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         List<MarketSourceRecord> records = response.rows().stream()
                 .<MarketSourceRecord>map(row -> new StockMasterPoint(
                         stock(text(row, "ts_code")),
-                        fetchedAt.toLocalDate(),
+                        fetchedDate,
                         text(row, "name"),
                         date(row, "list_date"),
                         fetchedAt,
@@ -117,12 +138,14 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         SOURCE,
                         RiskDataQualityStatus.AVAILABLE))
                 .toList();
-        if (records.isEmpty()) {
-            return MarketSourceBatch.insufficientHistory(
-                    SOURCE, "stock_basic returned no rows", fetchedAt);
+        stockMasterCache.put(fetchedDate, records);
+        while (stockMasterCache.size() > STOCK_MASTER_CACHE_DATES) {
+            LocalDate earliestDate = stockMasterCache.keySet().stream()
+                    .min(LocalDate::compareTo)
+                    .orElseThrow();
+            stockMasterCache.remove(earliestDate);
         }
-        return new MarketSourceBatch(
-                SOURCE, records, request.checkpoint(), fetchedAt);
+        return records;
     }
 
     private MarketSourceBatch breadth(
@@ -560,15 +583,26 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
                 .toList();
         List<Map<String, Object>> rows = new ArrayList<>();
+        boolean incomplete = false;
+        boolean reachedDocumentedRowLimit = false;
         if (stocks.isEmpty()) {
-            rows.addAll(queryMembership(Map.of()).rows());
+            TushareRiskResponse response = queryMembership(Map.of());
+            rows.addAll(response.rows());
+            reachedDocumentedRowLimit =
+                    response.rows().size() >= INDEX_MEMBER_ALL_ROW_LIMIT;
         } else {
             for (RiskObjectKey stock : stocks) {
-                rows.addAll(queryMembership(Map.of("ts_code", stock.objectId())).rows());
+                TushareRiskResponse response = queryMembership(
+                        Map.of("ts_code", stock.objectId()));
+                List<Map<String, Object>> matchingRows = response.rows().stream()
+                        .filter(row -> hasExpectedCode(row, stock.objectId()))
+                        .toList();
+                incomplete |= matchingRows.isEmpty();
+                rows.addAll(matchingRows);
             }
         }
         List<MarketSourceRecord> records = rows.stream()
-                .map(row -> membership(row, fetchedAt))
+                .map(this::membership)
                 .filter(exposure -> overlaps(
                         exposure.validFrom(), exposure.validTo(),
                         request.startDate(), request.endDate()))
@@ -577,6 +611,24 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         if (records.isEmpty()) {
             return MarketSourceBatch.insufficientHistory(
                     SOURCE, "index_member_all returned no effective rows in the request window",
+                    fetchedAt);
+        }
+        if (reachedDocumentedRowLimit) {
+            return MarketSourceBatch.partialHistory(
+                    SOURCE,
+                    records,
+                    null,
+                    "index_member_all reached documented 2000-row limit; "
+                            + "market-wide membership may be truncated",
+                    fetchedAt);
+        }
+        if (incomplete) {
+            return MarketSourceBatch.partialHistory(
+                    SOURCE,
+                    records,
+                    null,
+                    "index_member_all returned no matching rows for one or more "
+                            + "requested stocks",
                     fetchedAt);
         }
         return new MarketSourceBatch(
@@ -590,18 +642,16 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 "l1_code,l1_name,ts_code,in_date,out_date"));
     }
 
-    private IndustryExposure membership(
-            Map<String, Object> row,
-            LocalDateTime fetchedAt
-    ) {
+    private IndustryExposure membership(Map<String, Object> row) {
+        LocalDate validFrom = date(row, "in_date");
         return new IndustryExposure(
                 stock(text(row, "ts_code")),
                 sector(text(row, "l1_code")),
                 optionalText(row, "l1_name"),
-                date(row, "in_date"),
+                validFrom,
                 optionalDate(row, "out_date"),
-                fetchedAt,
-                fetchedAt,
+                validFrom.atStartOfDay(),
+                validFrom.atTime(20, 0),
                 SOURCE,
                 RiskDataQualityStatus.AVAILABLE);
     }
