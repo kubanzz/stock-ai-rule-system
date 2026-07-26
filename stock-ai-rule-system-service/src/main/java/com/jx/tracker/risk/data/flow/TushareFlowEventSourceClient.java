@@ -70,11 +70,16 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         try {
             request.dataset().validateObjects(request.objects());
             return switch (request.dataset()) {
-                case MARGIN_FINANCING -> margin(request, fetchedAt);
-                case ETF_FUND_FLOW -> etfFlow(request, fetchedAt);
-                case EARNINGS_FORECAST -> forecasts(request, fetchedAt);
-                case SHARE_UNLOCK -> unlocks(request, fetchedAt);
-                case SHARE_REDUCTION -> reductions(request, fetchedAt);
+                case MARGIN_FINANCING -> margin(
+                        request, fetchedAt, tradingCalendar(request));
+                case ETF_FUND_FLOW -> etfFlow(
+                        request, fetchedAt, tradingCalendar(request));
+                case EARNINGS_FORECAST -> forecasts(
+                        request, fetchedAt, tradingCalendar(request));
+                case SHARE_UNLOCK -> unlocks(
+                        request, fetchedAt, tradingCalendar(request));
+                case SHARE_REDUCTION -> reductions(
+                        request, fetchedAt, tradingCalendar(request));
                 case STOCK_ANNOUNCEMENT -> FlowEventSourceBatch.unavailable(
                         SOURCE,
                         "stock_announcement is routed directly to CNInfo/AKTools",
@@ -113,9 +118,9 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private FlowEventSourceBatch margin(
             FlowEventSourceRequest request,
-            LocalDateTime fetchedAt
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
     ) {
-        TradingCalendar calendar = tradingCalendar(request);
         List<String> gaps = new ArrayList<>();
         LocalDate warmupDate =
                 calendar.previousOpenBefore(request.startDate());
@@ -251,7 +256,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             attributes.put("formulaVersion", "margin-market-sum-rzye-v1");
             LocalDateTime observedAt = tradeDate.atTime(15, 0);
             LocalDateTime availableAt =
-                    tradeDate.plusDays(1).atTime(8, 30);
+                    calendar.requiredNextOpenAfter(tradeDate)
+                            .atTime(8, 30);
             records.add(record(
                     "margin_financing:CN-A:" + tradeDate,
                     CN_A, tradeDate, observedAt, observedAt, availableAt,
@@ -317,7 +323,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private FlowEventSourceBatch etfFlow(
             FlowEventSourceRequest request,
-            LocalDateTime fetchedAt
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
     ) {
         LocalDate historyStart = request.startDate().minusYears(1);
         TushareRiskResponse basicResponse = query(
@@ -446,11 +453,14 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                                 .add(
                                         netFlow, referenceAssets, close,
                                         later(
-                                                current.tradeDate()
-                                                        .plusDays(1)
+                                                calendar
+                                                        .requiredNextOpenAfter(
+                                                                current.tradeDate())
                                                         .atTime(8, 30),
-                                                nav.announcementDate()
-                                                        .atStartOfDay()));
+                                                calendar
+                                                        .requiredNextOpenAfter(
+                                                                nav.announcementDate())
+                                                        .atTime(8, 30)));
                         calculated = true;
                     }
                 }
@@ -545,7 +555,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private FlowEventSourceBatch forecasts(
             FlowEventSourceRequest request,
-            LocalDateTime fetchedAt
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
     ) {
         List<FlowEventSourceRecord> records = new ArrayList<>();
         List<String> gaps = new ArrayList<>();
@@ -583,7 +594,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 }
                 LocalDate announcementDate = date(row, "ann_date");
                 LocalDateTime availableAt =
-                        announcementDate.plusDays(1).atStartOfDay();
+                        calendar.requiredNextOpenAfter(
+                                announcementDate).atStartOfDay();
                 if (!inAvailabilityWindow(request, availableAt)) {
                     continue;
                 }
@@ -656,7 +668,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private FlowEventSourceBatch unlocks(
             FlowEventSourceRequest request,
-            LocalDateTime fetchedAt
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
     ) {
         List<FlowEventSourceRecord> records = new ArrayList<>();
         List<String> gaps = new ArrayList<>();
@@ -679,7 +692,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 }
                 LocalDate announcementDate = date(row, "ann_date");
                 LocalDateTime availableAt =
-                        announcementDate.plusDays(1).atStartOfDay();
+                        calendar.requiredNextOpenAfter(
+                                announcementDate).atStartOfDay();
                 if (!inAvailabilityWindow(request, availableAt)) {
                     continue;
                 }
@@ -723,7 +737,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
 
     private FlowEventSourceBatch reductions(
             FlowEventSourceRequest request,
-            LocalDateTime fetchedAt
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
     ) {
         List<FlowEventSourceRecord> records = new ArrayList<>();
         List<String> gaps = new ArrayList<>();
@@ -754,7 +769,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 }
                 LocalDate announcementDate = date(row, "ann_date");
                 LocalDateTime availableAt =
-                        announcementDate.plusDays(1).atStartOfDay();
+                        calendar.requiredNextOpenAfter(
+                                announcementDate).atStartOfDay();
                 if (!inAvailabilityWindow(request, availableAt)) {
                     continue;
                 }
@@ -1299,6 +1315,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             return openDays.stream()
                     .filter(openDay -> openDay.isBefore(date))
                     .max(LocalDate::compareTo).orElse(null);
+        }
+
+        private LocalDate requiredNextOpenAfter(LocalDate date) {
+            return openDays.stream()
+                    .filter(openDay -> openDay.isAfter(date))
+                    .min(LocalDate::compareTo)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "trade_cal has no next open day after "
+                                    + date));
         }
 
         private List<LocalDate> openDays(
