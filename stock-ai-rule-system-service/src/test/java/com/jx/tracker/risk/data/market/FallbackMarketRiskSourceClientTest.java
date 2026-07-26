@@ -19,6 +19,8 @@ class FallbackMarketRiskSourceClientTest {
     private static final LocalDateTime FETCHED_AT = LocalDateTime.of(2026, 7, 18, 19, 0);
     private static final RiskObjectKey STOCK =
             new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+    private static final RiskObjectKey OTHER_STOCK =
+            new RiskObjectKey(RiskObjectType.STOCK, "000001.SZ");
     private static final RiskProviderRequest REQUEST = new RiskProviderRequest(
             List.of(STOCK), List.of(RiskHorizon.SHORT_TERM),
             LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 18), null);
@@ -74,7 +76,8 @@ class FallbackMarketRiskSourceClientTest {
         assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
         assertThat(result.records()).containsExactly(fallbackRecord);
         assertThat(result.source()).contains("tushare", "aktools");
-        assertThat(result.failureReason()).contains("daily permission denied");
+        assertThat(result.failureReason()).isNull();
+        assertThat(result.fallbackReason()).contains("daily permission denied");
     }
 
     @Test
@@ -93,12 +96,18 @@ class FallbackMarketRiskSourceClientTest {
 
         assertThat(fallbackCalls).hasValue(1);
         assertThat(result.records()).containsExactly(fallbackRecord);
-        assertThat(result.failureReason()).contains("daily returned no rows");
+        assertThat(result.failureReason()).isNull();
+        assertThat(result.fallbackReason()).contains("daily returned no rows");
     }
 
     @Test
-    void partialPrimaryCallsFallbackButRetainsPrimaryAuditRecords() {
-        MarketSourceRecord primaryRecord = stockMaster("tushare");
+    void partialPrimaryMergesAnAvailableFallbackAndKeepsFormalPrimaryIdentity() {
+        MarketSourceRecord primaryRecord = stockMaster(
+                STOCK, "tushare", "主源名称", RiskDataQualityStatus.AVAILABLE);
+        MarketSourceRecord fallbackSameIdentity = stockMaster(
+                STOCK, "aktools", "补源名称", RiskDataQualityStatus.AVAILABLE);
+        MarketSourceRecord fallbackMissingIdentity = stockMaster(
+                OTHER_STOCK, "aktools", "平安银行", RiskDataQualityStatus.AVAILABLE);
         MarketSourceBatch primaryBatch = MarketSourceBatch.partialHistory(
                 "tushare", List.of(primaryRecord), null,
                 "stock_basic is a current snapshot", FETCHED_AT);
@@ -107,17 +116,70 @@ class FallbackMarketRiskSourceClientTest {
                 (dataset, request) -> primaryBatch,
                 (dataset, request) -> {
                     fallbackCalls.incrementAndGet();
-                    return available("aktools", stockMaster("aktools"));
+                    return new MarketSourceBatch(
+                            "aktools",
+                            List.of(fallbackSameIdentity, fallbackMissingIdentity),
+                            null,
+                            FETCHED_AT);
                 });
 
         MarketSourceBatch result = client.fetch(MarketDatasetCode.CN_A_STOCK_MASTER, REQUEST);
 
         assertThat(fallbackCalls).hasValue(1);
-        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
-        assertThat(result.records()).containsExactly(primaryRecord);
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records())
+                .containsExactly(primaryRecord, fallbackMissingIdentity)
+                .doesNotContain(fallbackSameIdentity);
         assertThat(result.source()).contains("tushare", "aktools");
-        assertThat(result.failureReason())
-                .contains("stock_basic is a current snapshot", "primary partial records retained");
+        assertThat(result.failureReason()).isNull();
+        assertThat(result.fallbackReason())
+                .contains("stock_basic is a current snapshot", "aktools");
+    }
+
+    @Test
+    void availableFallbackReplacesAnAuditOnlyPrimaryRecordWithTheSameIdentity() {
+        MarketSourceRecord auditOnlyPrimary = stockMaster(
+                STOCK, "tushare", "主源审计", RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        MarketSourceRecord formalFallback = stockMaster(
+                STOCK, "aktools", "贵州茅台", RiskDataQualityStatus.AVAILABLE);
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> MarketSourceBatch.partialHistory(
+                        "tushare",
+                        List.of(auditOnlyPrimary),
+                        null,
+                        "stock_basic mapping is incomplete",
+                        FETCHED_AT),
+                (dataset, request) -> available("aktools", formalFallback));
+
+        MarketSourceBatch result = client.fetch(MarketDatasetCode.CN_A_STOCK_MASTER, REQUEST);
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).containsExactly(formalFallback);
+        assertThat(result.fallbackReason())
+                .contains("stock_basic mapping is incomplete", "insufficient_history");
+    }
+
+    @Test
+    void twoPartialSourcesKeepTheMergedAuditRecordsWithoutAdvancingCheckpoint() {
+        MarketSourceRecord primaryRecord = stockMaster(
+                STOCK, "tushare", "贵州茅台", RiskDataQualityStatus.AVAILABLE);
+        MarketSourceRecord fallbackRecord = stockMaster(
+                OTHER_STOCK, "aktools", "平安银行", RiskDataQualityStatus.AVAILABLE);
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> MarketSourceBatch.partialHistory(
+                        "tushare", List.of(primaryRecord), REQUEST.checkpoint(),
+                        "primary truncated", FETCHED_AT),
+                (dataset, request) -> MarketSourceBatch.partialHistory(
+                        "aktools", List.of(fallbackRecord), REQUEST.checkpoint(),
+                        "fallback truncated", FETCHED_AT));
+
+        MarketSourceBatch result = client.fetch(MarketDatasetCode.CN_A_STOCK_MASTER, REQUEST);
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).containsExactly(primaryRecord, fallbackRecord);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason()).contains("primary truncated", "fallback truncated");
+        assertThat(result.fallbackReason()).isEqualTo(result.failureReason());
     }
 
     private static MarketSourceBatch available(String source, MarketSourceRecord record) {
@@ -125,9 +187,18 @@ class FallbackMarketRiskSourceClientTest {
     }
 
     private static StockMasterPoint stockMaster(String source) {
+        return stockMaster(STOCK, source, "贵州茅台", RiskDataQualityStatus.AVAILABLE);
+    }
+
+    private static StockMasterPoint stockMaster(
+            RiskObjectKey stock,
+            String source,
+            String name,
+            RiskDataQualityStatus qualityStatus
+    ) {
         return new StockMasterPoint(
-                STOCK, FETCHED_AT.toLocalDate(), "贵州茅台",
+                stock, FETCHED_AT.toLocalDate(), name,
                 LocalDate.of(2001, 8, 27), FETCHED_AT, FETCHED_AT,
-                source, RiskDataQualityStatus.AVAILABLE);
+                source, qualityStatus);
     }
 }

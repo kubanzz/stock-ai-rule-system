@@ -127,6 +127,10 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
                         ? annotatePartialHistory(observations, sourceBatch.failureReason())
                         : auditOnly(observations, sourceBatch.failureReason());
             }
+            if (sourceBatch.fallbackReason() != null) {
+                observations = annotateFallbackReason(
+                        observations, sourceBatch.fallbackReason());
+            }
             if (observations.isEmpty() && industryExposures.isEmpty()) {
                 return new RiskProviderBatch(
                         sourceBatch.source(), List.of(), List.of(), List.of(), sourceBatch.nextCheckpoint(),
@@ -151,6 +155,22 @@ public final class MarketRiskDataProvider implements RiskDataProvider {
 
     public Set<String> supportedIndicatorCodes() {
         return MarketRiskIndicator.codes();
+    }
+
+    private List<RiskObservation> annotateFallbackReason(
+            List<RiskObservation> observations,
+            String fallbackReason
+    ) {
+        return observations.stream().map(observation -> {
+            Map<String, Object> attributes = new LinkedHashMap<>(observation.attributes());
+            attributes.put("fallbackReason", fallbackReason);
+            return new RiskObservation(
+                    observation.object(), observation.horizon(), observation.tradeDate(),
+                    observation.dimension(), observation.indicatorCode(),
+                    observation.componentCode(), observation.value(), observation.unit(),
+                    observation.observedAt(), observation.availableAt(), observation.source(),
+                    observation.qualityStatus(), attributes);
+        }).toList();
     }
 
     private List<RiskObservation> auditOnly(

@@ -191,6 +191,31 @@ class MarketRiskDataProviderTest {
     }
 
     @Test
+    void fallbackReasonIsCopiedIntoEveryObservationForPersistenceAudit() {
+        String fallbackReason =
+                "primary[tushare]: shibor missing; fallback[aktools]: quality=available";
+        MarketRiskDataProvider provider = new MarketRiskDataProvider((dataset, request) ->
+                new MarketSourceBatch(
+                        "tushare->aktools",
+                        List.of(valuation(
+                                END_DATE,
+                                LocalDateTime.of(2026, 7, 18, 18, 0),
+                                "18")),
+                        null,
+                        FETCHED_AT,
+                        RiskDataQualityStatus.AVAILABLE,
+                        null,
+                        fallbackReason));
+
+        RiskProviderBatch batch = provider.fetch("valuation", request(null));
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.observations()).isNotEmpty().allSatisfy(observation ->
+                assertThat(observation.attributes())
+                        .containsEntry("fallbackReason", fallbackReason));
+    }
+
+    @Test
     void dailySeriesProducesDocumentedProxiesAndMarksNewStockHistoryInsufficient() {
         List<MarketSourceRecord> records = dailyPoints(65);
         MarketRiskDataProvider provider = provider(records, null);

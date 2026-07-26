@@ -3,6 +3,10 @@ package com.jx.tracker.risk.data.market;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.provider.RiskProviderRequest;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 /** Uses a secondary market source only when the primary source cannot provide complete history. */
 public final class FallbackMarketRiskSourceClient implements MarketRiskSourceClient {
 
@@ -27,28 +31,84 @@ public final class FallbackMarketRiskSourceClient implements MarketRiskSourceCli
             return primaryBatch;
         }
         MarketSourceBatch fallbackBatch = fallback.fetch(dataset, request);
-        if (!primaryBatch.records().isEmpty()) {
-            return new MarketSourceBatch(
-                    combinedSource(primaryBatch, fallbackBatch),
-                    primaryBatch.records(),
-                    primaryBatch.nextCheckpoint(),
-                    fallbackBatch.fetchedAt(),
-                    primaryBatch.qualityStatus(),
-                    combinedReason(primaryBatch, fallbackBatch)
-                            + "; primary partial records retained");
-        }
+        List<MarketSourceRecord> mergedRecords = mergeRecords(primaryBatch, fallbackBatch);
+        boolean fallbackComplete = formal(fallbackBatch.qualityStatus());
+        RiskDataQualityStatus qualityStatus = mergedQuality(
+                mergedRecords, fallbackBatch, fallbackComplete);
+        String auditReason = combinedReason(primaryBatch, fallbackBatch);
         return new MarketSourceBatch(
                 combinedSource(primaryBatch, fallbackBatch),
-                fallbackBatch.records(),
-                fallbackBatch.nextCheckpoint(),
+                mergedRecords,
+                fallbackComplete ? fallbackBatch.nextCheckpoint() : null,
                 fallbackBatch.fetchedAt(),
-                fallbackBatch.qualityStatus(),
-                combinedReason(primaryBatch, fallbackBatch));
+                qualityStatus,
+                formal(qualityStatus) ? null : auditReason,
+                auditReason);
     }
 
     private boolean requiresFallback(RiskDataQualityStatus status) {
         return status == RiskDataQualityStatus.UNAVAILABLE
                 || status == RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+    }
+
+    private List<MarketSourceRecord> mergeRecords(
+            MarketSourceBatch primaryBatch,
+            MarketSourceBatch fallbackBatch
+    ) {
+        Map<String, MarketSourceRecord> merged = new LinkedHashMap<>();
+        primaryBatch.records().forEach(record ->
+                merged.put(recordIdentity(record), record));
+        fallbackBatch.records().forEach(record -> {
+            String identity = recordIdentity(record);
+            MarketSourceRecord primaryRecord = merged.get(identity);
+            if (primaryRecord == null
+                    || (!formal(primaryRecord.qualityStatus())
+                    && formal(record.qualityStatus()))) {
+                merged.put(identity, record);
+            }
+        });
+        return List.copyOf(merged.values());
+    }
+
+    private RiskDataQualityStatus mergedQuality(
+            List<MarketSourceRecord> mergedRecords,
+            MarketSourceBatch fallbackBatch,
+            boolean fallbackComplete
+    ) {
+        if (fallbackComplete) {
+            if (fallbackBatch.qualityStatus() == RiskDataQualityStatus.VALID_ZERO
+                    && mergedRecords.isEmpty()) {
+                return RiskDataQualityStatus.VALID_ZERO;
+            }
+            return RiskDataQualityStatus.AVAILABLE;
+        }
+        if (!mergedRecords.isEmpty()) {
+            return RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+        }
+        return fallbackBatch.qualityStatus();
+    }
+
+    private boolean formal(RiskDataQualityStatus status) {
+        return status == RiskDataQualityStatus.AVAILABLE
+                || status == RiskDataQualityStatus.VALID_ZERO;
+    }
+
+    private String recordIdentity(MarketSourceRecord record) {
+        if (record instanceof IndustryExposure exposure) {
+            return String.join(
+                    ":",
+                    record.getClass().getName(),
+                    exposure.stock().objectType().getCode(),
+                    exposure.stock().objectId(),
+                    exposure.sector().objectId(),
+                    exposure.validFrom().toString());
+        }
+        return String.join(
+                ":",
+                record.getClass().getName(),
+                record.object().objectType().getCode(),
+                record.object().objectId(),
+                record.tradeDate().toString());
     }
 
     private String combinedSource(
@@ -66,7 +126,9 @@ public final class FallbackMarketRiskSourceClient implements MarketRiskSourceCli
         if (fallbackAudit == null || fallbackAudit.isBlank()) {
             fallbackAudit = "quality=" + fallbackBatch.qualityStatus().getCode();
         }
-        return "primary[" + primaryBatch.source() + "]: " + primaryBatch.failureReason()
+        return "primary[" + primaryBatch.source() + "]: quality="
+                + primaryBatch.qualityStatus().getCode()
+                + ", reason=" + primaryBatch.failureReason()
                 + "; fallback[" + fallbackBatch.source() + "]: " + fallbackAudit;
     }
 }

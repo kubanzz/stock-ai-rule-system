@@ -12,7 +12,8 @@ public record MarketSourceBatch(
         RiskIngestionCheckpoint nextCheckpoint,
         LocalDateTime fetchedAt,
         RiskDataQualityStatus qualityStatus,
-        String failureReason
+        String failureReason,
+        String fallbackReason
 ) {
     public MarketSourceBatch {
         if (source == null || source.isBlank() || qualityStatus == null) {
@@ -31,6 +32,20 @@ public record MarketSourceBatch(
                 || qualityStatus == RiskDataQualityStatus.VALID_ZERO) && !records.isEmpty()) {
             throw new IllegalArgumentException("empty market source batch quality must not contain records");
         }
+        fallbackReason = fallbackReason == null || fallbackReason.isBlank()
+                ? null : fallbackReason.trim();
+    }
+
+    public MarketSourceBatch(
+            String source,
+            List<MarketSourceRecord> records,
+            RiskIngestionCheckpoint nextCheckpoint,
+            LocalDateTime fetchedAt,
+            RiskDataQualityStatus qualityStatus,
+            String failureReason
+    ) {
+        this(source, records, nextCheckpoint, fetchedAt,
+                qualityStatus, failureReason, null);
     }
 
     public MarketSourceBatch(
@@ -45,7 +60,8 @@ public record MarketSourceBatch(
                         : RiskDataQualityStatus.AVAILABLE,
                 records == null || records.isEmpty()
                         ? "market source returned no records"
-                        : null);
+                        : null,
+                null);
     }
 
     public static MarketSourceBatch insufficientHistory(
@@ -55,7 +71,7 @@ public record MarketSourceBatch(
     ) {
         return new MarketSourceBatch(
                 source, List.of(), null, fetchedAt,
-                RiskDataQualityStatus.INSUFFICIENT_HISTORY, reason);
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY, reason, null);
     }
 
     public static MarketSourceBatch partialHistory(
@@ -67,6 +83,6 @@ public record MarketSourceBatch(
     ) {
         return new MarketSourceBatch(
                 source, currentRecords, nextCheckpoint, fetchedAt,
-                RiskDataQualityStatus.INSUFFICIENT_HISTORY, reason);
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY, reason, null);
     }
 }
