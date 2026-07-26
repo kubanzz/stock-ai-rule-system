@@ -251,40 +251,47 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 new TushareRiskRequest(
                         "index_daily",
                         withCode(window, BENCHMARK_CODE),
-                        "ts_code,trade_date,close")));
+                        "ts_code,trade_date,close")),
+                BENCHMARK_CODE);
         Map<LocalDate, BigDecimal> leader = closeByDate(httpClient.query(
                 new TushareRiskRequest(
                         "index_daily",
                         withCode(window, LEADER_CODE),
-                        "ts_code,trade_date,close")));
+                        "ts_code,trade_date,close")),
+                LEADER_CODE);
         List<MarketSourceRecord> records = new ArrayList<>();
         boolean incomplete = benchmark.isEmpty() || leader.isEmpty();
         for (RiskObjectKey object : request.objects()) {
             TushareRiskResponse response;
+            String expectedCode;
             if (object.objectType() == RiskObjectType.STOCK) {
+                expectedCode = object.objectId();
                 response = httpClient.query(new TushareRiskRequest(
                         "daily",
-                        withCode(window, object.objectId()),
+                        withCode(window, expectedCode),
                         "ts_code,trade_date,open,close,vol"));
             } else if (object.objectType() == RiskObjectType.MARKET
                     && "CN-A".equalsIgnoreCase(object.objectId())) {
+                expectedCode = BROAD_MARKET_CODE;
                 response = httpClient.query(new TushareRiskRequest(
                         "index_daily",
-                        withCode(window, BROAD_MARKET_CODE),
+                        withCode(window, expectedCode),
                         "ts_code,trade_date,open,close,vol"));
             } else {
                 incomplete = true;
                 continue;
             }
-            if (response.rows().isEmpty()) {
-                incomplete = true;
-            }
+            boolean hasExpectedRowInWindow = false;
             for (Map<String, Object> row : response.rows()) {
+                if (!hasExpectedCode(row, expectedCode)) {
+                    continue;
+                }
                 LocalDate tradeDate = date(row, "trade_date");
                 if (tradeDate.isBefore(request.startDate())
                         || tradeDate.isAfter(request.endDate())) {
                     continue;
                 }
+                hasExpectedRowInWindow = true;
                 BigDecimal benchmarkClose = benchmark.get(tradeDate);
                 BigDecimal leaderClose = leader.get(tradeDate);
                 if (benchmarkClose == null || leaderClose == null) {
@@ -306,6 +313,9 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         availableAt(tradeDate),
                         SOURCE,
                         RiskDataQualityStatus.AVAILABLE));
+            }
+            if (!hasExpectedRowInWindow) {
+                incomplete = true;
             }
         }
         String reason = "daily/index_daily requires complete trade_date joins for benchmark "
@@ -336,9 +346,15 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         return Map.copyOf(combined);
     }
 
-    private Map<LocalDate, BigDecimal> closeByDate(TushareRiskResponse response) {
+    private Map<LocalDate, BigDecimal> closeByDate(
+            TushareRiskResponse response,
+            String expectedCode
+    ) {
         Map<LocalDate, BigDecimal> closes = new LinkedHashMap<>();
         for (Map<String, Object> row : response.rows()) {
+            if (!hasExpectedCode(row, expectedCode)) {
+                continue;
+            }
             LocalDate tradeDate = date(row, "trade_date");
             BigDecimal previous = closes.put(tradeDate, decimal(row, "close"));
             if (previous != null) {
@@ -347,6 +363,14 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             }
         }
         return Map.copyOf(closes);
+    }
+
+    private boolean hasExpectedCode(
+            Map<String, Object> row,
+            String expectedCode
+    ) {
+        String actualCode = optionalText(row, "ts_code");
+        return actualCode != null && expectedCode.equalsIgnoreCase(actualCode);
     }
 
     private LocalDateTime observedAt(LocalDate tradeDate) {

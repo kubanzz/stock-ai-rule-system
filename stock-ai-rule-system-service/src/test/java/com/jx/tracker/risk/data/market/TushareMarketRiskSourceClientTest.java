@@ -12,6 +12,7 @@ import com.jx.tracker.risk.provider.RiskProviderRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.Constructor;
@@ -215,6 +216,163 @@ class TushareMarketRiskSourceClientTest {
                 .allSatisfy(query -> assertThat(query.params())
                         .containsEntry("start_date", "20260718")
                         .containsEntry("end_date", "20260718"));
+    }
+
+    @Test
+    void marketDailyFiltersMismatchedTargetRowsBeforeMappingTheRequestedStock() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "daily:000001.SZ" -> response(
+                        "daily",
+                        dailyRow("600519.SH", "900.00", "999.00", "9999"),
+                        dailyRow("000001.SZ", "10.00", "11.00", "1000"));
+                case "index_daily:000016.SH" -> response("index_daily", closeRow(
+                        "000016.SH", "1500.00"));
+                case "index_daily:000300.SH" -> response("index_daily", closeRow(
+                        "000300.SH", "4000.00"));
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(List.of(OTHER_STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            MarketDailyPoint point = (MarketDailyPoint) record;
+            assertThat(point.object()).isEqualTo(OTHER_STOCK);
+            assertThat(point.open()).isEqualByComparingTo("10.00");
+            assertThat(point.close()).isEqualByComparingTo("11.00");
+            assertThat(point.volume()).isEqualByComparingTo("1000");
+        });
+    }
+
+    @Test
+    void marketDailyRejectsARequestedStockResponseContainingOnlyAnotherCode() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "daily:000001.SZ" -> response("daily", dailyRow(
+                        "600519.SH", "900.00", "999.00", "9999"));
+                case "index_daily:000016.SH" -> response("index_daily", closeRow(
+                        "000016.SH", "1500.00"));
+                case "index_daily:000300.SH" -> response("index_daily", closeRow(
+                        "000300.SH", "4000.00"));
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(List.of(OTHER_STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).isEmpty();
+    }
+
+    @Test
+    void marketDailyFiltersMismatchedBenchmarkRowsBeforeTradeDateJoin() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "daily:000001.SZ" -> response("daily", dailyRow(
+                        "000001.SZ", "10.00", "11.00", "1000"));
+                case "index_daily:000016.SH" -> response("index_daily", closeRow(
+                        "000016.SH", "1500.00"));
+                case "index_daily:000300.SH" -> response(
+                        "index_daily",
+                        closeRow("399300.SZ", "9999.00"),
+                        closeRow("000300.SH", "4000.00"));
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(List.of(OTHER_STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            MarketDailyPoint point = (MarketDailyPoint) record;
+            assertThat(point.benchmarkClose()).isEqualByComparingTo("4000.00");
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"000300.SH", "000016.SH"})
+    void marketDailyRejectsBenchmarkOrLeaderResponsesContainingOnlyAnotherCode(
+            String mismatchedSeriesCode
+    ) {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            if (mismatchedSeriesCode.equals(code)) {
+                return response("index_daily", closeRow("399999.SZ", "9999.00"));
+            }
+            return switch (query.apiName() + ":" + code) {
+                case "daily:000001.SZ" -> response("daily", dailyRow(
+                        "000001.SZ", "10.00", "11.00", "1000"));
+                case "index_daily:000016.SH" -> response("index_daily", closeRow(
+                        "000016.SH", "1500.00"));
+                case "index_daily:000300.SH" -> response("index_daily", closeRow(
+                        "000300.SH", "4000.00"));
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(List.of(OTHER_STOCK), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).isEmpty();
+    }
+
+    @Test
+    void marketDailyRejectsBroadMarketRowsWithAnotherIndexCode() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "index_daily:000016.SH" -> response("index_daily", closeRow(
+                        "000016.SH", "1500.00"));
+                case "index_daily:000300.SH" -> response("index_daily", closeRow(
+                        "000300.SH", "4000.00"));
+                case "index_daily:000985.CSI" -> response("index_daily", dailyRow(
+                        "000300.SH", "5000.00", "5100.00", "2000"));
+                default -> response(query.apiName());
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(List.of(MARKET), TODAY, TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).isEmpty();
     }
 
     @Test
