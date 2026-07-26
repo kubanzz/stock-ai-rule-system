@@ -12,6 +12,7 @@ import com.jx.tracker.risk.provider.RiskProviderRequest;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -38,20 +39,40 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             new BigDecimal("0.95");
     private static final int STOCK_MASTER_CACHE_DATES = 32;
     private static final int INDEX_MEMBER_ALL_ROW_LIMIT = 2_000;
+    private static final int DAILY_ROW_LIMIT = 6_000;
+    private static final Duration BREADTH_REQUEST_DELAY =
+            Duration.ofMillis(125);
     private static final List<String> GLOBAL_LEADING_MARKETS =
             List.of("SPX", "IXIC", "HSI", "N225");
+    private static final RiskObjectKey CN_A_MARKET =
+            new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
 
     private final TushareRiskHttpClient httpClient;
     private final Clock clock;
+    private final TushareRequestPacer breadthRequestPacer;
+    private final TushareBreadthCalculator breadthCalculator =
+            new TushareBreadthCalculator();
     private final Map<LocalDate, List<MarketSourceRecord>> stockMasterCache =
             new LinkedHashMap<>();
 
     public TushareMarketRiskSourceClient(TushareRiskHttpClient httpClient, Clock clock) {
-        if (httpClient == null || clock == null) {
+        this(
+                httpClient,
+                clock,
+                TushareRequestPacer.fixedDelay(BREADTH_REQUEST_DELAY));
+    }
+
+    TushareMarketRiskSourceClient(
+            TushareRiskHttpClient httpClient,
+            Clock clock,
+            TushareRequestPacer breadthRequestPacer
+    ) {
+        if (httpClient == null || clock == null || breadthRequestPacer == null) {
             throw new IllegalArgumentException("TuShare HTTP client and clock are required");
         }
         this.httpClient = httpClient;
         this.clock = clock;
+        this.breadthRequestPacer = breadthRequestPacer;
     }
 
     @Override
@@ -152,30 +173,112 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             RiskProviderRequest request,
             LocalDateTime fetchedAt
     ) {
-        TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
-                "daily",
-                Map.of("trade_date", request.endDate().format(COMPACT_DATE)),
-                "ts_code,trade_date,close,pre_close"));
-        int advancing = 0;
-        int declining = 0;
-        for (Map<String, Object> row : response.rows()) {
-            LocalDate tradeDate = date(row, "trade_date");
-            if (!tradeDate.equals(request.endDate())) {
-                continue;
+        Set<LocalDate> openDates = openTradingDates(request);
+        if (openDates.isEmpty()) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "trade_cal did not confirm the breadth request window",
+                    fetchedAt);
+        }
+        List<LocalDate> orderedOpenDates = openDates.stream().sorted().toList();
+        List<TushareBreadthCalculator.DailyBar> bars = new ArrayList<>();
+        List<String> gaps = new ArrayList<>();
+        for (LocalDate openDate : orderedOpenDates) {
+            breadthRequestPacer.awaitPermit();
+            TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
+                    "daily",
+                    Map.of("trade_date", openDate.format(COMPACT_DATE)),
+                    "ts_code,trade_date,close,pre_close"));
+            if (response.rows().size() >= DAILY_ROW_LIMIT) {
+                gaps.add("daily " + openDate
+                        + " reached documented 6000-row limit and may be truncated");
             }
-            int comparison = decimal(row, "close")
-                    .compareTo(decimal(row, "pre_close"));
-            if (comparison > 0) {
-                advancing++;
-            } else if (comparison < 0) {
-                declining++;
+            for (Map<String, Object> row : response.rows()) {
+                LocalDate tradeDate = date(row, "trade_date");
+                if (!tradeDate.equals(openDate)) {
+                    continue;
+                }
+                RiskObjectKey object = stock(text(row, "ts_code"));
+                bars.add(new TushareBreadthCalculator.DailyBar(
+                        object.objectId(),
+                        tradeDate,
+                        decimal(row, "close"),
+                        decimal(row, "pre_close")));
             }
         }
-        String reason = "daily cross-section advancing=" + advancing
-                + ", declining=" + declining
-                + "; newHigh/newLow and moving-average counts require a historical "
-                + "window with a point-in-time active stock universe";
-        return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
+        TushareBreadthCalculator.Calculation calculation =
+                breadthCalculator.calculate(bars, request.resultStartDate());
+        Map<LocalDate, TushareBreadthCalculator.BreadthCounts> countsByDate =
+                calculation.points().stream().collect(
+                        java.util.stream.Collectors.toUnmodifiableMap(
+                                TushareBreadthCalculator.BreadthCounts::tradeDate,
+                                counts -> counts));
+        List<MarketSourceRecord> records = new ArrayList<>();
+        for (LocalDate openDate : orderedOpenDates) {
+            if (openDate.isBefore(request.resultStartDate())) {
+                continue;
+            }
+            TushareBreadthCalculator.BreadthCounts counts =
+                    countsByDate.get(openDate);
+            if (counts == null) {
+                gaps.add("daily " + openDate + " returned no valid A-share rows");
+                continue;
+            }
+            if (counts.eligibleCount() == 0) {
+                gaps.add("daily " + openDate
+                        + " eligible=0 actual=" + counts.actualCount()
+                        + " because fewer than 252 valid bars were available");
+                continue;
+            }
+            if (!counts.formal()) {
+                gaps.add("daily " + openDate
+                        + " breadth coverage="
+                        + counts.coverage().multiply(BigDecimal.valueOf(100))
+                                .stripTrailingZeros().toPlainString()
+                        + "% below 95% (eligible=" + counts.eligibleCount()
+                        + ", actual=" + counts.actualCount() + ")");
+            }
+            records.add(new BreadthPoint(
+                    CN_A_MARKET,
+                    openDate,
+                    counts.advancingCount(),
+                    counts.decliningCount(),
+                    counts.newHighCount(),
+                    counts.newLowCount(),
+                    counts.aboveMovingAverageCount(),
+                    counts.eligibleCount(),
+                    "advanceDecline-252dHighLow-50dMA-current-inclusive-v1;"
+                            + "highLowWindow=252;movingAverageWindow=50",
+                    "cn-a-daily-current-valid-bars-v1;actual="
+                            + counts.actualCount()
+                            + ";eligible=" + counts.eligibleCount()
+                            + ";coverage=" + counts.coverage().toPlainString(),
+                    false,
+                    "tushare-breadth-rolling-v1",
+                    "tushare-cn-daily-close-available-1800-v1",
+                    observedAt(openDate),
+                    availableAt(openDate),
+                    SOURCE,
+                    counts.formal()
+                            ? RiskDataQualityStatus.AVAILABLE
+                            : RiskDataQualityStatus.INSUFFICIENT_HISTORY));
+        }
+        if (records.isEmpty()) {
+            String reason = gaps.isEmpty()
+                    ? "daily returned no eligible 252-bar breadth universe"
+                    : String.join("; ", gaps);
+            return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
+        }
+        if (!gaps.isEmpty()) {
+            return MarketSourceBatch.partialHistory(
+                    SOURCE,
+                    records,
+                    null,
+                    String.join("; ", gaps),
+                    fetchedAt);
+        }
+        return new MarketSourceBatch(
+                SOURCE, records, request.checkpoint(), fetchedAt);
     }
 
     private MarketSourceBatch crossMarket(

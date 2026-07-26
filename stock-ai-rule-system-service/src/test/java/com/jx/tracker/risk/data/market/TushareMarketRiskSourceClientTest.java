@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -850,22 +851,153 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
-    void breadthAuditsTheDailyCrossSectionButDoesNotFabricateHistoricalCounts() {
+    void breadthBuildsFormalRollingCountsAndUsesTheInjectedPacerPerDailyQuery() {
+        List<LocalDate> dates = datesEndingToday(252);
+        AtomicInteger permits = new AtomicInteger();
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
-        when(httpClient.query(any())).thenReturn(response(
-                "daily",
-                Map.of(
-                        "ts_code", "600519.SH",
-                        "trade_date", "20260718",
-                        "close", new BigDecimal("1500"),
-                        "pre_close", new BigDecimal("1490")),
-                Map.of(
-                        "ts_code", "000001.SZ",
-                        "trade_date", "20260718",
-                        "close", new BigDecimal("10"),
-                        "pre_close", new BigDecimal("11"))));
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            if ("trade_cal".equals(query.apiName())) {
+                return responseRows(
+                        "trade_cal",
+                        dates.stream().map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+            }
+            LocalDate date = LocalDate.parse(
+                    (String) query.params().get("trade_date"),
+                    java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+            int index = Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(
+                    dates.getFirst(), date));
+            return response(
+                    "daily",
+                    breadthRow(
+                            "000001.SZ",
+                            date,
+                            BigDecimal.valueOf(index + 1L),
+                            BigDecimal.valueOf(index)),
+                    breadthRow(
+                            "600519.SH",
+                            date,
+                            BigDecimal.valueOf(252L - index),
+                            BigDecimal.valueOf(253L - index)));
+        });
         TushareMarketRiskSourceClient client =
-                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+                new TushareMarketRiskSourceClient(
+                        httpClient, CLOCK, permits::incrementAndGet);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.BREADTH,
+                request(List.of(MARKET), dates.getFirst(), TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            BreadthPoint point = (BreadthPoint) record;
+            assertThat(point.tradeDate()).isEqualTo(TODAY);
+            assertThat(point.advancingCount()).isEqualTo(1);
+            assertThat(point.decliningCount()).isEqualTo(1);
+            assertThat(point.newHighCount()).isEqualTo(1);
+            assertThat(point.newLowCount()).isEqualTo(1);
+            assertThat(point.aboveMovingAverageCount()).isEqualTo(1);
+            assertThat(point.totalCount()).isEqualTo(2);
+            assertThat(point.breadthDefinition())
+                    .contains("252dHighLow", "50dMA", "current-inclusive");
+            assertThat(point.universeDefinition())
+                    .contains("actual=2", "eligible=2", "coverage=1.0000");
+            assertThat(point.proxy()).isFalse();
+            assertThat(point.observedAt()).isEqualTo(TODAY.atTime(15, 0));
+            assertThat(point.availableAt()).isEqualTo(TODAY.atTime(18, 0));
+        });
+        assertThat(permits).hasValue(252);
+        ArgumentCaptor<TushareRiskRequest> requestCaptor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(253))
+                .query(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues())
+                .filteredOn(query -> query.apiName().equals("daily"))
+                .hasSize(252)
+                .allSatisfy(query -> assertThat(query.fields())
+                        .isEqualTo("ts_code,trade_date,close,pre_close"));
+    }
+
+    @Test
+    void breadthReturnsRealCountsAsPartialWhenEligibleCoverageIsBelowNinetyFivePercent() {
+        List<LocalDate> dates = datesEndingToday(252);
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            if ("trade_cal".equals(query.apiName())) {
+                return responseRows(
+                        "trade_cal",
+                        dates.stream().map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+            }
+            LocalDate date = LocalDate.parse(
+                    (String) query.params().get("trade_date"),
+                    java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+            int index = Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(
+                    dates.getFirst(), date));
+            List<Map<String, Object>> rows = new java.util.ArrayList<>(List.of(
+                    breadthRow(
+                            "000001.SZ",
+                            date,
+                            BigDecimal.valueOf(index + 1L),
+                            BigDecimal.valueOf(index)),
+                    breadthRow(
+                            "600519.SH",
+                            date,
+                            BigDecimal.valueOf(252L - index),
+                            BigDecimal.valueOf(253L - index))));
+            if (date.equals(TODAY)) {
+                rows.add(breadthRow(
+                        "300750.SZ", date, BigDecimal.TEN, BigDecimal.TEN));
+            }
+            return responseRows("daily", rows);
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK, () -> {
+                });
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.BREADTH,
+                request(List.of(MARKET), dates.getFirst(), TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason())
+                .contains("below 95%", "eligible=2", "actual=3");
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            BreadthPoint point = (BreadthPoint) record;
+            assertThat(point.totalCount()).isEqualTo(2);
+            assertThat(point.advancingCount()).isEqualTo(1);
+            assertThat(point.decliningCount()).isEqualTo(1);
+            assertThat(point.qualityStatus())
+                    .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+            assertThat(point.universeDefinition())
+                    .contains("actual=3", "eligible=2", "coverage=0.6667");
+        });
+    }
+
+    @Test
+    void breadthTreatsTheDocumentedDailyRowLimitAsTruncated() {
+        List<Map<String, Object>> rows = IntStream.rangeClosed(1, 6000)
+                .mapToObj(index -> breadthRow(
+                        String.format("%06d.SZ", index),
+                        TODAY,
+                        BigDecimal.TEN,
+                        BigDecimal.TEN))
+                .toList();
+        AtomicInteger permits = new AtomicInteger();
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return "trade_cal".equals(query.apiName())
+                    ? response("trade_cal", openDayRow(TODAY))
+                    : responseRows("daily", rows);
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(
+                        httpClient, CLOCK, permits::incrementAndGet);
 
         MarketSourceBatch result = client.fetch(
                 MarketDatasetCode.BREADTH,
@@ -874,18 +1006,9 @@ class TushareMarketRiskSourceClientTest {
         assertThat(result.qualityStatus())
                 .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
         assertThat(result.records()).isEmpty();
-        assertThat(result.failureReason())
-                .contains("daily", "advancing=1", "declining=1")
-                .containsIgnoringCase("newHigh")
-                .containsIgnoringCase("moving-average");
-        ArgumentCaptor<TushareRiskRequest> requestCaptor =
-                ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient).query(requestCaptor.capture());
-        assertThat(requestCaptor.getValue()).satisfies(query -> {
-            assertThat(query.apiName()).isEqualTo("daily");
-            assertThat(query.params()).containsEntry("trade_date", "20260718");
-            assertThat(query.fields()).isEqualTo("ts_code,trade_date,close,pre_close");
-        });
+        assertThat(result.nextCheckpoint()).isNull();
+        assertThat(result.failureReason()).contains("daily", "6000", "truncated");
+        assertThat(permits).hasValue(1);
     }
 
     @Test
@@ -1077,6 +1200,19 @@ class TushareMarketRiskSourceClientTest {
                 "ts_code", code,
                 "trade_date", compact(tradeDate),
                 "adj_factor", new BigDecimal(factor));
+    }
+
+    private static Map<String, Object> breadthRow(
+            String code,
+            LocalDate tradeDate,
+            BigDecimal close,
+            BigDecimal previousClose
+    ) {
+        return Map.of(
+                "ts_code", code,
+                "trade_date", compact(tradeDate),
+                "close", close,
+                "pre_close", previousClose);
     }
 
     private static Map<String, Object> openDayRow(LocalDate date) {
