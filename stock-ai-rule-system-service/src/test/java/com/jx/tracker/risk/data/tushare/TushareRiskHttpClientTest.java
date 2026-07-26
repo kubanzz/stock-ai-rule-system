@@ -2,6 +2,8 @@ package com.jx.tracker.risk.data.tushare;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -106,7 +108,7 @@ class TushareRiskHttpClientTest {
         server.expect(requestTo(LOCAL_URL))
                 .andExpect(captureBody)
                 .andRespond(withSuccess("""
-                        {"code":-2002,"msg":"rate limited","data":null}
+                        {"code":9001,"msg":"rate limited","data":null}
                         """, MediaType.APPLICATION_JSON));
         server.expect(requestTo(LOCAL_URL))
                 .andExpect(captureBody)
@@ -292,6 +294,32 @@ class TushareRiskHttpClientTest {
         server.verify();
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {2002, -2002})
+    void treatsDocumentedPermissionCodeAsPermissionWithoutRetrying(int code) {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(LOCAL_URL))
+                .andRespond(withSuccess("""
+                        {
+                          "code": %d,
+                          "msg": "permission denied",
+                          "data": null
+                        }
+                        """.formatted(code), MediaType.APPLICATION_JSON));
+        List<Duration> waits = new ArrayList<>();
+
+        TushareRiskException exception = catchThrowableOfType(
+                TushareRiskException.class,
+                () -> client(builder, 2, waits).query(
+                        new TushareRiskRequest("bak_basic", Map.of(), "ts_code")));
+
+        assertThat(exception.category()).isEqualTo(TushareRiskException.Category.PERMISSION);
+        assertThat(exception.code()).isEqualTo(code);
+        assertThat(waits).isEmpty();
+        server.verify();
+    }
+
     @Test
     void retriesRateLimitWithInjectedZeroWaitThenReturnsSuccess() {
         RestClient.Builder builder = RestClient.builder();
@@ -299,7 +327,7 @@ class TushareRiskHttpClientTest {
         server.expect(times(2), requestTo(LOCAL_URL))
                 .andRespond(withSuccess("""
                         {
-                          "code": -2002,
+                          "code": 9001,
                           "msg": "每分钟最多访问一次",
                           "data": null
                         }
@@ -331,7 +359,7 @@ class TushareRiskHttpClientTest {
         server.expect(times(3), requestTo(LOCAL_URL))
                 .andRespond(withSuccess("""
                         {
-                          "code": -2002,
+                          "code": 9001,
                           "msg": "rate limit exceeded",
                           "data": null
                         }
@@ -344,7 +372,7 @@ class TushareRiskHttpClientTest {
                         new TushareRiskRequest("stock_basic", Map.of(), "ts_code")));
 
         assertThat(exception.category()).isEqualTo(TushareRiskException.Category.RATE_LIMIT);
-        assertThat(exception.code()).isEqualTo(-2002);
+        assertThat(exception.code()).isEqualTo(9001);
         assertThat(waits).containsExactly(Duration.ZERO, Duration.ZERO);
         server.verify();
     }
@@ -387,12 +415,12 @@ class TushareRiskHttpClientTest {
     }
 
     @Test
-    void mapsStableVendorRateLimitCodeAndCapsExponentialBackoff() {
+    void usesRateLimitMessageFallbackAndCapsExponentialBackoff() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(times(3), requestTo(LOCAL_URL))
                 .andRespond(withSuccess("""
-                        {"code":-2002,"msg":"temporary vendor rejection","data":null}
+                        {"code":9001,"msg":"rate limit exceeded","data":null}
                         """, MediaType.APPLICATION_JSON));
         server.expect(requestTo(LOCAL_URL))
                 .andRespond(withSuccess("""
@@ -414,6 +442,39 @@ class TushareRiskHttpClientTest {
         assertThat(waits).containsExactly(
                 Duration.ofSeconds(2), Duration.ofSeconds(3), Duration.ofSeconds(3));
         server.verify();
+    }
+
+    @Test
+    void refusesRetryWhenRetryAfterExceedsConfiguredMaximum() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(LOCAL_URL))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .header(HttpHeaders.RETRY_AFTER, "120")
+                        .body("{\"msg\":\"HTTP rate limit\"}")
+                        .contentType(MediaType.APPLICATION_JSON));
+        List<Duration> waits = new ArrayList<>();
+        TushareRiskHttpClient.RetryPolicy policy = new TushareRiskHttpClient.RetryPolicy(
+                2, Duration.ofSeconds(1), 2.0, Duration.ofSeconds(60));
+
+        TushareRiskException exception = catchThrowableOfType(
+                TushareRiskException.class,
+                () -> client(builder, policy, waits, Clock.systemUTC()).query(
+                        new TushareRiskRequest("stock_basic", Map.of(), "ts_code")));
+
+        assertThat(exception.category()).isEqualTo(TushareRiskException.Category.RATE_LIMIT);
+        assertThat(exception.retryAfter()).isEqualTo(Duration.ofSeconds(120));
+        assertThat(waits).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void productionDefaultRetryPolicyCoversOneMinuteWindow() {
+        TushareRiskHttpClient.RetryPolicy policy =
+                TushareRiskHttpClient.RetryPolicy.defaultPolicy();
+
+        assertThat(policy.initialDelay()).isEqualTo(Duration.ofSeconds(60));
+        assertThat(policy.maxDelay()).isEqualTo(Duration.ofSeconds(60));
     }
 
     @Test

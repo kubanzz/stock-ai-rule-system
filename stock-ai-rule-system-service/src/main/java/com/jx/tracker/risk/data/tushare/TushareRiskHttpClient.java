@@ -35,9 +35,8 @@ import java.util.regex.Pattern;
 public final class TushareRiskHttpClient {
 
     private static final RetryPolicy DEFAULT_RETRY_POLICY =
-            new RetryPolicy(2, Duration.ofSeconds(1), 2.0, Duration.ofSeconds(30));
-    private static final Set<Integer> RATE_LIMIT_CODES = Set.of(-2002, -429, 429);
-    private static final Set<Integer> PERMISSION_CODES = Set.of(-2001);
+            RetryPolicy.defaultPolicy();
+    private static final Set<Integer> PERMISSION_CODES = Set.of(-2002, -2001, 2002);
     private static final Pattern TOKEN_ASSIGNMENT = Pattern.compile(
             "(?i)(token\\s*[=:]\\s*)[^\\s,;\"'}]+");
 
@@ -107,6 +106,9 @@ public final class TushareRiskHttpClient {
             } catch (TushareRiskException exception) {
                 if (exception.category() != TushareRiskException.Category.RATE_LIMIT
                         || retries >= retryPolicy.maxRetries()) {
+                    throw exception;
+                }
+                if (!retryPolicy.acceptsRetryAfter(exception.retryAfter())) {
                     throw exception;
                 }
                 retries++;
@@ -211,9 +213,6 @@ public final class TushareRiskHttpClient {
     }
 
     private TushareRiskException.Category category(int code, String vendorMessage) {
-        if (RATE_LIMIT_CODES.contains(code)) {
-            return TushareRiskException.Category.RATE_LIMIT;
-        }
         if (PERMISSION_CODES.contains(code)) {
             return TushareRiskException.Category.PERMISSION;
         }
@@ -400,6 +399,11 @@ public final class TushareRiskHttpClient {
             this(maxRetries, fixedDelay, 1.0, fixedDelay);
         }
 
+        public static RetryPolicy defaultPolicy() {
+            return new RetryPolicy(
+                    2, Duration.ofSeconds(60), 1.0, Duration.ofSeconds(60));
+        }
+
         public RetryPolicy {
             if (maxRetries < 0 || maxRetries > 10) {
                 throw TushareRiskException.configuration(
@@ -426,7 +430,7 @@ public final class TushareRiskHttpClient {
 
         Duration delay(int retryNumber, Duration retryAfter) {
             if (retryAfter != null) {
-                return capped(retryAfter);
+                return retryAfter.isNegative() ? Duration.ZERO : retryAfter;
             }
             if (initialDelay.isZero() || retryNumber <= 1 || multiplier == 1.0) {
                 return initialDelay;
@@ -439,11 +443,8 @@ public final class TushareRiskHttpClient {
             return Duration.ofNanos((long) Math.ceil(nanos));
         }
 
-        private Duration capped(Duration delay) {
-            if (delay.isNegative()) {
-                return Duration.ZERO;
-            }
-            return delay.compareTo(maxDelay) > 0 ? maxDelay : delay;
+        private boolean acceptsRetryAfter(Duration retryAfter) {
+            return retryAfter == null || retryAfter.compareTo(maxDelay) <= 0;
         }
     }
 }
