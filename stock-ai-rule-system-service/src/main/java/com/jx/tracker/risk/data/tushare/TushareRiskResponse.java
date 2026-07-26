@@ -1,8 +1,6 @@
 package com.jx.tracker.risk.data.tushare;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,7 +21,7 @@ public record TushareRiskResponse(
         fields = List.copyOf(fields == null ? List.of() : fields);
         List<Map<String, Object>> immutableRows = new ArrayList<>();
         for (Map<String, Object> row : rows == null ? List.<Map<String, Object>>of() : rows) {
-            immutableRows.add(Collections.unmodifiableMap(new LinkedHashMap<>(row)));
+            immutableRows.add(TushareRiskRequest.immutableJsonMap(row, "rows"));
         }
         rows = List.copyOf(immutableRows);
     }

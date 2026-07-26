@@ -1,5 +1,7 @@
 package com.jx.tracker.risk.data.tushare;
 
+import java.time.Duration;
+
 /**
  * TuShare HTTP 边界的结构化、已脱敏异常。
  */
@@ -17,32 +19,36 @@ public final class TushareRiskException extends RuntimeException {
     private final String apiName;
     private final Integer code;
     private final String vendorMessage;
+    private final Duration retryAfter;
 
     private TushareRiskException(
             Category category,
             String apiName,
             Integer code,
             String vendorMessage,
-            String detail
+            String detail,
+            Duration retryAfter
     ) {
         super(message(category, apiName, code, vendorMessage, detail));
         this.category = category;
         this.apiName = apiName;
         this.code = code;
         this.vendorMessage = vendorMessage;
+        this.retryAfter = retryAfter;
     }
 
     static TushareRiskException configuration(String detail) {
-        return new TushareRiskException(Category.CONFIGURATION, null, null, null, detail);
+        return new TushareRiskException(
+                Category.CONFIGURATION, null, null, null, detail, null);
     }
 
     static TushareRiskException remote(String apiName) {
         return new TushareRiskException(
-                Category.REMOTE, apiName, null, null, "remote request failed");
+                Category.REMOTE, apiName, null, null, "remote request failed", null);
     }
 
     static TushareRiskException parse(String apiName, String detail) {
-        return new TushareRiskException(Category.PARSE, apiName, null, null, detail);
+        return new TushareRiskException(Category.PARSE, apiName, null, null, detail, null);
     }
 
     static TushareRiskException vendor(
@@ -51,7 +57,17 @@ public final class TushareRiskException extends RuntimeException {
             int code,
             String vendorMessage
     ) {
-        return new TushareRiskException(category, apiName, code, vendorMessage, null);
+        return new TushareRiskException(
+                category, apiName, code, vendorMessage, null, null);
+    }
+
+    static TushareRiskException httpRateLimit(
+            String apiName,
+            String vendorMessage,
+            Duration retryAfter
+    ) {
+        return new TushareRiskException(
+                Category.RATE_LIMIT, apiName, 429, vendorMessage, null, retryAfter);
     }
 
     public Category category() {
@@ -68,6 +84,10 @@ public final class TushareRiskException extends RuntimeException {
 
     public String vendorMessage() {
         return vendorMessage;
+    }
+
+    public Duration retryAfter() {
+        return retryAfter;
     }
 
     private static String message(
