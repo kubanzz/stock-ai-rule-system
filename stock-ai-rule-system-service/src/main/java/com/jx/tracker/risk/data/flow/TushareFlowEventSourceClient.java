@@ -755,7 +755,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         object, floatDate,
                         floatDate.atTime(9, 30),
                         announcementDate.atStartOfDay(),
-                        availableAt, shares, "tenThousandShares",
+                        availableAt, shares, "shares",
                         "share_unlock", "限售股解禁",
                         attributes));
             }

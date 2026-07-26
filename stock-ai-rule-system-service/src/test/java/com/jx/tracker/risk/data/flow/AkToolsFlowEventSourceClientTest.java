@@ -693,6 +693,98 @@ class AkToolsFlowEventSourceClientTest {
     }
 
     @Test
+    void compositeReplacesPartialTushareUnlockWithCompleteAkToolsFixtureWithoutUnitConversion() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server =
+                MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_restricted_release_queue_sina")))
+                .andRespond(withSuccess("""
+                        {
+                          "data": [
+                            {"代码":"600519","解禁日期":"2026-08-01",
+                             "解禁数量":100,"上市批次":1,
+                             "公告日期":"2026-07-17"}
+                          ],
+                          "meta": {
+                            "historyComplete": true,
+                            "earliestAvailableDate": "2026-07-01",
+                            "nextCursor": "aktools-unlock-complete"
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        FlowEventSourceRecord tushareRecord =
+                new FlowEventSourceRecord(
+                        "tushare-unlock", "tushare-cursor", STOCK,
+                        LocalDate.of(2026, 8, 1),
+                        LocalDateTime.of(2026, 8, 1, 9, 30),
+                        LocalDateTime.of(2026, 7, 17, 0, 0),
+                        LocalDateTime.of(2026, 7, 20, 0, 0),
+                        new java.math.BigDecimal("1000000"),
+                        "shares", "share_unlock",
+                        "限售股解禁",
+                        java.util.Map.of(
+                                "holderName", "未披露股东"));
+        FlowEventSourceBatch partialTushare =
+                new FlowEventSourceBatch(
+                        "tushare", List.of(tushareRecord),
+                        RiskDataQualityStatus.AVAILABLE,
+                        "share_float partial", null,
+                        LocalDate.of(2026, 7, 17), false,
+                        LocalDateTime.of(2026, 7, 18, 20, 0),
+                        null);
+        AkToolsFlowEventSourceClient akTools = client(builder);
+        FlowEventSupplementProvider supplement =
+                new FlowEventSupplementProvider() {
+                    @Override
+                    public String providerCode() {
+                        return "aktools";
+                    }
+
+                    @Override
+                    public int priority() {
+                        return 100;
+                    }
+
+                    @Override
+                    public boolean supports(String datasetCode) {
+                        return FlowEventDataset.SHARE_UNLOCK.code()
+                                .equals(datasetCode);
+                    }
+
+                    @Override
+                    public FlowEventSourceBatch fetch(
+                            FlowEventSourceRequest request
+                    ) {
+                        return akTools.fetch(request);
+                    }
+                };
+        CompositeFlowEventSourceClient composite =
+                new CompositeFlowEventSourceClient(
+                        request -> partialTushare,
+                        List.of(supplement));
+
+        FlowEventSourceBatch result = composite.fetch(sourceRequest(
+                FlowEventDataset.SHARE_UNLOCK, List.of(STOCK),
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 8, 2)));
+
+        assertThat(result.source()).isEqualTo(
+                AkToolsFlowEventSourceClient.SOURCE);
+        assertThat(result.historyComplete()).isTrue();
+        assertThat(result.records()).singleElement()
+                .satisfies(record -> {
+                    assertThat(record.value())
+                            .isEqualByComparingTo("100");
+                    assertThat(record.unit())
+                            .isEqualTo("tenThousandShares");
+                });
+        assertThat(result.fallbackReason())
+                .contains("share_float partial");
+        server.verify();
+    }
+
+    @Test
     void reductionUsesPublishedRatioForModifierStrengthAndKeepsDistinctShareholders() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

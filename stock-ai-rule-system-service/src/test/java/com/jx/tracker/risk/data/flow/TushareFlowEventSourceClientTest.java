@@ -656,6 +656,9 @@ class TushareFlowEventSourceClientTest {
             assertThat(record.tradeDate()).isEqualTo(LocalDate.of(2026, 8, 10));
             assertThat(record.observedAt())
                     .isEqualTo(LocalDateTime.of(2026, 7, 10, 0, 0));
+            assertThat(record.unit()).isEqualTo("shares");
+            assertThat(record.value())
+                    .isEqualByComparingTo("250000");
             assertThat(record.availableAt())
                     .isEqualTo(LocalDateTime.of(2026, 7, 13, 0, 0));
             assertThat(record.attributes())

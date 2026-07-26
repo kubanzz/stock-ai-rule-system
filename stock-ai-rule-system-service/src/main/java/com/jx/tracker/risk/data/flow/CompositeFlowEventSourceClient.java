@@ -92,6 +92,7 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         String primaryReason = fallbackReason(primaryBatch);
         failures.add(primaryReason);
         LocalDateTime fetchedAt = primaryBatch.fetchedAt();
+        FlowEventSourceBatch auditBatch = primaryBatch;
         boolean attempted = false;
         for (FlowEventSupplementProvider supplement : supplements) {
             if (!supplement.supports(request.dataset().code())) {
@@ -110,22 +111,60 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
                                         + " valid_zero did not prove "
                                         + "the missing history");
                     }
+                    if (request.dataset().eventDataset()) {
+                        return candidate.withFallbackReason(
+                                primaryReason);
+                    }
                     return merge(primaryBatch, candidate, primaryReason, fetchedAt);
                 }
                 return candidate.withFallbackReason(primaryReason);
             }
             failures.add(fallbackReason(candidate));
+            if (request.dataset().eventDataset()
+                    && auditBatch.qualityStatus()
+                            == RiskDataQualityStatus.AVAILABLE
+                    && candidate.qualityStatus()
+                            == RiskDataQualityStatus.AVAILABLE) {
+                auditBatch = mergeAuditOnly(
+                        auditBatch, candidate,
+                        String.join("; ", failures), fetchedAt);
+            }
         }
         if (!attempted) {
             return primaryBatch;
         }
-        if (primaryBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE) {
-            return primaryBatch.withFallbackReason(String.join("; ", failures));
+        if (auditBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE) {
+            return auditBatch.withFallbackReason(
+                    String.join("; ", failures));
         }
         return FlowEventSourceBatch.unavailable(
                 primaryBatch.source() + "+supplement",
                 String.join("; ", failures),
                 fetchedAt);
+    }
+
+    private FlowEventSourceBatch mergeAuditOnly(
+            FlowEventSourceBatch primaryBatch,
+            FlowEventSourceBatch supplementBatch,
+            String reason,
+            LocalDateTime fetchedAt
+    ) {
+        Map<String, FlowEventSourceRecord> records =
+                new LinkedHashMap<>();
+        primaryBatch.records().forEach(record ->
+                records.putIfAbsent(recordKey(record), record));
+        supplementBatch.records().forEach(record ->
+                records.putIfAbsent(recordKey(record), record));
+        return new FlowEventSourceBatch(
+                primaryBatch.source() + "+"
+                        + supplementBatch.source(),
+                new ArrayList<>(records.values()),
+                RiskDataQualityStatus.AVAILABLE,
+                reason, null,
+                earliest(
+                        primaryBatch.earliestAvailableDate(),
+                        supplementBatch.earliestAvailableDate()),
+                false, fetchedAt, reason);
     }
 
     private FlowEventSourceBatch merge(
@@ -148,7 +187,10 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
 
     private String recordKey(FlowEventSourceRecord record) {
         if (isCrossSourceBusinessEvent(record.eventCode())) {
-            return businessEventKey(record);
+            String identity = commonBusinessIdentity(record);
+            if (identity != null) {
+                return businessEventKey(record, identity);
+            }
         }
         return record.object().objectType().getCode() + ":" + record.object().objectId()
                 + ":" + record.recordId() + ":" + record.availableAt();
@@ -160,24 +202,60 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
                 || "share_reduction".equals(eventCode);
     }
 
-    private String businessEventKey(FlowEventSourceRecord record) {
+    private String businessEventKey(
+            FlowEventSourceRecord record,
+            String identity
+    ) {
         return record.eventCode() + ":"
                 + record.object().objectType().getCode() + ":"
                 + record.object().objectId() + ":"
                 + record.tradeDate() + ":"
                 + record.observedAt().toLocalDate() + ":"
-                + normalizedValue(record);
+                + normalizedValue(record) + ":"
+                + identity;
+    }
+
+    private String commonBusinessIdentity(
+            FlowEventSourceRecord record
+    ) {
+        return switch (record.eventCode()) {
+            case "forecast_change" -> identity(
+                    "forecastType",
+                    record.attributes().get("forecastType"),
+                    record.title());
+            case "share_reduction" -> identity(
+                    "shareholder",
+                    record.attributes().get("shareholder"),
+                    null);
+            case "share_unlock" -> {
+                Object holder =
+                        record.attributes().get("holderName");
+                if (holder != null) {
+                    yield identity("holder", holder, null);
+                }
+                yield identity(
+                        "listingBatch",
+                        record.attributes().get("listingBatch"),
+                        null);
+            }
+            default -> null;
+        };
+    }
+
+    private String identity(
+            String type,
+            Object preferred,
+            String fallback
+    ) {
+        String value = preferred == null
+                ? fallback : preferred.toString();
+        return value == null || value.isBlank()
+                ? null : type + "=" + value.trim();
     }
 
     private String normalizedValue(FlowEventSourceRecord record) {
         if (record.value() == null) {
             return "null:" + record.unit();
-        }
-        if ("tenThousandShares".equals(record.unit())) {
-            return record.value()
-                    .multiply(java.math.BigDecimal.valueOf(10_000))
-                    .stripTrailingZeros().toPlainString()
-                    + ":shares";
         }
         return record.value().stripTrailingZeros().toPlainString()
                 + ":" + record.unit();

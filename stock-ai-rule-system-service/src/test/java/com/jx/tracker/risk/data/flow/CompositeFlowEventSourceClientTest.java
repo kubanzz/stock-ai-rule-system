@@ -155,7 +155,7 @@ class CompositeFlowEventSourceClientTest {
     }
 
     @Test
-    void mergesTheSameBusinessEventOnlyOnceAcrossSources() {
+    void completeEventSupplementReplacesPartialPrimary() {
         RiskObjectKey object = new RiskObjectKey(
                 RiskObjectType.STOCK, "600519.SH");
         FlowEventSourceRecord primaryRecord = forecastRecord(
@@ -183,7 +183,11 @@ class CompositeFlowEventSourceClientTest {
         FlowEventSourceBatch result = client.fetch(request(
                 FlowEventDataset.EARNINGS_FORECAST, object));
 
-        assertThat(result.records()).containsExactly(primaryRecord);
+        assertThat(result.records()).containsExactly(supplementRecord);
+        assertThat(result.source()).isEqualTo("aktools");
+        assertThat(result.historyComplete()).isTrue();
+        assertThat(result.fallbackReason())
+                .contains("forecast history is partial");
     }
 
     @Test
@@ -217,7 +221,7 @@ class CompositeFlowEventSourceClientTest {
     }
 
     @Test
-    void normalizesShareUnitsInCrossSourceBusinessKey() {
+    void completeAkToolsEventReplacementPreservesItsPublishedUnit() {
         RiskObjectKey object = new RiskObjectKey(
                 RiskObjectType.STOCK, "600519.SH");
         LocalDate eventDate = LocalDate.of(2026, 7, 14);
@@ -261,7 +265,117 @@ class CompositeFlowEventSourceClientTest {
         FlowEventSourceBatch result = client.fetch(request(
                 FlowEventDataset.SHARE_REDUCTION, object));
 
+        assertThat(result.records()).containsExactly(supplementRecord);
+        assertThat(result.records().getFirst().unit())
+                .isEqualTo("tenThousandShares");
+        assertThat(result.records().getFirst().value())
+                .isEqualByComparingTo("3");
+        assertThat(result.fallbackReason()).contains("partial");
+    }
+
+    @Test
+    void partialSourcesKeepSameDaySameValueDifferentShareholders() {
+        RiskObjectKey object = new RiskObjectKey(
+                RiskObjectType.STOCK, "600519.SH");
+        FlowEventSourceRecord shareholderA =
+                reductionRecord("tushare-a", object, "股东甲");
+        FlowEventSourceRecord shareholderB =
+                reductionRecord("aktools-b", object, "股东乙");
+        CompositeFlowEventSourceClient client =
+                partialEventClient(shareholderA, shareholderB);
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.SHARE_REDUCTION, object));
+
+        assertThat(result.records())
+                .containsExactly(shareholderA, shareholderB);
+        assertThat(result.historyComplete()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.failureReason())
+                .contains("primary partial")
+                .contains("supplement partial");
+    }
+
+    @Test
+    void partialSourcesDeduplicateOnlyWhenCommonIdentityMatches() {
+        RiskObjectKey object = new RiskObjectKey(
+                RiskObjectType.STOCK, "600519.SH");
+        FlowEventSourceRecord primaryRecord =
+                reductionRecord("tushare-a", object, "股东甲");
+        FlowEventSourceRecord duplicate =
+                reductionRecord("aktools-a", object, "股东甲");
+        CompositeFlowEventSourceClient client =
+                partialEventClient(primaryRecord, duplicate);
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.SHARE_REDUCTION, object));
+
         assertThat(result.records()).containsExactly(primaryRecord);
+        assertThat(result.historyComplete()).isFalse();
+    }
+
+    @Test
+    void partialSourcesPreserveBothRecordsWhenIdentityIsMissing() {
+        RiskObjectKey object = new RiskObjectKey(
+                RiskObjectType.STOCK, "600519.SH");
+        FlowEventSourceRecord primaryRecord =
+                reductionRecord("tushare-unknown", object, null);
+        FlowEventSourceRecord supplementRecord =
+                reductionRecord("aktools-unknown", object, null);
+        CompositeFlowEventSourceClient client =
+                partialEventClient(
+                        primaryRecord, supplementRecord);
+
+        FlowEventSourceBatch result = client.fetch(request(
+                FlowEventDataset.SHARE_REDUCTION, object));
+
+        assertThat(result.records())
+                .containsExactly(primaryRecord, supplementRecord);
+        assertThat(result.historyComplete()).isFalse();
+    }
+
+    private static CompositeFlowEventSourceClient partialEventClient(
+            FlowEventSourceRecord primaryRecord,
+            FlowEventSourceRecord supplementRecord
+    ) {
+        FlowEventSourceBatch primary = new FlowEventSourceBatch(
+                "tushare", List.of(primaryRecord),
+                RiskDataQualityStatus.AVAILABLE,
+                "primary partial", null,
+                primaryRecord.tradeDate(), false,
+                FETCHED_AT, null);
+        FlowEventSourceBatch supplement =
+                new FlowEventSourceBatch(
+                        "aktools", List.of(supplementRecord),
+                        RiskDataQualityStatus.AVAILABLE,
+                        "supplement partial", null,
+                        supplementRecord.tradeDate(), false,
+                        FETCHED_AT.plusMinutes(1), null);
+        return new CompositeFlowEventSourceClient(
+                request -> primary,
+                List.of(supplementCalls(
+                        new AtomicInteger(), supplement)));
+    }
+
+    private static FlowEventSourceRecord reductionRecord(
+            String recordId,
+            RiskObjectKey object,
+            String shareholder
+    ) {
+        LocalDate eventDate = LocalDate.of(2026, 7, 14);
+        LocalDateTime observedAt =
+                LocalDateTime.of(2026, 7, 15, 0, 0);
+        return new FlowEventSourceRecord(
+                recordId, recordId + "-cursor", object,
+                eventDate, eventDate.atTime(15, 0), observedAt,
+                observedAt.plusDays(1),
+                new BigDecimal("30000"), "shares",
+                "share_reduction", "股东减持",
+                shareholder == null
+                        ? Map.of("direction", "DE")
+                        : Map.of(
+                                "direction", "DE",
+                                "shareholder", shareholder));
     }
 
     private static FlowEventSupplementProvider supplementCalls(
