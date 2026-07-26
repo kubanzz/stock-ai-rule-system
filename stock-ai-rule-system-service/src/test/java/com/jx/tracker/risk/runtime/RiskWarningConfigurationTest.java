@@ -31,6 +31,8 @@ import static org.mockito.Mockito.mock;
 
 class RiskWarningConfigurationTest {
 
+    private static final String TEST_TUSHARE_TOKEN = "test-token-not-secret";
+
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(RiskWarningConfiguration.class, Dependencies.class);
 
@@ -93,6 +95,53 @@ class RiskWarningConfigurationTest {
                     context.getBean(AkToolsFlowEventSourceClient.class), "derivedRestClient"))
                     .isNotNull();
         });
+    }
+
+    @Test
+    void enabledRuntimeRejectsAnUnsupportedRiskPrimarySource() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.primary=csv"
+        ).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasRootCauseMessage(
+                    "risk warning source primary must be one of: aktools, tushare");
+            assertThat(rootCause(context.getStartupFailure()).getMessage()).doesNotContain(TEST_TUSHARE_TOKEN);
+        });
+    }
+
+    @Test
+    void enabledRuntimeRejectsTusharePrimarySourceWhenItsSwitchIsDisabled() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.primary=tushare",
+                "stock-ai-rule.risk-warning.source.tushare-enabled=false",
+                "stock-ai-rule.market-data.provider.token=" + TEST_TUSHARE_TOKEN
+        ).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasRootCauseMessage(
+                    "risk warning TuShare must be enabled when it is the primary source");
+            assertThat(rootCause(context.getStartupFailure()).getMessage()).doesNotContain(TEST_TUSHARE_TOKEN);
+        });
+    }
+
+    @Test
+    void enabledRuntimeRejectsAnEnabledTushareSourceWithoutAToken() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.tushare-enabled=true"
+        ).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasRootCauseMessage(
+                    "risk warning TuShare token must be configured when TuShare is enabled");
+            assertThat(rootCause(context.getStartupFailure()).getMessage()).doesNotContain(TEST_TUSHARE_TOKEN);
+        });
+    }
+
+    @Test
+    void enabledRuntimeAcceptsACompleteTushareSourceConfiguration() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.source.primary=tushare",
+                "stock-ai-rule.risk-warning.source.tushare-enabled=true",
+                "stock-ai-rule.market-data.provider.token=" + TEST_TUSHARE_TOKEN
+        ).run(context -> assertThat(context).hasNotFailed());
     }
 
     @Test
@@ -162,6 +211,14 @@ class RiskWarningConfigurationTest {
                 "stock-ai-rule.risk-warning.after-close-cutoff=19:00",
                 "stock-ai-rule.risk-warning.ak-tools-base-url=http://127.0.0.1:8090"
         );
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
     }
 
     @Configuration(proxyBeanMethods = false)

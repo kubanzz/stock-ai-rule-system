@@ -61,9 +61,19 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
+        ValidatedRiskSource validatedRiskSource(
+                RiskWarningProperties riskProperties,
+                MarketDataProviderProperties marketDataProperties
+        ) {
+            riskProperties.validateSource(marketDataProperties.getToken());
+            return ValidatedRiskSource.INSTANCE;
+        }
+
+        @Bean
         RestClientMarketRiskHttpTransport riskMarketHttpTransport(
                 RiskWarningProperties riskProperties,
                 MarketDataProviderProperties marketDataProperties,
+                ValidatedRiskSource validatedRiskSource,
                 RestClient.Builder restClientBuilder,
                 ObjectMapper objectMapper
         ) {
@@ -99,6 +109,7 @@ public class RiskWarningConfiguration {
         AkToolsFlowEventSourceClient riskFlowEventSourceClient(
                 RiskWarningProperties riskProperties,
                 MarketDataProviderProperties marketDataProperties,
+                ValidatedRiskSource validatedRiskSource,
                 RestClient.Builder restClientBuilder,
                 ObjectMapper objectMapper,
                 Clock clock
@@ -115,6 +126,10 @@ public class RiskWarningConfiguration {
         @Bean
         FlowEventRiskDataProvider riskFlowEventDataProvider(AkToolsFlowEventSourceClient sourceClient) {
             return new FlowEventRiskDataProvider(sourceClient);
+        }
+
+        private enum ValidatedRiskSource {
+            INSTANCE
         }
 
         @Bean
