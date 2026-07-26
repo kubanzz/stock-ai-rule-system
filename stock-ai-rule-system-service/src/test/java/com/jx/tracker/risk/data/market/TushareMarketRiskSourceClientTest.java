@@ -1148,6 +1148,56 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
+    void breadthRetryResumesFromTheFailedDateWithoutRefetchingSuccessfulDates() {
+        List<LocalDate> dates = datesEndingToday(3);
+        Map<LocalDate, AtomicInteger> dailyCalls = new java.util.LinkedHashMap<>();
+        AtomicInteger permits = new AtomicInteger();
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            if ("trade_cal".equals(query.apiName())) {
+                return responseRows(
+                        "trade_cal",
+                        dates.stream()
+                                .map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+            }
+            LocalDate date = LocalDate.parse(
+                    (String) query.params().get("trade_date"),
+                    java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+            int call = dailyCalls.computeIfAbsent(
+                    date, ignored -> new AtomicInteger()).incrementAndGet();
+            if (date.equals(dates.getLast()) && call == 1) {
+                throw failure(TushareRiskException.Category.REMOTE, "daily");
+            }
+            return response(
+                    "daily",
+                    breadthRow("600519.SH", date, BigDecimal.TEN, BigDecimal.TEN));
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(
+                        httpClient, CLOCK, permits::incrementAndGet);
+        RiskProviderRequest request =
+                request(List.of(MARKET), dates.getFirst(), TODAY, TODAY);
+
+        MarketSourceBatch failed =
+                client.fetch(MarketDatasetCode.BREADTH, request);
+        MarketSourceBatch resumed =
+                client.fetch(MarketDatasetCode.BREADTH, request);
+
+        assertThat(failed.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.UNAVAILABLE);
+        assertThat(resumed.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(dailyCalls)
+                .extractingByKeys(
+                        dates.getFirst(), dates.get(1), dates.getLast())
+                .extracting(AtomicInteger::get)
+                .containsExactly(1, 1, 2);
+        assertThat(permits).hasValue(4);
+    }
+
+    @Test
     void breadthReturnsRealCountsAsPartialWhenEligibleCoverageIsBelowNinetyFivePercent() {
         List<LocalDate> dates = datesEndingToday(252);
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);

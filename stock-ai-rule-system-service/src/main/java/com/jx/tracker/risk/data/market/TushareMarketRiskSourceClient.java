@@ -44,6 +44,7 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private static final BigDecimal FORMAL_OPEN_DAY_COVERAGE =
             new BigDecimal("0.95");
     private static final int STOCK_MASTER_CACHE_DATES = 32;
+    private static final int BREADTH_DAILY_CACHE_DATES = 512;
     private static final int INDEX_MEMBER_ALL_ROW_LIMIT = 2_000;
     private static final int DAILY_ROW_LIMIT = 6_000;
     private static final Duration BREADTH_REQUEST_DELAY =
@@ -63,6 +64,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private final TushareCrossMarketCalculator crossMarketCalculator =
             new TushareCrossMarketCalculator();
     private final Map<LocalDate, List<MarketSourceRecord>> stockMasterCache =
+            new LinkedHashMap<>();
+    private final Map<LocalDate, BreadthDailySlice> breadthDailyCache =
             new LinkedHashMap<>();
 
     public TushareMarketRiskSourceClient(TushareRiskHttpClient httpClient, Clock clock) {
@@ -230,27 +233,12 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         List<TushareBreadthCalculator.DailyBar> bars = new ArrayList<>();
         List<String> gaps = new ArrayList<>();
         for (LocalDate openDate : orderedOpenDates) {
-            breadthRequestPacer.awaitPermit();
-            TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
-                    "daily",
-                    Map.of("trade_date", openDate.format(COMPACT_DATE)),
-                    "ts_code,trade_date,close,pre_close"));
-            if (response.rows().size() >= DAILY_ROW_LIMIT) {
+            BreadthDailySlice dailySlice = breadthDailySlice(openDate);
+            if (dailySlice.truncated()) {
                 gaps.add("daily " + openDate
                         + " reached documented 6000-row limit and may be truncated");
             }
-            for (Map<String, Object> row : response.rows()) {
-                LocalDate tradeDate = date(row, "trade_date");
-                if (!tradeDate.equals(openDate)) {
-                    continue;
-                }
-                RiskObjectKey object = stock(text(row, "ts_code"));
-                bars.add(new TushareBreadthCalculator.DailyBar(
-                        object.objectId(),
-                        tradeDate,
-                        decimal(row, "close"),
-                        decimal(row, "pre_close")));
-            }
+            bars.addAll(dailySlice.bars());
         }
         TushareBreadthCalculator.Calculation calculation =
                 breadthCalculator.calculate(bars, request.resultStartDate());
@@ -325,6 +313,43 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         }
         return new MarketSourceBatch(
                 SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private synchronized BreadthDailySlice breadthDailySlice(
+            LocalDate openDate
+    ) {
+        BreadthDailySlice cached = breadthDailyCache.get(openDate);
+        if (cached != null) {
+            return cached;
+        }
+        breadthRequestPacer.awaitPermit();
+        TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
+                "daily",
+                Map.of("trade_date", openDate.format(COMPACT_DATE)),
+                "ts_code,trade_date,close,pre_close"));
+        List<TushareBreadthCalculator.DailyBar> bars = new ArrayList<>();
+        for (Map<String, Object> row : response.rows()) {
+            LocalDate tradeDate = date(row, "trade_date");
+            if (!tradeDate.equals(openDate)) {
+                continue;
+            }
+            RiskObjectKey object = stock(text(row, "ts_code"));
+            bars.add(new TushareBreadthCalculator.DailyBar(
+                    object.objectId(),
+                    tradeDate,
+                    decimal(row, "close"),
+                    decimal(row, "pre_close")));
+        }
+        BreadthDailySlice loaded = new BreadthDailySlice(
+                bars, response.rows().size() >= DAILY_ROW_LIMIT);
+        breadthDailyCache.put(openDate, loaded);
+        while (breadthDailyCache.size() > BREADTH_DAILY_CACHE_DATES) {
+            LocalDate earliestDate = breadthDailyCache.keySet().stream()
+                    .min(LocalDate::compareTo)
+                    .orElseThrow();
+            breadthDailyCache.remove(earliestDate);
+        }
+        return loaded;
     }
 
     private MarketSourceBatch crossMarket(
@@ -872,6 +897,15 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             BigDecimal close,
             BigDecimal volume
     ) {
+    }
+
+    private record BreadthDailySlice(
+            List<TushareBreadthCalculator.DailyBar> bars,
+            boolean truncated
+    ) {
+        private BreadthDailySlice {
+            bars = List.copyOf(bars);
+        }
     }
 
     private Map<String, Object> dateWindow(RiskProviderRequest request) {
