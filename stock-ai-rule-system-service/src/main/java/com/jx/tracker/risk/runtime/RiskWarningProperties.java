@@ -8,9 +8,12 @@ import java.time.LocalTime;
 public class RiskWarningProperties {
 
     public static final int DEFAULT_COLLECTION_CHUNK_SIZE = 25;
+    private static final String PRIMARY_AKTOOLS = "aktools";
+    private static final String PRIMARY_TUSHARE = "tushare";
 
     private boolean enabled;
     private boolean backfillEnabled;
+    private Source source = new Source();
     private String akToolsBaseUrl;
     private String derivedGatewayBaseUrl;
     private String modelVersion;
@@ -31,6 +34,14 @@ public class RiskWarningProperties {
 
     public void setBackfillEnabled(boolean backfillEnabled) {
         this.backfillEnabled = backfillEnabled;
+    }
+
+    public Source getSource() {
+        return source;
+    }
+
+    public void setSource(Source source) {
+        this.source = source == null ? new Source() : source;
     }
 
     public String getAkToolsBaseUrl() {
@@ -94,6 +105,28 @@ public class RiskWarningProperties {
         return collectionChunkSize;
     }
 
+    public String requiredPrimarySource() {
+        String primary = source.getPrimary();
+        if (primary == null || primary.isBlank()) {
+            return PRIMARY_AKTOOLS;
+        }
+        String normalized = primary.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!PRIMARY_AKTOOLS.equals(normalized) && !PRIMARY_TUSHARE.equals(normalized)) {
+            throw new IllegalStateException("risk warning source primary must be one of: aktools, tushare");
+        }
+        return normalized;
+    }
+
+    public void validateSource(String tushareToken) {
+        String primary = requiredPrimarySource();
+        if (PRIMARY_TUSHARE.equals(primary) && !source.isTushareEnabled()) {
+            throw new IllegalStateException("risk warning TuShare must be enabled when it is the primary source");
+        }
+        if (source.isTushareEnabled() && (tushareToken == null || tushareToken.isBlank())) {
+            throw new IllegalStateException("risk warning TuShare token must be configured when TuShare is enabled");
+        }
+    }
+
     public String resolvedAkToolsBaseUrl(String fallbackBaseUrl) {
         String resolved = akToolsBaseUrl == null || akToolsBaseUrl.isBlank()
                 ? fallbackBaseUrl
@@ -108,5 +141,36 @@ public class RiskWarningProperties {
         return derivedGatewayBaseUrl == null || derivedGatewayBaseUrl.isBlank()
                 ? null
                 : derivedGatewayBaseUrl.trim();
+    }
+
+    public static class Source {
+
+        private String primary = PRIMARY_AKTOOLS;
+        private boolean tushareEnabled;
+        private boolean cninfoAnnouncementFallbackEnabled = true;
+
+        public String getPrimary() {
+            return primary;
+        }
+
+        public void setPrimary(String primary) {
+            this.primary = primary;
+        }
+
+        public boolean isTushareEnabled() {
+            return tushareEnabled;
+        }
+
+        public void setTushareEnabled(boolean tushareEnabled) {
+            this.tushareEnabled = tushareEnabled;
+        }
+
+        public boolean isCninfoAnnouncementFallbackEnabled() {
+            return cninfoAnnouncementFallbackEnabled;
+        }
+
+        public void setCninfoAnnouncementFallbackEnabled(boolean cninfoAnnouncementFallbackEnabled) {
+            this.cninfoAnnouncementFallbackEnabled = cninfoAnnouncementFallbackEnabled;
+        }
     }
 }

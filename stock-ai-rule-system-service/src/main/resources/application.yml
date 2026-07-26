@@ -66,6 +66,10 @@ stock-ai-rule:
     # 风险查询和手动同步默认可用；五年回填、自动调度与正式闸门仍分别保持关闭。
     enabled: ${RISK_WARNING_ENABLED:true}
     backfill-enabled: ${RISK_WARNING_BACKFILL_ENABLED:false}
+    source:
+      primary: ${RISK_WARNING_PRIMARY_SOURCE:aktools}
+      tushare-enabled: ${RISK_WARNING_TUSHARE_ENABLED:false}
+      cninfo-announcement-fallback-enabled: ${RISK_WARNING_CNINFO_ANNOUNCEMENT_FALLBACK_ENABLED:true}
     # 为空时复用 market-data.provider.ak-tools-base-url。
     ak-tools-base-url: ${RISK_WARNING_AKTOOLS_BASE_URL:}
     # 可选规范化衍生网关；历史行情、宽度、估值、跨市场与 ETF 申赎数据由该网关提供。

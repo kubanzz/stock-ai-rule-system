@@ -1,2 +1,3 @@
 .worktrees/
 .superpowers/
+/stock-ai-rule-system-service/src/main/resources/application-local.yml
