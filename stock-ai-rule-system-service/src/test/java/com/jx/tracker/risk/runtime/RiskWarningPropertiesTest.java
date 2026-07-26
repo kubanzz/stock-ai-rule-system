@@ -1,6 +1,13 @@
 package com.jx.tracker.risk.runtime;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.core.io.ClassPathResource;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,5 +54,20 @@ class RiskWarningPropertiesTest {
         assertThatThrownBy(() -> properties.validateSource(" "))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("risk warning TuShare token must be configured when TuShare is enabled");
+    }
+
+    @Test
+    void keepsLocalConfigurationOutsideMavenResourcesAndActivatesItsProfileByDefault() throws IOException {
+        YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
+        yaml.setResources(new ClassPathResource("application.yml"));
+        Properties application = yaml.getObject();
+        Path moduleDirectory = Path.of(System.getProperty("basedir", ".")).toAbsolutePath().normalize();
+        String gitignore = Files.readString(moduleDirectory.getParent().resolve(".gitignore"));
+
+        assertThat(application).isNotNull();
+        assertThat(application.getProperty("spring.profiles.active")).isEqualTo("${SPRING_PROFILES_ACTIVE:dev,local}");
+        assertThat(gitignore)
+                .contains("/stock-ai-rule-system-service/config/application-local.yml")
+                .doesNotContain("/stock-ai-rule-system-service/src/main/resources/application-local.yml");
     }
 }
