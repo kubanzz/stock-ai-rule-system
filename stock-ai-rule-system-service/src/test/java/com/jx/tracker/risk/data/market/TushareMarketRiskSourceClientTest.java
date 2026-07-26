@@ -1012,34 +1012,91 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
-    void crossMarketQueriesMultipleLeadingSeriesAndFailsClosedWithoutCorrelationHistory() {
+    void crossMarketBuildsARealSixtySessionPointWithoutUnitedStatesLookahead() {
+        List<LocalDate> dates = datesEndingToday(62);
+        Map<LocalDate, BigDecimal> benchmark = new java.util.LinkedHashMap<>();
+        BigDecimal close = new BigDecimal("100");
+        benchmark.put(dates.getFirst(), close);
+        for (int index = 1; index < dates.size(); index++) {
+            BigDecimal dailyReturn = index % 2 == 0
+                    ? new BigDecimal("0.0100")
+                    : new BigDecimal("-0.0050");
+            close = close.multiply(BigDecimal.ONE.add(dailyReturn));
+            benchmark.put(dates.get(index), close);
+        }
+        Map<LocalDate, BigDecimal> unitedStates = new java.util.LinkedHashMap<>();
+        dates.forEach(date -> unitedStates.put(
+                date.minusDays(1), benchmark.get(date)));
+        unitedStates.put(TODAY, new BigDecimal("999999999"));
+
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenAnswer(invocation -> {
             TushareRiskRequest query = invocation.getArgument(0);
             String code = (String) query.params().get("ts_code");
-            return response(
-                    query.apiName(),
-                    Map.of(
-                            "ts_code", code,
-                            "trade_date", "20260718",
-                            "close", new BigDecimal("100")));
+            if ("trade_cal".equals(query.apiName())) {
+                return responseRows(
+                        "trade_cal",
+                        dates.stream().map(TushareMarketRiskSourceClientTest::openDayRow)
+                                .toList());
+            }
+            if ("index_daily".equals(query.apiName())) {
+                return responseRows(
+                        "index_daily",
+                        benchmark.entrySet().stream()
+                                .map(entry -> closeRow(
+                                        "000985.CSI",
+                                        entry.getKey(),
+                                        entry.getValue().toPlainString()))
+                                .toList());
+            }
+            Map<LocalDate, BigDecimal> closes =
+                    code.equals("SPX") || code.equals("IXIC")
+                            ? unitedStates : benchmark;
+            return responseRows(
+                    "index_global",
+                    closes.entrySet().stream()
+                            .map(entry -> closeRow(
+                                    code,
+                                    entry.getKey(),
+                                    entry.getValue().toPlainString()))
+                            .toList());
         });
         TushareMarketRiskSourceClient client =
                 new TushareMarketRiskSourceClient(httpClient, CLOCK);
 
         MarketSourceBatch result = client.fetch(
                 MarketDatasetCode.CROSS_MARKET,
-                request(List.of(MARKET), TODAY, TODAY, TODAY));
+                request(List.of(MARKET), dates.getFirst(), TODAY, TODAY));
 
-        assertThat(result.qualityStatus())
-                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
-        assertThat(result.records()).isEmpty();
-        assertThat(result.failureReason())
-                .contains("index_global", "SPX", "IXIC", "HSI", "N225")
-                .containsIgnoringCase("dynamic correlation");
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            CrossMarketPoint point = (CrossMarketPoint) record;
+            assertThat(point.tradeDate()).isEqualTo(TODAY);
+            assertThat(point.leadingAssetReturn()).isEqualByComparingTo("-0.0050000000");
+            assertThat(point.dynamicCorrelation()).isEqualByComparingTo("1.0000000000");
+            assertThat(point.confirmedDownMarketCount()).isEqualTo(4);
+            assertThat(point.observedMarketCount()).isEqualTo(4);
+            assertThat(point.basketDefinition())
+                    .contains(
+                            "SPX<CN-D",
+                            "IXIC<CN-D",
+                            "HSI<=CN-D",
+                            "N225<=CN-D",
+                            "SPX:2026-07-17",
+                            "HSI:2026-07-18",
+                            "000985.CSI",
+                            "correlationWindow=60");
+            assertThat(point.proxy()).isFalse();
+            assertThat(point.calculationVersion())
+                    .isEqualTo("tushare-cross-market-aligned-pearson-60-v1");
+            assertThat(point.availabilityPolicyVersion())
+                    .isEqualTo("CN-1800-PIT-v1");
+            assertThat(point.observedAt()).isEqualTo(TODAY.atTime(18, 0));
+            assertThat(point.availableAt()).isEqualTo(TODAY.atTime(18, 0));
+        });
         ArgumentCaptor<TushareRiskRequest> requestCaptor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient, org.mockito.Mockito.times(5)).query(requestCaptor.capture());
+        verify(httpClient, org.mockito.Mockito.times(6)).query(requestCaptor.capture());
         assertThat(requestCaptor.getAllValues())
                 .filteredOn(query -> query.apiName().equals("index_global"))
                 .extracting(query -> query.params().get("ts_code"))
@@ -1048,6 +1105,11 @@ class TushareMarketRiskSourceClientTest {
                 .anySatisfy(query -> {
                     assertThat(query.apiName()).isEqualTo("index_daily");
                     assertThat(query.params()).containsEntry("ts_code", "000985.CSI");
+                });
+        assertThat(requestCaptor.getAllValues())
+                .anySatisfy(query -> {
+                    assertThat(query.apiName()).isEqualTo("trade_cal");
+                    assertThat(query.params()).containsEntry("exchange", "SSE");
                 });
     }
 

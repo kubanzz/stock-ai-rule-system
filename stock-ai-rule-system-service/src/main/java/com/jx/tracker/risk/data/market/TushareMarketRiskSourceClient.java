@@ -52,6 +52,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private final TushareRequestPacer breadthRequestPacer;
     private final TushareBreadthCalculator breadthCalculator =
             new TushareBreadthCalculator();
+    private final TushareCrossMarketCalculator crossMarketCalculator =
+            new TushareCrossMarketCalculator();
     private final Map<LocalDate, List<MarketSourceRecord>> stockMasterCache =
             new LinkedHashMap<>();
 
@@ -285,24 +287,93 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             RiskProviderRequest request,
             LocalDateTime fetchedAt
     ) {
+        Set<LocalDate> openDates = openTradingDates(request);
+        if (openDates.isEmpty()) {
+            return MarketSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "trade_cal did not confirm the cross-market request window",
+                    fetchedAt);
+        }
         Map<String, Object> window = dateWindow(request);
+        Map<String, Map<LocalDate, BigDecimal>> globalCloses =
+                new LinkedHashMap<>();
+        List<String> gaps = new ArrayList<>();
         for (String code : GLOBAL_LEADING_MARKETS) {
-            httpClient.query(new TushareRiskRequest(
+            TushareRiskResponse response = httpClient.query(new TushareRiskRequest(
                     "index_global",
                     withCode(window, code),
                     "ts_code,trade_date,close"));
+            if (response.rows().size() >= 4_000) {
+                gaps.add("index_global " + code
+                        + " reached documented 4000-row limit and may be truncated");
+            }
+            globalCloses.put(code, closeByDate(response, code));
         }
-        httpClient.query(new TushareRiskRequest(
+        TushareRiskResponse benchmarkResponse =
+                httpClient.query(new TushareRiskRequest(
                 "index_daily",
                 withCode(window, BROAD_MARKET_CODE),
                 "ts_code,trade_date,close"));
-        return MarketSourceBatch.insufficientHistory(
-                SOURCE,
-                "index_global basket [SPX,IXIC,HSI,N225] and index_daily "
-                        + BROAD_MARKET_CODE
-                        + " require aligned real returns and a 60-session dynamic correlation "
-                        + "window with synchronized availability",
-                fetchedAt);
+        if (benchmarkResponse.rows().size() >= DAILY_ROW_LIMIT) {
+            gaps.add("index_daily " + BROAD_MARKET_CODE
+                    + " reached documented 6000-row limit and may be truncated");
+        }
+        TushareCrossMarketCalculator.Calculation calculation =
+                crossMarketCalculator.calculate(
+                        openDates.stream().sorted().toList(),
+                        closeByDate(benchmarkResponse, BROAD_MARKET_CODE),
+                        Map.copyOf(globalCloses),
+                        request.resultStartDate());
+        gaps.addAll(calculation.gaps());
+
+        List<MarketSourceRecord> records = calculation.points().stream()
+                .<MarketSourceRecord>map(point -> new CrossMarketPoint(
+                        CN_A_MARKET,
+                        point.tradeDate(),
+                        point.leadingAssetReturn(),
+                        point.dynamicCorrelation(),
+                        point.confirmedDownMarketCount(),
+                        point.observedMarketCount(),
+                        crossMarketBasketDefinition(point.selectedCloseDates()),
+                        false,
+                        "tushare-cross-market-aligned-pearson-60-v1",
+                        "CN-1800-PIT-v1",
+                        point.tradeDate().atTime(18, 0),
+                        point.tradeDate().atTime(18, 0),
+                        SOURCE,
+                        RiskDataQualityStatus.AVAILABLE))
+                .toList();
+        if (records.isEmpty()) {
+            String reason = gaps.isEmpty()
+                    ? "index_global basket [SPX,IXIC,HSI,N225] and index_daily "
+                            + BROAD_MARKET_CODE
+                            + " did not provide 60 aligned return pairs"
+                    : String.join("; ", gaps);
+            return MarketSourceBatch.insufficientHistory(SOURCE, reason, fetchedAt);
+        }
+        if (!gaps.isEmpty()) {
+            return MarketSourceBatch.partialHistory(
+                    SOURCE,
+                    records,
+                    null,
+                    String.join("; ", gaps),
+                    fetchedAt);
+        }
+        return new MarketSourceBatch(
+                SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private String crossMarketBasketDefinition(
+            Map<String, LocalDate> selectedCloseDates
+    ) {
+        return "basket=[SPX,IXIC,HSI,N225];"
+                + "lagRules=SPX<CN-D,IXIC<CN-D,HSI<=CN-D,N225<=CN-D;"
+                + "benchmark=" + BROAD_MARKET_CODE
+                + ";correlationWindow=60;selectedDates="
+                + "SPX:" + selectedCloseDates.get("SPX")
+                + ",IXIC:" + selectedCloseDates.get("IXIC")
+                + ",HSI:" + selectedCloseDates.get("HSI")
+                + ",N225:" + selectedCloseDates.get("N225");
     }
 
     private MarketSourceBatch valuation(
