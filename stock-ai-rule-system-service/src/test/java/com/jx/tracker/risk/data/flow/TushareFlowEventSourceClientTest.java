@@ -60,10 +60,13 @@ class TushareFlowEventSourceClientTest {
                 case "margin" -> response("margin",
                         marginRow("SSE", "20260715", "80", "10", "7", "4", "90"),
                         marginRow("SZSE", "20260715", "170", "20", "11", "8", "190"),
+                        marginRow("BSE", "20260715", "0", "0", "0", "0", "0"),
                         marginRow("SSE", "20260716", "100", "20", "15", "5", "120"),
                         marginRow("SZSE", "20260716", "200", "30", "25", "10", "230"),
+                        marginRow("BSE", "20260716", "0", "0", "0", "0", "0"),
                         marginRow("SSE", "20260717", "90", "10", "8", "18", "100"),
-                        marginRow("SZSE", "20260717", "180", "20", "12", "30", "200"));
+                        marginRow("SZSE", "20260717", "180", "20", "12", "30", "200"),
+                        marginRow("BSE", "20260717", "0", "0", "0", "0", "0"));
                 case "margin_detail" ->
                         "20260715".equals(
                                 query.params().get("start_date"))
@@ -75,18 +78,27 @@ class TushareFlowEventSourceClientTest {
                                                 "000001.SZ", "20260715",
                                                 "170", "11", "8", "20", "190"),
                                         marginDetailRow(
+                                                "430047.BJ", "20260715",
+                                                "0", "0", "0", "0", "0"),
+                                        marginDetailRow(
                                                 "600519.SH", "20260716",
                                                 "100", "15", "5", "20", "120"),
                                         marginDetailRow(
                                                 "000001.SZ", "20260716",
-                                                "200", "25", "10", "30", "230"))
+                                                "200", "25", "10", "30", "230"),
+                                        marginDetailRow(
+                                                "430047.BJ", "20260716",
+                                                "0", "0", "0", "0", "0"))
                                 : response("margin_detail",
                                         marginDetailRow(
                                                 "600519.SH", "20260717",
                                                 "90", "8", "18", "10", "100"),
                                         marginDetailRow(
                                                 "000001.SZ", "20260717",
-                                                "180", "12", "30", "20", "200"));
+                                                "180", "12", "30", "20", "200"),
+                                        marginDetailRow(
+                                                "430047.BJ", "20260717",
+                                                "0", "0", "0", "0", "0"));
                 default -> throw new AssertionError(query.apiName());
             };
         });
@@ -111,7 +123,7 @@ class TushareFlowEventSourceClientTest {
                     .containsEntry("referenceBalance", new BigDecimal("300"))
                     .containsEntry("financingBuy", new BigDecimal("20"))
                     .containsEntry("financingRepay", new BigDecimal("48"))
-                    .containsEntry("detailRowCount", 2)
+                    .containsEntry("detailRowCount", 3)
                     .containsEntry("formulaVersion", "margin-market-sum-rzye-v1");
             assertThat(record.observedAt())
                     .isEqualTo(LocalDateTime.of(2026, 7, 17, 15, 0));
@@ -180,6 +192,63 @@ class TushareFlowEventSourceClientTest {
                 .contains("20260716")
                 .contains("SZSE")
                 .contains("margin_detail");
+    }
+
+    @Test
+    void marginFailsClosedWhenAnyAuditedMetricDiffers() {
+        TushareRiskHttpClient httpClient =
+                mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal",
+                        tradeCalendarRow("20260716", true),
+                        tradeCalendarRow("20260717", true),
+                        tradeCalendarRow("20260720", true));
+                case "margin" -> response("margin",
+                        marginRow("SSE", "20260716",
+                                "100", "20", "15", "5", "120"),
+                        marginRow("SZSE", "20260716",
+                                "200", "30", "25", "10", "230"),
+                        marginRow("BSE", "20260716",
+                                "0", "0", "0", "0", "0"),
+                        marginRow("SSE", "20260717",
+                                "90", "10", "8", "18", "100"),
+                        marginRow("SZSE", "20260717",
+                                "180", "20", "12", "30", "200"),
+                        marginRow("BSE", "20260717",
+                                "0", "0", "0", "0", "0"));
+                case "margin_detail" -> response("margin_detail",
+                        marginDetailRow("600519.SH", "20260716",
+                                "100", "15", "5", "20", "120"),
+                        marginDetailRow("000001.SZ", "20260716",
+                                "200", "25", "10", "30", "230"),
+                        marginDetailRow("430047.BJ", "20260716",
+                                "0", "0", "0", "0", "0"),
+                        marginDetailRow("600519.SH", "20260717",
+                                "90", "8", "18", "10", "100"),
+                        marginDetailRow("000001.SZ", "20260717",
+                                "180", "12", "30", "999", "200"),
+                        marginDetailRow("430047.BJ", "20260717",
+                                "0", "0", "0", "0", "0"));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(
+                        httpClient, CLOCK).fetch(request(
+                        FlowEventDataset.MARGIN_FINANCING,
+                        List.of(MARKET),
+                        LocalDate.of(2026, 7, 17),
+                        LocalDate.of(2026, 7, 17)));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.historyComplete()).isFalse();
+        assertThat(result.failureReason())
+                .contains("SZSE")
+                .contains("rqye");
     }
 
     @Test

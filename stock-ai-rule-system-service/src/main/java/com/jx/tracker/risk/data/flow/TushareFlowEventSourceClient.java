@@ -45,6 +45,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final int MARKET_DETAIL_ROW_LIMIT = 6_000;
     private static final BigDecimal SHARE_UNIT_MULTIPLIER =
             new BigDecimal("10000");
+    private static final LocalDate BSE_LAUNCH_DATE =
+            LocalDate.of(2021, 11, 15);
+    private static final List<String> MARGIN_METRICS =
+            List.of("rzye", "rqye", "rzmre", "rzche", "rzrqye");
 
     private final TushareRiskHttpClient httpClient;
     private final Clock clock;
@@ -185,11 +189,6 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         .add(exchangeForStockCode(code), row);
             }
         }
-        LocalDate firstBseDate = byDate.entrySet().stream()
-                .filter(entry -> entry.getValue()
-                        .hasExchange("BSE"))
-                .map(Map.Entry::getKey)
-                .min(LocalDate::compareTo).orElse(null);
         for (LocalDate openDate : detailDates) {
             MarginAggregate aggregate = byDate.get(openDate);
             if (aggregate == null) {
@@ -199,8 +198,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             }
             List<String> exchanges = new ArrayList<>(
                     List.of("SSE", "SZSE"));
-            if (firstBseDate != null
-                    && !openDate.isBefore(firstBseDate)) {
+            if (!openDate.isBefore(BSE_LAUNCH_DATE)) {
                 exchanges.add("BSE");
             }
             MarginDetailAggregate detail = details.get(openDate);
@@ -217,14 +215,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                             + " missing exchange " + exchange);
                     continue;
                 }
-                if (detail.financingBalance(exchange)
-                        .compareTo(aggregate.financingBalance(
-                                exchange)) != 0) {
-                    gaps.add("margin_detail "
-                            + compact(openDate) + " "
-                            + exchange
-                            + " financing balance does not match "
-                            + "margin aggregate");
+                for (String metric : MARGIN_METRICS) {
+                    if (detail.metric(exchange, metric)
+                            .compareTo(aggregate.metric(
+                                    exchange, metric)) != 0) {
+                        gaps.add("margin_detail "
+                                + compact(openDate) + " "
+                                + exchange + " " + metric
+                                + " does not match margin aggregate");
+                    }
                 }
             }
         }
@@ -1238,8 +1237,8 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         private BigDecimal financingBuy = BigDecimal.ZERO;
         private BigDecimal financingRepay = BigDecimal.ZERO;
         private BigDecimal combinedBalance = BigDecimal.ZERO;
-        private final Map<String, BigDecimal>
-                financingBalanceByExchange = new LinkedHashMap<>();
+        private final Map<String, Map<String, BigDecimal>>
+                metricsByExchange = new LinkedHashMap<>();
 
         private void add(
                 String exchange,
@@ -1247,8 +1246,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         ) {
             BigDecimal exchangeBalance = number(row, "rzye");
             financingBalance = financingBalance.add(exchangeBalance);
-            financingBalanceByExchange.merge(
-                    exchange, exchangeBalance, BigDecimal::add);
+            Map<String, BigDecimal> exchangeMetrics =
+                    metricsByExchange.computeIfAbsent(
+                            exchange,
+                            ignored -> new LinkedHashMap<>());
+            for (String metric : MARGIN_METRICS) {
+                exchangeMetrics.merge(
+                        metric, number(row, metric),
+                        BigDecimal::add);
+            }
             securitiesLendingBalance =
                     securitiesLendingBalance.add(
                             number(row, "rqye"));
@@ -1261,11 +1267,14 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         }
 
         private boolean hasExchange(String exchange) {
-            return financingBalanceByExchange.containsKey(exchange);
+            return metricsByExchange.containsKey(exchange);
         }
 
-        private BigDecimal financingBalance(String exchange) {
-            return financingBalanceByExchange.get(exchange);
+        private BigDecimal metric(
+                String exchange,
+                String metric
+        ) {
+            return metricsByExchange.get(exchange).get(metric);
         }
 
         private static BigDecimal number(
@@ -1291,18 +1300,23 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final class MarginDetailAggregate {
         private final Map<String, Integer> countByExchange =
                 new LinkedHashMap<>();
-        private final Map<String, BigDecimal>
-                financingBalanceByExchange = new LinkedHashMap<>();
+        private final Map<String, Map<String, BigDecimal>>
+                metricsByExchange = new LinkedHashMap<>();
 
         private void add(
                 String exchange,
                 Map<String, Object> row
         ) {
             countByExchange.merge(exchange, 1, Integer::sum);
-            financingBalanceByExchange.merge(
-                    exchange,
-                    MarginAggregate.number(row, "rzye"),
-                    BigDecimal::add);
+            Map<String, BigDecimal> exchangeMetrics =
+                    metricsByExchange.computeIfAbsent(
+                            exchange,
+                            ignored -> new LinkedHashMap<>());
+            for (String metric : MARGIN_METRICS) {
+                exchangeMetrics.merge(
+                        metric, MarginAggregate.number(row, metric),
+                        BigDecimal::add);
+            }
         }
 
         private int count(String exchange) {
@@ -1314,9 +1328,13 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     .mapToInt(Integer::intValue).sum();
         }
 
-        private BigDecimal financingBalance(String exchange) {
-            return financingBalanceByExchange.getOrDefault(
-                    exchange, BigDecimal.ZERO);
+        private BigDecimal metric(
+                String exchange,
+                String metric
+        ) {
+            return metricsByExchange
+                    .getOrDefault(exchange, Map.of())
+                    .getOrDefault(metric, BigDecimal.ZERO);
         }
     }
 

@@ -161,37 +161,12 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
     }
 
     private String businessEventKey(FlowEventSourceRecord record) {
-        String eventIdentity = switch (record.eventCode()) {
-            case "forecast_change" -> attributes(
-                    record, "reportPeriod", "forecastType");
-            case "share_unlock" -> attributes(
-                    record, "holderName", "shareType",
-                    "listingBatch");
-            case "share_reduction" -> attributes(
-                    record, "shareholder", "direction",
-                    "changeStartDate");
-            default -> "";
-        };
         return record.eventCode() + ":"
                 + record.object().objectType().getCode() + ":"
                 + record.object().objectId() + ":"
                 + record.tradeDate() + ":"
                 + record.observedAt().toLocalDate() + ":"
-                + normalizedValue(record) + ":"
-                + eventIdentity;
-    }
-
-    private String attributes(
-            FlowEventSourceRecord record,
-            String... names
-    ) {
-        StringBuilder result = new StringBuilder();
-        for (String name : names) {
-            result.append(name).append('=')
-                    .append(record.attributes().get(name))
-                    .append(';');
-        }
-        return result.toString();
+                + normalizedValue(record);
     }
 
     private String normalizedValue(FlowEventSourceRecord record) {

@@ -258,9 +258,14 @@ class CompositeFlowEventSourceClientTest {
                 announcementDate.atStartOfDay(), availableAt,
                 BigDecimal.valueOf(-30), "percent",
                 "forecast_change", "预减",
-                Map.of(
-                        "reportPeriod", LocalDate.of(2026, 6, 30),
-                        "forecastType", "预减"));
+                recordId.startsWith("tushare")
+                        ? Map.of(
+                                "reportPeriod",
+                                LocalDate.of(2026, 6, 30),
+                                "forecastType", "预减")
+                        : Map.of(
+                                "predictionMetric", "净利润",
+                                "forecastType", "预减"));
     }
 
     private static FlowEventSourceRequest request(
