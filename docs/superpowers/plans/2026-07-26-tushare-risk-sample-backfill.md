@@ -18,7 +18,7 @@
 - 修改：`stock-ai-rule-system-service/src/main/resources/application.yml`
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/runtime/RiskWarningProperties.java`
 - 测试：`stock-ai-rule-system-service/src/test/java/com/jx/tracker/risk/runtime/RiskWarningPropertiesTest.java`
-- 本地忽略文件：`stock-ai-rule-system-service/src/main/resources/application-local.yml`
+- 本地忽略文件：`stock-ai-rule-system-service/config/application-local.yml`
 
 **步骤：**
 
@@ -26,8 +26,8 @@
 2. 运行 `mvn -Dtest=RiskWarningPropertiesTest test`，确认测试因缺少 source 配置能力失败。
 3. 在 `RiskWarningProperties` 增加 `source.primary`、`source.tushareEnabled`、`source.cninfoAnnouncementFallbackEnabled`，并提供严格校验方法。
 4. 在公共 `application.yml` 增加环境变量占位，不写 Token。
-5. 在 `.gitignore` 精确忽略后端 `application-local.yml`。
-6. 创建 `application-local.yml`，将用户授权的 Token 写入 `stock-ai-rule.market-data.provider.token`，并启用 TuShare 风险主源；禁止打印文件内容。
+5. 在 `.gitignore` 精确忽略后端外部 `config/application-local.yml`；不得放入 `src/main/resources`，避免密钥进入构建产物。
+6. 默认激活 `dev,local`，创建外部 `config/application-local.yml`，将用户授权的 Token 写入 `stock-ai-rule.market-data.provider.token`，并启用 TuShare 风险主源；禁止打印文件内容。
 7. 运行属性测试，并用 `git check-ignore`、`git status` 验证本地配置未被跟踪。
 8. 提交可跟踪文件，不提交本地配置。
 
