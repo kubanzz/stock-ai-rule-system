@@ -102,6 +102,101 @@ class FallbackMarketRiskSourceClientTest {
     }
 
     @Test
+    void latestBreadthDoesNotStartFullMarketFallbackWhenTushareIsPartial() {
+        MarketSourceRecord primaryRecord = stockMaster(
+                STOCK, "tushare", "主源审计", RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        MarketSourceBatch primaryBatch = MarketSourceBatch.partialHistory(
+                "tushare", List.of(primaryRecord), null,
+                "breadth coverage is below 95%", FETCHED_AT);
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> primaryBatch,
+                (dataset, request) -> {
+                    fallbackCalls.incrementAndGet();
+                    return available("aktools", stockMaster("aktools"));
+                });
+        LocalDate tradeDate = LocalDate.of(2026, 7, 18);
+        RiskProviderRequest latestRequest = new RiskProviderRequest(
+                List.of(STOCK), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2024, 7, 18), tradeDate, tradeDate, null);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.BREADTH, latestRequest);
+
+        assertThat(result).isSameAs(primaryBatch);
+        assertThat(fallbackCalls).hasValue(0);
+    }
+
+    @Test
+    void latestBreadthDoesNotStartFullMarketFallbackWhenTushareIsUnavailable() {
+        MarketSourceBatch primaryBatch = new MarketSourceBatch(
+                "tushare", List.of(), null, FETCHED_AT,
+                RiskDataQualityStatus.UNAVAILABLE, "daily request failed");
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> primaryBatch,
+                (dataset, request) -> {
+                    fallbackCalls.incrementAndGet();
+                    return available("aktools", stockMaster("aktools"));
+                });
+        LocalDate tradeDate = LocalDate.of(2026, 7, 18);
+        RiskProviderRequest latestRequest = new RiskProviderRequest(
+                List.of(STOCK), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2024, 7, 18), tradeDate, tradeDate, null);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.BREADTH, latestRequest);
+
+        assertThat(result).isSameAs(primaryBatch);
+        assertThat(fallbackCalls).hasValue(0);
+    }
+
+    @Test
+    void latestNonBreadthDatasetStillUsesFallbackWhenTushareIsUnavailable() {
+        MarketSourceBatch primaryBatch = new MarketSourceBatch(
+                "tushare", List.of(), null, FETCHED_AT,
+                RiskDataQualityStatus.UNAVAILABLE, "daily request failed");
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        MarketSourceRecord fallbackRecord = stockMaster("aktools");
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> primaryBatch,
+                (dataset, request) -> {
+                    fallbackCalls.incrementAndGet();
+                    return available("aktools", fallbackRecord);
+                });
+        LocalDate tradeDate = LocalDate.of(2026, 7, 18);
+        RiskProviderRequest latestRequest = new RiskProviderRequest(
+                List.of(STOCK), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2024, 7, 18), tradeDate, tradeDate, null);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY, latestRequest);
+
+        assertThat(result.records()).containsExactly(fallbackRecord);
+        assertThat(fallbackCalls).hasValue(1);
+    }
+
+    @Test
+    void historicalBreadthStillUsesFallbackForIncompleteTushareHistory() {
+        MarketSourceBatch primaryBatch = MarketSourceBatch.insufficientHistory(
+                "tushare", "historical breadth is incomplete", FETCHED_AT);
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        MarketSourceRecord fallbackRecord = stockMaster("aktools");
+        FallbackMarketRiskSourceClient client = new FallbackMarketRiskSourceClient(
+                (dataset, request) -> primaryBatch,
+                (dataset, request) -> {
+                    fallbackCalls.incrementAndGet();
+                    return available("aktools", fallbackRecord);
+                });
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.BREADTH, REQUEST);
+
+        assertThat(result.records()).containsExactly(fallbackRecord);
+        assertThat(fallbackCalls).hasValue(1);
+    }
+
+    @Test
     void partialPrimaryMergesAnAvailableFallbackAndKeepsFormalPrimaryIdentity() {
         MarketSourceRecord primaryRecord = stockMaster(
                 STOCK, "tushare", "主源名称", RiskDataQualityStatus.AVAILABLE);
