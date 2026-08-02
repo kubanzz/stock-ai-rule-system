@@ -47,6 +47,7 @@ import java.util.Set;
 public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
     private static final int OBJECT_SCOPE_CHUNK_SIZE = 250;
+    private static final int LAST_ERROR_MAX_LENGTH = 1_024;
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcOperations namedJdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -244,7 +245,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 """,
                 providerCode, datasetCode, scopeKey, json(Map.of("cursor", checkpoint.cursor())),
                 checkpoint.checkpointAt(), batch.fetchedAt(), batch.fetchedAt(), batch.source(),
-                batch.qualityStatus().getCode(), batch.errorMessage());
+                batch.qualityStatus().getCode(), boundedError(batch.errorMessage()));
     }
 
     @Override
@@ -284,7 +285,16 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 """,
                 providerCode, datasetCode, scopeKey, json(checkpointValue),
                 checkpointAt, batch.fetchedAt(), batch.fetchedAt(), batch.source(),
-                batch.qualityStatus().getCode(), batch.errorMessage());
+                batch.qualityStatus().getCode(), boundedError(batch.errorMessage()));
+    }
+
+    private String boundedError(String errorMessage) {
+        if (errorMessage == null
+                || errorMessage.length() <= LAST_ERROR_MAX_LENGTH) {
+            return errorMessage;
+        }
+        return errorMessage.substring(0, LAST_ERROR_MAX_LENGTH - 3)
+                + "...";
     }
 
     @Override

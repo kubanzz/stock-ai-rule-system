@@ -139,6 +139,31 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
+    void checkpointPersistenceBoundsLongAuditErrorsToSchemaLimit() {
+        RecordingJdbcTemplate jdbc = new RecordingJdbcTemplate();
+        JdbcRiskWorkflowRepository repository =
+                new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        LocalDateTime timestamp = LocalDateTime.of(2026, 7, 18, 20, 0);
+        RiskIngestionCheckpoint checkpoint = new RiskIngestionCheckpoint(
+                "dataset-a", "market:CN-A", "cursor-9", timestamp);
+        String longError = "gap;".repeat(400);
+        RiskProviderBatch partial = new RiskProviderBatch(
+                "tushare", List.of(), List.of(), checkpoint,
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY,
+                longError, timestamp);
+
+        repository.saveCheckpoint(
+                "provider-a", "dataset-a", "market:CN-A",
+                checkpoint, partial);
+        repository.saveIngestionStatus(
+                "provider-a", "dataset-a", "market:CN-A",
+                checkpoint, partial);
+
+        assertThat(jdbc.arguments).hasSize(2).allSatisfy(arguments ->
+                assertThat(arguments[9].toString()).hasSize(1024));
+    }
+
+    @Test
     void statusWithoutExistingCursorStoresNoSyntheticJsonNullCursor() {
         RecordingJdbcTemplate jdbc = new RecordingJdbcTemplate();
         JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
