@@ -314,8 +314,12 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
-        JdbcRiskTradeDateResolver riskTradeDateResolver(JdbcTemplate jdbcTemplate) {
-            return new JdbcRiskTradeDateResolver(jdbcTemplate);
+        JdbcRiskTradeDateResolver riskTradeDateResolver(
+                JdbcTemplate jdbcTemplate,
+                RiskWarningProperties properties
+        ) {
+            return new JdbcRiskTradeDateResolver(
+                    jdbcTemplate, properties.requiredAfterCloseCutoff());
         }
 
         @Bean
