@@ -36,7 +36,8 @@ public final class TushareRiskHttpClient {
 
     private static final RetryPolicy DEFAULT_RETRY_POLICY =
             RetryPolicy.defaultPolicy();
-    private static final Set<Integer> PERMISSION_CODES = Set.of(-2002, -2001, 2002);
+    private static final Set<Integer> PERMISSION_CODES =
+            Set.of(-2002, -2001, 2002, 40101);
     private static final Pattern TOKEN_ASSIGNMENT = Pattern.compile(
             "(?i)(token\\s*[=:]\\s*)[^\\s,;\"'}]+");
 

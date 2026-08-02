@@ -321,6 +321,31 @@ class TushareRiskHttpClientTest {
     }
 
     @Test
+    void treatsVendorInvalidTokenCodeAsPermissionWithoutRetrying() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(LOCAL_URL))
+                .andRespond(withSuccess("""
+                        {
+                          "code": 40101,
+                          "msg": "您的token不对，请确认。",
+                          "data": null
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        List<Duration> waits = new ArrayList<>();
+
+        TushareRiskException exception = catchThrowableOfType(
+                TushareRiskException.class,
+                () -> client(builder, 2, waits).query(
+                        new TushareRiskRequest("trade_cal", Map.of(), "cal_date")));
+
+        assertThat(exception.category()).isEqualTo(TushareRiskException.Category.PERMISSION);
+        assertThat(exception.code()).isEqualTo(40101);
+        assertThat(waits).isEmpty();
+        server.verify();
+    }
+
+    @Test
     void retriesRateLimitWithInjectedZeroWaitThenReturnsSuccess() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
