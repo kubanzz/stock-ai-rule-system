@@ -99,6 +99,42 @@ class TushareRiskBackfillSourceProbeTest {
     }
 
     @Test
+    void classifiesSuccessfulEmptyResponsesWithoutFieldMetadataAsValidZero() {
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest request = invocation.getArgument(0);
+            return new TushareRiskResponse(request.apiName(), List.of(), List.of());
+        });
+
+        SourceProbeResult result = probe().probeTushare(END_DATE);
+
+        assertThat(result.reachable()).isTrue();
+        assertThat(result.summaries()).hasSize(REQUIRED_APIS.size());
+        assertThat(result.summaries())
+                .allSatisfy(summary -> {
+                    assertThat(summary.rowCount()).isZero();
+                    assertThat(summary.quality())
+                            .isEqualTo(SourceProbeSummary.Quality.VALID_ZERO);
+                });
+    }
+
+    @Test
+    void classifiesSuccessfulEmptyResponsesWithPartialFieldMetadataAsValidZero() {
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest request = invocation.getArgument(0);
+            return new TushareRiskResponse(
+                    request.apiName(), List.of("ts_code"), List.of());
+        });
+
+        SourceProbeResult result = probe().probeTushare(END_DATE);
+
+        assertThat(result.reachable()).isTrue();
+        assertThat(result.summaries()).hasSize(REQUIRED_APIS.size());
+        assertThat(result.summaries())
+                .allSatisfy(summary -> assertThat(summary.quality())
+                        .isEqualTo(SourceProbeSummary.Quality.VALID_ZERO));
+    }
+
+    @Test
     void reportsTheExactPermissionDeniedApiWithoutLeakingVendorText() throws Exception {
         String secret = "probe-secret-must-never-appear";
         when(httpClient.query(any())).thenAnswer(invocation -> {
@@ -190,7 +226,11 @@ class TushareRiskBackfillSourceProbeTest {
             TushareRiskRequest request = invocation.getArgument(0);
             if (request.apiName().equals("daily_basic")) {
                 return new TushareRiskResponse(
-                        "daily_basic", List.of("ts_code", "trade_date"), List.of());
+                        "daily_basic",
+                        List.of("ts_code", "trade_date"),
+                        List.of(Map.of(
+                                "ts_code", "000001.SZ",
+                                "trade_date", "20260710")));
             }
             return empty(request);
         });

@@ -55,7 +55,8 @@ public final class TushareRiskBackfillSourceProbe implements RiskBackfillSourceP
                     continue;
                 }
                 List<String> requiredFields = List.of(spec.fields().split(","));
-                if (!response.fields().containsAll(requiredFields)) {
+                if (!response.rows().isEmpty()
+                        && !response.fields().containsAll(requiredFields)) {
                     failures.add(failure(spec.api(), "MAPPING", null));
                     continue;
                 }
