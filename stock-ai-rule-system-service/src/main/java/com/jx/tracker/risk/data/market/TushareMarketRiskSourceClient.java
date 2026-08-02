@@ -54,9 +54,12 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
     private static final int BREADTH_IN_PROCESS_RESUME_MAX_OPEN_DAYS =
             Math.max(2_048, BREADTH_SIX_YEAR_SCORING_AND_WARMUP_OPEN_DAYS);
     private static final int INDEX_MEMBER_ALL_ROW_LIMIT = 2_000;
+    private static final int INDEX_MEMBER_ALL_MAX_PAGES = 10;
     private static final int DAILY_ROW_LIMIT = 6_000;
+    // The configured TuShare-compatible service requires at least 0.2 seconds
+    // between bulk requests (450 requests/minute hard ceiling).
     private static final Duration BREADTH_REQUEST_DELAY =
-            Duration.ofMillis(125);
+            Duration.ofMillis(200);
     private static final Pattern SAFE_MAPPING_FIELD = Pattern.compile(
             "(?:field|duplicate)\\s+([A-Za-z0-9_]+)$");
     private static final List<String> GLOBAL_LEADING_MARKETS =
@@ -976,12 +979,11 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 .toList();
         List<Map<String, Object>> rows = new ArrayList<>();
         boolean incomplete = false;
-        boolean reachedDocumentedRowLimit = false;
+        String paginationGap = null;
         if (stocks.isEmpty()) {
-            TushareRiskResponse response = queryMembership(Map.of());
-            rows.addAll(response.rows());
-            reachedDocumentedRowLimit =
-                    response.rows().size() >= INDEX_MEMBER_ALL_ROW_LIMIT;
+            MembershipPages pages = queryMarketWideMembership();
+            rows.addAll(pages.rows());
+            paginationGap = pages.gapReason();
         } else {
             for (RiskObjectKey stock : stocks) {
                 TushareRiskResponse response = queryMembership(
@@ -993,34 +995,50 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 rows.addAll(matchingRows);
             }
         }
-        List<MarketSourceRecord> records = rows.stream()
-                .map(this::membership)
-                .filter(exposure -> overlaps(
-                        exposure.validFrom(), exposure.validTo(),
-                        request.startDate(), request.endDate()))
-                .map(MarketSourceRecord.class::cast)
-                .toList();
+        int unclassifiedRowCount = 0;
+        int invalidRowCount = 0;
+        List<MarketSourceRecord> records = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            if (!hasSw1Classification(row)) {
+                unclassifiedRowCount++;
+                continue;
+            }
+            try {
+                IndustryExposure exposure = membership(row);
+                if (overlaps(exposure.validFrom(), exposure.validTo(),
+                        request.startDate(), request.endDate())) {
+                    records.add(exposure);
+                }
+            } catch (IllegalArgumentException exception) {
+                invalidRowCount++;
+            }
+        }
         if (records.isEmpty()) {
             return MarketSourceBatch.insufficientHistory(
-                    SOURCE, "index_member_all returned no effective rows in the request window",
+                    SOURCE,
+                    unclassifiedRowCount == 0 && invalidRowCount == 0
+                            ? "index_member_all returned no effective rows in the request window"
+                            : membershipRowGap(unclassifiedRowCount, invalidRowCount)
+                            + "; no effective rows remained in the request window",
                     fetchedAt);
         }
-        if (reachedDocumentedRowLimit) {
+        if (incomplete || paginationGap != null
+                || unclassifiedRowCount > 0 || invalidRowCount > 0) {
+            List<String> reasons = new ArrayList<>();
+            if (incomplete) {
+                reasons.add("index_member_all returned no matching rows for one or more requested stocks");
+            }
+            if (paginationGap != null) {
+                reasons.add(paginationGap);
+            }
+            if (unclassifiedRowCount > 0 || invalidRowCount > 0) {
+                reasons.add(membershipRowGap(unclassifiedRowCount, invalidRowCount));
+            }
             return MarketSourceBatch.partialHistory(
                     SOURCE,
                     records,
                     null,
-                    "index_member_all reached documented 2000-row limit; "
-                            + "market-wide membership may be truncated",
-                    fetchedAt);
-        }
-        if (incomplete) {
-            return MarketSourceBatch.partialHistory(
-                    SOURCE,
-                    records,
-                    null,
-                    "index_member_all returned no matching rows for one or more "
-                            + "requested stocks",
+                    String.join("; ", reasons),
                     fetchedAt);
         }
         return new MarketSourceBatch(
@@ -1032,6 +1050,58 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                 "index_member_all",
                 params,
                 "l1_code,l1_name,ts_code,in_date,out_date"));
+    }
+
+    private MembershipPages queryMarketWideMembership() {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Set<String> pageSignatures = new java.util.HashSet<>();
+        for (int page = 0; page < INDEX_MEMBER_ALL_MAX_PAGES; page++) {
+            int offset = page * INDEX_MEMBER_ALL_ROW_LIMIT;
+            TushareRiskResponse response = queryMembership(Map.of(
+                    "limit", INDEX_MEMBER_ALL_ROW_LIMIT,
+                    "offset", offset));
+            List<Map<String, Object>> pageRows = response.rows();
+            if (pageRows.isEmpty()) {
+                return new MembershipPages(List.copyOf(rows), null);
+            }
+            String signature = pageRows.toString();
+            if (!pageSignatures.add(signature)) {
+                return new MembershipPages(
+                        List.copyOf(rows),
+                        "index_member_all pagination stalled after full "
+                                + INDEX_MEMBER_ALL_ROW_LIMIT + "-row page");
+            }
+            rows.addAll(pageRows);
+            if (pageRows.size() < INDEX_MEMBER_ALL_ROW_LIMIT) {
+                return new MembershipPages(List.copyOf(rows), null);
+            }
+        }
+        return new MembershipPages(
+                List.copyOf(rows),
+                "index_member_all exceeded " + INDEX_MEMBER_ALL_MAX_PAGES
+                        + " pagination safety limit");
+    }
+
+    private boolean hasSw1Classification(Map<String, Object> row) {
+        return optionalText(row, "l1_code") != null
+                && optionalText(row, "l1_name") != null;
+    }
+
+    private String membershipRowGap(int unclassifiedRowCount, int invalidRowCount) {
+        List<String> gaps = new ArrayList<>();
+        if (unclassifiedRowCount > 0) {
+            gaps.add(unclassifiedRowCount + " rows missing SW1 classification");
+        }
+        if (invalidRowCount > 0) {
+            gaps.add(invalidRowCount + " invalid rows");
+        }
+        return "index_member_all skipped " + String.join(" and ", gaps);
+    }
+
+    private record MembershipPages(
+            List<Map<String, Object>> rows,
+            String gapReason
+    ) {
     }
 
     private IndustryExposure membership(Map<String, Object> row) {

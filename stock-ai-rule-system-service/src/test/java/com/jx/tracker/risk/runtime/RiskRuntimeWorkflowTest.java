@@ -98,10 +98,10 @@ class RiskRuntimeWorkflowTest {
             assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(6));
             assertThat(request.providerStartDate()).isEqualTo(DATE.minusYears(2));
             assertThat(request.providerResultStartDate()).isEqualTo(DATE);
-            assertThat(request.collectionTasks()).hasSize(5);
-            assertThat(request.collectionTasks()).noneMatch(task ->
+            assertThat(request.collectionTasks()).hasSize(7);
+            assertThat(request.collectionTasks()).anyMatch(task ->
                     task.datasetCode().equals(MarketDatasetCode.BREADTH.code()));
-            assertThat(request.collectionTasks()).noneMatch(task ->
+            assertThat(request.collectionTasks()).anyMatch(task ->
                     task.datasetCode().equals(MarketDatasetCode.CROSS_MARKET.code()));
             assertThat(request.collectionTasks().stream()
                     .flatMap(task -> task.objects().stream()))

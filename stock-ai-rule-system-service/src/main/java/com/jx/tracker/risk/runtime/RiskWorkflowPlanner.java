@@ -76,6 +76,10 @@ public final class RiskWorkflowPlanner {
                 MarketDatasetCode.MARKET_DAILY.code(), List.of(market)));
         tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
                 MarketDatasetCode.VALUATION.code(), List.of(market)));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.BREADTH.code(), List.of(market)));
+        tasks.add(task(MarketRiskDataProvider.PROVIDER_CODE,
+                MarketDatasetCode.CROSS_MARKET.code(), List.of(market)));
         tasks.add(task(FLOW_EVENT_PROVIDER,
                 FlowEventDataset.MARGIN_FINANCING.code(), List.of(market)));
         tasks.add(task(FLOW_EVENT_PROVIDER,

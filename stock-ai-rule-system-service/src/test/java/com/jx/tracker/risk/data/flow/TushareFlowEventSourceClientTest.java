@@ -112,23 +112,23 @@ class TushareFlowEventSourceClientTest {
         assertThat(result.records()).hasSize(2);
         assertThat(result.records()).element(1).satisfies(record -> {
             assertThat(record.object()).isEqualTo(MARKET);
-            assertThat(record.tradeDate()).isEqualTo(LocalDate.of(2026, 7, 17));
-            assertThat(record.value()).isEqualByComparingTo("270");
+            assertThat(record.tradeDate()).isEqualTo(LocalDate.of(2026, 7, 16));
+            assertThat(record.value()).isEqualByComparingTo("300");
             assertThat(record.attributes())
-                    .containsEntry("previousBalance", new BigDecimal("300"))
-                    .containsEntry("referenceBalance", new BigDecimal("300"))
-                    .containsEntry("financingBuy", new BigDecimal("20"))
-                    .containsEntry("financingRepay", new BigDecimal("48"))
+                    .containsEntry("previousBalance", new BigDecimal("250"))
+                    .containsEntry("referenceBalance", new BigDecimal("250"))
+                    .containsEntry("financingBuy", new BigDecimal("40"))
+                    .containsEntry("financingRepay", new BigDecimal("15"))
                     .containsEntry("detailRowCount", 2)
                     .containsEntry("formulaVersion", "margin-market-sum-rzye-v1");
             assertThat(record.observedAt())
-                    .isEqualTo(LocalDateTime.of(2026, 7, 17, 15, 0));
+                    .isEqualTo(LocalDateTime.of(2026, 7, 16, 15, 0));
             assertThat(record.availableAt())
-                    .isEqualTo(LocalDateTime.of(2026, 7, 20, 8, 30));
+                    .isEqualTo(LocalDateTime.of(2026, 7, 17, 8, 30));
         });
         ArgumentCaptor<TushareRiskRequest> captor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient, org.mockito.Mockito.times(5))
+        verify(httpClient, org.mockito.Mockito.times(4))
                 .query(captor.capture());
         assertThat(captor.getAllValues()).filteredOn(
                         query -> query.apiName().equals("margin_detail"))
@@ -136,7 +136,7 @@ class TushareFlowEventSourceClientTest {
                         .containsOnlyKeys("start_date", "end_date"))
                 .extracting(query -> query.params().get("start_date"))
                 .containsExactly(
-                        "20260715", "20260716", "20260717");
+                        "20260715", "20260716");
         assertThat(captor.getAllValues()).filteredOn(
                         query -> query.apiName().equals("margin"))
                 .singleElement().satisfies(query -> assertThat(
@@ -199,8 +199,11 @@ class TushareFlowEventSourceClientTest {
             TushareRiskRequest query = invocation.getArgument(0);
             return switch (query.apiName()) {
                 case "trade_cal" -> response("trade_cal",
+                        tradeCalendarRow("20260715", true),
                         tradeCalendarRow("20260716", true),
                         tradeCalendarRow("20260717", true),
+                        tradeCalendarRow("20260718", false),
+                        tradeCalendarRow("20260719", false),
                         tradeCalendarRow("20260720", true));
                 case "margin" -> response("margin",
                         marginRow("SSE", "20260716",
@@ -215,11 +218,11 @@ class TushareFlowEventSourceClientTest {
                         marginDetailRow("600519.SH", "20260716",
                                 "100", "15", "5", "20", "120"),
                         marginDetailRow("000001.SZ", "20260716",
-                                "200", "25", "10", "30", "230"),
+                                "200", "25", "10", "999", "230"),
                         marginDetailRow("600519.SH", "20260717",
                                 "90", "8", "18", "10", "100"),
                         marginDetailRow("000001.SZ", "20260717",
-                                "180", "12", "30", "999", "200"));
+                                "180", "12", "30", "20", "200"));
                 default -> throw new AssertionError(query.apiName());
             };
         });
@@ -238,6 +241,107 @@ class TushareFlowEventSourceClientTest {
         assertThat(result.failureReason())
                 .contains("SZSE")
                 .contains("rqye");
+    }
+
+    @Test
+    void marginAcceptsSmallOfficialBalanceCoverageGapsWhenTransactionsMatch() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal",
+                        tradeCalendarRow("20260716", true),
+                        tradeCalendarRow("20260717", true),
+                        tradeCalendarRow("20260718", false),
+                        tradeCalendarRow("20260719", false),
+                        tradeCalendarRow("20260720", true));
+                case "margin" -> response("margin",
+                        marginRow("SSE", "20260716", "100", "10", "20", "15", "110"),
+                        marginRow("SZSE", "20260716", "200", "20", "30", "25", "220"),
+                        marginRow("SSE", "20260717", "100", "10", "20", "15", "110"),
+                        marginRow("SZSE", "20260717", "200", "20", "30", "25", "220"));
+                case "margin_detail" -> response("margin_detail",
+                        marginDetailRow("600519.SH", "20260716",
+                                "99.2", "20", "15", "9.999", "109.199"),
+                        marginDetailRow("000001.SZ", "20260716",
+                                "198.5", "30", "25", "19.999", "218.499"),
+                        marginDetailRow("600519.SH", "20260717",
+                                "100", "20", "15", "10", "110"),
+                        marginDetailRow("000001.SZ", "20260717",
+                                "200", "30", "25", "20", "220"));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(httpClient, CLOCK)
+                        .fetch(request(
+                                FlowEventDataset.MARGIN_FINANCING,
+                                List.of(MARKET),
+                                LocalDate.of(2026, 7, 17),
+                                LocalDate.of(2026, 7, 17)));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.historyComplete()).isTrue();
+        assertThat(result.failureReason()).isNull();
+        assertThat(result.records()).singleElement().satisfies(record ->
+                assertThat((BigDecimal) record.attributes().get(
+                        "detailBalanceCoverageMinimum"))
+                        .isEqualByComparingTo("0.99200000"));
+    }
+
+    @Test
+    void marginPublishesThePriorSessionBalanceOnItsFirstAvailableTradingDate() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal",
+                        tradeCalendarRow("20260715", true),
+                        tradeCalendarRow("20260716", true),
+                        tradeCalendarRow("20260717", true),
+                        tradeCalendarRow("20260718", false),
+                        tradeCalendarRow("20260719", false),
+                        tradeCalendarRow("20260720", true));
+                case "margin" -> response("margin",
+                        marginRow("SSE", "20260715", "95", "9", "18", "14", "104"),
+                        marginRow("SZSE", "20260715", "190", "19", "28", "24", "209"),
+                        marginRow("SSE", "20260716", "100", "10", "20", "15", "110"),
+                        marginRow("SZSE", "20260716", "200", "20", "30", "25", "220"));
+                case "margin_detail" -> switch (
+                        query.params().get("start_date").toString()) {
+                    case "20260715" -> response("margin_detail",
+                            marginDetailRow("600519.SH", "20260715",
+                                    "95", "18", "14", "9", "104"),
+                            marginDetailRow("000001.SZ", "20260715",
+                                    "190", "28", "24", "19", "209"));
+                    case "20260716" -> response("margin_detail",
+                                marginDetailRow("600519.SH", "20260716",
+                                        "100", "20", "15", "10", "110"),
+                                marginDetailRow("000001.SZ", "20260716",
+                                        "200", "30", "25", "20", "220"));
+                    default -> response("margin_detail");
+                };
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(httpClient, CLOCK)
+                        .fetch(request(
+                                FlowEventDataset.MARGIN_FINANCING,
+                                List.of(MARKET),
+                                LocalDate.of(2026, 7, 17),
+                                LocalDate.of(2026, 7, 17)));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.historyComplete()).isTrue();
+        assertThat(result.failureReason()).isNull();
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            assertThat(record.tradeDate()).isEqualTo(LocalDate.of(2026, 7, 16));
+            assertThat(record.availableAt())
+                    .isEqualTo(LocalDateTime.of(2026, 7, 17, 8, 30));
+        });
     }
 
     @Test
@@ -299,7 +403,7 @@ class TushareFlowEventSourceClientTest {
         assertThat(result.records()).hasSize(2);
         ArgumentCaptor<TushareRiskRequest> captor =
                 ArgumentCaptor.forClass(TushareRiskRequest.class);
-        verify(httpClient, org.mockito.Mockito.times(5))
+        verify(httpClient, org.mockito.Mockito.times(4))
                 .query(captor.capture());
         assertThat(captor.getAllValues())
                 .filteredOn(query -> "margin_detail".equals(
@@ -307,7 +411,7 @@ class TushareFlowEventSourceClientTest {
                 .extracting(query -> query.params()
                         .get("start_date"))
                 .containsExactly(
-                        "20260715", "20260716", "20260717");
+                        "20260715", "20260716");
     }
 
     @Test
@@ -474,6 +578,235 @@ class TushareFlowEventSourceClientTest {
                             "fundContributionTop")
                     .doesNotContainKey("fundContributions");
         });
+    }
+
+    @Test
+    void etfCatalogSkipsNonExchangeFundCodesWithoutDiscardingValidEtfs() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> standardTradeCalendar();
+                case "etf_basic" -> "L".equals(query.params().get("list_status"))
+                        ? response(
+                                "etf_basic",
+                                etfBasicRow("510300.SH", "L"),
+                                etfBasicRow("000001.OF", "L"))
+                        : response("etf_basic");
+                case "fund_basic" -> response(
+                        "fund_basic",
+                        fundBasicRow("510300.SH", "沪深300ETF"),
+                        fundBasicRow("000001.OF", "场外基金"));
+                case "fund_share" -> response("fund_share",
+                        Map.of("ts_code", "510300.SH", "trade_date", "20260716",
+                                "fd_share", new BigDecimal("100")),
+                        Map.of("ts_code", "510300.SH", "trade_date", "20260717",
+                                "fd_share", new BigDecimal("110")));
+                case "fund_nav" -> response("fund_nav",
+                        Map.of("ts_code", "510300.SH", "ann_date", "20260718",
+                                "nav_date", "20260717", "unit_nav", BigDecimal.ONE));
+                case "fund_daily" -> response("fund_daily",
+                        Map.of("ts_code", "510300.SH", "trade_date", "20260717",
+                                "close", BigDecimal.ONE));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(httpClient, CLOCK)
+                        .fetch(request(
+                                FlowEventDataset.ETF_FUND_FLOW,
+                                List.of(MARKET)));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).singleElement();
+        assertThat(result.historyComplete()).isTrue();
+        assertThat(result.failureReason()).isNull();
+    }
+
+    @Test
+    void incrementalEtfSyncBatchesOfficialShareNavAndDailyRowsByDate() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> standardTradeCalendar();
+                case "etf_basic" -> "L".equals(query.params().get("list_status"))
+                        ? response("etf_basic", etfBasicRow("510300.SH", "L"))
+                        : response("etf_basic");
+                case "fund_basic" -> response(
+                        "fund_basic", fundBasicRow("510300.SH", "沪深300ETF"));
+                case "fund_share" -> response("fund_share", Map.of(
+                        "ts_code", "510300.SH",
+                        "trade_date", query.params().get("trade_date"),
+                        "fd_share", switch (query.params().get("trade_date").toString()) {
+                            case "20260715" -> new BigDecimal("100");
+                            case "20260716" -> new BigDecimal("105");
+                            case "20260717" -> new BigDecimal("110");
+                            default -> throw new AssertionError(query.params());
+                        }));
+                case "fund_nav" -> response("fund_nav", Map.of(
+                        "ts_code", "510300.SH",
+                        "ann_date", query.params().get("nav_date"),
+                        "nav_date", query.params().get("nav_date"),
+                        "unit_nav", new BigDecimal("1.20")));
+                case "fund_daily" -> response("fund_daily", Map.of(
+                        "ts_code", "510300.SH",
+                        "trade_date", query.params().get("trade_date"),
+                        "close", new BigDecimal("1.21")));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+        RiskProviderRequest providerRequest = new RiskProviderRequest(
+                List.of(MARKET), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2026, 7, 16),
+                LocalDate.of(2026, 7, 20),
+                LocalDate.of(2026, 7, 20), null);
+
+        FlowEventSourceBatch result = new TushareFlowEventSourceClient(
+                httpClient,
+                Clock.fixed(Instant.parse("2026-07-21T00:00:00Z"), SHANGHAI))
+                .fetch(new FlowEventSourceRequest(
+                        FlowEventDataset.ETF_FUND_FLOW, providerRequest));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.historyComplete()).isTrue();
+        assertThat(result.records()).hasSize(2).last().satisfies(record -> {
+            assertThat(record.tradeDate()).isEqualTo(LocalDate.of(2026, 7, 17));
+            assertThat(record.availableAt())
+                    .isEqualTo(LocalDateTime.of(2026, 7, 20, 8, 30));
+            assertThat(record.value()).isEqualByComparingTo("60000");
+        });
+        ArgumentCaptor<TushareRiskRequest> captor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(14)).query(captor.capture());
+        assertThat(captor.getAllValues())
+                .filteredOn(query -> List.of(
+                                "fund_share", "fund_nav", "fund_daily")
+                        .contains(query.apiName()))
+                .hasSize(9)
+                .allSatisfy(query -> assertThat(query.params())
+                        .containsKeys("limit", "offset")
+                        .doesNotContainKey("ts_code"));
+        assertThat(captor.getAllValues()).filteredOn(query ->
+                        "fund_share".equals(query.apiName())
+                                || "fund_nav".equals(query.apiName()))
+                .allSatisfy(query -> assertThat(query.params())
+                        .containsEntry("limit", 2000));
+        assertThat(captor.getAllValues()).filteredOn(query ->
+                        "fund_daily".equals(query.apiName()))
+                .allSatisfy(query -> assertThat(query.params())
+                        .containsEntry("limit", 5000));
+    }
+
+    @Test
+    void incrementalEtfPaginationContinuesAfterAFullFundSharePage() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> standardTradeCalendar();
+                case "etf_basic" -> "L".equals(query.params().get("list_status"))
+                        ? response("etf_basic", etfBasicRow("510300.SH", "L"))
+                        : response("etf_basic");
+                case "fund_basic" -> response(
+                        "fund_basic", fundBasicRow("510300.SH", "沪深300ETF"));
+                case "fund_share" -> {
+                    int offset = (int) query.params().get("offset");
+                    String tradeDate = query.params().get("trade_date").toString();
+                    if ("20260715".equals(tradeDate) && offset == 0) {
+                        yield new TushareRiskResponse(
+                                "fund_share", List.of(), java.util.stream.IntStream
+                                .range(0, 2000)
+                                .mapToObj(index -> Map.<String, Object>of(
+                                        "ts_code", "160000.OF",
+                                        "trade_date", tradeDate,
+                                        "fd_share", BigDecimal.ONE))
+                                .toList());
+                    }
+                    if (offset > 0) {
+                        yield response("fund_share");
+                    }
+                    yield response("fund_share", Map.of(
+                            "ts_code", "510300.SH", "trade_date", tradeDate,
+                            "fd_share", "20260716".equals(tradeDate)
+                                    ? new BigDecimal("100") : new BigDecimal("110")));
+                }
+                case "fund_nav" -> response("fund_nav", Map.of(
+                        "ts_code", "510300.SH",
+                        "ann_date", query.params().get("nav_date"),
+                        "nav_date", query.params().get("nav_date"),
+                        "unit_nav", BigDecimal.ONE));
+                case "fund_daily" -> response("fund_daily", Map.of(
+                        "ts_code", "510300.SH",
+                        "trade_date", query.params().get("trade_date"),
+                        "close", BigDecimal.ONE));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+        RiskProviderRequest providerRequest = new RiskProviderRequest(
+                List.of(MARKET), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2026, 7, 16), LocalDate.of(2026, 7, 20),
+                LocalDate.of(2026, 7, 20), null);
+
+        new TushareFlowEventSourceClient(httpClient, CLOCK).fetch(
+                new FlowEventSourceRequest(FlowEventDataset.ETF_FUND_FLOW, providerRequest));
+
+        ArgumentCaptor<TushareRiskRequest> captor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.atLeastOnce()).query(captor.capture());
+        assertThat(captor.getAllValues()).filteredOn(query ->
+                        "fund_share".equals(query.apiName())
+                                && "20260715".equals(query.params().get("trade_date")))
+                .extracting(query -> query.params().get("offset"))
+                .containsExactly(0, 2000);
+    }
+
+    @Test
+    void incrementalEtfCoverageExcludesFundsDelistedBeforeTheSourceDates() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> standardTradeCalendar();
+                case "etf_basic" -> switch (query.params().get("list_status").toString()) {
+                    case "L" -> response("etf_basic", etfBasicRow("510300.SH", "L"));
+                    case "D" -> response("etf_basic", etfBasicRow("510500.SH", "D"));
+                    default -> response("etf_basic");
+                };
+                case "fund_basic" -> response("fund_basic",
+                        fundBasicRow("510300.SH", "沪深300ETF"),
+                        fundBasicRow("510500.SH", "已退市ETF", "20100101", "20260701"));
+                case "fund_share" -> response("fund_share", Map.of(
+                        "ts_code", "510300.SH",
+                        "trade_date", query.params().get("trade_date"),
+                        "fd_share", switch (query.params().get("trade_date").toString()) {
+                            case "20260715" -> new BigDecimal("100");
+                            case "20260716" -> new BigDecimal("105");
+                            default -> new BigDecimal("110");
+                        }));
+                case "fund_nav" -> response("fund_nav", Map.of(
+                        "ts_code", "510300.SH", "ann_date", query.params().get("nav_date"),
+                        "nav_date", query.params().get("nav_date"), "unit_nav", BigDecimal.ONE));
+                case "fund_daily" -> response("fund_daily", Map.of(
+                        "ts_code", "510300.SH", "trade_date", query.params().get("trade_date"),
+                        "close", BigDecimal.ONE));
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+        RiskProviderRequest providerRequest = new RiskProviderRequest(
+                List.of(MARKET), List.of(RiskHorizon.SHORT_TERM),
+                LocalDate.of(2026, 7, 16), LocalDate.of(2026, 7, 20),
+                LocalDate.of(2026, 7, 20), null);
+
+        FlowEventSourceBatch result = new TushareFlowEventSourceClient(httpClient, CLOCK)
+                .fetch(new FlowEventSourceRequest(
+                        FlowEventDataset.ETF_FUND_FLOW, providerRequest));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).allSatisfy(record -> assertThat(record.attributes())
+                .containsEntry("universeFundCount", 1)
+                .containsEntry("coveredFundCount", 1));
     }
 
     @Test
@@ -1278,7 +1611,8 @@ class TushareFlowEventSourceClientTest {
                 case "trade_cal" -> response("trade_cal",
                         tradeCalendarRow("20260630", true),
                         tradeCalendarRow("20260717", true),
-                        tradeCalendarRow("20260720", true));
+                        tradeCalendarRow("20260720", true),
+                        tradeCalendarRow("20260721", true));
                 case "margin" -> response("margin", marginRow(
                         "SSE", "20260717",
                         "100", "20", "15", "5", "120"));
@@ -1291,10 +1625,16 @@ class TushareFlowEventSourceClientTest {
         });
         FlowEventSourceBatch marginResult =
                 new TushareFlowEventSourceClient(
-                        marginHttpClient, CLOCK).fetch(request(
+                        marginHttpClient,
+                        Clock.fixed(
+                                Instant.parse("2026-07-21T00:00:00Z"),
+                                SHANGHAI)).fetch(request(
                         FlowEventDataset.MARGIN_FINANCING,
-                        List.of(MARKET)));
+                        List.of(MARKET),
+                        LocalDate.of(2026, 7, 20),
+                        LocalDate.of(2026, 7, 20)));
         assertThat(marginResult.qualityStatus())
+                .as(marginResult.failureReason())
                 .isEqualTo(RiskDataQualityStatus.AVAILABLE);
         assertThat(marginResult.historyComplete()).isFalse();
         assertThat(marginResult.nextCursor()).isNull();

@@ -17,6 +17,7 @@ import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.model.RiskSnapshot;
+import com.jx.tracker.risk.data.flow.FlowEventDataset;
 import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.data.market.MarketDatasetCode;
 import com.jx.tracker.risk.provider.RiskDataProvider;
@@ -52,6 +53,8 @@ public final class RiskWarningWorkflow {
     private final RiskLayerComposer layerComposer = new RiskLayerComposer();
     private static final RiskObjectKey CN_A = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
     private static final BigDecimal CONFIRMATION_SCORE = new BigDecimal("60");
+    private static final int INCREMENTAL_FLOW_LOOKBACK_DAYS = 14;
+    private static final int LATEST_CALCULATION_CONTEXT_YEARS = 2;
 
     public RiskWarningWorkflow(
             List<RiskDataProvider> providers,
@@ -178,15 +181,32 @@ public final class RiskWarningWorkflow {
             RiskWorkflowRequest request,
             RiskIngestionCheckpoint checkpoint
     ) {
-        boolean incremental = request.providerStartDate().isAfter(request.collectionStartDate());
-        boolean needsCalculationContext = MarketDatasetCode.MARKET_DAILY.code()
-                .equals(task.datasetCode());
-        LocalDate startDate = incremental && !needsCalculationContext
-                ? request.endDate()
-                : request.providerStartDate();
-        LocalDate resultStartDate = incremental && !needsCalculationContext
-                ? request.endDate()
-                : request.providerResultStartDate();
+        boolean latestRun = request.scoreStartDate().equals(request.endDate());
+        boolean needsCalculationContext = Set.of(
+                        MarketDatasetCode.MARKET_DAILY.code(),
+                        MarketDatasetCode.BREADTH.code(),
+                        MarketDatasetCode.CROSS_MARKET.code())
+                .contains(task.datasetCode());
+        boolean flowDataset = FlowEventDataset.codes().contains(task.datasetCode());
+        LocalDate incrementalFlowStart = request.endDate()
+                .minusDays(INCREMENTAL_FLOW_LOOKBACK_DAYS);
+        if (incrementalFlowStart.isBefore(request.providerStartDate())) {
+            incrementalFlowStart = request.providerStartDate();
+        }
+        LocalDate calculationContextStart = request.endDate()
+                .minusYears(LATEST_CALCULATION_CONTEXT_YEARS);
+        if (calculationContextStart.isBefore(request.providerStartDate())) {
+            calculationContextStart = request.providerStartDate();
+        }
+        LocalDate startDate = !latestRun
+                ? request.providerStartDate()
+                : flowDataset
+                ? incrementalFlowStart
+                : needsCalculationContext
+                ? calculationContextStart
+                : request.endDate();
+        LocalDate resultStartDate = latestRun
+                ? request.endDate() : request.providerResultStartDate();
         return new RiskProviderRequest(
                 task.objects(), request.horizons(), startDate, resultStartDate,
                 request.endDate(), checkpoint

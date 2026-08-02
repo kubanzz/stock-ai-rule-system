@@ -10,6 +10,7 @@ import com.jx.tracker.risk.engine.RiskIndicatorCatalog;
 import com.jx.tracker.risk.engine.RiskIndicatorComponentCatalog;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.FlowEventDataset;
 import com.jx.tracker.risk.data.flow.FlowEventSourceBatch;
 import com.jx.tracker.risk.data.flow.FlowEventSourceRecord;
 import com.jx.tracker.risk.data.market.IndustryExposure;
@@ -142,6 +143,133 @@ class RiskWarningWorkflowTest {
             assertThat(batch.errorMessage()).isEqualTo("source failed");
         });
         assertThat(repository.gates).isEmpty();
+    }
+
+    @Test
+    void incrementalFlowCollectionKeepsAShortPublicationAndCalculationLookback() {
+        InMemoryRepository repository = new InMemoryRepository();
+        List<RiskProviderRequest> requests = new ArrayList<>();
+        RiskDataProvider provider = new RiskDataProvider() {
+            @Override
+            public String providerCode() {
+                return "provider-a";
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return FlowEventDataset.MARGIN_FINANCING.code().equals(datasetCode);
+            }
+
+            @Override
+            public RiskProviderBatch fetch(String datasetCode, RiskProviderRequest request) {
+                requests.add(request);
+                return RiskProviderBatch.unavailable(
+                        "source-a", "fixture unavailable", AS_OF);
+            }
+        };
+        RiskCollectionTask marginTask = new RiskCollectionTask(
+                "provider-a", FlowEventDataset.MARGIN_FINANCING.code(),
+                "market:CN-A", List.of(MARKET));
+        RiskWorkflowRequest request = new RiskWorkflowRequest(
+                List.of(marginTask), List.of(RiskHorizon.SHORT_TERM),
+                DATE.minusYears(6), DATE, DATE, AS_OF, List.of(), "risk-v1",
+                RiskWorkflowRequest.DEFAULT_AFTER_CLOSE_CUTOFF,
+                DATE.minusYears(2), DATE);
+
+        workflow(repository, provider).run(request);
+
+        assertThat(requests).singleElement().satisfies(actual -> {
+            assertThat(actual.startDate()).isEqualTo(DATE.minusDays(14));
+            assertThat(actual.resultStartDate()).isEqualTo(DATE);
+            assertThat(actual.endDate()).isEqualTo(DATE);
+        });
+    }
+
+    @Test
+    void standardDailyFlowCollectionAlsoUsesTheShortLookback() {
+        InMemoryRepository repository = new InMemoryRepository();
+        List<RiskProviderRequest> requests = new ArrayList<>();
+        RiskDataProvider provider = new RiskDataProvider() {
+            @Override
+            public String providerCode() {
+                return "provider-a";
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return FlowEventDataset.ETF_FUND_FLOW.code().equals(datasetCode);
+            }
+
+            @Override
+            public RiskProviderBatch fetch(String datasetCode, RiskProviderRequest request) {
+                requests.add(request);
+                return RiskProviderBatch.unavailable("source-a", "fixture unavailable", AS_OF);
+            }
+        };
+        RiskCollectionTask task = new RiskCollectionTask(
+                "provider-a", FlowEventDataset.ETF_FUND_FLOW.code(),
+                "market:CN-A", List.of(MARKET));
+
+        workflow(repository, provider).run(RiskWorkflowRequest.daily(
+                DATE, AS_OF, List.of(task), List.of(RiskHorizon.SHORT_TERM),
+                List.of(), "risk-v1"));
+
+        assertThat(requests).singleElement().satisfies(actual -> {
+            assertThat(actual.startDate()).isEqualTo(DATE.minusDays(14));
+            assertThat(actual.resultStartDate()).isEqualTo(DATE);
+            assertThat(actual.endDate()).isEqualTo(DATE);
+        });
+    }
+
+    @Test
+    void incrementalBreadthAndCrossMarketKeepTheirCalculationHistory() {
+        InMemoryRepository repository = new InMemoryRepository();
+        Map<String, RiskProviderRequest> requests = new LinkedHashMap<>();
+        RiskDataProvider provider = new RiskDataProvider() {
+            @Override
+            public String providerCode() {
+                return "provider-a";
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return true;
+            }
+
+            @Override
+            public RiskProviderBatch fetch(
+                    String datasetCode,
+                    RiskProviderRequest request
+            ) {
+                requests.put(datasetCode, request);
+                return RiskProviderBatch.unavailable(
+                        "source-a", "fixture unavailable", AS_OF);
+            }
+        };
+        List<RiskCollectionTask> tasks = List.of(
+                new RiskCollectionTask(
+                        "provider-a", MarketDatasetCode.BREADTH.code(),
+                        "market:CN-A", List.of(MARKET)),
+                new RiskCollectionTask(
+                        "provider-a", MarketDatasetCode.CROSS_MARKET.code(),
+                        "market:CN-A", List.of(MARKET)));
+        LocalDate providerStart = DATE.minusYears(2);
+        RiskWorkflowRequest request = new RiskWorkflowRequest(
+                tasks, List.of(RiskHorizon.SHORT_TERM),
+                DATE.minusYears(6), DATE, DATE, AS_OF, List.of(), "risk-v1",
+                RiskWorkflowRequest.DEFAULT_AFTER_CLOSE_CUTOFF,
+                providerStart, DATE);
+
+        workflow(repository, provider).run(request);
+
+        assertThat(requests).containsOnlyKeys(
+                MarketDatasetCode.BREADTH.code(),
+                MarketDatasetCode.CROSS_MARKET.code());
+        assertThat(requests.values()).allSatisfy(actual -> {
+            assertThat(actual.startDate()).isEqualTo(providerStart);
+            assertThat(actual.resultStartDate()).isEqualTo(DATE);
+            assertThat(actual.endDate()).isEqualTo(DATE);
+        });
     }
 
     @Test

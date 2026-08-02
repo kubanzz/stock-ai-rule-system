@@ -56,6 +56,32 @@ class FlowEventRiskDataProviderTest {
     }
 
     @Test
+    void incrementalSyncAcceptsPriorSessionFactsPublishedOnTheRequestedDate() {
+        LocalDate sourceTradeDate = END.minusDays(1);
+        FlowEventSourceRecord delayedMargin = new FlowEventSourceRecord(
+                "margin-delayed", "cursor-1", MARKET, sourceTradeDate,
+                sourceTradeDate.atTime(15, 0), sourceTradeDate.atTime(15, 0),
+                END.atTime(8, 30), new BigDecimal("90"), "currency",
+                "balance", "融资余额",
+                Map.of("previousBalance", "100", "referenceBalance", "100"));
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(
+                available("tushare", delayedMargin));
+        RiskProviderRequest incrementalRequest = new RiskProviderRequest(
+                List.of(MARKET), List.of(RiskHorizon.SHORT_TERM),
+                END, END, null);
+
+        RiskProviderBatch batch = provider.fetch(
+                "margin_financing", incrementalRequest);
+
+        assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(batch.observations()).hasSize(2).allSatisfy(observation -> {
+            assertThat(observation.tradeDate()).isEqualTo(END);
+            assertThat(observation.attributes())
+                    .containsEntry("sourceTradeDate", sourceTradeDate.toString());
+        });
+    }
+
+    @Test
     void distinguishesSuccessfulEmptyQueryFromSourceFailure() {
         FlowEventRiskDataProvider emptyProvider = new FlowEventRiskDataProvider(
                 request -> FlowEventSourceBatch.validZero("aktools", "empty-1", AVAILABLE_AT));
@@ -327,13 +353,14 @@ class FlowEventRiskDataProviderTest {
     }
 
     @Test
-    void filtersRecordsOutsideRequestedObjectsAndFactDates() {
+    void filtersRecordsOutsideRequestedObjectsAndAvailabilityDates() {
         FlowEventSourceRecord otherObject = recordFor(OTHER_STOCK,
                 "forecast-other", new BigDecimal("-35"), "forecast_change",
                 Map.of("economicMeaning", "cash_flow", "adverse", true));
         FlowEventSourceRecord oldFact = new FlowEventSourceRecord(
                 "forecast-old", "cursor-old", STOCK, START.minusDays(1), START.minusDays(1).atStartOfDay(),
-                START.atStartOfDay(), START.plusDays(1).atStartOfDay(), new BigDecimal("-35"), "percent",
+                START.minusDays(1).atTime(8, 0), START.minusDays(1).atTime(9, 0),
+                new BigDecimal("-35"), "percent",
                 "forecast_change", "历史预告", Map.of("economicMeaning", "cash_flow", "adverse", true));
         FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(
                 available("aktools", otherObject, oldFact));
@@ -498,6 +525,28 @@ class FlowEventRiskDataProviderTest {
                 request(List.of(RiskHorizon.SHORT_TERM), checkpoint));
 
         assertThat(batch.qualityStatus()).isEqualTo(RiskDataQualityStatus.VALID_ZERO);
+        assertThat(batch.nextCheckpoint()).isEqualTo(checkpoint);
+    }
+
+    @Test
+    void lookbackWindowReplaysRecordsBeforeCheckpointForIdempotentUpsert() {
+        RiskIngestionCheckpoint checkpoint = new RiskIngestionCheckpoint(
+                "stock_announcement", "stock:600519.SH", "cursor-5", OBSERVED_AT);
+        FlowEventSourceRecord lateRevision = new FlowEventSourceRecord(
+                "notice-late", "cursor-4", STOCK, END.minusDays(1),
+                END.minusDays(1).atStartOfDay(), OBSERVED_AT, AVAILABLE_AT,
+                new BigDecimal("50"), "score", "notice", "晚到公告",
+                Map.of("economicMeaning", "market_trust", "adverse", true));
+        FlowEventRiskDataProvider provider = new FlowEventRiskDataProvider(
+                available("aktools", lateRevision));
+        RiskProviderRequest lookback = new RiskProviderRequest(
+                List.of(STOCK), List.of(RiskHorizon.SHORT_TERM),
+                START, END, END, checkpoint);
+
+        RiskProviderBatch batch = provider.fetch("stock_announcement", lookback);
+
+        assertThat(batch.events()).singleElement().satisfies(event ->
+                assertThat(event.payload()).containsEntry("sourceRecordId", "notice-late"));
         assertThat(batch.nextCheckpoint()).isEqualTo(checkpoint);
     }
 

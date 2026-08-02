@@ -46,6 +46,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     private static final int FUND_SHARE_ROW_LIMIT = 2_000;
     private static final int FUND_NAV_ROW_LIMIT = 2_000;
     private static final int FUND_DAILY_ROW_LIMIT = 5_000;
+    private static final int INCREMENTAL_ETF_MAX_PAGES = 100;
     private static final int FORECAST_VIP_ROW_LIMIT = 2_000;
     private static final int HOLDER_TRADE_ROW_LIMIT = 3_000;
     private static final int MARGIN_ROW_LIMIT = 4_000;
@@ -54,6 +55,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             new BigDecimal("10000");
     private static final List<String> MARGIN_METRICS =
             List.of("rzye", "rqye", "rzmre", "rzche", "rzrqye");
+    private static final List<String> MARGIN_BALANCE_METRICS =
+            List.of("rzye", "rqye", "rzrqye");
+    private static final BigDecimal MARGIN_BALANCE_RELATIVE_TOLERANCE =
+            new BigDecimal("0.01");
 
     private final TushareRiskHttpClient httpClient;
     private final Clock clock;
@@ -180,7 +185,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         }
         Map<LocalDate, MarginDetailAggregate> details = new LinkedHashMap<>();
         List<LocalDate> detailDates =
-                calendar.openDays(warmupDate, request.endDate());
+                calendar.openDays(warmupDate, request.endDate()).stream()
+                        .filter(openDate -> !calendar.requiredNextOpenAfter(openDate)
+                                .isAfter(request.endDate()))
+                        .toList();
         for (int index = 0; index < detailDates.size(); index++) {
             LocalDate sliceStart = detailDates.get(index);
             LocalDate sliceEnd = sliceStart;
@@ -238,9 +246,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     continue;
                 }
                 for (String metric : MARGIN_METRICS) {
-                    if (detail.metric(exchange, metric)
-                            .compareTo(aggregate.metric(
-                                    exchange, metric)) != 0) {
+                    if (!marginMetricMatches(
+                            metric,
+                            detail.metric(exchange, metric),
+                            aggregate.metric(exchange, metric))) {
                         gaps.add("margin_detail "
                                 + compact(openDate) + " "
                                 + exchange + " " + metric
@@ -256,8 +265,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         .sorted(Map.Entry.comparingByKey()).toList()) {
             LocalDate tradeDate = entry.getKey();
             MarginAggregate aggregate = entry.getValue();
-            if (tradeDate.isBefore(request.startDate())) {
+            LocalDateTime observedAt = tradeDate.atTime(15, 0);
+            LocalDateTime availableAt =
+                    calendar.requiredNextOpenAfter(tradeDate)
+                            .atTime(8, 30);
+            if (availableAt.toLocalDate().isBefore(request.startDate())) {
                 previousBalance = aggregate.financingBalance;
+                continue;
+            }
+            if (availableAt.toLocalDate().isAfter(request.endDate())) {
                 continue;
             }
             Map<String, Object> attributes = new LinkedHashMap<>();
@@ -274,11 +290,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     details.getOrDefault(
                             tradeDate,
                             new MarginDetailAggregate()).count());
+            attributes.put("detailBalanceCoverageMinimum",
+                    minimumMarginBalanceCoverage(
+                            aggregate, details.get(tradeDate)));
             attributes.put("formulaVersion", "margin-market-sum-rzye-v1");
-            LocalDateTime observedAt = tradeDate.atTime(15, 0);
-            LocalDateTime availableAt =
-                    calendar.requiredNextOpenAfter(tradeDate)
-                            .atTime(8, 30);
             records.add(record(
                     "margin_financing:CN-A:" + tradeDate,
                     CN_A, tradeDate, observedAt, observedAt, availableAt,
@@ -306,6 +321,54 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     earliest(byDate.keySet()), fetchedAt);
         }
         return available(records, earliest(byDate.keySet()), fetchedAt);
+    }
+
+    private boolean marginMetricMatches(
+            String metric,
+            BigDecimal detailValue,
+            BigDecimal aggregateValue
+    ) {
+        if (detailValue.compareTo(aggregateValue) == 0) {
+            return true;
+        }
+        if (!MARGIN_BALANCE_METRICS.contains(metric)
+                || aggregateValue.signum() == 0) {
+            return false;
+        }
+        BigDecimal relativeDifference = detailValue
+                .subtract(aggregateValue)
+                .abs()
+                .divide(aggregateValue.abs(), 8, RoundingMode.HALF_UP);
+        return relativeDifference.compareTo(
+                MARGIN_BALANCE_RELATIVE_TOLERANCE) <= 0;
+    }
+
+    private BigDecimal minimumMarginBalanceCoverage(
+            MarginAggregate aggregate,
+            MarginDetailAggregate detail
+    ) {
+        if (detail == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        BigDecimal minimum = BigDecimal.ONE;
+        for (String exchange : List.of("SSE", "SZSE")) {
+            if (!aggregate.hasExchange(exchange)
+                    || detail.count(exchange) == 0) {
+                return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+            }
+            for (String metric : MARGIN_BALANCE_METRICS) {
+                BigDecimal aggregateValue = aggregate.metric(exchange, metric);
+                BigDecimal coverage = aggregateValue.signum() == 0
+                        ? (detail.metric(exchange, metric).signum() == 0
+                        ? BigDecimal.ONE : BigDecimal.ZERO)
+                        : detail.metric(exchange, metric)
+                        .abs()
+                        .divide(aggregateValue.abs(), 8, RoundingMode.HALF_UP)
+                        .min(BigDecimal.ONE);
+                minimum = minimum.min(coverage);
+            }
+        }
+        return minimum.setScale(8, RoundingMode.HALF_UP);
     }
 
     private TradingCalendar tradingCalendar(
@@ -346,6 +409,298 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     }
 
     private FlowEventSourceBatch etfFlow(
+            FlowEventSourceRequest request,
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
+    ) {
+        if (request.providerRequest().resultStartDate()
+                .isAfter(request.startDate())) {
+            return incrementalEtfFlowByDate(
+                    request, fetchedAt, calendar);
+        }
+        return etfFlowByFund(request, fetchedAt, calendar);
+    }
+
+    private FlowEventSourceBatch incrementalEtfFlowByDate(
+            FlowEventSourceRequest request,
+            LocalDateTime fetchedAt,
+            TradingCalendar calendar
+    ) {
+        LocalDate warmupDate =
+                calendar.previousOpenBefore(request.startDate());
+        if (warmupDate == null) {
+            return FlowEventSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "trade_cal has no previous open day before "
+                            + request.startDate(),
+                    null, fetchedAt);
+        }
+        List<LocalDate> sourceDates = calendar
+                .openDays(warmupDate, request.endDate()).stream()
+                .filter(date -> {
+                    LocalDate nextOpen = calendar.nextOpenAfter(date);
+                    return nextOpen != null
+                            && !nextOpen.isAfter(request.endDate());
+                })
+                .toList();
+        if (sourceDates.isEmpty()) {
+            return FlowEventSourceBatch.insufficientHistory(
+                    SOURCE,
+                    "trade_cal has no ETF source date published in the request window",
+                    null, fetchedAt);
+        }
+        EtfCatalog catalog = etfCatalogCache.computeIfAbsent(
+                new EtfCatalogWindow(
+                        request.startDate().minusYears(1),
+                        request.endDate()),
+                this::loadEtfCatalog);
+        java.util.Set<String> confirmedFunds = sourceDates.stream()
+                .flatMap(date -> catalog.activeFundCodes(date).stream())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        List<String> gaps = new ArrayList<>(catalog.gaps());
+        if (confirmedFunds.isEmpty()) {
+            gaps.add("etf_basic/fund_basic returned no PIT-effective ETF universe");
+        }
+
+        Map<String, SharePoint> previousShares = new LinkedHashMap<>();
+        Map<LocalDate, EtfAggregate> byDate = new LinkedHashMap<>();
+        Map<LocalDate, EtfCoverage> coverageByDate = new LinkedHashMap<>();
+        LocalDate earliestShareDate = null;
+        for (int sourceDateIndex = 0;
+             sourceDateIndex < sourceDates.size();
+             sourceDateIndex++) {
+            LocalDate sourceDate = sourceDates.get(sourceDateIndex);
+            java.util.Set<String> activeFunds =
+                    catalog.activeFundCodes(sourceDate);
+            Map<String, Object> shareParams = Map.of(
+                    "trade_date", compact(sourceDate));
+            Map<String, Object> navParams = Map.of(
+                    "nav_date", compact(sourceDate));
+            Map<String, Object> dailyParams = Map.of(
+                    "trade_date", compact(sourceDate));
+            List<Map<String, Object>> shareRows = queryPaged(
+                    "fund_share", shareParams,
+                    "ts_code,trade_date,fd_share");
+            List<Map<String, Object>> navRows = queryPaged(
+                    "fund_nav", navParams,
+                    "ts_code,ann_date,nav_date,unit_nav");
+            List<Map<String, Object>> dailyRows = queryPaged(
+                    "fund_daily", dailyParams,
+                    "ts_code,trade_date,close");
+
+            Map<String, NavPoint> navByFund = new LinkedHashMap<>();
+            int conflictingNavCount = 0;
+            for (Map<String, Object> row : navRows) {
+                String code = optionalExchangeFundCode(row);
+                if (code == null || !activeFunds.contains(code)
+                        || !date(row, "nav_date").equals(sourceDate)) {
+                    continue;
+                }
+                LocalDate announcementDate = date(row, "ann_date");
+                if (announcementDate.isAfter(request.endDate())) {
+                    continue;
+                }
+                NavPoint candidate = new NavPoint(
+                        decimal(row, "unit_nav"), announcementDate);
+                NavPoint existing = navByFund.get(code);
+                if (existing == null
+                        || candidate.announcementDate().isAfter(
+                                existing.announcementDate())) {
+                    navByFund.put(code, candidate);
+                } else if (candidate.announcementDate().equals(
+                        existing.announcementDate())
+                        && candidate.unitNav().compareTo(
+                                existing.unitNav()) != 0) {
+                    conflictingNavCount++;
+                }
+            }
+            if (conflictingNavCount > 0) {
+                gaps.add("fund_nav " + sourceDate
+                        + " has " + conflictingNavCount
+                        + " conflicting ETF rows");
+            }
+
+            Map<String, BigDecimal> closeByFund = new LinkedHashMap<>();
+            int conflictingCloseCount = 0;
+            for (Map<String, Object> row : dailyRows) {
+                String code = optionalExchangeFundCode(row);
+                if (code == null || !activeFunds.contains(code)
+                        || !date(row, "trade_date").equals(sourceDate)) {
+                    continue;
+                }
+                BigDecimal close = decimal(row, "close");
+                BigDecimal existing = closeByFund.putIfAbsent(code, close);
+                if (existing != null && existing.compareTo(close) != 0) {
+                    conflictingCloseCount++;
+                }
+            }
+            if (conflictingCloseCount > 0) {
+                gaps.add("fund_daily " + sourceDate
+                        + " has " + conflictingCloseCount
+                        + " conflicting ETF rows");
+            }
+
+            int missingReferenceCount = 0;
+            java.util.Set<String> coveredOnDate =
+                    new java.util.LinkedHashSet<>();
+            for (Map<String, Object> row : shareRows) {
+                String code = optionalExchangeFundCode(row);
+                if (code == null || !activeFunds.contains(code)
+                        || !date(row, "trade_date").equals(sourceDate)) {
+                    continue;
+                }
+                SharePoint current = new SharePoint(
+                        sourceDate, decimal(row, "fd_share"));
+                SharePoint previous = previousShares.put(code, current);
+                earliestShareDate = earlier(earliestShareDate, sourceDate);
+                if (previous == null) {
+                    continue;
+                }
+                NavPoint nav = navByFund.get(code);
+                BigDecimal close = closeByFund.get(code);
+                if (nav == null || close == null) {
+                    missingReferenceCount++;
+                    continue;
+                }
+                LocalDateTime availableAt = later(
+                        calendar.requiredNextOpenAfter(sourceDate)
+                                .atTime(8, 30),
+                        calendar.requiredNextOpenAfter(
+                                nav.announcementDate()).atTime(8, 30));
+                if (!inAvailabilityWindow(request, availableAt)) {
+                    continue;
+                }
+                BigDecimal netFlow = current.share()
+                        .subtract(previous.share())
+                        .multiply(SHARE_UNIT_MULTIPLIER)
+                        .multiply(nav.unitNav())
+                        .stripTrailingZeros();
+                BigDecimal referenceAssets = current.share()
+                        .multiply(SHARE_UNIT_MULTIPLIER)
+                        .multiply(nav.unitNav())
+                        .stripTrailingZeros();
+                byDate.computeIfAbsent(
+                                sourceDate,
+                                ignored -> new EtfAggregate())
+                        .add(code, netFlow, referenceAssets,
+                                close, nav.unitNav(),
+                                nav.announcementDate(), availableAt);
+                coveredOnDate.add(code);
+            }
+            if (missingReferenceCount > 0) {
+                gaps.add("ETF " + sourceDate + " skipped "
+                        + missingReferenceCount
+                        + " share rows missing exact fund_nav/fund_daily");
+            }
+            LocalDate publishedDate = calendar.nextOpenAfter(sourceDate);
+            boolean coverageDate = sourceDateIndex > 0
+                    && publishedDate != null
+                    && !publishedDate.isBefore(request.startDate())
+                    && !publishedDate.isAfter(request.endDate());
+            if (coverageDate) {
+                EtfCoverage coverage = new EtfCoverage(
+                        activeFunds.size(), coveredOnDate.size());
+                coverageByDate.put(sourceDate, coverage);
+                if (!coverage.complete()) {
+                    gaps.add("ETF " + sourceDate + " coverage="
+                            + coverage.coveredFundCount() + "/"
+                            + coverage.universeFundCount()
+                            + " active funds");
+                }
+            }
+        }
+
+        List<FlowEventSourceRecord> records = etfRecords(
+                byDate, coverageByDate);
+        if (records.isEmpty()) {
+            return FlowEventSourceBatch.insufficientHistory(
+                    SOURCE,
+                    gaps.isEmpty()
+                            ? "ETF share history has no calculable share delta"
+                            : String.join("; ", gaps),
+                    earliestShareDate, fetchedAt);
+        }
+        if (!gaps.isEmpty()) {
+            return partial(records, String.join("; ", gaps),
+                    earliestShareDate, fetchedAt);
+        }
+        return available(records, earliestShareDate, fetchedAt);
+    }
+
+    private List<Map<String, Object>> queryPaged(
+            String apiName,
+            Map<String, Object> baseParams,
+            String fields
+    ) {
+        int pageSize = switch (apiName) {
+            case "fund_share" -> FUND_SHARE_ROW_LIMIT;
+            case "fund_nav" -> FUND_NAV_ROW_LIMIT;
+            case "fund_daily" -> FUND_DAILY_ROW_LIMIT;
+            default -> throw new IllegalArgumentException(
+                    "unsupported incremental paged API " + apiName);
+        };
+        List<Map<String, Object>> rows = new ArrayList<>();
+        java.util.Set<String> pageSignatures = new java.util.HashSet<>();
+        for (int page = 0; page < INCREMENTAL_ETF_MAX_PAGES; page++) {
+            Map<String, Object> params = new LinkedHashMap<>(baseParams);
+            params.put("limit", pageSize);
+            params.put("offset", page * pageSize);
+            List<Map<String, Object>> pageRows = query(
+                    apiName, params, fields).rows();
+            if (!pageRows.isEmpty()
+                    && !pageSignatures.add(pageRows.toString())) {
+                throw new IllegalArgumentException(
+                        apiName + " returned a repeated pagination page");
+            }
+            rows.addAll(pageRows);
+            if (pageRows.size() < pageSize) {
+                return List.copyOf(rows);
+            }
+        }
+        throw new IllegalArgumentException(
+                apiName + " exceeded incremental pagination safety limit");
+    }
+
+    private List<FlowEventSourceRecord> etfRecords(
+            Map<LocalDate, EtfAggregate> byDate,
+            Map<LocalDate, EtfCoverage> coverageByDate
+    ) {
+        List<FlowEventSourceRecord> records = new ArrayList<>();
+        byDate.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    LocalDate tradeDate = entry.getKey();
+                    EtfAggregate aggregate = entry.getValue();
+                    EtfCoverage coverage = coverageByDate.getOrDefault(
+                            tradeDate,
+                            new EtfCoverage(
+                                    aggregate.fundCount,
+                                    aggregate.fundCount));
+                    Map<String, Object> attributes = Map.ofEntries(
+                            Map.entry("referenceAssets", aggregate.referenceAssets),
+                            Map.entry("shareUnitMultiplier", SHARE_UNIT_MULTIPLIER),
+                            Map.entry("fundDailyClose", aggregate.weightedClose()),
+                            Map.entry("fundDailyCloseWeightedAverage", aggregate.weightedClose()),
+                            Map.entry("fundCount", aggregate.fundCount),
+                            Map.entry("fundContributionCount", aggregate.contributionCount()),
+                            Map.entry("fundContributionHash", aggregate.contributionHash()),
+                            Map.entry("fundContributionTop", aggregate.topContributions()),
+                            Map.entry("universeFundCount", coverage.universeFundCount()),
+                            Map.entry("coveredFundCount", coverage.coveredFundCount()),
+                            Map.entry("formula", "(fd_share[t]-fd_share[t-1])*10000*unit_nav[t]"),
+                            Map.entry("formulaVersion", "fund-share-delta-times-unit-nav-v1"),
+                            Map.entry("secondaryMarketAmountUsed", false));
+                    records.add(record(
+                            "etf_fund_flow:CN-A:" + tradeDate,
+                            CN_A, tradeDate, tradeDate.atTime(15, 0),
+                            tradeDate.atTime(15, 0), aggregate.availableAt,
+                            aggregate.netFlow, "currency",
+                            "etf_redemption_flow", "ETF 份额变化衍生净申赎",
+                            attributes));
+                });
+        return List.copyOf(records);
+    }
+
+    private FlowEventSourceBatch etfFlowByFund(
             FlowEventSourceRequest request,
             LocalDateTime fetchedAt,
             TradingCalendar calendar
@@ -610,7 +965,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                         + "-row boundary");
             }
             for (Map<String, Object> row : response.rows()) {
-                String code = normalizedCode(row, "ts_code");
+                String code = optionalExchangeFundCode(row);
+                if (code == null) {
+                    continue;
+                }
                 catalogStatuses.put(
                         code, defaultText(
                                 row, "list_status", status));
@@ -627,10 +985,13 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         Map<String, Map<String, Object>> metadataByCode =
                 new LinkedHashMap<>();
         for (Map<String, Object> row : fundBasic.rows()) {
-            metadataByCode.put(
-                    normalizedCode(row, "ts_code"), row);
+            String code = optionalExchangeFundCode(row);
+            if (code == null) {
+                continue;
+            }
+            metadataByCode.put(code, row);
         }
-        List<String> effectiveCodes = new ArrayList<>();
+        List<EtfFundWindow> effectiveFunds = new ArrayList<>();
         for (Map.Entry<String, String> entry :
                 catalogStatuses.entrySet().stream()
                         .sorted(Map.Entry.comparingByKey())
@@ -658,14 +1019,15 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     && (delistDate == null
                     || !delistDate.isBefore(
                             window.historyStart()))) {
-                effectiveCodes.add(code);
+                effectiveFunds.add(new EtfFundWindow(
+                        code, listDate, delistDate));
             }
         }
         if (catalogStatuses.isEmpty()) {
             gaps.add("etf_basic returned no ETF catalog rows");
         }
         return new EtfCatalog(
-                List.copyOf(effectiveCodes),
+                List.copyOf(effectiveFunds),
                 List.copyOf(gaps));
     }
 
@@ -1110,6 +1472,16 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         return stock(text(row, key)).objectId();
     }
 
+    private String optionalExchangeFundCode(Map<String, Object> row) {
+        String code = optionalText(row, "ts_code");
+        if (code == null) {
+            return null;
+        }
+        String normalized = code.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("^\\d{6}\\.(SH|SZ|BJ)$")
+                ? normalized : null;
+    }
+
     private RiskObjectKey stock(String rawCode) {
         String normalized =
                 rawCode == null ? "" : rawCode.trim().toUpperCase(
@@ -1452,12 +1824,20 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
         }
 
         private LocalDate requiredNextOpenAfter(LocalDate date) {
+            LocalDate nextOpen = nextOpenAfter(date);
+            if (nextOpen == null) {
+                throw new IllegalArgumentException(
+                        "trade_cal has no next open day after "
+                                + date);
+            }
+            return nextOpen;
+        }
+
+        private LocalDate nextOpenAfter(LocalDate date) {
             return openDays.stream()
                     .filter(openDay -> openDay.isAfter(date))
                     .min(LocalDate::compareTo)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "trade_cal has no next open day after "
-                                    + date));
+                    .orElse(null);
         }
 
         private List<LocalDate> openDays(
@@ -1604,9 +1984,45 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
     }
 
     private record EtfCatalog(
-            List<String> fundCodes,
+            List<EtfFundWindow> funds,
             List<String> gaps
     ) {
+        private EtfCatalog {
+            funds = funds == null ? List.of() : List.copyOf(funds);
+            gaps = gaps == null ? List.of() : List.copyOf(gaps);
+        }
+
+        private List<String> fundCodes() {
+            return funds.stream().map(EtfFundWindow::code).toList();
+        }
+
+        private java.util.Set<String> activeFundCodes(LocalDate date) {
+            return funds.stream()
+                    .filter(fund -> fund.activeOn(date))
+                    .map(EtfFundWindow::code)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+    }
+
+    private record EtfFundWindow(
+            String code,
+            LocalDate listDate,
+            LocalDate delistDate
+    ) {
+        private boolean activeOn(LocalDate date) {
+            return !date.isBefore(listDate)
+                    && (delistDate == null || !date.isAfter(delistDate));
+        }
+    }
+
+    private record EtfCoverage(
+            int universeFundCount,
+            int coveredFundCount
+    ) {
+        private boolean complete() {
+            return universeFundCount > 0
+                    && coveredFundCount == universeFundCount;
+        }
     }
 
     private record NavPoint(

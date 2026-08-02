@@ -277,6 +277,103 @@ class TushareMarketRiskSourceClientTest {
     }
 
     @Test
+    void marketWideMembershipKeepsValidRowsWhenSomeStocksHaveNoSw1Classification() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(response(
+                "index_member_all",
+                membershipRow("600519.SH", "801120.SI", "食品饮料"),
+                Map.of(
+                        "ts_code", "000001.SZ",
+                        "l1_code", "",
+                        "l1_name", "",
+                        "in_date", "20210701",
+                        "out_date", "")));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.SW1_MEMBERSHIP,
+                request(
+                        List.of(MARKET),
+                        LocalDate.of(2021, 7, 1),
+                        TODAY,
+                        TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            IndustryExposure exposure = (IndustryExposure) record;
+            assertThat(exposure.stock()).isEqualTo(STOCK);
+            assertThat(exposure.sector().objectId()).isEqualTo("SW1:801120");
+        });
+        assertThat(result.failureReason())
+                .contains("index_member_all", "missing SW1 classification", "1");
+    }
+
+    @Test
+    void marketWideMembershipKeepsValidRowsWhenOtherRowsHaveInvalidFormats() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenReturn(response(
+                "index_member_all",
+                membershipRow("600519.SH", "801120.SI", "食品饮料"),
+                membershipRow("BAD", "801780.SI", "银行"),
+                membershipRow("000001.SZ", "BAD", "银行"),
+                Map.of(
+                        "ts_code", "000002.SZ",
+                        "l1_code", "801780.SI",
+                        "l1_name", "银行",
+                        "in_date", "not-a-date",
+                        "out_date", "")));
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.SW1_MEMBERSHIP,
+                request(List.of(MARKET), LocalDate.of(2021, 7, 1), TODAY, TODAY));
+
+        assertThat(result.qualityStatus())
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(result.records()).singleElement().satisfies(record ->
+                assertThat(record.object()).isEqualTo(STOCK));
+        assertThat(result.failureReason())
+                .contains("index_member_all", "invalid rows", "3");
+    }
+
+    @Test
+    void marketWideMembershipPaginatesUntilTheLastShortPage() {
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            int offset = (int) query.params().get("offset");
+            if (offset == 0) {
+                return responseRows("index_member_all", IntStream.rangeClosed(1, 2000)
+                        .mapToObj(index -> membershipRow(
+                                String.format("%06d.SZ", index),
+                                "801120.SI", "食品饮料"))
+                        .toList());
+            }
+            return response("index_member_all",
+                    membershipRow("600519.SH", "801120.SI", "食品饮料"));
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.SW1_MEMBERSHIP,
+                request(List.of(MARKET), LocalDate.of(2021, 7, 1), TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).hasSize(2001);
+        ArgumentCaptor<TushareRiskRequest> captor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(2)).query(captor.capture());
+        assertThat(captor.getAllValues()).extracting(query -> query.params().get("offset"))
+                .containsExactly(0, 2000);
+        assertThat(captor.getAllValues()).allSatisfy(query ->
+                assertThat(query.params()).containsEntry("limit", 2000));
+    }
+
+    @Test
     void marketDailyJoinsStockAndBroadMarketWithRealBenchmarkAndAuditedLeader() {
         TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
         when(httpClient.query(any())).thenAnswer(invocation -> {
