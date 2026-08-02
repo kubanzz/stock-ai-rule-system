@@ -44,6 +44,45 @@ class RiskBackfillPreflightServiceTest {
         assertThat(result.failures()).isEmpty();
         assertThat(result.flywayVersion()).isEqualTo("2");
         assertThat(result.activeStockCount()).isEqualTo(1);
+        assertThat(result.tushareProbe().detail()).isEqualTo("not probed");
+        verify(sourceProbe, never()).probeTushare(any());
+    }
+
+    @Test
+    void tusharePrimaryProbesTushareAndRequiredFallbacks() {
+        arrangeReadyEnvironment();
+        when(sourceProbe.probeTushare(END_DATE))
+                .thenReturn(SourceProbeResult.reachable("tushare"));
+        RiskWarningProperties warning = enabledRiskProperties();
+        warning.getSource().setPrimary("tushare");
+        warning.getSource().setTushareEnabled(true);
+
+        RiskBackfillPreflight result = service.check(
+                validCommand(), warning, List.of("600519.SH"));
+
+        assertThat(result.ready()).isTrue();
+        assertThat(result.tushareProbe().reachable()).isTrue();
+        verify(sourceProbe).probeTushare(END_DATE);
+        verify(sourceProbe).probeAkTools(END_DATE);
+        verify(sourceProbe).probeDerivedGateway(END_DATE);
+    }
+
+    @Test
+    void tusharePrimaryFailsPreflightWhenARequiredApiIsDenied() {
+        arrangeReadyEnvironment();
+        when(sourceProbe.probeTushare(END_DATE)).thenReturn(
+                SourceProbeResult.unreachable(
+                        "tushare", "TuShare probe failed: api=yc_cb category=PERMISSION code=2002"));
+        RiskWarningProperties warning = enabledRiskProperties();
+        warning.getSource().setPrimary("tushare");
+        warning.getSource().setTushareEnabled(true);
+
+        RiskBackfillPreflight result = service.check(
+                validCommand(), warning, List.of("600519.SH"));
+
+        assertThat(result.ready()).isFalse();
+        assertThat(result.environmentFailures())
+                .contains("TuShare probe failed: api=yc_cb category=PERMISSION code=2002");
     }
 
     @Test
