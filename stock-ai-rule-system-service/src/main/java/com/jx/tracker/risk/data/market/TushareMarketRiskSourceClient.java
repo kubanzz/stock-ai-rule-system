@@ -62,6 +62,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             Duration.ofMillis(200);
     private static final Pattern SAFE_MAPPING_FIELD = Pattern.compile(
             "(?:field|duplicate)\\s+([A-Za-z0-9_]+)$");
+    private static final Pattern SW1_SECTOR_OBJECT = Pattern.compile(
+            "(?i)^SW1:(\\d{6})$");
     private static final List<String> GLOBAL_LEADING_MARKETS =
             List.of("SPX", "IXIC", "HSI", "N225");
     private static final RiskObjectKey CN_A_MARKET =
@@ -159,7 +161,7 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             case CN_A_STOCK_MASTER -> "stock_basic";
             case SW1_MEMBERSHIP -> "index_member_all";
             case MARKET_DAILY ->
-                    "trade_cal,daily,adj_factor,index_daily";
+                    "trade_cal,daily,adj_factor,index_daily,sw_daily";
             case VALUATION -> "yc_cb,daily_basic";
             case BREADTH -> "trade_cal,daily";
             case CROSS_MARKET ->
@@ -692,6 +694,20 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
                         "ts_code,trade_date,adj_factor"));
                 target = adjustedDailyByDate(
                         daily, adjustments, expectedCode, request, openDates);
+            } else if (object.objectType() == RiskObjectType.SECTOR) {
+                expectedCode = swDailyCode(object.objectId());
+                if (expectedCode == null) {
+                    gaps.add("unsupported market daily object " + object.objectId());
+                    continue;
+                }
+                target = dailyByDate(
+                        httpClient.query(new TushareRiskRequest(
+                                "sw_daily",
+                                withCode(window, expectedCode),
+                                "ts_code,trade_date,open,close,vol")),
+                        expectedCode,
+                        request,
+                        openDates);
             } else if (object.objectType() == RiskObjectType.MARKET
                     && "CN-A".equalsIgnoreCase(object.objectId())) {
                 expectedCode = BROAD_MARKET_CODE;
@@ -709,6 +725,8 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
             }
             String targetDefinition = object.objectType() == RiskObjectType.STOCK
                     ? "daily/adj_factor " + expectedCode
+                    : object.objectType() == RiskObjectType.SECTOR
+                    ? "sw_daily " + expectedCode
                     : "index_daily " + expectedCode;
             Set<LocalDate> joinedDates = openDates.stream()
                     .filter(target::containsKey)
@@ -758,6 +776,11 @@ public final class TushareMarketRiskSourceClient implements MarketRiskSourceClie
         }
         return new MarketSourceBatch(
                 SOURCE, records, request.checkpoint(), fetchedAt);
+    }
+
+    private String swDailyCode(String objectId) {
+        Matcher matcher = SW1_SECTOR_OBJECT.matcher(objectId.trim());
+        return matcher.matches() ? matcher.group(1) + ".SI" : null;
     }
 
     private Set<LocalDate> openTradingDates(RiskProviderRequest request) {
