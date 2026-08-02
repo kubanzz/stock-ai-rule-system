@@ -199,6 +199,10 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             }
             for (Map<String, Object> row : detailResponse.rows()) {
                 String code = normalizedCode(row, "ts_code");
+                String exchange = exchangeForStockCode(code);
+                if (!List.of("SSE", "SZSE").contains(exchange)) {
+                    continue;
+                }
                 LocalDate tradeDate = date(row, "trade_date");
                 if (tradeDate.isBefore(sliceStart)
                         || tradeDate.isAfter(sliceEnd)
@@ -208,7 +212,7 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                 details.computeIfAbsent(
                         tradeDate,
                         ignored -> new MarginDetailAggregate())
-                        .add(exchangeForStockCode(code), row);
+                        .add(exchange, row);
             }
         }
         for (LocalDate openDate : detailDates) {

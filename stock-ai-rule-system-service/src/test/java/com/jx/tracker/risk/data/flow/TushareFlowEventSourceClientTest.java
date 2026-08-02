@@ -88,7 +88,10 @@ class TushareFlowEventSourceClientTest {
                                                 "90", "8", "18", "10", "100"),
                                         marginDetailRow(
                                                 "000001.SZ", "20260717",
-                                                "180", "12", "30", "20", "200"));
+                                                "180", "12", "30", "20", "200"),
+                                        marginDetailRow(
+                                                "430047.BJ", "20260717",
+                                                "999", "88", "77", "99", "1098"));
                     default -> throw new AssertionError(
                             query.params());
                 };
