@@ -96,9 +96,36 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     source, quality_status, payload_json
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
-                    indicator_value = VALUES(indicator_value), unit = VALUES(unit),
-                    observed_at = VALUES(observed_at), available_at = VALUES(available_at),
-                    quality_status = VALUES(quality_status), payload_json = VALUES(payload_json)
+                    indicator_value = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(indicator_value)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN indicator_value ELSE VALUES(indicator_value) END,
+                    unit = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(unit)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN unit ELSE VALUES(unit) END,
+                    observed_at = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(observed_at)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN observed_at ELSE VALUES(observed_at) END,
+                    available_at = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(available_at)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN available_at ELSE VALUES(available_at) END,
+                    payload_json = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(payload_json)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN payload_json ELSE VALUES(payload_json) END,
+                    quality_status = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(quality_status)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN quality_status ELSE VALUES(quality_status) END
                 """,
                 observation.object().objectType().getCode(), observation.object().objectId(),
                 observation.horizon().getCode(), observation.tradeDate(), observation.dimension().getCode(),
@@ -116,10 +143,46 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     source, quality_status, event_payload
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
-                    trade_date = VALUES(trade_date), dimension_code = VALUES(dimension_code),
-                    severity_score = VALUES(severity_score), occurred_at = VALUES(occurred_at),
-                    observed_at = VALUES(observed_at), available_at = VALUES(available_at),
-                    quality_status = VALUES(quality_status), event_payload = VALUES(event_payload)
+                    trade_date = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(trade_date)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN trade_date ELSE VALUES(trade_date) END,
+                    dimension_code = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(dimension_code)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN dimension_code ELSE VALUES(dimension_code) END,
+                    severity_score = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(severity_score)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN severity_score ELSE VALUES(severity_score) END,
+                    occurred_at = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(occurred_at)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN occurred_at ELSE VALUES(occurred_at) END,
+                    observed_at = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(observed_at)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN observed_at ELSE VALUES(observed_at) END,
+                    available_at = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(available_at)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN available_at ELSE VALUES(available_at) END,
+                    event_payload = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(event_payload)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN event_payload ELSE VALUES(event_payload) END,
+                    quality_status = CASE
+                        WHEN VALUES(quality_status) IN ('available', 'valid_zero')
+                        THEN VALUES(quality_status)
+                        WHEN quality_status IN ('available', 'valid_zero')
+                        THEN quality_status ELSE VALUES(quality_status) END
                 """,
                 event.object().objectType().getCode(), event.object().objectId(), event.tradeDate(),
                 event.dimension().getCode(), event.eventType(), event.eventKey(), event.severityScore(),
@@ -266,13 +329,35 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
     @Override
     public List<IndustryExposure> findIndustryExposures(RiskWorkflowRequest request) {
-        List<String> stockIds = requestedObjects(request).stream()
+        Set<RiskObjectKey> requestedObjects = requestedObjects(request);
+        List<String> stockIds = requestedObjects.stream()
                 .filter(object -> object.objectType() == RiskObjectType.STOCK)
                 .map(RiskObjectKey::objectId)
                 .sorted()
                 .toList();
         if (stockIds.isEmpty()) {
-            return List.of();
+            boolean marketWide = requestedObjects.stream().anyMatch(object ->
+                    object.objectType() == RiskObjectType.MARKET
+                            && "CN-A".equals(object.objectId()));
+            if (!marketWide) {
+                return List.of();
+            }
+            MapSqlParameterSource parameters = new MapSqlParameterSource()
+                    .addValue("stockObjectType", RiskObjectType.STOCK.getCode())
+                    .addValue("endDate", request.endDate())
+                    .addValue("asOf", request.asOf())
+                    .addValue("availableQuality", RiskDataQualityStatus.AVAILABLE.getCode())
+                    .addValue("validZeroQuality", RiskDataQualityStatus.VALID_ZERO.getCode());
+            return List.copyOf(namedJdbcTemplate.query("""
+                    SELECT object_type, object_id, parent_object_type, parent_object_id,
+                           parent_object_name, valid_from, valid_to, observed_at, available_at, source, quality_status
+                    FROM risk_object_exposure
+                    WHERE object_type = :stockObjectType
+                      AND valid_from <= :endDate AND (valid_to IS NULL OR valid_to >= :endDate)
+                      AND available_at <= :asOf
+                      AND quality_status IN (:availableQuality, :validZeroQuality)
+                    ORDER BY object_id, valid_from, available_at
+                    """, parameters, this::mapExposure));
         }
         List<IndustryExposure> exposures = new java.util.ArrayList<>();
         for (int offset = 0; offset < stockIds.size(); offset += OBJECT_SCOPE_CHUNK_SIZE) {

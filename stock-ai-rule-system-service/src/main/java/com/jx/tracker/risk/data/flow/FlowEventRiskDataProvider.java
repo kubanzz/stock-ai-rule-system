@@ -113,7 +113,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
         Map<String, FlowEventSourceRecord> uniqueRecords = new LinkedHashMap<>();
         sourceBatch.records().stream()
                 .filter(record -> request.objects().contains(record.object()))
-                .filter(record -> inRequestedPointInTime(dataset, record, request))
+                .filter(record -> inRequestedPointInTime(record, request))
                 .filter(record -> isAfterCheckpointBoundary(record, request))
                 .forEach(record -> uniqueRecords.putIfAbsent(recordKey(dataset, record), record));
         if (uniqueRecords.isEmpty()) {
@@ -319,7 +319,6 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
     }
 
     private boolean inRequestedPointInTime(
-            FlowEventDataset dataset,
             FlowEventSourceRecord record,
             RiskProviderRequest request
     ) {
@@ -327,11 +326,7 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
                 || record.availableAt().toLocalDate().isAfter(request.endDate())) {
             return false;
         }
-        if (dataset == FlowEventDataset.SHARE_UNLOCK) {
-            return true;
-        }
-        return !record.tradeDate().isBefore(request.startDate())
-                && !record.tradeDate().isAfter(request.endDate());
+        return true;
     }
 
     private RiskIngestionCheckpoint checkpoint(
@@ -410,7 +405,8 @@ public final class FlowEventRiskDataProvider implements RiskDataProvider {
     }
 
     private boolean isAfterCheckpointBoundary(FlowEventSourceRecord record, RiskProviderRequest request) {
-        return request.checkpoint() == null
+        boolean replayLookback = request.resultStartDate().isAfter(request.startDate());
+        return replayLookback || request.checkpoint() == null
                 || record.cursor().compareTo(request.checkpoint().cursor()) > 0;
     }
 

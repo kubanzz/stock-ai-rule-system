@@ -264,6 +264,80 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
+    void partialReplayCannotDowngradeExistingFormalObservationOrEvent() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_partial_replay_quality;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_observation (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL(30, 10), unit VARCHAR(32),
+                    observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), payload_json VARCHAR(1024),
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
+                           component_code, available_at, source))
+                """);
+        jdbc.execute("""
+                CREATE TABLE risk_event_fact (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), trade_date DATE,
+                    dimension_code CHAR(1), event_type VARCHAR(64), event_key VARCHAR(128),
+                    severity_score DECIMAL(7, 4), occurred_at TIMESTAMP,
+                    observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), event_payload VARCHAR(1024),
+                    UNIQUE(source, event_type, event_key, object_type, object_id))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime timestamp = date.atTime(18, 0);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+        RiskObservation formalObservation = new RiskObservation(
+                stock, RiskHorizon.SHORT_TERM, date, RiskDimension.FORCED_SELLING,
+                "A2", new BigDecimal("0.25"), "ratio", timestamp, timestamp,
+                "tushare", RiskDataQualityStatus.AVAILABLE, Map.of("state", "formal"));
+        RiskObservation auditObservation = new RiskObservation(
+                stock, RiskHorizon.SHORT_TERM, date, RiskDimension.FORCED_SELLING,
+                "A2", null, "ratio", timestamp, timestamp,
+                "tushare", RiskDataQualityStatus.INSUFFICIENT_HISTORY, Map.of("state", "partial"));
+        RiskEvent formalEvent = new RiskEvent(
+                stock, date, RiskDimension.SUBSTANTIVE_TRIGGER,
+                "announcement", "event-1", new BigDecimal("80"),
+                timestamp, timestamp, timestamp, "tushare",
+                RiskDataQualityStatus.AVAILABLE, Map.of("state", "formal"));
+        RiskEvent auditEvent = new RiskEvent(
+                stock, date, RiskDimension.SUBSTANTIVE_TRIGGER,
+                "announcement", "event-1", null,
+                timestamp, timestamp, timestamp, "tushare",
+                RiskDataQualityStatus.INSUFFICIENT_HISTORY, Map.of("state", "partial"));
+        JdbcRiskWorkflowRepository repository =
+                new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.saveObservation(formalObservation);
+        repository.saveEvent(formalEvent);
+        repository.saveObservation(auditObservation);
+        repository.saveEvent(auditEvent);
+
+        Map<String, Object> observation = jdbc.queryForMap("""
+                SELECT indicator_value, quality_status, payload_json
+                FROM risk_indicator_observation
+                """);
+        assertThat(observation.get("indicator_value").toString()).startsWith("0.25");
+        assertThat(observation)
+                .containsEntry("quality_status", "available");
+        assertThat(observation.get("payload_json").toString()).contains("formal");
+        Map<String, Object> event = jdbc.queryForMap("""
+                SELECT severity_score, quality_status, event_payload
+                FROM risk_event_fact
+                """);
+        assertThat(event.get("severity_score").toString()).startsWith("80");
+        assertThat(event)
+                .containsEntry("quality_status", "available");
+        assertThat(event.get("event_payload").toString()).contains("formal");
+    }
+
+    @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
     void batchReadsPushBoundObjectScopeIntoParameterizedSqlExactlyOncePerArtifact() {
         JdbcTemplate jdbc = new JdbcTemplate();
@@ -442,6 +516,49 @@ class JdbcRiskWorkflowRepositoryTest {
             assertThat(exposure.stock().objectId()).isEqualTo("600519.SH");
             assertThat(exposure.sector().objectId()).isEqualTo("SW1:801780");
             assertThat(exposure.sectorName()).isEqualTo("银行");
+            assertThat(exposure.availableAt()).isBeforeOrEqualTo(asOf);
+        });
+    }
+
+    @Test
+    void marketWideExposureReadReusesAllCurrentlyEffectiveIndustryRelationships() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_market_exposure_scope;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_object_exposure (
+                    object_type VARCHAR(16), object_id VARCHAR(64),
+                    parent_object_type VARCHAR(16), parent_object_id VARCHAR(64),
+                    parent_object_name VARCHAR(128),
+                    valid_from DATE, valid_to DATE, observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime asOf = date.atTime(20, 0);
+        jdbc.update("""
+                INSERT INTO risk_object_exposure VALUES
+                ('stock', '600519.SH', 'sector', 'SW1:801120', '食品饮料', ?, NULL, ?, ?, 'source-a', 'available'),
+                ('stock', '000001.SZ', 'sector', 'SW1:801780', '银行', ?, ?, ?, ?, 'source-a', 'available'),
+                ('stock', '600000.SH', 'sector', 'SW1:801780', '银行', ?, NULL, ?, ?, 'source-a', 'available')
+                """,
+                date.minusYears(1), date.minusYears(1).atStartOfDay(), date.minusYears(1).atTime(20, 0),
+                date.minusYears(1), date.minusDays(1), date.minusYears(1).atStartOfDay(), date.minusYears(1).atTime(20, 0),
+                date.minusYears(1), date.minusYears(1).atStartOfDay(), date.plusDays(1).atTime(9, 0));
+        RiskObjectKey market = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                date, asOf,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "market_daily", "market:CN-A", List.of(market))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        List<IndustryExposure> exposures =
+                new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper())
+                        .findIndustryExposures(request);
+
+        assertThat(exposures).singleElement().satisfies(exposure -> {
+            assertThat(exposure.stock().objectId()).isEqualTo("600519.SH");
+            assertThat(exposure.sector().objectId()).isEqualTo("SW1:801120");
             assertThat(exposure.availableAt()).isBeforeOrEqualTo(asOf);
         });
     }

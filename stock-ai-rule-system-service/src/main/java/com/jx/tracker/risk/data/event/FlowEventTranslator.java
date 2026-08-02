@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
@@ -122,7 +123,7 @@ public final class FlowEventTranslator {
         String canonicalBusinessKey = canonicalBusinessKey(record, eventType);
         eventPayload.put("canonicalBusinessKey", canonicalBusinessKey);
         RiskEvent event = new RiskEvent(
-                record.object(), record.tradeDate(), RiskDimension.SUBSTANTIVE_TRIGGER,
+                record.object(), scoringTradeDate(record), RiskDimension.SUBSTANTIVE_TRIGGER,
                 eventType, stableEventKey(eventType, canonicalBusinessKey), severity,
                 record.occurredAt(), record.observedAt(), record.availableAt(), source,
                 RiskDataQualityStatus.AVAILABLE, eventPayload);
@@ -165,7 +166,7 @@ public final class FlowEventTranslator {
         String canonicalBusinessKey = canonicalBusinessKey(record, eventType);
         payload.put("canonicalBusinessKey", canonicalBusinessKey);
         RiskEvent event = new RiskEvent(
-                record.object(), record.tradeDate(), RiskDimension.FORCED_SELLING,
+                record.object(), scoringTradeDate(record), RiskDimension.FORCED_SELLING,
                 eventType, stableEventKey(eventType, canonicalBusinessKey), severity,
                 record.occurredAt(), record.observedAt(), record.availableAt(), source,
                 RiskDataQualityStatus.AVAILABLE, payload);
@@ -186,7 +187,7 @@ public final class FlowEventTranslator {
         Map<String, Object> horizonAttributes = new HashMap<>(attributes);
         horizonAttributes.put("windowDays", windowDays(horizon));
         return new RiskObservation(
-                record.object(), horizon, record.tradeDate(), dimension, indicatorCode, value, unit,
+                record.object(), horizon, scoringTradeDate(record), dimension, indicatorCode, value, unit,
                 record.observedAt(), record.availableAt(), source,
                 qualityStatus, horizonAttributes);
     }
@@ -218,10 +219,15 @@ public final class FlowEventTranslator {
         Map<String, Object> attributes = new HashMap<>(record.attributes());
         attributes.put("sourceRecordId", record.recordId());
         attributes.put("sourceCursor", record.cursor());
+        attributes.put("sourceTradeDate", record.tradeDate().toString());
         if (fallbackReason != null && !fallbackReason.isBlank()) {
             attributes.put("fallbackReason", fallbackReason);
         }
         return attributes;
+    }
+
+    private LocalDate scoringTradeDate(FlowEventSourceRecord record) {
+        return record.availableAt().toLocalDate();
     }
 
     private String canonicalBusinessKey(FlowEventSourceRecord record, String type) {

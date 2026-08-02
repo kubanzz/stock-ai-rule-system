@@ -128,6 +128,77 @@ class FlowEventTranslatorAndMetricsTest {
     }
 
     @Test
+    void delayedMarketFactsUseTheirFirstAvailableTradingDateForScoring() {
+        LocalDate sourceTradeDate = LocalDate.of(2026, 7, 17);
+        LocalDate effectiveTradeDate = LocalDate.of(2026, 7, 20);
+        FlowEventSourceRecord margin = new FlowEventSourceRecord(
+                "margin-20260717", "cursor-1", STOCK, sourceTradeDate,
+                sourceTradeDate.atTime(15, 0), sourceTradeDate.atTime(15, 0),
+                effectiveTradeDate.atTime(8, 30), new BigDecimal("90"),
+                "currency", "balance", "融资余额",
+                Map.of("referenceBalance", "100", "previousBalance", "100"));
+
+        FlowEventTranslation result = new FlowEventTranslator(
+                EventEconomicMeaningDictionary.defaultDictionary())
+                .translate(FlowEventDataset.MARGIN_FINANCING, margin,
+                        RiskHorizon.SHORT_TERM, "tushare", null);
+
+        assertThat(result.observations()).hasSize(2).allSatisfy(observation -> {
+            assertThat(observation.tradeDate()).isEqualTo(effectiveTradeDate);
+            assertThat(observation.attributes())
+                    .containsEntry("sourceTradeDate", sourceTradeDate.toString());
+        });
+    }
+
+    @Test
+    void delayedSubstantiveEventsUseTheirFirstAvailableTradingDateForScoring() {
+        LocalDate sourceTradeDate = LocalDate.of(2026, 7, 17);
+        LocalDate effectiveTradeDate = LocalDate.of(2026, 7, 20);
+        FlowEventSourceRecord forecast = new FlowEventSourceRecord(
+                "forecast-20260717", "cursor-1", STOCK, sourceTradeDate,
+                sourceTradeDate.atStartOfDay(), sourceTradeDate.atStartOfDay(),
+                effectiveTradeDate.atStartOfDay(), new BigDecimal("-30"),
+                "forecast_change", "forecast", "业绩预减",
+                Map.of("adverse", true));
+
+        FlowEventTranslation result = new FlowEventTranslator(
+                EventEconomicMeaningDictionary.defaultDictionary())
+                .translate(FlowEventDataset.EARNINGS_FORECAST, forecast,
+                        RiskHorizon.SHORT_TERM, "tushare", null);
+
+        assertThat(result.observations()).singleElement().satisfies(observation ->
+                assertThat(observation.tradeDate()).isEqualTo(effectiveTradeDate));
+        assertThat(result.events()).singleElement().satisfies(event -> {
+            assertThat(event.tradeDate()).isEqualTo(effectiveTradeDate);
+            assertThat(event.payload())
+                    .containsEntry("sourceTradeDate", sourceTradeDate.toString());
+        });
+    }
+
+    @Test
+    void delayedModifierEventsUseTheirFirstAvailableTradingDateForScoring() {
+        LocalDate sourceTradeDate = LocalDate.of(2026, 7, 17);
+        LocalDate effectiveTradeDate = LocalDate.of(2026, 7, 20);
+        FlowEventSourceRecord reduction = new FlowEventSourceRecord(
+                "reduction-20260717", "cursor-1", STOCK, sourceTradeDate,
+                sourceTradeDate.atTime(15, 0), sourceTradeDate.atTime(15, 0),
+                effectiveTradeDate.atTime(8, 30), new BigDecimal("1000"),
+                "shares", "share_reduction", "股东减持",
+                Map.of("actualReduction", true, "modifierRatio", new BigDecimal("3")));
+
+        FlowEventTranslation result = new FlowEventTranslator(
+                EventEconomicMeaningDictionary.defaultDictionary())
+                .translate(FlowEventDataset.SHARE_REDUCTION, reduction,
+                        RiskHorizon.SHORT_TERM, "tushare", null);
+
+        assertThat(result.events()).singleElement().satisfies(event -> {
+            assertThat(event.tradeDate()).isEqualTo(effectiveTradeDate);
+            assertThat(event.payload())
+                    .containsEntry("sourceTradeDate", sourceTradeDate.toString());
+        });
+    }
+
+    @Test
     void missingAdverseSeverityRemainsInsufficientHistory() {
         FlowEventTranslator translator = new FlowEventTranslator(EventEconomicMeaningDictionary.defaultDictionary());
         FlowEventSourceRecord adverseWithoutValue = sourceRecord(

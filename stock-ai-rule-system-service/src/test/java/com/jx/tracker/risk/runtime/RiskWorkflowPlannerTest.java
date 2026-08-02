@@ -89,11 +89,11 @@ class RiskWorkflowPlannerTest {
     }
 
     @Test
-    void marketPlanCollectsTheCurrentMembershipUniverseInOnePagedRequest() {
+    void marketPlanCollectsMembershipBreadthAndCrossMarketDatasets() {
         RiskWorkflowPlan plan = planner().planMarket();
 
         assertThat(plan.stockObjects()).isEmpty();
-        assertThat(plan.collectionTasks()).hasSize(5);
+        assertThat(plan.collectionTasks()).hasSize(7);
         assertThat(plan.collectionTasks().stream()
                 .filter(task -> task.datasetCode().equals(MarketDatasetCode.SW1_MEMBERSHIP.code()))
                 .flatMap(task -> task.objects().stream()))
@@ -103,9 +103,9 @@ class RiskWorkflowPlannerTest {
                 .containsOnly(market());
         assertThat(plan.collectionTasks()).noneMatch(task ->
                 task.datasetCode().equals(MarketDatasetCode.CN_A_STOCK_MASTER.code()));
-        assertThat(plan.collectionTasks()).noneMatch(task ->
+        assertThat(plan.collectionTasks()).anyMatch(task ->
                 task.datasetCode().equals(MarketDatasetCode.BREADTH.code()));
-        assertThat(plan.collectionTasks()).noneMatch(task ->
+        assertThat(plan.collectionTasks()).anyMatch(task ->
                 task.datasetCode().equals(MarketDatasetCode.CROSS_MARKET.code()));
     }
 
