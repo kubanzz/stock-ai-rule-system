@@ -133,13 +133,6 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
             TradingCalendar calendar
     ) {
         List<String> gaps = new ArrayList<>();
-        List<LocalDate> missingCalendarDates =
-                calendar.missingDates(
-                        request.startDate(), request.endDate());
-        if (!missingCalendarDates.isEmpty()) {
-            gaps.add("trade_cal missing natural dates "
-                    + missingCalendarDates);
-        }
         LocalDate warmupDate =
                 calendar.previousOpenBefore(request.startDate());
         if (warmupDate == null) {
@@ -147,13 +140,29 @@ public final class TushareFlowEventSourceClient implements FlowEventSourceClient
                     + request.startDate());
             warmupDate = request.startDate();
         }
+        LocalDate availabilityBoundary;
+        try {
+            availabilityBoundary =
+                    calendar.requiredNextOpenAfter(request.endDate());
+        } catch (IllegalArgumentException exception) {
+            gaps.add("trade_cal has no next open day after "
+                    + request.endDate());
+            availabilityBoundary = request.endDate();
+        }
+        List<LocalDate> missingCalendarDates =
+                calendar.missingDates(
+                        warmupDate, availabilityBoundary);
+        if (!missingCalendarDates.isEmpty()) {
+            gaps.add("trade_cal missing dependency dates "
+                    + missingCalendarDates);
+        }
         TushareRiskResponse aggregateResponse = query(
                 "margin", dateWindow(warmupDate, request.endDate()),
                 "exchange_id,trade_date,rzye,rqye,rzmre,rzche,rzrqye");
         Map<LocalDate, MarginAggregate> byDate = new LinkedHashMap<>();
         for (Map<String, Object> row : aggregateResponse.rows()) {
             String exchange = text(row, "exchange_id");
-            if (!List.of("SSE", "SZSE", "BSE").contains(exchange)) {
+            if (!List.of("SSE", "SZSE").contains(exchange)) {
                 continue;
             }
             LocalDate tradeDate = date(row, "trade_date");

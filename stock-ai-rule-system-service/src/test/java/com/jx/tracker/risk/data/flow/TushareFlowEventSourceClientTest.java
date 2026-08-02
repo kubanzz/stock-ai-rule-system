@@ -56,6 +56,7 @@ class TushareFlowEventSourceClientTest {
                         tradeCalendarRow("20260716", true),
                         tradeCalendarRow("20260717", true),
                         tradeCalendarRow("20260718", false),
+                        tradeCalendarRow("20260719", false),
                         tradeCalendarRow("20260720", true));
                 case "margin" -> response("margin",
                         marginRow("SSE", "20260715", "80", "10", "7", "4", "90"),
@@ -63,7 +64,8 @@ class TushareFlowEventSourceClientTest {
                         marginRow("SSE", "20260716", "100", "20", "15", "5", "120"),
                         marginRow("SZSE", "20260716", "200", "30", "25", "10", "230"),
                         marginRow("SSE", "20260717", "90", "10", "8", "18", "100"),
-                        marginRow("SZSE", "20260717", "180", "20", "12", "30", "200"));
+                        marginRow("SZSE", "20260717", "180", "20", "12", "30", "200"),
+                        marginRow("BSE", "20260717", "999", "99", "88", "77", "1098"));
                 case "margin_detail" -> switch (
                         query.params().get("start_date").toString()) {
                     case "20260715" -> response("margin_detail",
@@ -250,6 +252,8 @@ class TushareFlowEventSourceClientTest {
                         tradeCalendarRow("20260715", true),
                         tradeCalendarRow("20260716", true),
                         tradeCalendarRow("20260717", true),
+                        tradeCalendarRow("20260718", false),
+                        tradeCalendarRow("20260719", false),
                         tradeCalendarRow("20260720", true));
                 case "margin" -> response("margin",
                         zeroMarginRow("SSE", "20260715"),
@@ -304,6 +308,57 @@ class TushareFlowEventSourceClientTest {
     }
 
     @Test
+    void marginFailsClosedWhenWarmupCalendarIntervalHasAGap() {
+        TushareRiskHttpClient httpClient =
+                mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            return switch (query.apiName()) {
+                case "trade_cal" -> response("trade_cal",
+                        tradeCalendarRow("20260714", true),
+                        tradeCalendarRow("20260716", true),
+                        tradeCalendarRow("20260717", true),
+                        tradeCalendarRow("20260718", false),
+                        tradeCalendarRow("20260719", false),
+                        tradeCalendarRow("20260720", true));
+                case "margin" -> response("margin",
+                        zeroMarginRow("SSE", "20260714"),
+                        zeroMarginRow("SZSE", "20260714"),
+                        zeroMarginRow("SSE", "20260716"),
+                        zeroMarginRow("SZSE", "20260716"),
+                        zeroMarginRow("SSE", "20260717"),
+                        zeroMarginRow("SZSE", "20260717"));
+                case "margin_detail" -> {
+                    String date = query.params()
+                            .get("start_date").toString();
+                    yield response("margin_detail",
+                            marginDetailRow(
+                                    "600519.SH", date,
+                                    "0", "0", "0", "0", "0"),
+                            marginDetailRow(
+                                    "000001.SZ", date,
+                                    "0", "0", "0", "0", "0"));
+                }
+                default -> throw new AssertionError(query.apiName());
+            };
+        });
+
+        FlowEventSourceBatch result =
+                new TushareFlowEventSourceClient(
+                        httpClient, CLOCK).fetch(request(
+                        FlowEventDataset.MARGIN_FINANCING,
+                        List.of(MARKET),
+                        LocalDate.of(2026, 7, 16),
+                        LocalDate.of(2026, 7, 17)));
+
+        assertThat(result.historyComplete()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.failureReason())
+                .contains("trade_cal missing dependency dates")
+                .contains("2026-07-15");
+    }
+
+    @Test
     void marginMissingClosedCalendarDayFailsClosed() {
         TushareRiskHttpClient httpClient =
                 mock(TushareRiskHttpClient.class);
@@ -347,7 +402,7 @@ class TushareFlowEventSourceClientTest {
 
         assertThat(result.historyComplete()).isFalse();
         assertThat(result.failureReason())
-                .contains("trade_cal missing natural dates")
+                .contains("trade_cal missing dependency dates")
                 .contains("2026-07-18");
     }
 
