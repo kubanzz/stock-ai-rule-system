@@ -50,6 +50,8 @@ class TushareMarketRiskSourceClientTest {
             new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
     private static final RiskObjectKey OTHER_STOCK =
             new RiskObjectKey(RiskObjectType.STOCK, "000001.SZ");
+    private static final RiskObjectKey SECTOR =
+            new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010");
 
     @Test
     void stockBasicMapsOnlyTheCurrentSnapshotWithNormalizedStockCodes() {
@@ -436,6 +438,69 @@ class TushareMarketRiskSourceClientTest {
                 .allSatisfy(query -> assertThat(query.params())
                         .containsEntry("start_date", "20260718")
                         .containsEntry("end_date", "20260718"));
+    }
+
+    @Test
+    void marketDailyUsesSwDailyForRequestedSw1Sector() {
+        LocalDate closedDate = TODAY.minusDays(1);
+        TushareRiskHttpClient httpClient = mock(TushareRiskHttpClient.class);
+        when(httpClient.query(any())).thenAnswer(invocation -> {
+            TushareRiskRequest query = invocation.getArgument(0);
+            String code = (String) query.params().get("ts_code");
+            return switch (query.apiName() + ":" + code) {
+                case "sw_daily:801010.SI" -> response(
+                        "sw_daily",
+                        dailyRow("801010.SI", "2500.00", "2525.00", "12345"),
+                        dailyRow("801020.SI", TODAY, "9000", "9001", "1"),
+                        dailyRow("801010.SI", closedDate, "8000", "8001", "2"),
+                        dailyRow(
+                                "801010.SI",
+                                closedDate.minusDays(1),
+                                "7000",
+                                "7001",
+                                "3"));
+                case "index_daily:000016.SH" -> response("index_daily", closeRow(
+                        "000016.SH", "1500.00"));
+                case "index_daily:000300.SH" -> response("index_daily", closeRow(
+                        "000300.SH", "4000.00"));
+                case "trade_cal:null" -> response(
+                        "trade_cal",
+                        Map.of(
+                                "exchange", "SSE",
+                                "cal_date", compact(closedDate),
+                                "is_open", "0"),
+                        openDayRow(TODAY));
+                default -> marketDailySupport(query);
+            };
+        });
+        TushareMarketRiskSourceClient client =
+                new TushareMarketRiskSourceClient(httpClient, CLOCK);
+
+        MarketSourceBatch result = client.fetch(
+                MarketDatasetCode.MARKET_DAILY,
+                request(List.of(SECTOR), closedDate, TODAY, TODAY));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(result.records()).singleElement().satisfies(record -> {
+            MarketDailyPoint point = (MarketDailyPoint) record;
+            assertThat(point.object()).isEqualTo(SECTOR);
+            assertThat(point.open()).isEqualByComparingTo("2500.00");
+            assertThat(point.close()).isEqualByComparingTo("2525.00");
+            assertThat(point.volume()).isEqualByComparingTo("12345");
+            assertThat(point.source()).isEqualTo("tushare");
+        });
+        ArgumentCaptor<TushareRiskRequest> requestCaptor =
+                ArgumentCaptor.forClass(TushareRiskRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(4)).query(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues()).anySatisfy(query -> {
+            assertThat(query.apiName()).isEqualTo("sw_daily");
+            assertThat(query.params())
+                    .containsEntry("ts_code", "801010.SI")
+                    .containsEntry("start_date", "20260717")
+                    .containsEntry("end_date", "20260718");
+            assertThat(query.fields())
+                    .isEqualTo("ts_code,trade_date,open,close,vol");
+        });
     }
 
     @Test
