@@ -3,10 +3,18 @@ package com.jx.tracker.risk.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.market.data.provider.MarketDataProviderProperties;
 import com.jx.tracker.risk.data.flow.AkToolsFlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.CompositeFlowEventSourceClient;
 import com.jx.tracker.risk.data.flow.FlowEventRiskDataProvider;
+import com.jx.tracker.risk.data.flow.FlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.TushareFlowEventSourceClient;
+import com.jx.tracker.risk.data.flow.FlowEventDataset;
 import com.jx.tracker.risk.data.market.AkToolsMarketRiskSourceClient;
+import com.jx.tracker.risk.data.market.FallbackMarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.MarketRiskDataProvider;
+import com.jx.tracker.risk.data.market.MarketRiskSourceClient;
 import com.jx.tracker.risk.data.market.RestClientMarketRiskHttpTransport;
+import com.jx.tracker.risk.data.market.TushareMarketRiskSourceClient;
+import com.jx.tracker.risk.data.tushare.TushareRiskHttpClient;
 import com.jx.tracker.risk.backfill.RiskBackfillCommandConfiguration;
 import com.jx.tracker.risk.backfill.RiskBackfillCommandProperties;
 import com.jx.tracker.risk.engine.RiskNormalizer;
@@ -23,16 +31,21 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({
@@ -61,9 +74,19 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
+        ValidatedRiskSource validatedRiskSource(
+                RiskWarningProperties riskProperties,
+                MarketDataProviderProperties marketDataProperties
+        ) {
+            riskProperties.validateSource(marketDataProperties.getToken());
+            return ValidatedRiskSource.INSTANCE;
+        }
+
+        @Bean
         RestClientMarketRiskHttpTransport riskMarketHttpTransport(
                 RiskWarningProperties riskProperties,
                 MarketDataProviderProperties marketDataProperties,
+                ValidatedRiskSource validatedRiskSource,
                 RestClient.Builder restClientBuilder,
                 ObjectMapper objectMapper
         ) {
@@ -91,7 +114,64 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
-        MarketRiskDataProvider riskMarketDataProvider(AkToolsMarketRiskSourceClient sourceClient) {
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        TushareRiskHttpClient tushareRiskHttpClient(
+                MarketDataProviderProperties marketDataProperties,
+                ValidatedRiskSource validatedRiskSource,
+                RestClient.Builder restClientBuilder,
+                ObjectMapper objectMapper
+        ) {
+            Duration connectTimeout = positiveDuration(
+                    marketDataProperties.getConnectTimeout(), "connectTimeout");
+            Duration readTimeout = positiveDuration(
+                    marketDataProperties.getReadTimeout(), "readTimeout");
+            HttpClient javaHttpClient = HttpClient.newBuilder()
+                    .connectTimeout(connectTimeout)
+                    .build();
+            JdkClientHttpRequestFactory requestFactory =
+                    new JdkClientHttpRequestFactory(javaHttpClient);
+            requestFactory.setReadTimeout(readTimeout);
+            return new TushareRiskHttpClient(
+                    marketDataProperties.getToken(),
+                    marketDataProperties.getApiUrl(),
+                    restClientBuilder.clone().requestFactory(requestFactory),
+                    objectMapper
+            );
+        }
+
+        @Bean
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        TushareMarketRiskSourceClient tushareMarketRiskSourceClient(
+                TushareRiskHttpClient httpClient,
+                Clock clock
+        ) {
+            return new TushareMarketRiskSourceClient(httpClient, clock);
+        }
+
+        @Bean
+        @Primary
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        FallbackMarketRiskSourceClient fallbackMarketRiskSourceClient(
+                TushareMarketRiskSourceClient primary,
+                AkToolsMarketRiskSourceClient fallback
+        ) {
+            return new FallbackMarketRiskSourceClient(primary, fallback);
+        }
+
+        @Bean
+        MarketRiskDataProvider riskMarketDataProvider(MarketRiskSourceClient sourceClient) {
             return new MarketRiskDataProvider(sourceClient);
         }
 
@@ -99,6 +179,7 @@ public class RiskWarningConfiguration {
         AkToolsFlowEventSourceClient riskFlowEventSourceClient(
                 RiskWarningProperties riskProperties,
                 MarketDataProviderProperties marketDataProperties,
+                ValidatedRiskSource validatedRiskSource,
                 RestClient.Builder restClientBuilder,
                 ObjectMapper objectMapper,
                 Clock clock
@@ -113,8 +194,68 @@ public class RiskWarningConfiguration {
         }
 
         @Bean
-        FlowEventRiskDataProvider riskFlowEventDataProvider(AkToolsFlowEventSourceClient sourceClient) {
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        TushareFlowEventSourceClient tushareFlowEventSourceClient(
+                TushareRiskHttpClient httpClient,
+                Clock clock
+        ) {
+            return new TushareFlowEventSourceClient(httpClient, clock);
+        }
+
+        @Bean
+        @Primary
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.source",
+                name = "primary",
+                havingValue = "tushare"
+        )
+        CompositeFlowEventSourceClient compositeFlowEventSourceClient(
+                TushareFlowEventSourceClient primary,
+                AkToolsFlowEventSourceClient fallback,
+                RiskWarningProperties properties
+        ) {
+            Map<String, FlowEventSourceClient> directRoutes =
+                    properties.getSource()
+                            .isCninfoAnnouncementFallbackEnabled()
+                            ? Map.of(
+                                    FlowEventDataset.STOCK_ANNOUNCEMENT
+                                            .code(),
+                                    fallback)
+                            : Map.of();
+            java.util.Set<String> blockedFallbackDatasets =
+                    properties.getSource()
+                            .isCninfoAnnouncementFallbackEnabled()
+                            ? java.util.Set.of()
+                            : java.util.Set.of(
+                                    FlowEventDataset
+                                            .STOCK_ANNOUNCEMENT
+                                            .code());
+            return new CompositeFlowEventSourceClient(
+                    primary, fallback, directRoutes,
+                    blockedFallbackDatasets);
+        }
+
+        @Bean
+        FlowEventRiskDataProvider riskFlowEventDataProvider(
+                FlowEventSourceClient sourceClient
+        ) {
             return new FlowEventRiskDataProvider(sourceClient);
+        }
+
+        private enum ValidatedRiskSource {
+            INSTANCE
+        }
+
+        private Duration positiveDuration(Duration value, String field) {
+            if (value == null || value.isZero() || value.isNegative()) {
+                throw new IllegalStateException(
+                        "market data provider " + field + " must be positive");
+            }
+            return value;
         }
 
         @Bean

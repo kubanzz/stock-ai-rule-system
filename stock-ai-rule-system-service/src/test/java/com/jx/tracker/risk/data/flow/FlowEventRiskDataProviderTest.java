@@ -195,7 +195,7 @@ class FlowEventRiskDataProviderTest {
     }
 
     @Test
-    void incompleteAvailablePrimaryAlsoTriggersSupplementAndMergesRecords() {
+    void completeEventSupplementReplacesIncompletePrimaryForFormalScoring() {
         FlowEventSourceBatch primaryBatch = new FlowEventSourceBatch(
                 "aktools", List.of(record("forecast-primary", new BigDecimal("-20"),
                 "forecast_change", Map.of("economicMeaning", "cash_flow", "adverse", true))),
@@ -213,10 +213,11 @@ class FlowEventRiskDataProviderTest {
         FlowEventFetchResult result = provider.fetchWithCoverage(
                 "earnings_forecast", request(List.of(RiskHorizon.SHORT_TERM), null));
 
-        assertThat(result.batch().observations()).hasSize(2);
+        assertThat(result.batch().source()).isEqualTo("licensed");
+        assertThat(result.batch().observations()).hasSize(1);
         assertThat(result.batch().observations()).extracting(observation ->
                 observation.attributes().get("sourceRecordId"))
-                .containsExactlyInAnyOrder("forecast-primary", "forecast-history");
+                .containsExactly("forecast-history");
         assertThat(result.coverageReport().fallbackReason()).contains("recent-only");
         assertThat(result.coverageReport().historyGaps()).isEmpty();
     }

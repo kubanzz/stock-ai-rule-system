@@ -8,16 +8,36 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 主源只在不可用或历史不足时切换补源，成功零值不会触发切换。 */
 public final class CompositeFlowEventSourceClient implements FlowEventSourceClient {
 
     private final FlowEventSourceClient primary;
     private final List<FlowEventSupplementProvider> supplements;
+    private final Map<String, FlowEventSourceClient> directRoutes;
+    private final Set<String> blockedFallbackDatasets;
 
     public CompositeFlowEventSourceClient(
             FlowEventSourceClient primary,
             List<FlowEventSupplementProvider> supplements
+    ) {
+        this(primary, supplements, Map.of(), Set.of());
+    }
+
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            List<FlowEventSupplementProvider> supplements,
+            Map<String, FlowEventSourceClient> directRoutes
+    ) {
+        this(primary, supplements, directRoutes, Set.of());
+    }
+
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            List<FlowEventSupplementProvider> supplements,
+            Map<String, FlowEventSourceClient> directRoutes,
+            Set<String> blockedFallbackDatasets
     ) {
         if (primary == null) {
             throw new IllegalArgumentException("primary source is required");
@@ -26,11 +46,44 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         this.supplements = supplements == null ? List.of() : supplements.stream()
                 .sorted(Comparator.comparingInt(FlowEventSupplementProvider::priority))
                 .toList();
+        this.directRoutes = directRoutes == null ? Map.of() : Map.copyOf(directRoutes);
+        this.blockedFallbackDatasets =
+                blockedFallbackDatasets == null
+                        ? Set.of()
+                        : Set.copyOf(blockedFallbackDatasets);
+    }
+
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            FlowEventSourceClient fallback,
+            Map<String, FlowEventSourceClient> directRoutes
+    ) {
+        this(primary, fallback == null ? List.of() : List.of(
+                supplement(fallback)), directRoutes);
+    }
+
+    public CompositeFlowEventSourceClient(
+            FlowEventSourceClient primary,
+            FlowEventSourceClient fallback,
+            Map<String, FlowEventSourceClient> directRoutes,
+            Set<String> blockedFallbackDatasets
+    ) {
+        this(primary, fallback == null ? List.of() : List.of(
+                        supplement(fallback)),
+                directRoutes, blockedFallbackDatasets);
     }
 
     @Override
     public FlowEventSourceBatch fetch(FlowEventSourceRequest request) {
+        FlowEventSourceClient direct = directRoutes.get(request.dataset().code());
+        if (direct != null) {
+            return direct.fetch(request);
+        }
         FlowEventSourceBatch primaryBatch = primary.fetch(request);
+        if (blockedFallbackDatasets.contains(
+                request.dataset().code())) {
+            return primaryBatch;
+        }
         if (!requiresFallback(primaryBatch)) {
             return primaryBatch;
         }
@@ -39,6 +92,7 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         String primaryReason = fallbackReason(primaryBatch);
         failures.add(primaryReason);
         LocalDateTime fetchedAt = primaryBatch.fetchedAt();
+        FlowEventSourceBatch auditBatch = primaryBatch;
         boolean attempted = false;
         for (FlowEventSupplementProvider supplement : supplements) {
             if (!supplement.supports(request.dataset().code())) {
@@ -49,22 +103,68 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
             fetchedAt = fetchedAt.isAfter(candidate.fetchedAt()) ? fetchedAt : candidate.fetchedAt();
             if (!requiresFallback(candidate)) {
                 if (primaryBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE) {
+                    if (candidate.qualityStatus()
+                            == RiskDataQualityStatus.VALID_ZERO) {
+                        return primaryBatch.withFallbackReason(
+                                primaryReason + "; "
+                                        + candidate.source()
+                                        + " valid_zero did not prove "
+                                        + "the missing history");
+                    }
+                    if (request.dataset().eventDataset()) {
+                        return candidate.withFallbackReason(
+                                primaryReason);
+                    }
                     return merge(primaryBatch, candidate, primaryReason, fetchedAt);
                 }
                 return candidate.withFallbackReason(primaryReason);
             }
             failures.add(fallbackReason(candidate));
+            if (request.dataset().eventDataset()
+                    && auditBatch.qualityStatus()
+                            == RiskDataQualityStatus.AVAILABLE
+                    && candidate.qualityStatus()
+                            == RiskDataQualityStatus.AVAILABLE) {
+                auditBatch = mergeAuditOnly(
+                        auditBatch, candidate,
+                        String.join("; ", failures), fetchedAt);
+            }
         }
         if (!attempted) {
             return primaryBatch;
         }
-        if (primaryBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE) {
-            return primaryBatch.withFallbackReason(String.join("; ", failures));
+        if (auditBatch.qualityStatus() == RiskDataQualityStatus.AVAILABLE) {
+            return auditBatch.withFallbackReason(
+                    String.join("; ", failures));
         }
         return FlowEventSourceBatch.unavailable(
                 primaryBatch.source() + "+supplement",
                 String.join("; ", failures),
                 fetchedAt);
+    }
+
+    private FlowEventSourceBatch mergeAuditOnly(
+            FlowEventSourceBatch primaryBatch,
+            FlowEventSourceBatch supplementBatch,
+            String reason,
+            LocalDateTime fetchedAt
+    ) {
+        Map<String, FlowEventSourceRecord> records =
+                new LinkedHashMap<>();
+        primaryBatch.records().forEach(record ->
+                records.putIfAbsent(recordKey(record), record));
+        supplementBatch.records().forEach(record ->
+                records.putIfAbsent(recordKey(record), record));
+        return new FlowEventSourceBatch(
+                primaryBatch.source() + "+"
+                        + supplementBatch.source(),
+                new ArrayList<>(records.values()),
+                RiskDataQualityStatus.AVAILABLE,
+                reason, null,
+                earliest(
+                        primaryBatch.earliestAvailableDate(),
+                        supplementBatch.earliestAvailableDate()),
+                false, fetchedAt, reason);
     }
 
     private FlowEventSourceBatch merge(
@@ -86,8 +186,79 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
     }
 
     private String recordKey(FlowEventSourceRecord record) {
+        if (isCrossSourceBusinessEvent(record.eventCode())) {
+            String identity = commonBusinessIdentity(record);
+            if (identity != null) {
+                return businessEventKey(record, identity);
+            }
+        }
         return record.object().objectType().getCode() + ":" + record.object().objectId()
                 + ":" + record.recordId() + ":" + record.availableAt();
+    }
+
+    private boolean isCrossSourceBusinessEvent(String eventCode) {
+        return "forecast_change".equals(eventCode)
+                || "share_unlock".equals(eventCode)
+                || "share_reduction".equals(eventCode);
+    }
+
+    private String businessEventKey(
+            FlowEventSourceRecord record,
+            String identity
+    ) {
+        return record.eventCode() + ":"
+                + record.object().objectType().getCode() + ":"
+                + record.object().objectId() + ":"
+                + record.tradeDate() + ":"
+                + record.observedAt().toLocalDate() + ":"
+                + normalizedValue(record) + ":"
+                + identity;
+    }
+
+    private String commonBusinessIdentity(
+            FlowEventSourceRecord record
+    ) {
+        return switch (record.eventCode()) {
+            case "forecast_change" -> identity(
+                    "forecastType",
+                    record.attributes().get("forecastType"),
+                    record.title());
+            case "share_reduction" -> identity(
+                    "shareholder",
+                    record.attributes().get("shareholder"),
+                    null);
+            case "share_unlock" -> {
+                Object holder =
+                        record.attributes().get("holderName");
+                if (holder != null) {
+                    yield identity("holder", holder, null);
+                }
+                yield identity(
+                        "listingBatch",
+                        record.attributes().get("listingBatch"),
+                        null);
+            }
+            default -> null;
+        };
+    }
+
+    private String identity(
+            String type,
+            Object preferred,
+            String fallback
+    ) {
+        String value = preferred == null
+                ? fallback : preferred.toString();
+        return value == null || value.isBlank()
+                ? null : type + "=" + value.trim();
+    }
+
+    private String normalizedValue(FlowEventSourceRecord record) {
+        if (record.value() == null) {
+            return "null:" + record.unit();
+        }
+        return record.value().stripTrailingZeros().toPlainString()
+                + ":" + record.unit();
     }
 
     private String maxCursor(String left, String right) {
@@ -121,5 +292,31 @@ public final class CompositeFlowEventSourceClient implements FlowEventSourceClie
         return batch.qualityStatus() == RiskDataQualityStatus.UNAVAILABLE
                 || batch.qualityStatus() == RiskDataQualityStatus.INSUFFICIENT_HISTORY
                 || !batch.historyComplete();
+    }
+
+    private static FlowEventSupplementProvider supplement(
+            FlowEventSourceClient fallback
+    ) {
+        return new FlowEventSupplementProvider() {
+            @Override
+            public String providerCode() {
+                return "fallback";
+            }
+
+            @Override
+            public int priority() {
+                return 100;
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return true;
+            }
+
+            @Override
+            public FlowEventSourceBatch fetch(FlowEventSourceRequest request) {
+                return fallback.fetch(request);
+            }
+        };
     }
 }

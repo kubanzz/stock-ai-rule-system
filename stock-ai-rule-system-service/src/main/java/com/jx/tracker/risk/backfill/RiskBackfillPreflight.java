@@ -9,17 +9,38 @@ public record RiskBackfillPreflight(
         String flywayVersion,
         boolean openTradingDay,
         int activeStockCount,
+        SourceProbeResult tushareProbe,
         SourceProbeResult akToolsProbe,
         SourceProbeResult derivedGatewayProbe,
         boolean reportDirectoryWritable,
         long enforcedGateCount
 ) {
 
+    public RiskBackfillPreflight(
+            List<String> configurationFailures,
+            List<String> environmentFailures,
+            String flywayVersion,
+            boolean openTradingDay,
+            int activeStockCount,
+            SourceProbeResult akToolsProbe,
+            SourceProbeResult derivedGatewayProbe,
+            boolean reportDirectoryWritable,
+            long enforcedGateCount
+    ) {
+        this(configurationFailures, environmentFailures, flywayVersion,
+                openTradingDay, activeStockCount,
+                SourceProbeResult.notProbed("tushare"),
+                akToolsProbe, derivedGatewayProbe,
+                reportDirectoryWritable, enforcedGateCount);
+    }
+
     public RiskBackfillPreflight {
         configurationFailures = configurationFailures == null
                 ? List.of() : List.copyOf(configurationFailures);
         environmentFailures = environmentFailures == null
                 ? List.of() : List.copyOf(environmentFailures);
+        tushareProbe = tushareProbe == null
+                ? SourceProbeResult.notProbed("tushare") : tushareProbe;
         akToolsProbe = akToolsProbe == null
                 ? SourceProbeResult.notProbed("aktools") : akToolsProbe;
         derivedGatewayProbe = derivedGatewayProbe == null

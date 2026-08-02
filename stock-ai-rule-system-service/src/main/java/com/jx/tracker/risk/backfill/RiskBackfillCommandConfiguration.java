@@ -5,6 +5,7 @@ import com.jx.tracker.market.data.provider.MarketDataProviderProperties;
 import com.jx.tracker.risk.runtime.RiskBackfillService;
 import com.jx.tracker.risk.runtime.RiskUniverseReader;
 import com.jx.tracker.risk.runtime.RiskWarningProperties;
+import com.jx.tracker.risk.data.tushare.TushareRiskHttpClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -45,11 +46,16 @@ public class RiskBackfillCommandConfiguration {
     RiskBackfillSourceProbe riskBackfillSourceProbe(
             RiskWarningProperties riskProperties,
             MarketDataProviderProperties marketDataProperties,
+            ObjectProvider<TushareRiskHttpClient> tushareHttpClient,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper
     ) {
-        return new HttpRiskBackfillSourceProbe(
+        RiskBackfillSourceProbe httpProbe = new HttpRiskBackfillSourceProbe(
                 riskProperties, marketDataProperties, restClientBuilder, objectMapper);
+        TushareRiskHttpClient client = tushareHttpClient.getIfAvailable();
+        return client == null
+                ? httpProbe
+                : new TushareRiskBackfillSourceProbe(client, httpProbe);
     }
 
     @Bean

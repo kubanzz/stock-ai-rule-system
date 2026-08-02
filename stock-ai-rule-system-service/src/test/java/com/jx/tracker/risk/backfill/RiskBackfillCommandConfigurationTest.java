@@ -3,6 +3,7 @@ package com.jx.tracker.risk.backfill;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.risk.runtime.RiskBackfillService;
 import com.jx.tracker.risk.runtime.RiskWarningConfiguration;
+import com.jx.tracker.risk.data.tushare.TushareRiskHttpClient;
 import com.jx.tracker.risk.workflow.RiskWorkflowRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.ApplicationRunner;
@@ -66,6 +67,29 @@ class RiskBackfillCommandConfigurationTest {
             assertThat(context).hasSingleBean(RiskBackfillPreflightService.class);
             assertThat(context).hasSingleBean(RiskBackfillReadinessRepository.class);
             assertThat(context).hasSingleBean(RiskBackfillReportStore.class);
+        });
+    }
+
+    @Test
+    void tushareCommandWiresTheTushareAwarePreflightProbe() {
+        contextRunner.withPropertyValues(
+                "stock-ai-rule.risk-warning.enabled=true",
+                "stock-ai-rule.risk-warning.backfill-enabled=true",
+                "stock-ai-rule.risk-warning.model-version=risk-v1",
+                "stock-ai-rule.risk-warning.after-close-cutoff=20:00",
+                "stock-ai-rule.risk-warning.source.primary=tushare",
+                "stock-ai-rule.risk-warning.source.tushare-enabled=true",
+                "stock-ai-rule.market-data.provider.token=contract-test-token",
+                "stock-ai-rule.risk-warning.backfill-command.enabled=true",
+                "stock-ai-rule.risk-warning.backfill-command.mode=sample",
+                "stock-ai-rule.risk-warning.backfill-command.end-date=2026-07-10",
+                "stock-ai-rule.risk-warning.backfill-command.confirmation=BACKFILL_5Y"
+        ).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(TushareRiskHttpClient.class);
+            assertThat(context).hasSingleBean(RiskBackfillSourceProbe.class);
+            assertThat(context.getBean(RiskBackfillSourceProbe.class))
+                    .isInstanceOf(TushareRiskBackfillSourceProbe.class);
         });
     }
 

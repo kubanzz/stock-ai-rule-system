@@ -37,7 +37,7 @@ public final class RiskBackfillPreflightService {
         List<String> configurationFailures = configurationFailures(command, warning);
         if (!configurationFailures.isEmpty()) {
             return result(configurationFailures, List.of(), null, false,
-                    size(activeSymbols), null, null, false, 0L);
+                    size(activeSymbols), null, null, null, false, 0L);
         }
 
         LocalDate endDate = command.getEndDate();
@@ -63,9 +63,17 @@ public final class RiskBackfillPreflightService {
         }
         boolean reportDirectoryWritable = writable(command.getReportDirectory(), environmentFailures);
 
+        SourceProbeResult tushare = SourceProbeResult.notProbed("tushare");
         SourceProbeResult akTools = SourceProbeResult.notProbed("aktools");
         SourceProbeResult derived = SourceProbeResult.notProbed("derived-gateway");
         if (environmentFailures.isEmpty()) {
+            if ("tushare".equals(warning.requiredPrimarySource())) {
+                tushare = safeProbe(
+                        () -> sourceProbe.probeTushare(endDate), "tushare");
+                if (!tushare.reachable()) {
+                    environmentFailures.add(tushare.detail());
+                }
+            }
             akTools = safeProbe(() -> sourceProbe.probeAkTools(endDate), "aktools");
             if (!akTools.reachable()) {
                 environmentFailures.add(akTools.detail());
@@ -78,7 +86,7 @@ public final class RiskBackfillPreflightService {
         }
         return result(configurationFailures, environmentFailures,
                 flywayVersion.orElse(null), openTradingDay, activeStockCount,
-                akTools, derived, reportDirectoryWritable, enforcedGateCount);
+                tushare, akTools, derived, reportDirectoryWritable, enforcedGateCount);
     }
 
     public List<String> configurationFailures(
@@ -104,6 +112,7 @@ public final class RiskBackfillPreflightService {
         capture(warning::requiredModelVersion, failures);
         capture(warning::requiredAfterCloseCutoff, failures);
         capture(warning::requiredCollectionChunkSize, failures);
+        capture(warning::requiredPrimarySource, failures);
         return List.copyOf(failures);
     }
 
@@ -201,6 +210,7 @@ public final class RiskBackfillPreflightService {
             String flywayVersion,
             boolean openTradingDay,
             int activeStockCount,
+            SourceProbeResult tushare,
             SourceProbeResult akTools,
             SourceProbeResult derived,
             boolean reportDirectoryWritable,
@@ -208,7 +218,7 @@ public final class RiskBackfillPreflightService {
     ) {
         return new RiskBackfillPreflight(
                 configurationFailures, environmentFailures, flywayVersion,
-                openTradingDay, activeStockCount, akTools, derived,
+                openTradingDay, activeStockCount, tushare, akTools, derived,
                 reportDirectoryWritable, enforcedGateCount);
     }
 
