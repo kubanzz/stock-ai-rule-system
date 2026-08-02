@@ -4,16 +4,24 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public final class JdbcRiskTradeDateResolver implements RiskTradeDateResolver {
 
     private final JdbcTemplate jdbcTemplate;
+    private final LocalTime afterCloseCutoff;
 
-    public JdbcRiskTradeDateResolver(JdbcTemplate jdbcTemplate) {
-        if (jdbcTemplate == null) {
-            throw new IllegalArgumentException("jdbcTemplate is required");
+    public JdbcRiskTradeDateResolver(
+            JdbcTemplate jdbcTemplate,
+            LocalTime afterCloseCutoff
+    ) {
+        if (jdbcTemplate == null || afterCloseCutoff == null) {
+            throw new IllegalArgumentException(
+                    "jdbcTemplate and afterCloseCutoff are required");
         }
         this.jdbcTemplate = jdbcTemplate;
+        this.afterCloseCutoff = afterCloseCutoff;
     }
 
     @Override
@@ -21,13 +29,18 @@ public final class JdbcRiskTradeDateResolver implements RiskTradeDateResolver {
         if (clock == null) {
             throw new IllegalArgumentException("clock is required");
         }
+        LocalDateTime now = LocalDateTime.now(clock);
+        LocalDate latestCompletedDate = now.toLocalTime()
+                .isBefore(afterCloseCutoff)
+                ? now.toLocalDate().minusDays(1)
+                : now.toLocalDate();
         LocalDate latest = jdbcTemplate.queryForObject("""
                 SELECT MAX(trade_date)
                 FROM trade_calendar
                 WHERE market IN ('CN', 'A股')
                   AND is_open = 1
                   AND trade_date <= ?
-                """, LocalDate.class, LocalDate.now(clock));
+                """, LocalDate.class, latestCompletedDate);
         if (latest == null) {
             throw new IllegalStateException("未找到可用的 A 股交易日");
         }
