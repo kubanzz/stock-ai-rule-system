@@ -27,7 +27,7 @@ public final class FallbackMarketRiskSourceClient implements MarketRiskSourceCli
     @Override
     public MarketSourceBatch fetch(MarketDatasetCode dataset, RiskProviderRequest request) {
         MarketSourceBatch primaryBatch = primary.fetch(dataset, request);
-        if (!requiresFallback(primaryBatch.qualityStatus())) {
+        if (!requiresFallback(dataset, request, primaryBatch.qualityStatus())) {
             return primaryBatch;
         }
         MarketSourceBatch fallbackBatch = fallback.fetch(dataset, request);
@@ -46,9 +46,19 @@ public final class FallbackMarketRiskSourceClient implements MarketRiskSourceCli
                 auditReason);
     }
 
-    private boolean requiresFallback(RiskDataQualityStatus status) {
-        return status == RiskDataQualityStatus.UNAVAILABLE
+    private boolean requiresFallback(
+            MarketDatasetCode dataset,
+            RiskProviderRequest request,
+            RiskDataQualityStatus status
+    ) {
+        boolean incomplete = status == RiskDataQualityStatus.UNAVAILABLE
                 || status == RiskDataQualityStatus.INSUFFICIENT_HISTORY;
+        if (!incomplete) {
+            return false;
+        }
+        boolean latestBreadth = dataset == MarketDatasetCode.BREADTH
+                && request.resultStartDate().equals(request.endDate());
+        return !latestBreadth;
     }
 
     private List<MarketSourceRecord> mergeRecords(
