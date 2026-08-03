@@ -312,6 +312,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     FROM risk_indicator_observation
                     WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
                       AND horizon IN (:horizons)
+                      AND quality_status IN ('available', 'valid_zero')
                     """ + scope.predicate() + """
                     ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
                     """, scope.parameters(), this::mapObservation).stream();

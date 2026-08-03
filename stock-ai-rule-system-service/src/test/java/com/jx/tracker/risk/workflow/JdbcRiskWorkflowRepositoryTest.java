@@ -238,6 +238,40 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
+    void observationReadExcludesNonFormalQualityBeforeMaterializingRows() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_workflow_formal_quality;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_observation (
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL,
+                    unit VARCHAR(32), observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), payload_json VARCHAR(1024))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime at = date.atTime(18, 0);
+        jdbc.update("""
+                INSERT INTO risk_indicator_observation VALUES
+                ('stock', '600519.SH', '1-5d', ?, 'V', 'V1', 'available', 10, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('stock', '600519.SH', '1-5d', ?, 'V', 'V1', 'validZero', 0, 'ratio', ?, ?, 'source-a', 'valid_zero', '{}'),
+                ('stock', '600519.SH', '1-5d', ?, 'V', 'V1', 'insufficient', NULL, 'ratio', ?, ?, 'source-a', 'insufficient_history', '{}'),
+                ('stock', '600519.SH', '1-5d', ?, 'V', 'V1', 'unavailable', NULL, 'ratio', ?, ?, 'source-a', 'unavailable', '{}')
+                """, date, at, at, date, at, at, date, at, at, date, at, at);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+
+        List<RiskObservation> observations = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper())
+                .findObservations(dailyRequest(date, date.atTime(20, 0), stock));
+
+        assertThat(observations).extracting(RiskObservation::qualityStatus)
+                .containsExactlyInAnyOrder(
+                        RiskDataQualityStatus.AVAILABLE,
+                        RiskDataQualityStatus.VALID_ZERO);
+    }
+
+    @Test
     void observationCorrectionsAppendByAvailabilityTimeAndRemainPointInTimeReadable() {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:risk_observation_revisions;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
