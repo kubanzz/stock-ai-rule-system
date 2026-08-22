@@ -1,0 +1,384 @@
+<section style="max-width:677px;margin:0 auto;background:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color:#52525B;line-height:1.8;letter-spacing:0.3px;overflow-x:hidden;">
+  <section style="margin:10px 10px 40px;padding:32px 24px 24px;border-top:1px solid #E4E4E7;border-bottom:1px solid #E4E4E7;background:#FFFFFF;">
+    <p style="font-size:11px;color:#A1A1AA;letter-spacing:2px;margin:0 0 18px;font-weight:400;"><span leaf="">QUOTE</span></p>
+    <p style="font-size:18px;font-weight:700;color:#27272A;margin:0 0 8px;line-height:1.7;letter-spacing:0.5px;">
+      <span leaf="">真正困难的，不是生成一个方向，而是让</span>
+      <span style="border-bottom:2px solid #F97316;font-weight:700;color:#27272A;"><span leaf="">每一次判断都有证据</span></span>
+      <span leaf="">，让每一次误判都能被追溯。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px;">
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">很多股票 AI 项目的第一反应，是把足够多的数据交给模型，然后等待一个方向结论。但在工程实践里，</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">结论越简单</span></span>
+      <span leaf="">，背后的责任链就越容易被隐藏：数据是否可靠？指标为什么触发？风险是否被忽略？模型判断错了以后，系统怎样改进？</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">我们正在构建的“股票因子规则预测与 AI 规则优化系统”，选择了一条更克制的路线：把 AI 放进一条</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">可解释、可回测、可审核</span></span>
+      <span leaf="">的工程闭环，而不是把它放在决策链的最高处。</span>
+    </p>
+    <p style="margin-bottom:32px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">这篇文章不谈“神奇预测器”，只拆解</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">一条股票信号的完整旅程</span></span>
+      <span leaf="">：它怎样从数据进入系统，怎样形成解释，又怎样在收盘后被验证和复盘。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px 40px;">
+    <p style="font-size:11px;color:#A1A1AA;margin:0 0 16px;letter-spacing:2px;"><span leaf="">本文看点</span></p>
+    <section style="display:flex;justify-content:space-between;">
+      <section style="flex:1;background:#FAFAFA;border-top:1px solid #E4E4E7;padding:18px 12px 16px;margin-right:8px;">
+        <p style="font-size:11px;color:#A1A1AA;font-weight:500;margin:0 0 8px;letter-spacing:1px;"><span leaf="">01</span></p>
+        <p style="font-size:13px;font-weight:700;color:#27272A;margin:0;line-height:1.5;"><span leaf="">指标如何变成语义因子</span></p>
+      </section>
+      <section style="flex:1;background:#FAFAFA;border-top:1px solid #E4E4E7;padding:18px 12px 16px;margin-right:8px;">
+        <p style="font-size:11px;color:#A1A1AA;font-weight:500;margin:0 0 8px;letter-spacing:1px;"><span leaf="">02</span></p>
+        <p style="font-size:13px;font-weight:700;color:#27272A;margin:0;line-height:1.5;"><span leaf="">规则怎样输出解释包</span></p>
+      </section>
+      <section style="flex:1;background:#FAFAFA;border-top:1px solid #E4E4E7;padding:18px 12px 16px;">
+        <p style="font-size:11px;color:#A1A1AA;font-weight:500;margin:0 0 8px;letter-spacing:1px;"><span leaf="">03</span></p>
+        <p style="font-size:13px;font-weight:700;color:#27272A;margin:0;line-height:1.5;"><span leaf="">AI 为什么不能直接改规则</span></p>
+      </section>
+    </section>
+  </section>
+
+  <section style="margin-top:16px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">01</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">BOUNDARY</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">从“预测涨跌”退一步</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">系统首先定义的不是模型，而是</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">产品与责任边界</span></span>
+      <span leaf="">。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">它输出四类辅助决策信号：</span>
+      <span style="background:#F4F4F5;color:#27272A;padding:2px 7px;border-radius:3px;font-weight:700;font-size:14px;"><span leaf="">看涨、看跌、观望、高风险</span></span>
+      <span leaf="">。信号不是交易指令，还必须同时携带多空评分、风险评分、置信度、触发规则和解释原因。</span>
+    </p>
+    <section style="border-left:3px solid #52525B;padding:16px 0 16px 24px;margin:0 0 28px;">
+      <p style="font-size:16px;font-weight:700;color:#27272A;margin:0;line-height:1.7;letter-spacing:0.5px;"><span leaf="">“系统真正交付的不是一个标签，而是一条可以被共同检查的证据链。”</span></p>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">这种设计会牺牲一些“答案立刻出现”的爽感，却换来了三个工程收益：</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">结果可解释、过程可审计、策略可迭代</span></span>
+      <span leaf="">。</span>
+    </p>
+    <section style="display:flex;margin:0 0 28px;">
+      <section style="flex:1;border-top:2px solid #27272A;padding:18px 12px 16px;margin-right:8px;">
+        <p style="font-size:11px;color:#A1A1AA;margin:0 0 8px;letter-spacing:1px;font-weight:500;"><span leaf="">01</span></p>
+        <p style="font-size:13px;font-weight:700;color:#27272A;margin:0 0 6px;line-height:1.4;"><span leaf="">可解释</span></p>
+        <p style="font-size:12px;color:#71717A;margin:0;line-height:1.6;"><span leaf="">知道哪些因子与规则形成结论。</span></p>
+      </section>
+      <section style="flex:1;border-top:2px solid #27272A;padding:18px 12px 16px;margin-right:8px;">
+        <p style="font-size:11px;color:#A1A1AA;margin:0 0 8px;letter-spacing:1px;font-weight:500;"><span leaf="">02</span></p>
+        <p style="font-size:13px;font-weight:700;color:#27272A;margin:0 0 6px;line-height:1.4;"><span leaf="">可审计</span></p>
+        <p style="font-size:12px;color:#71717A;margin:0;line-height:1.6;"><span leaf="">保留数据、版本与触发链路。</span></p>
+      </section>
+      <section style="flex:1;border-top:2px solid #27272A;padding:18px 12px 16px;">
+        <p style="font-size:11px;color:#A1A1AA;margin:0 0 8px;letter-spacing:1px;font-weight:500;"><span leaf="">03</span></p>
+        <p style="font-size:13px;font-weight:700;color:#27272A;margin:0 0 6px;line-height:1.4;"><span leaf="">可迭代</span></p>
+        <p style="font-size:12px;color:#71717A;margin:0;line-height:1.6;"><span leaf="">让误判成为下一轮优化输入。</span></p>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">当数据异常、规则冲突或市场环境变化时，系统也有机会</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">主动降级为观望或高风险</span></span>
+      <span leaf="">，而不是强行给出方向判断。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px;"><section style="height:1px;background:#E4E4E7;margin:0;"><span leaf=""><br></span></section></section>
+
+  <section style="margin-top:56px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">02</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">DATA PIPELINE</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">数据管道决定系统上限</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">一条信号的旅程，从</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">多源数据采集</span></span>
+      <span leaf="">开始。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">行情、财报、新闻、资金流、指数、行业和宏观数据有不同的更新频率，也有不同的质量特征。日 K 数据可以在收盘后批量同步，新闻和事件数据更适合按分钟或事件触发，财报与宏观数据则需要处理</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">修订、缺失与发布时间差异</span></span>
+      <span leaf="">。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">因此，采集之后不能立刻进入规则引擎。数据要先经过去重、补全、交易日对齐、异常值过滤、时间戳统一和股票代码映射，并保留</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">数据来源与质量标记</span></span>
+      <span leaf="">。</span>
+    </p>
+    <section style="margin:0 0 20px;border-radius:8px;overflow:hidden;background:#1E293B;box-shadow:0 4px 16px -8px rgba(15,23,42,0.4);">
+      <section style="display:flex;align-items:center;padding:9px 14px;background:#0F172A;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FF5F56;margin-right:7px;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FFBD2E;margin-right:7px;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#27C93F;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="margin-left:12px;font-size:12px;color:#64748B;font-family:Consolas,Monaco,monospace;letter-spacing:1px;"><span leaf="">json</span></span>
+      </section>
+      <section style="padding:11px 14px;">
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">{</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;symbol&quot;: &quot;600519.SH&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;market&quot;: &quot;CN&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;trade_date&quot;: &quot;2026-08-21&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;close_price&quot;: 1418.60,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;daily_return&quot;: 0.0128,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;data_quality&quot;: &quot;normal&quot;</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">}</span></p>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span style="background:#F4F4F5;color:#27272A;padding:2px 6px;border-radius:4px;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:14px;"><span leaf="">data_quality</span></span>
+      <span leaf="">不是装饰字段。它决定后续因子能否参与计算，也决定信号是否需要降低置信度。对于规则系统来说，</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">错误数据产生的“正确结论”</span></span>
+      <span leaf="">，仍然是不可接受的结果。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px;"><section style="height:1px;background:#E4E4E7;margin:0;"><span leaf=""><br></span></section></section>
+
+  <section style="margin-top:56px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">03</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">FACTOR LAYER</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">把指标翻译成语义因子</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">原始指标适合计算，却不适合直接编排</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">复杂业务规则</span></span>
+      <span leaf="">。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">例如，RSI 为 78、五日涨幅为 13.5％、量比为 2.4，这些数值本身没有错。但如果每条规则都直接依赖固定阈值，策略会迅速变得难以维护，任何口径调整都可能要求修改大量规则。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">系统在指标与规则之间增加了</span>
+      <span style="border-bottom:2px solid #F97316;font-weight:700;color:#27272A;"><span leaf="">因子语义层</span></span>
+      <span leaf="">，把连续数值转换成更稳定的领域表达。</span>
+    </p>
+    <section style="margin:0 0 20px;border-radius:8px;overflow:hidden;background:#1E293B;box-shadow:0 4px 16px -8px rgba(15,23,42,0.4);">
+      <section style="display:flex;align-items:center;padding:9px 14px;background:#0F172A;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FF5F56;margin-right:7px;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FFBD2E;margin-right:7px;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#27C93F;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="margin-left:12px;font-size:12px;color:#64748B;font-family:Consolas,Monaco,monospace;letter-spacing:1px;"><span leaf="">json</span></span>
+      </section>
+      <section style="padding:11px 14px;">
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">{</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;technical_status&quot;: &quot;overbought&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;short_term_trend&quot;: &quot;strong_up&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;volume_status&quot;: &quot;abnormal_high&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;sentiment_status&quot;: &quot;negative&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;market_status&quot;: &quot;weak&quot;</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">}</span></p>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">这层转换把</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">“怎么算”和“怎么判断”</span></span>
+      <span leaf="">拆开了。因子服务负责数据口径与阈值，规则引擎负责组合语义条件。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">对于开发者来说，这是一种</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">边界治理</span></span>
+      <span leaf="">：计算逻辑可以独立测试，规则表达更接近业务语言，后续从轻量 JSON 规则迁移到 Drools 时，领域模型也不需要推倒重来。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px;"><section style="height:1px;background:#E4E4E7;margin:0;"><span leaf=""><br></span></section></section>
+
+  <section style="margin-top:56px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">04</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">RULE ENGINE</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">规则引擎输出的是“解释包”</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">当语义因子准备完成，</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">规则引擎才开始工作</span></span>
+      <span leaf="">。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">规则不只负责寻找看涨条件，还要处理趋势、突破、风险、财报、舆情、市场环境、信号降级和多空冲突。一个强势突破规则被触发，并不意味着系统立刻输出看涨；如果同时出现技术过热、负面情绪或弱市场环境，</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">风险规则可以降低信号等级</span></span>
+      <span leaf="">。</span>
+    </p>
+    <section style="background:#FAFAFA;border:1px solid #E4E4E7;padding:20px 22px;margin:0 0 28px;">
+      <p style="font-size:11px;color:#A1A1AA;margin:0 0 8px;letter-spacing:2px;font-weight:500;"><span leaf="">OUTPUT CONTRACT</span></p>
+      <p style="font-size:15px;color:#3F3F46;margin:0;line-height:1.8;text-align:justify;">
+        <span leaf="">最终结果不是一个方向标签，而是由</span>
+        <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">信号、评分、规则与原因</span></span>
+        <span leaf="">组成的结构化解释包。</span>
+      </p>
+    </section>
+    <section style="margin:0 0 20px;border-radius:8px;overflow:hidden;background:#1E293B;box-shadow:0 4px 16px -8px rgba(15,23,42,0.4);">
+      <section style="display:flex;align-items:center;padding:9px 14px;background:#0F172A;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FF5F56;margin-right:7px;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FFBD2E;margin-right:7px;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#27C93F;font-size:0;line-height:0;overflow:hidden;"><span leaf="">.</span></span>
+        <span style="margin-left:12px;font-size:12px;color:#64748B;font-family:Consolas,Monaco,monospace;letter-spacing:1px;"><span leaf="">json</span></span>
+      </section>
+      <section style="padding:11px 14px;">
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">{</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;symbol&quot;: &quot;600519.SH&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;signal&quot;: &quot;watch&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;bullish_score&quot;: 55,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;bearish_score&quot;: 38,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;risk_score&quot;: 72,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;confidence&quot;: 0.61,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;triggered_rules&quot;: [</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　　　&quot;R_TREND_BREAKOUT_001&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　　　&quot;R_RISK_OVERBOUGHT_002&quot;,</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　　　&quot;R_SENTIMENT_NEGATIVE_003&quot;</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　],</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">　　&quot;reason&quot;: [&quot;趋势较强&quot;, &quot;技术过热&quot;, &quot;情绪偏负面&quot;]</span></p>
+        <p style="margin:0;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:13px;line-height:1.6;color:#E2E8F0;"><span leaf="">}</span></p>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">这里最重要的字段不是</span>
+      <span style="background:#F4F4F5;color:#27272A;padding:2px 6px;border-radius:4px;font-family:'SF Mono',Consolas,Monaco,monospace;font-size:14px;"><span leaf="">signal</span></span>
+      <span leaf="">，而是</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">triggered_rules、risk_score 与 reason</span></span>
+      <span leaf="">。它们把一次判断重新连接到规则版本、因子快照和数据来源。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">后端采用 JDK 21、Spring Boot 3.5、MyBatis-Plus、MySQL 与 Drools；前端基于 Vue 3 和 Vben Admin。技术栈不是重点，真正的重点是</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">各层只承担自己的责任</span></span>
+      <span leaf="">：数据层提供可信输入，因子层提供语义，规则层提供推理，信号层提供解释。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px;"><section style="height:1px;background:#E4E4E7;margin:0;"><span leaf=""><br></span></section></section>
+
+  <section style="margin-top:56px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">05</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">FEEDBACK LOOP</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">收盘不是结束，而是反馈开始</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">如果系统只负责生成信号，它依然只是一个</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">单向流水线</span></span>
+      <span leaf="">。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">每天收盘后，系统会采集实际涨跌与风险事件，对比历史信号，计算规则表现并识别误判样本。回测服务负责在历史区间中验证规则，统计命中率、收益回撤、适用行情和失效阶段；任务调度负责把</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">采集、验证、复盘</span></span>
+      <span leaf="">串成稳定流程。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">这样，每条规则都有自己的</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">运行履历</span></span>
+      <span leaf="">：在哪些市场环境中有效，在哪些行业中失真，最近是否出现连续误判，版本调整后是否真正改善。</span>
+    </p>
+    <p style="font-size:15px;margin:0 0 24px;text-align:center;color:#27272A;font-weight:700;letter-spacing:1px;border-top:1px solid #E4E4E7;border-bottom:1px solid #E4E4E7;padding:14px 10px;">
+      <span leaf="">“预测错误”不再只是一个红色数字，而会变成可分析的数据资产。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">系统可以追溯当时的因子快照、触发规则和市场环境，为 AI 复盘提供上下文，而不是只把最终涨跌结果丢给模型猜原因。这让</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">误判本身成为训练素材</span></span>
+      <span leaf="">。</span>
+    </p>
+  </section>
+
+  <section style="padding:0 10px;"><section style="height:1px;background:#E4E4E7;margin:0;"><span leaf=""><br></span></section></section>
+
+  <section style="margin-top:56px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">06</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">AI GOVERNANCE</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">AI 的位置：提出假设，不越过验证</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">AI 在这套系统中最有价值的工作，不是替规则引擎拍板，而是</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">分析误判</span></span>
+      <span leaf="">。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">它可以归纳错误样本的共同特征，发现现有规则遗漏的市场条件，生成候选规则或阈值调整建议。但这些建议只会进入</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">候选规则池</span></span>
+      <span leaf="">，随后必须经历历史回测、模拟盘观察和人工审核。</span>
+    </p>
+    <section style="margin-bottom:24px;">
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">1</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">采集数据并计算因子</span></span><span leaf="">，保留质量与来源信息。</span></p></section>
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">2</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">规则推理并输出信号</span></span><span leaf="">，同步保存解释链。</span></p></section>
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">3</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">收盘后验证实际结果</span></span><span leaf="">，统计规则表现。</span></p></section>
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">4</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">聚合误判样本</span></span><span leaf="">，补齐因子快照与市场环境。</span></p></section>
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">5</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">AI 生成归因与候选规则</span></span><span leaf="">，不直接触碰生产版本。</span></p></section>
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">6</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">执行回测与模拟观察</span></span><span leaf="">，确认改动是否稳健。</span></p></section>
+      <section style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#27272A;color:#fff;font-size:12px;font-weight:700;border-radius:50%;flex-shrink:0;margin-top:2px;"><span leaf="">7</span></span><p style="font-size:15px;color:#52525B;margin:0;line-height:1.8;flex:1;"><span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">人工审核通过后上线</span></span><span leaf="">，完整记录版本变化。</span></p></section>
+    </section>
+    <section style="border-left:3px solid #F97316;padding:14px 0 14px 22px;margin:0 0 24px;">
+      <p style="font-size:14px;font-weight:700;color:#27272A;margin:0;line-height:1.8;"><span leaf="">AI 可以扩大研究效率，但不能绕过策略治理；生产规则的上线责任仍然属于可验证的工程流程和人。</span></p>
+    </section>
+  </section>
+
+  <section style="padding:0 10px;"><section style="height:1px;background:#E4E4E7;margin:0;"><span leaf=""><br></span></section></section>
+
+  <section style="margin-top:56px;margin-bottom:32px;padding:0 10px;">
+    <section style="position:relative;padding-bottom:20px;border-bottom:1px solid #E4E4E7;">
+      <p style="font-size:48px;font-weight:900;color:#E4E4E7;margin:0;line-height:1;letter-spacing:-2px;"><span leaf="">∞</span></p>
+      <section style="margin-top:-8px;">
+        <p style="font-size:10px;color:#A1A1AA;font-weight:500;letter-spacing:3px;margin:0 0 6px;text-transform:uppercase;"><span leaf="">THE END</span></p>
+        <h3 style="font-size:20px;font-weight:800;color:#27272A;margin:0;letter-spacing:0.5px;line-height:1.4;"><span leaf="">让系统学会解释，也学会认错</span></h3>
+      </section>
+    </section>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">股票研究系统最危险的状态，不是偶尔判断错误，而是无法说明</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">为什么判断、为什么判断错</span></span>
+      <span leaf="">，以及下一次准备改变什么。</span>
+    </p>
+    <p style="margin-bottom:22px;font-size:15px;line-height:1.8;text-align:justify;color:#52525B;letter-spacing:0.3px;">
+      <span leaf="">因此，我们没有把项目设计成一个黑盒预测接口，而是把</span>
+      <span style="border-bottom:2px solid #52525B;font-weight:600;color:#27272A;"><span leaf="">数据、因子、规则、信号、风险、回测与 AI 复盘</span></span>
+      <span leaf="">连接成闭环。它的目标不是消灭不确定性，而是管理不确定性；不是替人做最终决定，而是提供更透明、更一致、更容易验证的研究信号。</span>
+    </p>
+    <section style="border-left:3px solid #52525B;padding:16px 0 16px 24px;margin:0 0 28px;">
+      <p style="font-size:16px;font-weight:700;color:#27272A;margin:0;line-height:1.7;letter-spacing:0.5px;"><span leaf="">“既能给出理由，也能留下证据；既能提出改进，也愿意接受回测和审核。”</span></p>
+    </section>
+    <section style="background:#FAFAFA;border-top:2px solid #27272A;padding:18px 22px;margin:0 0 24px;">
+      <p style="font-size:11px;color:#A1A1AA;margin:0 0 10px;letter-spacing:2px;font-weight:500;"><span leaf="">RISK NOTICE</span></p>
+      <p style="font-size:14px;color:#52525B;margin:0;line-height:1.8;"><span leaf="">本文介绍的是软件架构与研究方法。系统输出仅作为辅助决策信号，不构成投资建议，不代表确定性预测，也不保证收益。</span></p>
+    </section>
+  </section>
+
+  <section style="padding:0 10px;">
+    <section style="text-align:center;margin:0 0 36px;">
+      <section style="display:flex;align-items:center;justify-content:center;">
+        <span style="height:1px;width:48px;background:#E4E4E7;margin-right:16px;"><span leaf=""><br></span></span>
+        <span style="font-size:10px;color:#A1A1AA;letter-spacing:4px;font-weight:500;"><span leaf="">END</span></span>
+        <span style="height:1px;width:48px;background:#E4E4E7;margin-left:16px;"><span leaf=""><br></span></span>
+      </section>
+    </section>
+  </section>
+
+  <section style="padding:0 10px 24px;">
+    <section style="border-top:1px solid #E4E4E7;padding-top:28px;">
+      <p style="margin-bottom:16px;font-size:15px;line-height:1.8;color:#52525B;text-align:justify;"><span leaf="">我是 {{作者名}}，{{简介}}。</span></p>
+      <p style="margin-bottom:0;font-size:15px;line-height:1.8;color:#52525B;text-align:justify;">
+        <span leaf="">如果你觉得今天这篇有收获，欢迎</span>
+        <strong style="color:#27272A;"><span leaf="">点赞、在看、转发</span></strong>
+        <span leaf="">三连，我们下篇见。</span>
+      </p>
+    </section>
+  </section>
+</section>
