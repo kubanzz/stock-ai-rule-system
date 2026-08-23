@@ -173,6 +173,7 @@ RiskCoverageProfile profile = RiskCoverageProfileCatalog.resolve(
 - 维度不适用时分数为 `null`，但不产生缺失原因；
 - V/C/A 必需门槛只对适用维度执行；
 - T/S 组合只检查适用维度；
+- 总分在适用维度权重之间归一化，完整行业证据全部为 70 分时总分仍为 70 分；
 - 指标级缺失原因只遍历 `profile.definitions()`。
 
 - [ ] **步骤 4：运行引擎测试验证通过且无回归**

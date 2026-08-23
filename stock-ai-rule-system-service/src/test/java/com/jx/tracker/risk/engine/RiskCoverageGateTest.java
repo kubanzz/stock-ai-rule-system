@@ -15,15 +15,56 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RiskCoverageGateTest {
 
     private static final RiskObjectKey STOCK = new RiskObjectKey(RiskObjectType.STOCK, "600000.SH");
+    private static final RiskObjectKey SECTOR = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010");
     private static final LocalDate TRADE_DATE = LocalDate.of(2026, 7, 18);
     private static final LocalDateTime AS_OF = LocalDateTime.of(2026, 7, 18, 16, 0);
     private final RiskScoringEngine engine = new RiskScoringEngine();
+
+    @Test
+    void scoresACompleteV2SectorAgainstItsApplicableCatalog() {
+        RiskCoverageProfile profile = RiskCoverageProfileCatalog.resolve(
+                RiskObjectType.SECTOR, "risk-warning-v2");
+        List<RiskEvidence> applicableEvidence = evidence(Map.of(), Map.of()).stream()
+                .filter(item -> profile.applies(item.indicatorCode()))
+                .toList();
+        RiskScoreResult result = engine.score(request(
+                SECTOR,
+                "risk-warning-v2",
+                applicableEvidence
+        ));
+
+        assertThat(result.snapshot().completeness()).isEqualByComparingTo("1.0000");
+        assertThat(result.snapshot().vScore()).isNotNull();
+        assertThat(result.snapshot().tScore()).isNull();
+        assertThat(result.snapshot().sScore()).isNotNull();
+        assertThat(result.snapshot().cScore()).isNotNull();
+        assertThat(result.snapshot().aScore()).isNotNull();
+        assertThat(result.snapshot().totalScore()).isEqualByComparingTo("70.0000");
+        assertThat(result.missingReasons()).isEmpty();
+    }
+
+    @Test
+    void keepsLegacySectorCompletenessOnTheFiveHundredWeightDenominator() {
+        List<RiskEvidence> transmission = evidence(Map.of(), Map.of()).stream()
+                .filter(item -> Set.of("S1", "S2", "S4").contains(item.indicatorCode()))
+                .toList();
+
+        RiskScoreResult result = engine.score(request(
+                SECTOR,
+                "risk-warning-v1",
+                transmission
+        ));
+
+        assertThat(result.snapshot().completeness()).isEqualByComparingTo("0.1400");
+        assertFormalQuartetIsAbsent(result);
+    }
 
     @Test
     void requiresSixtyPercentValidWeightForEachDimension() {
@@ -183,8 +224,16 @@ class RiskCoverageGateTest {
     }
 
     private RiskScoreRequest request(List<RiskEvidence> evidence) {
+        return request(STOCK, "risk-engine-test-v1", evidence);
+    }
+
+    private RiskScoreRequest request(
+            RiskObjectKey object,
+            String modelVersion,
+            List<RiskEvidence> evidence
+    ) {
         return new RiskScoreRequest(
-                STOCK,
+                object,
                 RiskHorizon.SHORT_TERM,
                 TRADE_DATE,
                 TRADE_DATE.minusDays(1),
@@ -193,7 +242,7 @@ class RiskCoverageGateTest {
                 evidence,
                 List.of(),
                 ExtremeRiskConfirmation.none(),
-                "risk-engine-test-v1"
+                modelVersion
         );
     }
 

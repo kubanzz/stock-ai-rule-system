@@ -29,33 +29,40 @@ public final class RiskScoringEngine {
     );
 
     public RiskScoreResult score(RiskScoreRequest request) {
-        List<RiskEvidence> selectedEvidence = selectLatestEligibleEvidence(request);
+        RiskCoverageProfile profile = RiskCoverageProfileCatalog.resolve(
+                request.object().objectType(), request.modelVersion());
+        List<RiskEvidence> selectedEvidence = selectLatestEligibleEvidence(request).stream()
+                .filter(evidence -> profile.applies(evidence.indicatorCode()))
+                .toList();
         Map<String, RiskEvidence> validByCode = validEvidence(selectedEvidence);
         Map<RiskDimension, BigDecimal> dimensionScores = new EnumMap<>(RiskDimension.class);
         int totalValidWeight = 0;
 
         for (RiskDimension dimension : RiskDimension.values()) {
-            List<RiskIndicatorDefinition> definitions = RiskIndicatorCatalog.forDimension(dimension);
+            List<RiskIndicatorDefinition> definitions = profile.forDimension(dimension);
             int validWeight = definitions.stream()
                     .filter(definition -> validByCode.containsKey(definition.code()))
                     .mapToInt(RiskIndicatorDefinition::weight)
                     .sum();
             totalValidWeight += validWeight;
-            dimensionScores.put(dimension, calculateDimensionScore(definitions, validByCode, validWeight));
+            dimensionScores.put(dimension, calculateDimensionScore(
+                    definitions, validByCode, validWeight, profile.dimensionWeight(dimension)));
         }
 
         BigDecimal completeness = BigDecimal.valueOf(totalValidWeight)
-                .divide(new BigDecimal("500"), 4, RoundingMode.HALF_UP);
-        List<String> missingReasons = missingReasons(completeness, dimensionScores, validByCode);
+                .divide(BigDecimal.valueOf(profile.totalWeight()), 4, RoundingMode.HALF_UP);
+        List<String> missingReasons = missingReasons(
+                completeness, dimensionScores, validByCode, profile);
         boolean formal = missingReasons.isEmpty();
-        addEvidenceReasons(missingReasons, selectedEvidence, dimensionScores);
+        addEvidenceReasons(missingReasons, selectedEvidence, dimensionScores, profile);
 
         BigDecimal totalScore = null;
         RiskLevel level = null;
         RiskStage stage = null;
         BigDecimal riskConfidence = null;
         if (formal) {
-            totalScore = calculateTotal(dimensionScores, request.timeCorrectionFactor());
+            totalScore = calculateProfileTotal(
+                    dimensionScores, request.timeCorrectionFactor(), profile);
             RiskLevel rawLevel = rawLevel(dimensionScores, totalScore);
             RiskTransition transition = transition(request, rawLevel, dimensionScores, totalScore);
             level = transition.level();
@@ -180,10 +187,14 @@ public final class RiskScoringEngine {
     private BigDecimal calculateDimensionScore(
             List<RiskIndicatorDefinition> definitions,
             Map<String, RiskEvidence> validByCode,
-            int validWeight
+            int validWeight,
+            int applicableWeight
     ) {
+        if (applicableWeight == 0) {
+            return null;
+        }
         BigDecimal validRatio = BigDecimal.valueOf(validWeight)
-                .divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(applicableWeight), 4, RoundingMode.HALF_UP);
         if (validRatio.compareTo(DIMENSION_COMPLETENESS) < 0) {
             return null;
         }
@@ -202,25 +213,37 @@ public final class RiskScoringEngine {
     private List<String> missingReasons(
             BigDecimal completeness,
             Map<RiskDimension, BigDecimal> dimensionScores,
-            Map<String, RiskEvidence> validByCode
+            Map<String, RiskEvidence> validByCode,
+            RiskCoverageProfile profile
     ) {
         List<String> reasons = new ArrayList<>();
         if (completeness.compareTo(FORMAL_COMPLETENESS) < 0) {
             reasons.add("OVERALL_COMPLETENESS_BELOW_80_PERCENT");
         }
-        requireDimensionScore(reasons, dimensionScores, RiskDimension.STRUCTURAL_FRAGILITY);
-        requireDimensionScore(reasons, dimensionScores, RiskDimension.LOCAL_CONFIRMATION);
-        requireDimensionScore(reasons, dimensionScores, RiskDimension.FORCED_SELLING);
-        requireEvidence(reasons, validByCode, RiskDimension.STRUCTURAL_FRAGILITY);
-        requireEvidence(reasons, validByCode, RiskDimension.LOCAL_CONFIRMATION);
-        requireEvidence(reasons, validByCode, RiskDimension.FORCED_SELLING);
-        if (dimensionScores.get(RiskDimension.SUBSTANTIVE_TRIGGER) == null
-                && dimensionScores.get(RiskDimension.EXTERNAL_TRANSMISSION) == null) {
+        requireDimensionScore(
+                reasons, dimensionScores, RiskDimension.STRUCTURAL_FRAGILITY, profile);
+        requireDimensionScore(
+                reasons, dimensionScores, RiskDimension.LOCAL_CONFIRMATION, profile);
+        requireDimensionScore(
+                reasons, dimensionScores, RiskDimension.FORCED_SELLING, profile);
+        requireEvidence(
+                reasons, validByCode, RiskDimension.STRUCTURAL_FRAGILITY, profile);
+        requireEvidence(
+                reasons, validByCode, RiskDimension.LOCAL_CONFIRMATION, profile);
+        requireEvidence(
+                reasons, validByCode, RiskDimension.FORCED_SELLING, profile);
+        boolean triggerScoreMissing = !profile.applies(RiskDimension.SUBSTANTIVE_TRIGGER)
+                || dimensionScores.get(RiskDimension.SUBSTANTIVE_TRIGGER) == null;
+        boolean transmissionScoreMissing = !profile.applies(RiskDimension.EXTERNAL_TRANSMISSION)
+                || dimensionScores.get(RiskDimension.EXTERNAL_TRANSMISSION) == null;
+        if (triggerScoreMissing && transmissionScoreMissing) {
             reasons.add("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:T_OR_S");
         }
         boolean hasTriggerOrTransmission = validByCode.values().stream().anyMatch(evidence ->
-                evidence.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER
-                        || evidence.dimension() == RiskDimension.EXTERNAL_TRANSMISSION
+                (profile.applies(RiskDimension.SUBSTANTIVE_TRIGGER)
+                        && evidence.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER)
+                        || (profile.applies(RiskDimension.EXTERNAL_TRANSMISSION)
+                        && evidence.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)
         );
         if (!hasTriggerOrTransmission) {
             reasons.add("MISSING_REAL_EVIDENCE:T_OR_S");
@@ -231,13 +254,14 @@ public final class RiskScoringEngine {
     private void addEvidenceReasons(
             List<String> reasons,
             List<RiskEvidence> selectedEvidence,
-            Map<RiskDimension, BigDecimal> dimensionScores
+            Map<RiskDimension, BigDecimal> dimensionScores,
+            RiskCoverageProfile profile
     ) {
         Map<String, RiskEvidence> selectedByCode = new HashMap<>();
         for (RiskEvidence evidence : selectedEvidence) {
             selectedByCode.put(evidence.indicatorCode(), evidence);
         }
-        for (RiskIndicatorDefinition definition : RiskIndicatorCatalog.definitions()) {
+        for (RiskIndicatorDefinition definition : profile.definitions()) {
             if (dimensionScores.get(definition.dimension()) == null
                     && (definition.dimension() == RiskDimension.SUBSTANTIVE_TRIGGER
                     || definition.dimension() == RiskDimension.EXTERNAL_TRANSMISSION)) {
@@ -256,9 +280,10 @@ public final class RiskScoringEngine {
     private void requireDimensionScore(
             List<String> reasons,
             Map<RiskDimension, BigDecimal> dimensionScores,
-            RiskDimension dimension
+            RiskDimension dimension,
+            RiskCoverageProfile profile
     ) {
-        if (dimensionScores.get(dimension) == null) {
+        if (profile.applies(dimension) && dimensionScores.get(dimension) == null) {
             reasons.add("DIMENSION_VALID_WEIGHT_BELOW_60_PERCENT:" + dimension.getCode());
         }
     }
@@ -276,12 +301,42 @@ public final class RiskScoringEngine {
     private void requireEvidence(
             List<String> reasons,
             Map<String, RiskEvidence> validByCode,
-            RiskDimension dimension
+            RiskDimension dimension,
+            RiskCoverageProfile profile
     ) {
+        if (!profile.applies(dimension)) {
+            return;
+        }
         boolean found = validByCode.values().stream().anyMatch(evidence -> evidence.dimension() == dimension);
         if (!found) {
             reasons.add("MISSING_REAL_EVIDENCE:" + dimension.getCode());
         }
+    }
+
+    private BigDecimal calculateProfileTotal(
+            Map<RiskDimension, BigDecimal> dimensionScores,
+            BigDecimal timeCorrectionFactor,
+            RiskCoverageProfile profile
+    ) {
+        BigDecimal weighted = BigDecimal.ZERO;
+        BigDecimal applicableWeight = BigDecimal.ZERO;
+        for (Map.Entry<RiskDimension, BigDecimal> weight : DIMENSION_WEIGHTS.entrySet()) {
+            if (!profile.applies(weight.getKey())) {
+                continue;
+            }
+            applicableWeight = applicableWeight.add(weight.getValue());
+            BigDecimal score = dimensionScores.get(weight.getKey());
+            if (score != null) {
+                weighted = weighted.add(score.multiply(weight.getValue()));
+            }
+        }
+        if (applicableWeight.signum() == 0) {
+            throw new IllegalArgumentException("risk coverage profile must contain an applicable dimension");
+        }
+        return weighted.divide(applicableWeight, 8, RoundingMode.HALF_UP)
+                .multiply(timeCorrectionFactor)
+                .min(new BigDecimal("100"))
+                .setScale(4, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateTotal(
