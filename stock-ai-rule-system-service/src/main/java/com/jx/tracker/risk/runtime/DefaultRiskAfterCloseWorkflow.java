@@ -1,5 +1,6 @@
 package com.jx.tracker.risk.runtime;
 
+import com.jx.tracker.risk.engine.RiskCoverageProfileCatalog;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.workflow.RiskAfterCloseWorkflow;
 import com.jx.tracker.risk.workflow.RiskWarningWorkflow;
@@ -91,7 +92,10 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
         }
         RiskWorkflowPlan plan = planner.planMarketImmediate();
         return workflow.scoreStoredData(plan.recentSectorRebuildRequest(
-                endDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
+                endDate,
+                LocalDateTime.now(clock),
+                RiskCoverageProfileCatalog.OBJECT_AWARE_MODEL_VERSION,
+                afterCloseCutoff));
     }
 
     private LocalDateTime pointInTime(LocalDate tradeDate) {

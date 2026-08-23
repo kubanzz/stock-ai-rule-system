@@ -191,6 +191,7 @@ class RiskRuntimeWorkflowTest {
             assertThat(request.scoreStartDate()).isEqualTo(DATE.minusYears(2));
             assertThat(request.endDate()).isEqualTo(DATE);
             assertThat(request.asOf()).isEqualTo(DATE.plusDays(1).atTime(10, 0));
+            assertThat(request.modelVersion()).isEqualTo("risk-warning-v2");
             assertThat(request.collectionTasks()).anyMatch(task ->
                     task.objects().stream().anyMatch(object ->
                             object.objectId().equals("CN-A")));
