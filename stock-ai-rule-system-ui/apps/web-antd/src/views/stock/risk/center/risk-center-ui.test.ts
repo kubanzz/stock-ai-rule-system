@@ -53,6 +53,7 @@ describe('risk center UI safety contract', () => {
       page.indexOf('async function changeHorizon'),
     );
 
+    expect(changePage).toContain('detailRequests.next()');
     expect(changePage).toContain('resetSelection()');
     expect(changePage).toContain('stockRows.value[0]');
     expect(changePage).toContain('loadDetail');

@@ -286,6 +286,7 @@ async function loadCenter() {
 
 async function changePage(pageNum: number) {
   query.pageNum = pageNum;
+  detailRequests.next();
   resetSelection();
   await loadStockRows();
   const initial = stockRows.value[0];
