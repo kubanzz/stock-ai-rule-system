@@ -1,4 +1,0 @@
-01:03:07.341 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
-01:03:07.462 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase
-01:03:07.639 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,485] - Start creation of KieBase: defaultKieBase
-01:03:07.643 [main] INFO  o.d.c.k.b.i.KieContainerImpl - [createKieBase,501] - End creation of KieBase: defaultKieBase

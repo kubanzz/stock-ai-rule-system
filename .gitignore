@@ -1,3 +1,13 @@
 .worktrees/
 .superpowers/
 /stock-ai-rule-system-service/config/application-local.yml
+
+# 本地代理技能安装产物
+/.agents/
+/skills-lock.json
+
+# Turborepo 本地缓存
+/.turbo/
+
+# 后端运行日志
+/stock-ai-rule-system-service/logs/
