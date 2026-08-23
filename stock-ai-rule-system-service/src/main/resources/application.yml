@@ -86,6 +86,8 @@ stock-ai-rule:
       hot-retention-years: ${RISK_STORAGE_HOT_RETENTION_YEARS:2}
       archive-batch-size: ${RISK_STORAGE_ARCHIVE_BATCH_SIZE:5000}
       max-batches-per-run: ${RISK_STORAGE_MAX_BATCHES_PER_RUN:10}
+      archive-cron: ${RISK_STORAGE_ARCHIVE_CRON:0 30 2 * * *}
+      archive-zone: ${RISK_STORAGE_ARCHIVE_ZONE:Asia/Shanghai}
     backfill-command:
       # 一次性内部命令默认关闭；普通 Web 启动不会自动执行 Runner。
       enabled: ${RISK_WARNING_BACKFILL_COMMAND_ENABLED:false}

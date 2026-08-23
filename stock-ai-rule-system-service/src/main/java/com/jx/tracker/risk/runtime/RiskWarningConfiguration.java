@@ -21,6 +21,8 @@ import com.jx.tracker.risk.engine.RiskNormalizer;
 import com.jx.tracker.risk.engine.RiskScoringEngine;
 import com.jx.tracker.risk.gate.ShadowRiskGate;
 import com.jx.tracker.risk.sync.RiskSyncJobService;
+import com.jx.tracker.risk.storage.RiskObservationStorageTierScheduledTask;
+import com.jx.tracker.risk.storage.RiskObservationStorageTierService;
 import com.jx.tracker.risk.workflow.DefaultRiskSnapshotEvaluator;
 import com.jx.tracker.risk.workflow.PercentileRiskEvidenceAssembler;
 import com.jx.tracker.risk.workflow.RiskWarningWorkflow;
@@ -353,6 +355,28 @@ public class RiskWarningConfiguration {
             return new RiskSyncJobService(
                     workflow, tradeDateResolver,
                     taskExecutor.getIfAvailable(SyncTaskExecutor::new), clock);
+        }
+
+        @Bean
+        RiskObservationStorageTierService riskObservationStorageTierService(
+                JdbcTemplate jdbcTemplate,
+                RiskStorageTierProperties properties,
+                Clock clock
+        ) {
+            return new RiskObservationStorageTierService(jdbcTemplate, properties, clock);
+        }
+
+        @Bean
+        @ConditionalOnProperty(
+                prefix = "stock-ai-rule.risk-warning.storage",
+                name = "archive-enabled",
+                havingValue = "true"
+        )
+        RiskObservationStorageTierScheduledTask riskObservationStorageTierScheduledTask(
+                RiskObservationStorageTierService service,
+                RiskStorageTierProperties properties
+        ) {
+            return new RiskObservationStorageTierScheduledTask(service, properties);
         }
 
         @Bean
