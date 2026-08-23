@@ -102,7 +102,7 @@ stock-ai-rule:
       # 可选：mock / csv / tushare。外部 token 缺失时自动降级到 fallback-type。
       type: ${MARKET_DATA_PROVIDER:aktools}
       fallback-type: ${MARKET_DATA_FALLBACK_PROVIDER:mock}
-      token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:}}
+      token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:cf84fa45c5750c6d7115c85f973db90796c37c11641b3a69}}
       api-url: ${MARKET_DATA_PROVIDER_API_URL:https://api.tushare.pro}
       ak-tools-base-url: ${AKTOOLS_BASE_URL:http://127.0.0.1:8090}
       connect-timeout: ${MARKET_DATA_CONNECT_TIMEOUT:5s}
