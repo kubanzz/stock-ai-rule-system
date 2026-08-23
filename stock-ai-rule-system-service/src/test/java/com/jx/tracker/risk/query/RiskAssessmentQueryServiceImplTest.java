@@ -181,6 +181,82 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
+    void sectorQueryUsesSnapshotModelVersionToExplainApplicableIndicators() {
+        RiskScoreSnapshotEntity sector = snapshot(
+                33L, "1-5d", "1.00", "available", "watch", "sector", "SW1:801010");
+        sector.setModelVersion("risk-warning-v2");
+        when(snapshotMapper.selectForObject("sector", "SW1:801010", "1-5d", TRADE_DATE))
+                .thenReturn(List.of(sector));
+        when(evidenceMapper.selectBySnapshotIds(List.of(33L))).thenReturn(List.of(
+                evidence(331L, 33L, "V", "V3", "available"),
+                evidence(332L, 33L, "V", "V4", "available"),
+                evidence(333L, 33L, "S", "S1", "available"),
+                evidence(334L, 33L, "S", "S2", "available"),
+                evidence(335L, 33L, "S", "S4", "available"),
+                evidence(336L, 33L, "C", "C1", "available"),
+                evidence(337L, 33L, "C", "C3", "available"),
+                evidence(338L, 33L, "C", "C4", "available"),
+                evidence(339L, 33L, "C", "C5", "available"),
+                evidence(340L, 33L, "A", "A3", "available"),
+                evidence(341L, 33L, "A", "A5", "available")
+        ));
+        when(exposureMapper.selectActiveParents(
+                "sector", "SW1:801010", TRADE_DATE, CALCULATED_AT)).thenReturn(List.of());
+
+        var snapshot = service.objectDetail(
+                "sector", "SW1:801010", "1-5d", TRADE_DATE).snapshot();
+
+        assertThat(snapshot.completeness()).isEqualByComparingTo("1.0000");
+        assertThat(snapshot.dimensions())
+                .filteredOn(item -> item.dimension().equals("V"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.applicable()).isTrue();
+                    assertThat(item.usedCount()).isEqualTo(2);
+                    assertThat(item.totalCount()).isEqualTo(2);
+                });
+        assertThat(snapshot.dimensions())
+                .filteredOn(item -> item.dimension().equals("T"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.applicable()).isFalse();
+                    assertThat(item.totalCount()).isZero();
+                    assertThat(item.indicators())
+                            .allSatisfy(indicator ->
+                                    assertThat(indicator.status()).isEqualTo("not_applicable"));
+                });
+    }
+
+    @Test
+    void legacySectorQueryKeepsFiveHundredWeightCompleteness() {
+        RiskScoreSnapshotEntity sector = snapshot(
+                34L, "1-5d", "0.14", "insufficient_history", null,
+                "sector", "SW1:801010");
+        sector.setModelVersion("risk-warning-v1");
+        when(snapshotMapper.selectForObject("sector", "SW1:801010", "1-5d", TRADE_DATE))
+                .thenReturn(List.of(sector));
+        when(evidenceMapper.selectBySnapshotIds(List.of(34L))).thenReturn(List.of(
+                evidence(342L, 34L, "S", "S1", "available"),
+                evidence(343L, 34L, "S", "S2", "available"),
+                evidence(344L, 34L, "S", "S4", "available")
+        ));
+        when(exposureMapper.selectActiveParents(
+                "sector", "SW1:801010", TRADE_DATE, CALCULATED_AT)).thenReturn(List.of());
+
+        var snapshot = service.objectDetail(
+                "sector", "SW1:801010", "1-5d", TRADE_DATE).snapshot();
+
+        assertThat(snapshot.completeness()).isEqualByComparingTo("0.1400");
+        assertThat(snapshot.dimensions())
+                .filteredOn(item -> item.dimension().equals("T"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.applicable()).isTrue();
+                    assertThat(item.totalCount()).isEqualTo(4);
+                });
+    }
+
+    @Test
     void overviewMasksStaleMarketAndExcludesStaleCriticalFromCountsAndHighRiskFilter() {
         RiskScoreSnapshotEntity staleMarket = snapshot(
                 11L, "1-5d", "0.90", "stale", "critical", "market", "CN-A");

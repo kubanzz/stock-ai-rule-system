@@ -1,8 +1,11 @@
 package com.jx.tracker.risk.query;
 
+import com.jx.tracker.risk.engine.RiskCoverageProfile;
+import com.jx.tracker.risk.engine.RiskCoverageProfileCatalog;
 import com.jx.tracker.risk.engine.RiskIndicatorCatalog;
 import com.jx.tracker.risk.engine.RiskIndicatorDefinition;
 import com.jx.tracker.risk.model.RiskDimension;
+import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskDimensionAssessment;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskEvidence;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskIndicatorStatus;
@@ -42,12 +45,34 @@ public final class ProvisionalRiskAssessmentCalculator {
             boolean unavailable,
             List<RiskEvidence> evidence
     ) {
+        return calculate(
+                RiskObjectType.STOCK.getCode(),
+                "risk-warning-v1",
+                completeness,
+                formalScore,
+                formalLevel,
+                unavailable,
+                evidence
+        );
+    }
+
+    public Assessment calculate(
+            String objectType,
+            String modelVersion,
+            BigDecimal completeness,
+            BigDecimal formalScore,
+            String formalLevel,
+            boolean unavailable,
+            List<RiskEvidence> evidence
+    ) {
+        RiskCoverageProfile profile = RiskCoverageProfileCatalog.resolve(
+                RiskObjectType.fromCode(objectType), modelVersion);
         BigDecimal normalizedCompleteness = completeness == null ? BigDecimal.ZERO : completeness;
         List<RiskEvidence> selected = selectLatest(evidence);
-        List<RiskEvidence> validEvidence = validEvidence(selected);
-        BigDecimal evidenceCompleteness = evidenceCompleteness(validEvidence);
+        List<RiskEvidence> validEvidence = validEvidence(selected, profile);
+        BigDecimal evidenceCompleteness = evidenceCompleteness(validEvidence, profile);
         BigDecimal assessmentCompleteness = normalizedCompleteness.max(evidenceCompleteness);
-        List<RiskDimensionAssessment> dimensions = dimensions(selected, validEvidence);
+        List<RiskDimensionAssessment> dimensions = dimensions(selected, validEvidence, profile);
         LocalDateTime dataAsOf = validEvidence.stream()
                 .map(RiskEvidence::availableAt)
                 .filter(java.util.Objects::nonNull)
@@ -111,8 +136,12 @@ public final class ProvisionalRiskAssessmentCalculator {
         return layerType + ":" + layerId + ":" + evidence.indicatorCode();
     }
 
-    private List<RiskEvidence> validEvidence(List<RiskEvidence> evidence) {
+    private List<RiskEvidence> validEvidence(
+            List<RiskEvidence> evidence,
+            RiskCoverageProfile profile
+    ) {
         return evidence.stream()
+                .filter(item -> profile.applies(item.indicatorCode()))
                 .filter(item -> item.score() != null)
                 .filter(item -> "available".equals(item.qualityStatus())
                         || "valid_zero".equals(item.qualityStatus())
@@ -120,18 +149,23 @@ public final class ProvisionalRiskAssessmentCalculator {
                 .toList();
     }
 
-    private BigDecimal evidenceCompleteness(List<RiskEvidence> evidence) {
+    private BigDecimal evidenceCompleteness(
+            List<RiskEvidence> evidence,
+            RiskCoverageProfile profile
+    ) {
         BigDecimal usedWeight = evidence.stream()
                 .map(item -> effectiveWeight(
                         RiskIndicatorCatalog.require(item.indicatorCode()), item))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return usedWeight.divide(new BigDecimal("500"), 4, RoundingMode.HALF_UP)
+        return usedWeight.divide(
+                        BigDecimal.valueOf(profile.totalWeight()), 4, RoundingMode.HALF_UP)
                 .min(BigDecimal.ONE);
     }
 
     private List<RiskDimensionAssessment> dimensions(
             List<RiskEvidence> selected,
-            List<RiskEvidence> validEvidence
+            List<RiskEvidence> validEvidence,
+            RiskCoverageProfile profile
     ) {
         Map<String, RiskEvidence> selectedByCode = new HashMap<>();
         selected.forEach(item -> selectedByCode.merge(
@@ -139,7 +173,8 @@ public final class ProvisionalRiskAssessmentCalculator {
         List<RiskDimensionAssessment> result = new ArrayList<>();
         for (RiskDimension dimension : RiskDimension.values()) {
             List<RiskIndicatorDefinition> definitions = RiskIndicatorCatalog.forDimension(dimension);
-            Map<String, RiskIndicatorDefinition> definitionsByCode = definitions.stream()
+            List<RiskIndicatorDefinition> applicableDefinitions = profile.forDimension(dimension);
+            Map<String, RiskIndicatorDefinition> definitionsByCode = applicableDefinitions.stream()
                     .collect(java.util.stream.Collectors.toMap(
                             RiskIndicatorDefinition::code,
                             definition -> definition
@@ -163,14 +198,20 @@ public final class ProvisionalRiskAssessmentCalculator {
             List<RiskIndicatorStatus> indicators = definitions.stream()
                     .map(definition -> indicatorStatus(
                             definition, selectedByCode.get(definition.code()),
-                            usedCodes.contains(definition.code())))
+                            usedCodes.contains(definition.code()),
+                            profile.applies(definition.code())))
                     .toList();
+            BigDecimal applicableWeight = BigDecimal.valueOf(profile.dimensionWeight(dimension));
             result.add(new RiskDimensionAssessment(
                     dimension.getCode(),
+                    applicableWeight.signum() > 0,
                     score,
-                    usedWeight.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP),
+                    applicableWeight.signum() == 0
+                            ? BigDecimal.ZERO
+                            : usedWeight.divide(applicableWeight, 4, RoundingMode.HALF_UP)
+                                    .min(BigDecimal.ONE),
                     usedCodes.size(),
-                    definitions.size(),
+                    applicableDefinitions.size(),
                     indicators
             ));
         }
@@ -204,9 +245,12 @@ public final class ProvisionalRiskAssessmentCalculator {
     private RiskIndicatorStatus indicatorStatus(
             RiskIndicatorDefinition definition,
             RiskEvidence evidence,
-            boolean used
+            boolean used,
+            boolean applicable
     ) {
-        String status = used ? "used" : indicatorStatus(evidence);
+        String status = !applicable
+                ? "not_applicable"
+                : used ? "used" : indicatorStatus(evidence);
         return new RiskIndicatorStatus(
                 definition.code(),
                 definition.name(),
@@ -215,10 +259,10 @@ public final class ProvisionalRiskAssessmentCalculator {
                 status,
                 used,
                 used ? evidence.score() : null,
-                evidence == null ? null : evidence.rawValue(),
-                evidence == null ? null : evidence.source(),
-                evidence == null ? null : evidence.observedAt(),
-                evidence == null ? null : evidence.availableAt(),
+                evidence == null || !applicable ? null : evidence.rawValue(),
+                evidence == null || !applicable ? null : evidence.source(),
+                evidence == null || !applicable ? null : evidence.observedAt(),
+                evidence == null || !applicable ? null : evidence.availableAt(),
                 used ? null : indicatorReason(status)
         );
     }
@@ -237,6 +281,7 @@ public final class ProvisionalRiskAssessmentCalculator {
 
     private String indicatorReason(String status) {
         return switch (status) {
+            case "not_applicable" -> "当前对象类型不适用该指标";
             case "not_integrated" -> "当前对象没有该指标观测";
             case "source_failed" -> "数据源获取失败";
             case "stale" -> "数据已超过有效期";
@@ -269,17 +314,25 @@ public final class ProvisionalRiskAssessmentCalculator {
     }
 
     private boolean formalDimensionGates(List<RiskDimensionAssessment> dimensions) {
-        Map<String, BigDecimal> coverage = dimensions.stream().collect(
+        Map<String, RiskDimensionAssessment> byCode = dimensions.stream().collect(
                 java.util.stream.Collectors.toMap(
                         RiskDimensionAssessment::dimension,
-                        RiskDimensionAssessment::coverage
+                        item -> item
                 )
         );
-        return atLeast(coverage.get("V"), DIMENSION_GATE)
-                && atLeast(coverage.get("C"), DIMENSION_GATE)
-                && atLeast(coverage.get("A"), DIMENSION_GATE)
-                && (atLeast(coverage.get("T"), DIMENSION_GATE)
-                || atLeast(coverage.get("S"), DIMENSION_GATE));
+        return meetsGateWhenApplicable(byCode.get("V"))
+                && meetsGateWhenApplicable(byCode.get("C"))
+                && meetsGateWhenApplicable(byCode.get("A"))
+                && List.of("T", "S").stream()
+                        .map(byCode::get)
+                        .filter(java.util.Objects::nonNull)
+                        .filter(RiskDimensionAssessment::applicable)
+                        .anyMatch(item -> atLeast(item.coverage(), DIMENSION_GATE));
+    }
+
+    private boolean meetsGateWhenApplicable(RiskDimensionAssessment dimension) {
+        return dimension != null
+                && (!dimension.applicable() || atLeast(dimension.coverage(), DIMENSION_GATE));
     }
 
     private boolean atLeast(BigDecimal value, BigDecimal threshold) {

@@ -289,6 +289,8 @@ public class RiskAssessmentQueryServiceImpl implements RiskAssessmentQueryServic
                 .equals(row.getQualityStatus())
                 || RiskDataQualityStatus.STALE.getCode().equals(row.getQualityStatus());
         Assessment assessment = provisionalCalculator.calculate(
+                row.getObjectType(),
+                row.getModelVersion(),
                 completeness,
                 formal ? row.getTotalScore() : null,
                 formal ? row.getRiskLevel() : null,

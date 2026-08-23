@@ -48,6 +48,7 @@ public final class RiskAssessmentDto {
 
     public record RiskDimensionAssessment(
             String dimension,
+            boolean applicable,
             BigDecimal score,
             BigDecimal coverage,
             int usedCount,

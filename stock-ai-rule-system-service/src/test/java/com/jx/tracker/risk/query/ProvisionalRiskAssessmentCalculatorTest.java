@@ -204,6 +204,55 @@ class ProvisionalRiskAssessmentCalculatorTest {
                         }));
     }
 
+    @Test
+    void explainsV2SectorCoverageAgainstApplicableIndicators() {
+        Assessment result = calculator.calculate(
+                "sector",
+                "risk-warning-v2",
+                BigDecimal.ONE,
+                new BigDecimal("70"),
+                "watch",
+                false,
+                List.of(
+                        evidence("V3", "V", "70"),
+                        evidence("V4", "V", "70"),
+                        evidence("S1", "S", "70"),
+                        evidence("S2", "S", "70"),
+                        evidence("S4", "S", "70"),
+                        evidence("C1", "C", "70"),
+                        evidence("C3", "C", "70"),
+                        evidence("C4", "C", "70"),
+                        evidence("C5", "C", "70"),
+                        evidence("A3", "A", "70"),
+                        evidence("A5", "A", "70")
+                )
+        );
+
+        assertThat(result.evidenceCompleteness()).isEqualByComparingTo("1.0000");
+        assertThat(result.dimensions())
+                .filteredOn(item -> item.dimension().equals("V"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.applicable()).isTrue();
+                    assertThat(item.usedCount()).isEqualTo(2);
+                    assertThat(item.totalCount()).isEqualTo(2);
+                    assertThat(item.coverage()).isEqualByComparingTo("1.0000");
+                });
+        assertThat(result.dimensions())
+                .filteredOn(item -> item.dimension().equals("T"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.applicable()).isFalse();
+                    assertThat(item.usedCount()).isZero();
+                    assertThat(item.totalCount()).isZero();
+                    assertThat(item.indicators())
+                            .allSatisfy(indicator -> {
+                                assertThat(indicator.status()).isEqualTo("not_applicable");
+                                assertThat(indicator.reason()).isEqualTo("当前对象类型不适用该指标");
+                            });
+                });
+    }
+
     private RiskEvidence evidence(String code, String dimension, String score) {
         return new RiskEvidence(
                 dimension,
