@@ -133,8 +133,7 @@ public final class RiskBackfillCommandRunner {
         try {
             state.sampleSymbols = sampleSelector.select(
                     activeSymbols, command.normalizedSymbols(), command.getSampleSize());
-            Optional<RiskWorkflowRunSummary> result = backfillService.orElseThrow()
-                    .runFiveYearBackfill(command.getEndDate(), state.sampleSymbols);
+            Optional<RiskWorkflowRunSummary> result = runBackfill(state.sampleSymbols);
             if (result.isEmpty()) {
                 return finish(state, RiskBackfillExitCode.CONFIGURATION_ERROR,
                         "sample-execution", List.of("risk backfill service is disabled"), null);
@@ -170,8 +169,7 @@ public final class RiskBackfillCommandRunner {
             RiskWorkflowRunSummary aggregate = new RiskWorkflowRunSummary(0, 0, 0, 0, 0, 0, 0);
             for (List<String> chunk : symbolChunks(
                     activeSymbols, warning.requiredCollectionChunkSize())) {
-                Optional<RiskWorkflowRunSummary> result = backfillService.orElseThrow()
-                        .runFiveYearBackfill(command.getEndDate(), chunk);
+                Optional<RiskWorkflowRunSummary> result = runBackfill(chunk);
                 if (result.isEmpty()) {
                     return finish(state, RiskBackfillExitCode.CONFIGURATION_ERROR,
                             "full-execution", List.of("risk backfill service is disabled"), null);
@@ -217,6 +215,13 @@ public final class RiskBackfillCommandRunner {
         RiskBackfillReadinessData data = readinessRepository.load(
                 modelVersion(), scoreStartDate, endDate, pointInTime(endDate), stockSymbols);
         return readinessEvaluator.evaluate(data);
+    }
+
+    private Optional<RiskWorkflowRunSummary> runBackfill(List<String> symbols) {
+        RiskBackfillService service = backfillService.orElseThrow();
+        return command.isResumeFromStoredData()
+                ? service.runFiveYearBackfillFromStoredData(command.getEndDate(), symbols)
+                : service.runFiveYearBackfill(command.getEndDate(), symbols);
     }
 
     private LocalDateTime pointInTime(LocalDate endDate) {

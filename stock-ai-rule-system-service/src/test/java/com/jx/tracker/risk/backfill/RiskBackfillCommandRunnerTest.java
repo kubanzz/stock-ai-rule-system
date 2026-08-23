@@ -123,6 +123,22 @@ class RiskBackfillCommandRunnerTest {
     }
 
     @Test
+    void sampleRecoveryScoresStoredDataWithoutRepeatingCollection() {
+        command.setMode(RiskBackfillMode.SAMPLE);
+        command.setResumeFromStoredData(true);
+        when(preflightService.configurationFailures(command, warning)).thenReturn(List.of());
+        when(preflightService.check(command, warning, universe)).thenReturn(readyPreflight());
+        when(backfillService.runFiveYearBackfillFromStoredData(eq(END_DATE), anyList()))
+                .thenReturn(Optional.of(SUCCESS_SUMMARY));
+
+        RiskBackfillCommandResult result = runner().run();
+
+        assertThat(result.exitCode()).isEqualTo(RiskBackfillExitCode.SUCCESS);
+        verify(backfillService).runFiveYearBackfillFromStoredData(eq(END_DATE), anyList());
+        verify(backfillService, never()).runFiveYearBackfill(eq(END_DATE), anyList());
+    }
+
+    @Test
     void fullModeRequiresMatchingSampleReport() {
         command.setMode(RiskBackfillMode.FULL);
         when(preflightService.configurationFailures(command, warning)).thenReturn(List.of());

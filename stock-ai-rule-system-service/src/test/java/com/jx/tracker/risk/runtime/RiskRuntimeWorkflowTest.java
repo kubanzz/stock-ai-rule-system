@@ -132,6 +132,30 @@ class RiskRuntimeWorkflowTest {
         });
     }
 
+    @Test
+    void storedDataBackfillRecoveryUsesTheSameWindowWithoutCollectingAgain() {
+        RiskSignalCandidateReader candidateReader = mock(RiskSignalCandidateReader.class);
+        RiskWarningWorkflow coreWorkflow = mock(RiskWarningWorkflow.class);
+        when(candidateReader.read(any(), any(), any(), any())).thenReturn(List.of());
+        when(coreWorkflow.scoreStoredData(any())).thenReturn(SUMMARY);
+        RiskBackfillService service = new RiskBackfillService(
+                planner(), candidateReader, coreWorkflow, clockAt(DATE.atTime(21, 0)), properties(true));
+
+        Optional<RiskWorkflowRunSummary> result = service.runFiveYearBackfillFromStoredData(
+                DATE, List.of("600519.SH"));
+
+        assertThat(result).contains(SUMMARY);
+        ArgumentCaptor<RiskWorkflowRequest> requestCaptor =
+                ArgumentCaptor.forClass(RiskWorkflowRequest.class);
+        verify(coreWorkflow).scoreStoredData(requestCaptor.capture());
+        verify(coreWorkflow, org.mockito.Mockito.never()).run(any());
+        assertThat(requestCaptor.getValue()).satisfies(request -> {
+            assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(11));
+            assertThat(request.scoreStartDate()).isEqualTo(DATE.minusYears(5));
+            assertThat(request.endDate()).isEqualTo(DATE);
+        });
+    }
+
     private RiskWorkflowPlanner planner() {
         return new RiskWorkflowPlanner(() -> List.of("600519.SH"));
     }

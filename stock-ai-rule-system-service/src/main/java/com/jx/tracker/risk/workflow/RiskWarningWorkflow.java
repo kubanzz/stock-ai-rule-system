@@ -89,18 +89,12 @@ public final class RiskWarningWorkflow {
     }
 
     public synchronized RiskWorkflowRunSummary run(RiskWorkflowRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("request must not be null");
-        }
+        requireRequest(request);
         int observationsSaved = 0;
         int eventsSaved = 0;
         int checkpointsSaved = 0;
         int unavailableDatasets = 0;
-        Map<ExposureIdentity, IndustryExposure> exposuresByIdentity = new LinkedHashMap<>();
-        repository.findIndustryExposures(request).stream()
-                .filter(exposure -> eligible(exposure, request))
-                .forEach(exposure -> exposuresByIdentity.merge(
-                        ExposureIdentity.of(exposure), exposure, this::newestExposure));
+        Map<ExposureIdentity, IndustryExposure> exposuresByIdentity = loadIndustryExposures(request);
         for (RiskCollectionTask plannedTask : request.collectionTasks()) {
             List<RiskCollectionTask> collectionTasks = expandSectorObjects(
                     plannedTask, List.copyOf(exposuresByIdentity.values()), request);
@@ -158,6 +152,27 @@ public final class RiskWarningWorkflow {
             }
         }
 
+        return scoreStoredData(request, exposuresByIdentity, observationsSaved, eventsSaved,
+                checkpointsSaved, unavailableDatasets);
+    }
+
+    /**
+     * 跳过外部 Provider，仅对已经持久化的数据重新评分。
+     * 适用于采集完成、但评分或报告阶段因进程中断而需要恢复的场景。
+     */
+    public synchronized RiskWorkflowRunSummary scoreStoredData(RiskWorkflowRequest request) {
+        requireRequest(request);
+        return scoreStoredData(request, loadIndustryExposures(request), 0, 0, 0, 0);
+    }
+
+    private RiskWorkflowRunSummary scoreStoredData(
+            RiskWorkflowRequest request,
+            Map<ExposureIdentity, IndustryExposure> exposuresByIdentity,
+            int observationsSaved,
+            int eventsSaved,
+            int checkpointsSaved,
+            int unavailableDatasets
+    ) {
         List<RiskObservation> observations = repository.findObservations(request).stream()
                 .filter(observation -> eligible(observation.tradeDate(), observation.availableAt(), request))
                 .filter(observation -> formalScoreQuality(observation.qualityStatus()))
@@ -174,6 +189,23 @@ public final class RiskWarningWorkflow {
         return new RiskWorkflowRunSummary(
                 observationsSaved, eventsSaved, storedSnapshots.size(), evidenceCount,
                 gateCount, checkpointsSaved, unavailableDatasets);
+    }
+
+    private Map<ExposureIdentity, IndustryExposure> loadIndustryExposures(
+            RiskWorkflowRequest request
+    ) {
+        Map<ExposureIdentity, IndustryExposure> exposuresByIdentity = new LinkedHashMap<>();
+        repository.findIndustryExposures(request).stream()
+                .filter(exposure -> eligible(exposure, request))
+                .forEach(exposure -> exposuresByIdentity.merge(
+                        ExposureIdentity.of(exposure), exposure, this::newestExposure));
+        return exposuresByIdentity;
+    }
+
+    private void requireRequest(RiskWorkflowRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
     }
 
     private RiskProviderRequest providerRequest(

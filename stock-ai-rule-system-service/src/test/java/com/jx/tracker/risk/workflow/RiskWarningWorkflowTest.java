@@ -356,6 +356,28 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void storedDataRecoveryScoresPersistedArtifactsWithoutCallingProviders() {
+        InMemoryRepository repository = new InMemoryRepository();
+        CapturingProvider provider = new CapturingProvider(availableBatch());
+        RiskWarningWorkflow workflow = workflow(repository, provider);
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "stock:600519.SH", List.of(STOCK))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+        workflow.run(request);
+
+        RiskWorkflowRunSummary recovered = workflow.scoreStoredData(request);
+
+        assertThat(provider.requests()).hasSize(1);
+        assertThat(recovered.observationCount()).isZero();
+        assertThat(recovered.eventCount()).isZero();
+        assertThat(recovered.checkpointCount()).isZero();
+        assertThat(recovered.unavailableDatasetCount()).isZero();
+        assertThat(recovered.snapshotCount()).isPositive();
+    }
+
+    @Test
     void availableBatchWithoutCursorPersistsSuccessfulIngestionStatus() {
         InMemoryRepository repository = new InMemoryRepository();
         RiskProviderBatch available = new RiskProviderBatch(

@@ -18,6 +18,7 @@ public class RiskBackfillCommandProperties {
     private LocalDate endDate;
     private int sampleSize = DEFAULT_SAMPLE_SIZE;
     private List<String> symbols = List.of();
+    private boolean resumeFromStoredData;
     private String confirmation;
     private Path reportDirectory = Path.of("target/risk-backfill/reports");
 
@@ -94,6 +95,14 @@ public class RiskBackfillCommandProperties {
 
     public void setSymbols(List<String> symbols) {
         this.symbols = symbols == null ? List.of() : List.copyOf(symbols);
+    }
+
+    public boolean isResumeFromStoredData() {
+        return resumeFromStoredData;
+    }
+
+    public void setResumeFromStoredData(boolean resumeFromStoredData) {
+        this.resumeFromStoredData = resumeFromStoredData;
     }
 
     public String getConfirmation() {

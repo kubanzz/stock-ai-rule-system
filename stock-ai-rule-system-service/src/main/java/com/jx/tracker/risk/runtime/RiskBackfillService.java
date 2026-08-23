@@ -46,6 +46,22 @@ public final class RiskBackfillService {
             LocalDate endDate,
             List<String> symbols
     ) {
+        return runFiveYearBackfill(endDate, symbols, false);
+    }
+
+    /** 仅重用已落库的观测、事件与行业暴露进行评分，用于采集成功后中断的恢复。 */
+    public Optional<RiskWorkflowRunSummary> runFiveYearBackfillFromStoredData(
+            LocalDate endDate,
+            List<String> symbols
+    ) {
+        return runFiveYearBackfill(endDate, symbols, true);
+    }
+
+    private Optional<RiskWorkflowRunSummary> runFiveYearBackfill(
+            LocalDate endDate,
+            List<String> symbols,
+            boolean storedDataOnly
+    ) {
         if (!backfillEnabled) {
             return Optional.empty();
         }
@@ -56,8 +72,11 @@ public final class RiskBackfillService {
         LocalDateTime asOf = pointInTime(endDate);
         List<RiskSignalCandidate> signals = candidateReader.read(
                 endDate, plan.stockObjects(), plan.horizons(), asOf);
-        return Optional.of(workflow.run(plan.fiveYearBackfillRequest(
-                endDate, asOf, signals, modelVersion, afterCloseCutoff)));
+        var request = plan.fiveYearBackfillRequest(
+                endDate, asOf, signals, modelVersion, afterCloseCutoff);
+        return Optional.of(storedDataOnly
+                ? workflow.scoreStoredData(request)
+                : workflow.run(request));
     }
 
     private LocalDateTime pointInTime(LocalDate date) {
