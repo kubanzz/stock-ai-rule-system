@@ -112,4 +112,24 @@ public record RiskWorkflowPlan(
                 afterCloseCutoff
         );
     }
+
+    public RiskWorkflowRequest recentSectorRebuildRequest(
+            LocalDate endDate,
+            LocalDateTime asOf,
+            String modelVersion,
+            LocalTime afterCloseCutoff
+    ) {
+        LocalDate scoreStartDate = endDate.minusYears(2);
+        return new RiskWorkflowRequest(
+                collectionTasks,
+                horizons,
+                RiskWorkflowRequest.baselineCollectionStart(scoreStartDate),
+                scoreStartDate,
+                endDate,
+                asOf,
+                List.of(),
+                modelVersion,
+                afterCloseCutoff
+        );
+    }
 }

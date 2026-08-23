@@ -97,6 +97,32 @@ class RiskSyncJobServiceTest {
                 .hasMessageContaining("风险数据同步任务");
         assertThat(service.startMarketSync().jobId())
                 .isEqualTo(marketJob.jobId());
+        assertThatThrownBy(service::startSectorRebuild)
+                .isInstanceOf(com.jx.tracker.exception.ServiceException.class)
+                .hasMessageContaining("风险数据同步任务");
+    }
+
+    @Test
+    void sectorRebuildUsesStoredDataWorkflowAndDedicatedScope() {
+        DefaultRiskAfterCloseWorkflow workflow = mock(DefaultRiskAfterCloseWorkflow.class);
+        RiskTradeDateResolver tradeDateResolver = mock(RiskTradeDateResolver.class);
+        when(tradeDateResolver.latestOpenDate(CLOCK)).thenReturn(TRADE_DATE);
+        when(workflow.rebuildRecentSectorScores(TRADE_DATE))
+                .thenReturn(new RiskWorkflowRunSummary(0, 0, 186, 930, 0, 0, 0));
+        QueuedExecutor executor = new QueuedExecutor();
+        RiskSyncJobService service = new RiskSyncJobService(
+                workflow, tradeDateResolver, executor, CLOCK);
+
+        RiskSyncJob job = service.startSectorRebuild();
+
+        assertThat(job.scopeKey()).isEqualTo("sector:SW1:rebuild");
+        executor.runNext();
+        assertThat(service.get(job.jobId())).get().satisfies(completed -> {
+            assertThat(completed.status()).isEqualTo("succeeded");
+            assertThat(completed.snapshotCount()).isEqualTo(186);
+            assertThat(completed.evidenceCount()).isEqualTo(930);
+        });
+        verify(workflow).rebuildRecentSectorScores(TRADE_DATE);
     }
 
     private static final class QueuedExecutor implements TaskExecutor {

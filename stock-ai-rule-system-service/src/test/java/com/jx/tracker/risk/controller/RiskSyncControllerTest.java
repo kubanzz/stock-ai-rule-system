@@ -47,8 +47,10 @@ class RiskSyncControllerTest {
     void exposesMarketStockJobAndStatusEndpoints() throws Exception {
         RiskSyncJob market = queued("market-job", "market:CN-A");
         RiskSyncJob stock = queued("stock-job", "stock:600519.SH");
+        RiskSyncJob rebuild = queued("sector-rebuild-job", "sector:SW1:rebuild");
         when(service.startMarketSync()).thenReturn(market);
         when(service.startStockSync("600519")).thenReturn(stock);
+        when(service.startSectorRebuild()).thenReturn(rebuild);
         when(service.get("market-job")).thenReturn(Optional.of(market));
         when(service.status()).thenReturn(new RiskSyncStatus(market, List.of(market, stock)));
 
@@ -59,6 +61,10 @@ class RiskSyncControllerTest {
         mockMvc.perform(post("/api/risks/sync/stocks/600519"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.scopeKey").value("stock:600519.SH"));
+        mockMvc.perform(post("/api/risks/sync/sectors/rebuild"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.jobId").value("sector-rebuild-job"))
+                .andExpect(jsonPath("$.data.scopeKey").value("sector:SW1:rebuild"));
         mockMvc.perform(get("/api/risks/sync/jobs/market-job"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("queued"));

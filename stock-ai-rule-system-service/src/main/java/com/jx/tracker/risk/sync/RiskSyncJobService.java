@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 public final class RiskSyncJobService {
 
     private static final String MARKET_SCOPE = "market:CN-A";
+    private static final String SECTOR_REBUILD_SCOPE = "sector:SW1:rebuild";
     private static final Pattern SENSITIVE_VALUE = Pattern.compile(
             "(?i)(password|token|secret|credential)(\\s*[=:]\\s*)[^\\s,;]+");
     private static final int MAX_ERROR_LENGTH = 240;
@@ -46,7 +47,7 @@ public final class RiskSyncJobService {
     }
 
     public RiskSyncJob startMarketSync() {
-        return start(MARKET_SCOPE, null);
+        return start(MARKET_SCOPE, JobType.MARKET_SYNC, null);
     }
 
     public RiskSyncJob startStockSync(String symbol) {
@@ -56,7 +57,11 @@ public final class RiskSyncJobService {
         } catch (IllegalArgumentException | IllegalStateException exception) {
             throw new ServiceException(clean(exception), 400);
         }
-        return start("stock:" + normalized, normalized);
+        return start("stock:" + normalized, JobType.STOCK_SYNC, normalized);
+    }
+
+    public RiskSyncJob startSectorRebuild() {
+        return start(SECTOR_REBUILD_SCOPE, JobType.SECTOR_REBUILD, null);
     }
 
     public Optional<RiskSyncJob> get(String jobId) {
@@ -78,7 +83,11 @@ public final class RiskSyncJobService {
         return new RiskSyncStatus(latestMarket, active);
     }
 
-    private synchronized RiskSyncJob start(String scopeKey, String symbol) {
+    private synchronized RiskSyncJob start(
+            String scopeKey,
+            JobType jobType,
+            String symbol
+    ) {
         RiskSyncJob active = activeJobId == null ? null : jobs.get(activeJobId);
         if (active != null && active.active()) {
             if (scopeKey.equals(active.scopeKey())) {
@@ -96,7 +105,7 @@ public final class RiskSyncJobService {
         jobs.put(jobId, queued);
         activeJobId = jobId;
         try {
-            taskExecutor.execute(() -> run(jobId, symbol));
+            taskExecutor.execute(() -> run(jobId, jobType, symbol));
         } catch (RuntimeException exception) {
             jobs.remove(jobId);
             activeJobId = null;
@@ -105,16 +114,18 @@ public final class RiskSyncJobService {
         return queued;
     }
 
-    private void run(String jobId, String symbol) {
+    private void run(String jobId, JobType jobType, String symbol) {
         RiskSyncJob queued = jobs.get(jobId);
         try {
             update(jobId, "running", "resolving_trade_date", 5, null, null, null);
             LocalDate tradeDate = tradeDateResolver.latestOpenDate(clock);
-            update(jobId, "running", symbol == null ? "syncing_market" : "syncing_stock",
+            update(jobId, "running", phase(jobType),
                     20, tradeDate, null, null);
-            RiskWorkflowRunSummary summary = symbol == null
-                    ? workflow.runManualMarket(tradeDate)
-                    : workflow.runManualStock(tradeDate, symbol);
+            RiskWorkflowRunSummary summary = switch (jobType) {
+                case MARKET_SYNC -> workflow.runManualMarket(tradeDate);
+                case STOCK_SYNC -> workflow.runManualStock(tradeDate, symbol);
+                case SECTOR_REBUILD -> workflow.rebuildRecentSectorScores(tradeDate);
+            };
             String status = summary.unavailableDatasetCount() == 0
                     ? "succeeded" : "partial_success";
             String message = summary.unavailableDatasetCount() == 0
@@ -126,6 +137,14 @@ public final class RiskSyncJobService {
         } finally {
             clearActiveJob(jobId);
         }
+    }
+
+    private String phase(JobType jobType) {
+        return switch (jobType) {
+            case MARKET_SYNC -> "syncing_market";
+            case STOCK_SYNC -> "syncing_stock";
+            case SECTOR_REBUILD -> "rebuilding_sectors";
+        };
     }
 
     private synchronized void clearActiveJob(String jobId) {
@@ -181,5 +200,11 @@ public final class RiskSyncJobService {
         }
         value = SENSITIVE_VALUE.matcher(value.replaceAll("[\\r\\n\\t]+", " ")).replaceAll("$1$2***");
         return value.length() <= MAX_ERROR_LENGTH ? value : value.substring(0, MAX_ERROR_LENGTH);
+    }
+
+    private enum JobType {
+        MARKET_SYNC,
+        STOCK_SYNC,
+        SECTOR_REBUILD
     }
 }

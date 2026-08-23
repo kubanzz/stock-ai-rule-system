@@ -85,6 +85,15 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
                 tradeDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
     }
 
+    public synchronized RiskWorkflowRunSummary rebuildRecentSectorScores(LocalDate endDate) {
+        if (endDate == null) {
+            throw new IllegalArgumentException("endDate must not be null");
+        }
+        RiskWorkflowPlan plan = planner.planMarketImmediate();
+        return workflow.scoreStoredData(plan.recentSectorRebuildRequest(
+                endDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
+    }
+
     private LocalDateTime pointInTime(LocalDate tradeDate) {
         LocalDateTime configuredCutoff = tradeDate.atTime(afterCloseCutoff);
         LocalDateTime now = LocalDateTime.now(clock);

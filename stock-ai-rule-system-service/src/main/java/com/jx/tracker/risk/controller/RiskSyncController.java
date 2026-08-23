@@ -41,6 +41,12 @@ public class RiskSyncController {
         return AjaxResult.success(service.startStockSync(symbol));
     }
 
+    @PostMapping("/sectors/rebuild")
+    @Operation(summary = "异步使用已落库数据重建最近两年申万行业风险评分")
+    public AjaxResult rebuildSectors() {
+        return AjaxResult.success(service.startSectorRebuild());
+    }
+
     @GetMapping("/jobs/{jobId}")
     @Operation(summary = "查询风险同步任务")
     public AjaxResult job(@PathVariable("jobId") String jobId) {

@@ -170,6 +170,34 @@ class RiskRuntimeWorkflowTest {
         });
     }
 
+    @Test
+    void buildsAStoredDataOnlyTwoYearSectorRebuildRequest() {
+        RiskSignalCandidateReader candidateReader = mock(RiskSignalCandidateReader.class);
+        RiskWarningWorkflow coreWorkflow = mock(RiskWarningWorkflow.class);
+        when(coreWorkflow.scoreStoredData(any())).thenReturn(SUMMARY);
+        DefaultRiskAfterCloseWorkflow workflow = new DefaultRiskAfterCloseWorkflow(
+                planner(), candidateReader, coreWorkflow,
+                clockAt(DATE.plusDays(1).atTime(10, 0)), properties(false));
+
+        RiskWorkflowRunSummary result = workflow.rebuildRecentSectorScores(DATE);
+
+        assertThat(result).isEqualTo(SUMMARY);
+        ArgumentCaptor<RiskWorkflowRequest> requestCaptor =
+                ArgumentCaptor.forClass(RiskWorkflowRequest.class);
+        verify(coreWorkflow).scoreStoredData(requestCaptor.capture());
+        verify(coreWorkflow, org.mockito.Mockito.never()).run(any());
+        assertThat(requestCaptor.getValue()).satisfies(request -> {
+            assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(8));
+            assertThat(request.scoreStartDate()).isEqualTo(DATE.minusYears(2));
+            assertThat(request.endDate()).isEqualTo(DATE);
+            assertThat(request.asOf()).isEqualTo(DATE.plusDays(1).atTime(10, 0));
+            assertThat(request.collectionTasks()).anyMatch(task ->
+                    task.objects().stream().anyMatch(object ->
+                            object.objectId().equals("CN-A")));
+        });
+        verifyNoInteractions(candidateReader);
+    }
+
     private RiskWorkflowPlanner planner() {
         return new RiskWorkflowPlanner(() -> List.of("600519.SH"));
     }
