@@ -45,6 +45,7 @@ const rows = computed(() =>
 
 function emptyAssessment(dimension: RiskDimension): RiskDimensionAssessment {
   return {
+    applicable: true,
     coverage: 0,
     dimension,
     indicators: [],
@@ -63,8 +64,11 @@ function emptyAssessment(dimension: RiskDimension): RiskDimensionAssessment {
       class="grid grid-cols-[92px_1fr_auto] items-center gap-3"
     >
       <span class="text-sm">{{ row.code }} · {{ row.label }}</span>
+      <span v-if="!row.assessment.applicable" class="text-sm text-gray-400">
+        不适用
+      </span>
       <Progress
-        v-if="row.value !== null"
+        v-else-if="row.value !== null"
         :percent="row.value"
         :show-info="true"
         size="small"

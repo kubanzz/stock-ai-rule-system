@@ -9,6 +9,7 @@ defineProps<{
 
 const statusPresentation = {
   insufficient_history: { color: 'gold', label: '历史不足' },
+  not_applicable: { color: 'default', label: '不适用' },
   not_integrated: { color: 'default', label: '尚未接入' },
   source_failed: { color: 'red', label: '源失败' },
   stale: { color: 'orange', label: '已过期' },
@@ -42,7 +43,13 @@ const statusPresentation = {
             <span>{{ item.source || '未知来源' }}</span>
             <span>可用于 {{ item.availableAt || '--' }}</span>
           </div>
-          <div v-else class="indicator-reason">
+          <div
+            v-else
+            class="indicator-reason"
+            :class="{
+              'indicator-reason-muted': item.status === 'not_applicable',
+            }"
+          >
             {{ item.reason || '当前未参与计算' }}
           </div>
         </div>
@@ -54,8 +61,11 @@ const statusPresentation = {
       </div>
     </template>
     <button class="indicator-trigger" type="button">
-      {{ assessment.usedCount }}/{{ assessment.totalCount }} 可用 ·
-      {{ Math.round(assessment.coverage * 100) }}%
+      <template v-if="!assessment.applicable">不适用</template>
+      <template v-else>
+        {{ assessment.usedCount }}/{{ assessment.totalCount }} 可用 ·
+        {{ Math.round(assessment.coverage * 100) }}%
+      </template>
     </button>
   </Popover>
 </template>
@@ -107,5 +117,9 @@ const statusPresentation = {
 
 .indicator-reason {
   color: #d46b08;
+}
+
+.indicator-reason-muted {
+  color: hsl(var(--muted-foreground));
 }
 </style>

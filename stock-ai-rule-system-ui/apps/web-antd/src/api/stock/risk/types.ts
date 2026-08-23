@@ -15,6 +15,7 @@ export type RiskConclusionStatus =
   | 'unavailable';
 export type RiskIndicatorAvailability =
   | 'insufficient_history'
+  | 'not_applicable'
   | 'not_integrated'
   | 'source_failed'
   | 'stale'
@@ -59,6 +60,7 @@ export interface RiskIndicatorStatus {
 }
 
 export interface RiskDimensionAssessment {
+  applicable: boolean;
   coverage: number;
   dimension: RiskDimension;
   indicators: RiskIndicatorStatus[];

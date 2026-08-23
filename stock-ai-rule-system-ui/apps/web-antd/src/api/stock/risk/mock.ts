@@ -137,6 +137,7 @@ const incompleteSnapshot = snapshot({
   conclusionStatus: 'provisional',
   dimensions: [
     {
+      applicable: true,
       coverage: 0.5,
       dimension: 'C',
       indicators: [
