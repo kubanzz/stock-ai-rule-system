@@ -240,6 +240,49 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
+    void marketScopedBatchReadAlsoLoadsAllSectorCandidatesButNoStocks() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_workflow_market_layers;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_observation (
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL,
+                    unit VARCHAR(32), observed_at TIMESTAMP, available_at TIMESTAMP,
+                    source VARCHAR(64), quality_status VARCHAR(32), payload_json VARCHAR(1024))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        LocalDateTime at = date.atTime(18, 0);
+        jdbc.update("""
+                INSERT INTO risk_indicator_observation VALUES
+                ('market', 'CN-A', '1-5d', ?, 'V', 'V1', 'V1', 10, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('sector', 'SW1:801010', '1-5d', ?, 'V', 'V3', 'V3', 20, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('sector', 'SW1:801780', '1-5d', ?, 'V', 'V4', 'V4', 30, 'ratio', ?, ?, 'source-a', 'available', '{}'),
+                ('stock', '600519.SH', '1-5d', ?, 'V', 'V3', 'V3', 40, 'ratio', ?, ?, 'source-a', 'available', '{}')
+                """, date, at, at, date, at, at, date, at, at, date, at, at);
+        JdbcRiskWorkflowRepository repository =
+                new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        List<RiskObservation> marketObservations = repository.findObservations(
+                dailyRequest(date, date.atTime(20, 0),
+                        new RiskObjectKey(RiskObjectType.MARKET, "CN-A")));
+        List<RiskObservation> explicitSectorObservations = repository.findObservations(
+                dailyRequest(date, date.atTime(20, 0),
+                        new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010")));
+
+        assertThat(marketObservations).extracting(RiskObservation::object)
+                .containsExactly(
+                        new RiskObjectKey(RiskObjectType.MARKET, "CN-A"),
+                        new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010"),
+                        new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801780"))
+                .doesNotContain(new RiskObjectKey(RiskObjectType.STOCK, "600519.SH"));
+        assertThat(explicitSectorObservations).extracting(RiskObservation::object)
+                .containsExactly(new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801010"));
+    }
+
+    @Test
     void observationReadExcludesNonFormalQualityBeforeMaterializingRows() {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:risk_workflow_formal_quality;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -551,7 +594,7 @@ class JdbcRiskWorkflowRepositoryTest {
 
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void nonStockBatchReadOnlyUsesExplicitBoundObjects() {
+    void marketBatchReadUsesBoundMarketAndAllSectorCandidates() {
         NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
         doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
         JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
@@ -571,9 +614,11 @@ class JdbcRiskWorkflowRepositoryTest {
                 org.mockito.ArgumentCaptor.forClass(SqlParameterSource.class);
         verify(named).query(sql.capture(), parameters.capture(), any(RowMapper.class));
         assertThat(sql.getValue())
-                .contains("object_type = :scopeObjectType0 AND object_id = :scopeObjectId0")
-                .doesNotContain("layerSectorType", "layerMarketType");
-        assertThat(parameters.getValue().getValue("scopeObjectId0")).isEqualTo("CN-A");
+                .contains("object_type = :layerMarketType AND object_id = :layerMarketId")
+                .contains("object_type = :layerSectorType")
+                .doesNotContain("scopeObjectType0", "scopeObjectId0");
+        assertThat(parameters.getValue().getValue("layerMarketId")).isEqualTo("CN-A");
+        assertThat(parameters.getValue().getValue("layerSectorType")).isEqualTo("sector");
     }
 
     @Test

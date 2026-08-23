@@ -817,15 +817,23 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         }
         boolean containsStock = requested.stream()
                 .anyMatch(object -> object.objectType() == RiskObjectType.STOCK);
-        List<RiskObjectKey> explicit = containsStock ? requested.stream()
+        boolean containsMarket = requested.stream()
+                .anyMatch(object -> object.objectType() == RiskObjectType.MARKET
+                        && "CN-A".equals(object.objectId()));
+        boolean includeLayerCandidates = containsStock || containsMarket;
+        List<RiskObjectKey> explicit = includeLayerCandidates ? requested.stream()
                 .filter(object -> object.objectType() != RiskObjectType.SECTOR)
                 .filter(object -> object.objectType() != RiskObjectType.MARKET
                         || !"CN-A".equals(object.objectId()))
                 .toList() : requested;
         List<ObjectSqlScope> scopes = new java.util.ArrayList<>();
+        if (explicit.isEmpty() && includeLayerCandidates) {
+            scopes.add(objectSqlScope(List.of(), true));
+        }
         for (int offset = 0; offset < explicit.size(); offset += OBJECT_SCOPE_CHUNK_SIZE) {
             int end = Math.min(offset + OBJECT_SCOPE_CHUNK_SIZE, explicit.size());
-            scopes.add(objectSqlScope(explicit.subList(offset, end), containsStock && offset == 0));
+            scopes.add(objectSqlScope(
+                    explicit.subList(offset, end), includeLayerCandidates && offset == 0));
         }
         return List.copyOf(scopes);
     }
