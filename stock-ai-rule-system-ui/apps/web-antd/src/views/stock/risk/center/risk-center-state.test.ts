@@ -61,7 +61,7 @@ describe('risk center state', () => {
     expect(createRiskCenterQuery()).toEqual({
       horizon: '1-5d',
       pageNum: 1,
-      pageSize: 100,
+      pageSize: 20,
     });
   });
 
@@ -131,6 +131,7 @@ describe('risk center state', () => {
     expect(queries.stock).toMatchObject({
       keyword: '茅台',
       objectType: 'stock',
+      pageSize: 20,
       parentObjectId: 'SW1:801120',
       parentObjectType: 'sector',
       tradeDate: '2026-07-18',

@@ -59,7 +59,7 @@ export function createRiskCenterQuery(): Required<
   return {
     horizon: '1-5d',
     pageNum: 1,
-    pageSize: 100,
+    pageSize: 20,
   };
 }
 

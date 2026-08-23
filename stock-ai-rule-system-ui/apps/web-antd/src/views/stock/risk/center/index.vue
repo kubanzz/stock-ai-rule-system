@@ -438,7 +438,7 @@ onUnmounted(clearSyncPolling);
       />
 
       <Pagination
-        v-if="objectTotal > (query.pageSize ?? 100)"
+        v-if="objectTotal > (query.pageSize ?? 20)"
         :current="query.pageNum"
         :page-size="query.pageSize"
         :show-size-changer="false"
