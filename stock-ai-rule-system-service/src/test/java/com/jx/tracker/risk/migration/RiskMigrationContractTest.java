@@ -66,6 +66,29 @@ class RiskMigrationContractTest {
     }
 
     @Test
+    void observationTierMigrationCreatesCompactBaselineAndColdArchiveWithoutMovingData() throws IOException {
+        String migration = resource("/db/migration/V4__risk_observation_storage_tiers.sql");
+
+        assertThat(migration).contains(
+                "CREATE TABLE risk_indicator_baseline",
+                "actual_value DECIMAL(30,10) NULL",
+                "UNIQUE KEY uk_risk_baseline_object_component_date",
+                "KEY idx_risk_baseline_object_horizon_date",
+                "CREATE TABLE risk_indicator_observation_archive",
+                "PRIMARY KEY (id)",
+                "UNIQUE KEY uk_risk_archive_object_code_date_source",
+                "KEY idx_risk_archive_object_date",
+                "KEY idx_risk_archive_available_at"
+        );
+        assertThat(migration).doesNotContain(
+                "INSERT INTO risk_indicator_baseline",
+                "INSERT INTO risk_indicator_observation_archive",
+                "DELETE FROM risk_indicator_observation",
+                "UPDATE risk_indicator_observation"
+        );
+    }
+
+    @Test
     void scheduledEventsMayBecomeEffectiveAfterTheyAreObserved() throws IOException {
         String migration = resource("/db/migration/V2__risk_warning_foundation.sql");
         String eventTable = between(

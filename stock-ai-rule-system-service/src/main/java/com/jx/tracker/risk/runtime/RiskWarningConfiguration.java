@@ -50,6 +50,7 @@ import java.util.Map;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({
         RiskWarningProperties.class,
+        RiskStorageTierProperties.class,
         RiskBackfillCommandProperties.class,
         MarketDataProviderProperties.class
 })
