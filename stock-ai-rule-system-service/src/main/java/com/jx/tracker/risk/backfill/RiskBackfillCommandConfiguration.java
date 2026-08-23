@@ -3,6 +3,7 @@ package com.jx.tracker.risk.backfill;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.market.data.provider.MarketDataProviderProperties;
 import com.jx.tracker.risk.runtime.RiskBackfillService;
+import com.jx.tracker.risk.runtime.RiskStorageTierProperties;
 import com.jx.tracker.risk.runtime.RiskUniverseReader;
 import com.jx.tracker.risk.runtime.RiskWarningProperties;
 import com.jx.tracker.risk.data.tushare.TushareRiskHttpClient;
@@ -38,8 +39,11 @@ public class RiskBackfillCommandConfiguration {
     }
 
     @Bean
-    RiskBackfillReadinessRepository riskBackfillReadinessRepository(JdbcTemplate jdbcTemplate) {
-        return new JdbcRiskBackfillReadinessRepository(jdbcTemplate);
+    RiskBackfillReadinessRepository riskBackfillReadinessRepository(
+            JdbcTemplate jdbcTemplate,
+            RiskStorageTierProperties storageProperties
+    ) {
+        return new JdbcRiskBackfillReadinessRepository(jdbcTemplate, storageProperties);
     }
 
     @Bean

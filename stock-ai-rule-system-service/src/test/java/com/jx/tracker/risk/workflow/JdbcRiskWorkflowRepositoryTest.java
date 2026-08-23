@@ -303,7 +303,10 @@ class JdbcRiskWorkflowRepositoryTest {
                 stock, RiskHorizon.SHORT_TERM, date, RiskDimension.STRUCTURAL_FRAGILITY,
                 "V3", new BigDecimal("20"), "ratio", date.atTime(15, 0), correctedAvailableAt,
                 "source-a", RiskDataQualityStatus.AVAILABLE, Map.of("revision", "correction"));
-        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        RiskStorageTierProperties properties = new RiskStorageTierProperties();
+        properties.setTieredReadEnabled(true);
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                jdbc, new ObjectMapper(), properties);
 
         repository.saveObservation(original);
         repository.saveObservation(original);
@@ -326,7 +329,7 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
-    void observationWriteMaintainsOneCompactLatestBaselineRow() {
+    void observationWriteMaintainsCompactPointInTimeBaselineRevisions() {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:risk_observation_baseline;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
                 "sa", ""));
@@ -353,7 +356,8 @@ class JdbcRiskWorkflowRepositoryTest {
                     dataset_code VARCHAR(64), trading_day BOOLEAN, market_price BOOLEAN,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code, component_code))
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
+                           component_code, available_at, source))
                 """);
         LocalDate date = LocalDate.of(2026, 7, 18);
         RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
@@ -366,13 +370,13 @@ class JdbcRiskWorkflowRepositoryTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_indicator_observation", Integer.class))
                 .isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_indicator_baseline", Integer.class))
-                .isEqualTo(1);
-        assertThat(jdbc.queryForObject(
-                "SELECT actual_value FROM risk_indicator_baseline", BigDecimal.class))
-                .isEqualByComparingTo("20");
-        assertThat(jdbc.queryForObject(
-                "SELECT available_at FROM risk_indicator_baseline", LocalDateTime.class))
-                .isEqualTo(date.atTime(20, 0));
+                .isEqualTo(3);
+        assertThat(jdbc.queryForList(
+                "SELECT actual_value FROM risk_indicator_baseline ORDER BY available_at",
+                BigDecimal.class)).containsExactly(
+                new BigDecimal("10.0000000000"),
+                new BigDecimal("15.0000000000"),
+                new BigDecimal("20.0000000000"));
     }
 
     @Test
@@ -884,7 +888,8 @@ class JdbcRiskWorkflowRepositoryTest {
                     dataset_code VARCHAR(64), trading_day BOOLEAN, market_price BOOLEAN,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code, component_code))
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
+                           component_code, available_at, source))
                 """);
     }
 

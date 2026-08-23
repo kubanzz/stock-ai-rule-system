@@ -13,6 +13,7 @@ import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.provider.RiskObservation;
+import com.jx.tracker.risk.runtime.RiskStorageTierProperties;
 import com.jx.tracker.risk.workflow.JdbcRiskWorkflowRepository;
 import com.jx.tracker.risk.workflow.RiskCollectionTask;
 import com.jx.tracker.risk.workflow.RiskWorkflowRequest;
@@ -70,7 +71,7 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult first = flyway.migrate();
             MigrateResult repeated = flyway.migrate();
 
-            assertThat(first.migrationsExecuted).isEqualTo(3);
+            assertThat(first.migrationsExecuted).isEqualTo(4);
             assertThat(repeated.migrationsExecuted).isZero();
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
@@ -117,8 +118,8 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult upgraded = flyway.migrate();
             LocalDateTime migrationFinishedAt = databaseNow(schema);
 
-            assertThat(upgraded.migrationsExecuted).isEqualTo(2);
-            assertThat(currentVersion(schema)).isEqualTo("3");
+            assertThat(upgraded.migrationsExecuted).isEqualTo(3);
+            assertThat(currentVersion(schema)).isEqualTo("4");
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
             assertObservationCorrectionsRemainPointInTime(schema);
@@ -199,7 +200,10 @@ class RiskMySqlMigrationIntegrationTest {
 
     private void assertObservationCorrectionsRemainPointInTime(String schema) {
         JdbcTemplate jdbc = jdbc(schema);
-        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+        RiskStorageTierProperties storageProperties = new RiskStorageTierProperties();
+        storageProperties.setTieredReadEnabled(true);
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                jdbc, new ObjectMapper(), storageProperties);
         LocalDate date = LocalDate.of(2026, 7, 18);
         LocalDateTime firstAvailableAt = date.atTime(18, 0);
         LocalDateTime correctedAvailableAt = date.atTime(19, 0);
@@ -219,6 +223,11 @@ class RiskMySqlMigrationIntegrationTest {
 
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM risk_indicator_observation
+                WHERE object_type = 'stock' AND object_id = '601398.SH'
+                  AND indicator_code = 'V3' AND trade_date = '2026-07-18'
+                """, Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM risk_indicator_baseline
                 WHERE object_type = 'stock' AND object_id = '601398.SH'
                   AND indicator_code = 'V3' AND trade_date = '2026-07-18'
                 """, Integer.class)).isEqualTo(2);

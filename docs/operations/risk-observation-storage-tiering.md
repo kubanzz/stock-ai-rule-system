@@ -20,11 +20,11 @@ RISK_STORAGE_ARCHIVE_ENABLED=false
 此时：
 
 - 风险中心已经只读取 `risk_score_snapshot` 和 `risk_score_evidence`；
-- 新观测开始同步维护紧凑基线；
+- 新观测开始同步维护不含原始 JSON 的轻量时点修订；
 - 评分仍读取原始热表；
 - 不会自动搬迁或删除历史数据。
 
-### 阶段二：分批初始化紧凑基线
+### 阶段二：分批初始化轻量时点修订
 
 按月或按季度设置窗口，避免一次处理全部历史。下面 SQL 只展示单个窗口；重复执行时修改日期并在每个窗口后提交。
 
@@ -38,65 +38,39 @@ INSERT INTO risk_indicator_baseline (
     available_at, source, quality_status, already_normalized_risk_score,
     normalization_contract, dataset_code, trading_day, market_price
 )
-SELECT object_type, object_id, horizon, trade_date, dimension_code,
-       indicator_code, component_code, actual_value, unit, observed_at,
-       available_at, source, quality_status, already_normalized_risk_score,
-       normalization_contract, dataset_code, trading_day, market_price
-FROM (
-    SELECT observation.object_type, observation.object_id, observation.horizon,
-           observation.trade_date, observation.dimension_code,
-           observation.indicator_code, observation.component_code,
-           COALESCE(
-               observation.indicator_value,
-               CASE
-                   WHEN JSON_TYPE(JSON_EXTRACT(
-                       observation.payload_json, '$.auditValue'
-                   )) IN ('INTEGER', 'DOUBLE')
-                   THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(
-                       observation.payload_json, '$.auditValue'
-                   )) AS DECIMAL(30, 10))
-               END
-           ) AS actual_value,
-           observation.unit, observation.observed_at, observation.available_at,
-           observation.source, observation.quality_status,
-           CASE JSON_UNQUOTE(JSON_EXTRACT(
-               observation.payload_json, '$.alreadyNormalizedRiskScore'
-           )) WHEN 'true' THEN 1 WHEN 'false' THEN 0 END
-               AS already_normalized_risk_score,
-           JSON_UNQUOTE(JSON_EXTRACT(
-               observation.payload_json, '$.normalizationContract'
-           )) AS normalization_contract,
-           JSON_UNQUOTE(JSON_EXTRACT(
-               observation.payload_json, '$.datasetCode'
-           )) AS dataset_code,
-           CASE JSON_UNQUOTE(JSON_EXTRACT(
-               observation.payload_json, '$.tradingDay'
-           )) WHEN 'true' THEN 1 WHEN 'false' THEN 0 END AS trading_day,
-           CASE JSON_UNQUOTE(JSON_EXTRACT(
-               observation.payload_json, '$.marketPrice'
-           )) WHEN 'true' THEN 1 WHEN 'false' THEN 0 END AS market_price,
-           ROW_NUMBER() OVER (
-               PARTITION BY observation.object_type, observation.object_id,
-                   observation.horizon, observation.trade_date,
-                   observation.indicator_code, observation.component_code
-               ORDER BY CASE WHEN observation.quality_status
-                                  IN ('available', 'valid_zero')
-                             THEN 1 ELSE 0 END DESC,
-                        observation.available_at DESC,
-                        observation.id DESC
-           ) AS baseline_rank
-    FROM risk_indicator_observation observation
-    WHERE observation.trade_date >= @window_start
-      AND observation.trade_date < @window_end
-) ranked
-WHERE baseline_rank = 1
+SELECT observation.object_type, observation.object_id, observation.horizon,
+       observation.trade_date, observation.dimension_code,
+       observation.indicator_code, observation.component_code,
+       COALESCE(
+           observation.indicator_value,
+           CASE WHEN JSON_TYPE(JSON_EXTRACT(
+                    observation.payload_json, '$.auditValue')) IN ('INTEGER', 'DOUBLE')
+                THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(
+                    observation.payload_json, '$.auditValue')) AS DECIMAL(30, 10))
+           END
+       ) AS actual_value,
+       observation.unit, observation.observed_at, observation.available_at,
+       observation.source, observation.quality_status,
+       CASE JSON_UNQUOTE(JSON_EXTRACT(
+           observation.payload_json, '$.alreadyNormalizedRiskScore'
+       )) WHEN 'true' THEN 1 WHEN 'false' THEN 0 END,
+       JSON_UNQUOTE(JSON_EXTRACT(
+           observation.payload_json, '$.normalizationContract')),
+       JSON_UNQUOTE(JSON_EXTRACT(observation.payload_json, '$.datasetCode')),
+       CASE JSON_UNQUOTE(JSON_EXTRACT(
+           observation.payload_json, '$.tradingDay'
+       )) WHEN 'true' THEN 1 WHEN 'false' THEN 0 END,
+       CASE JSON_UNQUOTE(JSON_EXTRACT(
+           observation.payload_json, '$.marketPrice'
+       )) WHEN 'true' THEN 1 WHEN 'false' THEN 0 END
+FROM risk_indicator_observation observation
+WHERE observation.trade_date >= @window_start
+  AND observation.trade_date < @window_end
 ON DUPLICATE KEY UPDATE
     dimension_code = VALUES(dimension_code),
     actual_value = VALUES(actual_value),
     unit = VALUES(unit),
     observed_at = VALUES(observed_at),
-    available_at = VALUES(available_at),
-    source = VALUES(source),
     quality_status = VALUES(quality_status),
     already_normalized_risk_score = VALUES(already_normalized_risk_score),
     normalization_contract = VALUES(normalization_contract),
@@ -116,7 +90,7 @@ FROM risk_indicator_baseline;
 SELECT COUNT(*) AS missing_baseline_rows
 FROM (
     SELECT DISTINCT object_type, object_id, horizon, trade_date,
-           indicator_code, component_code
+           indicator_code, component_code, available_at, source
     FROM risk_indicator_observation
 ) observation
 LEFT JOIN risk_indicator_baseline baseline
@@ -126,10 +100,12 @@ LEFT JOIN risk_indicator_baseline baseline
  AND baseline.trade_date = observation.trade_date
  AND baseline.indicator_code = observation.indicator_code
  AND baseline.component_code = observation.component_code
+ AND baseline.available_at = observation.available_at
+ AND baseline.source = observation.source
 WHERE baseline.id IS NULL;
 ```
 
-`missing_baseline_rows` 必须为 0。再抽样比较市场、行业和股票三个对象、三个周期的最新评分输入与评分结果。
+`missing_baseline_rows` 必须为 0。再抽样比较市场、行业和股票三个对象、三个周期在多个 `asOf` 时点的评分输入与评分结果。
 
 ### 阶段三：启用分层读取
 
@@ -157,9 +133,9 @@ RISK_STORAGE_ARCHIVE_CRON="0 30 2 * * *"
 
 每轮最多处理 5 万行。归档任务会在同一事务中：
 
-1. 为本批缺失的自然键补写紧凑基线；
+1. 为本批轻量修订执行幂等 upsert；
 2. 校验基线覆盖；
-3. 复制完整记录到冷表并按 ID 核对；
+3. 复制完整记录到冷表，并逐字段核对热冷内容；
 4. 删除热表对应 ID。
 
 观察以下指标：
@@ -204,8 +180,22 @@ SELECT id, object_type, object_id, horizon, trade_date, dimension_code,
        indicator_code, component_code, indicator_value, unit, observed_at,
        available_at, source, quality_status, payload_json, created_at
 FROM risk_indicator_observation_archive
-ON DUPLICATE KEY UPDATE id = VALUES(id);
+ON DUPLICATE KEY UPDATE
+    object_type = VALUES(object_type),
+    object_id = VALUES(object_id),
+    horizon = VALUES(horizon),
+    trade_date = VALUES(trade_date),
+    dimension_code = VALUES(dimension_code),
+    indicator_code = VALUES(indicator_code),
+    component_code = VALUES(component_code),
+    indicator_value = VALUES(indicator_value),
+    unit = VALUES(unit),
+    observed_at = VALUES(observed_at),
+    available_at = VALUES(available_at),
+    source = VALUES(source),
+    quality_status = VALUES(quality_status),
+    payload_json = VALUES(payload_json),
+    created_at = VALUES(created_at);
 ```
 
 恢复并核对后再重启服务。冷表暂不删除，作为可恢复副本保留。
-

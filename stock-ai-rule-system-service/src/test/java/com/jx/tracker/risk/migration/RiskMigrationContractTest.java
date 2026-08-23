@@ -73,6 +73,7 @@ class RiskMigrationContractTest {
                 "CREATE TABLE risk_indicator_baseline",
                 "actual_value DECIMAL(30,10) NULL",
                 "UNIQUE KEY uk_risk_baseline_object_component_date",
+                "object_type, object_id, horizon, trade_date, indicator_code,\n        component_code, available_at, source",
                 "KEY idx_risk_baseline_object_horizon_date",
                 "CREATE TABLE risk_indicator_observation_archive",
                 "PRIMARY KEY (id)",
@@ -86,6 +87,7 @@ class RiskMigrationContractTest {
                 "DELETE FROM risk_indicator_observation",
                 "UPDATE risk_indicator_observation"
         );
+        assertThat(migration).contains("轻量时点修订");
     }
 
     @Test

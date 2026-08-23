@@ -76,4 +76,3 @@ public class RiskStorageTierProperties {
         return maxBatchesPerRun;
     }
 }
-

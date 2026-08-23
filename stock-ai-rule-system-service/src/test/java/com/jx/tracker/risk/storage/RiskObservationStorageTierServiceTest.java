@@ -33,10 +33,19 @@ class RiskObservationStorageTierServiceTest {
         assertThat(result.archivedRows()).isEqualTo(2);
         assertThat(jdbc.selectArgs).containsExactly(LocalDate.of(2024, 8, 23), 5_000);
         assertThat(jdbc.sql).hasSize(6);
-        assertThat(jdbc.sql.get(1)).contains("INSERT IGNORE INTO risk_indicator_baseline");
+        assertThat(jdbc.sql.get(1))
+                .contains("INSERT INTO risk_indicator_baseline")
+                .contains("ON DUPLICATE KEY UPDATE")
+                .contains("actual_value = VALUES(actual_value)");
+        assertThat(jdbc.sql.get(1)).doesNotContain("ROW_NUMBER()");
         assertThat(jdbc.sql.get(2)).contains("missing_baseline_rows");
-        assertThat(jdbc.sql.get(3)).contains("INSERT INTO risk_indicator_observation_archive");
-        assertThat(jdbc.sql.get(4)).contains("archived_rows");
+        assertThat(jdbc.sql.get(3))
+                .contains("INSERT INTO risk_indicator_observation_archive")
+                .contains("indicator_value = VALUES(indicator_value)")
+                .contains("payload_json = VALUES(payload_json)");
+        assertThat(jdbc.sql.get(4))
+                .contains("mismatched_archive_rows")
+                .contains("archive.payload_json", "hot.payload_json");
         assertThat(jdbc.sql.get(5)).startsWith("DELETE FROM risk_indicator_observation");
         assertThat(jdbc.sql).allSatisfy(sql -> SQLUtils.parseSingleStatement(sql, DbType.mysql));
     }
@@ -102,7 +111,8 @@ class RiskObservationStorageTierServiceTest {
         @SuppressWarnings("unchecked")
         public <T> T queryForObject(String sql, Class<T> requiredType, Object... args) {
             this.sql.add(sql);
-            int value = sql.contains("missing_baseline_rows") ? 0 : ids.size();
+            int value = sql.contains("missing_baseline_rows")
+                    || sql.contains("mismatched_archive_rows") ? 0 : ids.size();
             return (T) Integer.valueOf(value);
         }
     }

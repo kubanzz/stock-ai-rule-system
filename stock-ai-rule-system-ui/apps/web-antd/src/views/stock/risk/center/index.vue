@@ -286,7 +286,12 @@ async function loadCenter() {
 
 async function changePage(pageNum: number) {
   query.pageNum = pageNum;
+  resetSelection();
   await loadStockRows();
+  const initial = stockRows.value[0];
+  if (initial) {
+    await loadDetail(initial);
+  }
 }
 
 async function changeHorizon(value: unknown) {

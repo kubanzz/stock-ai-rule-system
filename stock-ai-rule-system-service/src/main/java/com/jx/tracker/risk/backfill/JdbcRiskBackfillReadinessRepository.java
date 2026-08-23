@@ -2,6 +2,7 @@ package com.jx.tracker.risk.backfill;
 
 import com.jx.tracker.risk.data.market.AshareRiskObjectCatalog;
 import com.jx.tracker.risk.model.RiskHorizon;
+import com.jx.tracker.risk.runtime.RiskStorageTierProperties;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
@@ -33,25 +34,43 @@ public final class JdbcRiskBackfillReadinessRepository
     private static final List<String> TIMESTAMP_TABLES = List.of(
             "risk_object_exposure", "risk_indicator_observation", "risk_event_fact",
             "risk_score_snapshot", "risk_score_evidence", "risk_gate_result",
-            "risk_ingestion_checkpoint");
+            "risk_ingestion_checkpoint", "risk_indicator_observation_archive");
 
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcOperations namedJdbcTemplate;
+    private final RiskStorageTierProperties storageProperties;
     private final AshareRiskObjectCatalog objectCatalog = new AshareRiskObjectCatalog();
 
     public JdbcRiskBackfillReadinessRepository(JdbcTemplate jdbcTemplate) {
-        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate));
+        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate),
+                new RiskStorageTierProperties());
+    }
+
+    public JdbcRiskBackfillReadinessRepository(
+            JdbcTemplate jdbcTemplate,
+            RiskStorageTierProperties storageProperties
+    ) {
+        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate), storageProperties);
     }
 
     JdbcRiskBackfillReadinessRepository(
             JdbcTemplate jdbcTemplate,
             NamedParameterJdbcOperations namedJdbcTemplate
     ) {
-        if (jdbcTemplate == null || namedJdbcTemplate == null) {
+        this(jdbcTemplate, namedJdbcTemplate, new RiskStorageTierProperties());
+    }
+
+    JdbcRiskBackfillReadinessRepository(
+            JdbcTemplate jdbcTemplate,
+            NamedParameterJdbcOperations namedJdbcTemplate,
+            RiskStorageTierProperties storageProperties
+    ) {
+        if (jdbcTemplate == null || namedJdbcTemplate == null || storageProperties == null) {
             throw new IllegalArgumentException("readiness JDBC dependencies are required");
         }
         this.jdbcTemplate = jdbcTemplate;
         this.namedJdbcTemplate = namedJdbcTemplate;
+        this.storageProperties = storageProperties;
     }
 
     @Override
@@ -123,14 +142,14 @@ public final class JdbcRiskBackfillReadinessRepository
         MapSqlParameterSource parameters = baseParameters(scope, scoreStartDate, endDate, asOf);
         namedJdbcTemplate.query("""
                 SELECT indicator_code, component_code, COUNT(*) AS observation_count
-                FROM risk_indicator_observation
+                FROM %s
                 WHERE trade_date BETWEEN :scoreStartDate AND :endDate
                   AND available_at <= :asOf
                   AND indicator_value IS NOT NULL
                   AND quality_status IN ('available', 'valid_zero')
                   AND object_type = :objectType AND object_id IN (:objectIds)
                 GROUP BY indicator_code, component_code
-                """, parameters, resultSet -> {
+                """.formatted(observationSource()), parameters, resultSet -> {
             MutableObservedIndicator indicator = target.computeIfAbsent(
                     resultSet.getString("indicator_code"), ignored -> new MutableObservedIndicator());
             indicator.components.add(resultSet.getString("component_code"));
@@ -153,7 +172,7 @@ public final class JdbcRiskBackfillReadinessRepository
                 SELECT MIN(trade_date) AS earliest_date, MAX(trade_date) AS latest_date
                 FROM (
                     SELECT object_id, trade_date
-                    FROM risk_indicator_observation
+                    FROM %s
                     WHERE trade_date BETWEEN :scoreStartDate AND :endDate
                       AND available_at <= :asOf
                       AND indicator_value IS NOT NULL
@@ -165,7 +184,7 @@ public final class JdbcRiskBackfillReadinessRepository
                     HAVING COUNT(DISTINCT CONCAT(
                             indicator_code, ':', component_code)) = :componentCount
                 ) complete_core_days
-                """, parameters, resultSet -> resultSet.next()
+                """.formatted(observationSource()), parameters, resultSet -> resultSet.next()
                 ? new DateRange(localDate(resultSet, "earliest_date"),
                         localDate(resultSet, "latest_date"))
                 : new DateRange(null, null));
@@ -186,7 +205,7 @@ public final class JdbcRiskBackfillReadinessRepository
                 SELECT COUNT(*)
                 FROM (
                     SELECT object_id, trade_date
-                    FROM risk_indicator_observation
+                    FROM %s
                     WHERE trade_date BETWEEN :scoreStartDate AND :endDate
                       AND available_at <= :asOf
                       AND indicator_value IS NOT NULL
@@ -198,7 +217,7 @@ public final class JdbcRiskBackfillReadinessRepository
                     HAVING COUNT(DISTINCT CONCAT(
                             indicator_code, ':', component_code)) = :componentCount
                 ) complete_core_days
-                """, parameters, Long.class);
+                """.formatted(observationSource()), parameters, Long.class);
         return count == null ? 0 : count;
     }
 
@@ -229,7 +248,7 @@ public final class JdbcRiskBackfillReadinessRepository
                            COUNT(*) AS trading_day_count
                     FROM (
                         SELECT object_id, trade_date
-                        FROM risk_indicator_observation
+                        FROM %s
                         WHERE trade_date BETWEEN :scoreStartDate AND :endDate
                           AND available_at <= :asOf
                           AND indicator_value IS NOT NULL
@@ -242,7 +261,7 @@ public final class JdbcRiskBackfillReadinessRepository
                                 indicator_code, ':', component_code)) = :componentCount
                     ) complete_core_days
                     GROUP BY object_id
-                    """, parameters, (resultSet, rowNum) -> new CoreObjectStats(
+                    """.formatted(observationSource()), parameters, (resultSet, rowNum) -> new CoreObjectStats(
                     resultSet.getString("object_id"),
                     localDate(resultSet, "earliest_date"),
                     localDate(resultSet, "latest_date"),
@@ -410,6 +429,25 @@ public final class JdbcRiskBackfillReadinessRepository
                 .addValue("scoreStartDate", scoreStartDate)
                 .addValue("endDate", endDate)
                 .addValue("asOf", asOf);
+    }
+
+    private String observationSource() {
+        if (!storageProperties.isTieredReadEnabled()) {
+            return "risk_indicator_observation";
+        }
+        return """
+                (
+                    SELECT object_type, object_id, trade_date, indicator_code,
+                           component_code, indicator_value, observed_at, available_at,
+                           source, quality_status
+                    FROM risk_indicator_observation
+                    UNION ALL
+                    SELECT object_type, object_id, trade_date, indicator_code,
+                           component_code, indicator_value, observed_at, available_at,
+                           source, quality_status
+                    FROM risk_indicator_observation_archive
+                ) risk_observation
+                """;
     }
 
     private List<ObjectScope> scopes(List<String> stocks, List<String> sectors) {

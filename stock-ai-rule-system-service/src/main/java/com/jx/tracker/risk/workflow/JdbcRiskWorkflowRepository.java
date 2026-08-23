@@ -222,6 +222,8 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                   AND trade_date = :tradeDate
                   AND indicator_code = :indicatorCode
                   AND component_code = :componentCode
+                  AND available_at = :availableAt
+                  AND source = :source
                   AND (
                       (:formalQuality = TRUE
                        AND quality_status NOT IN ('available', 'valid_zero'))

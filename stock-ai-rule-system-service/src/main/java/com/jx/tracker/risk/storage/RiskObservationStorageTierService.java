@@ -64,14 +64,13 @@ public class RiskObservationStorageTierService {
         }
 
         jdbcTemplate.update(copyToArchiveSql(placeholders), arguments);
-        Integer archivedRows = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) AS archived_rows FROM risk_indicator_observation_archive "
-                        + "WHERE id IN (" + placeholders + ")",
+        Integer mismatchedArchiveRows = jdbcTemplate.queryForObject(
+                archiveMismatchCountSql(placeholders),
                 Integer.class, arguments);
-        if (archivedRows == null || archivedRows != ids.size()) {
+        if (mismatchedArchiveRows == null || mismatchedArchiveRows != 0) {
             throw new IllegalStateException(
-                    "risk cold archive verification failed: expected " + ids.size()
-                            + " but found " + archivedRows);
+                    "risk cold archive content verification failed: "
+                            + mismatchedArchiveRows);
         }
 
         int deletedRows = jdbcTemplate.update(
@@ -97,54 +96,51 @@ public class RiskObservationStorageTierService {
 
     private String compactMissingBaselineSql(String placeholders) {
         return """
-                INSERT IGNORE INTO risk_indicator_baseline (
+                INSERT INTO risk_indicator_baseline (
                     object_type, object_id, horizon, trade_date, dimension_code,
                     indicator_code, component_code, actual_value, unit, observed_at,
                     available_at, source, quality_status, already_normalized_risk_score,
                     normalization_contract, dataset_code, trading_day, market_price
                 )
-                SELECT object_type, object_id, horizon, trade_date, dimension_code,
-                       indicator_code, component_code, actual_value, unit, observed_at,
-                       available_at, source, quality_status, already_normalized_risk_score,
-                       normalization_contract, dataset_code, trading_day, market_price
-                FROM (
-                    SELECT hot.object_type, hot.object_id, hot.horizon, hot.trade_date,
-                           hot.dimension_code, hot.indicator_code, hot.component_code,
-                           COALESCE(
-                               hot.indicator_value,
-                               CASE WHEN JSON_TYPE(JSON_EXTRACT(hot.payload_json, '$.auditValue'))
-                                         IN ('INTEGER', 'DOUBLE')
-                                    THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(
-                                         hot.payload_json, '$.auditValue')) AS DECIMAL(30, 10))
-                               END
-                           ) AS actual_value,
-                           hot.unit, hot.observed_at, hot.available_at, hot.source,
-                           hot.quality_status,
-                           CASE JSON_UNQUOTE(JSON_EXTRACT(
-                               hot.payload_json, '$.alreadyNormalizedRiskScore'))
-                               WHEN 'true' THEN 1 WHEN 'false' THEN 0
-                           END AS already_normalized_risk_score,
-                           JSON_UNQUOTE(JSON_EXTRACT(
-                               hot.payload_json, '$.normalizationContract')) AS normalization_contract,
-                           JSON_UNQUOTE(JSON_EXTRACT(
-                               hot.payload_json, '$.datasetCode')) AS dataset_code,
-                           CASE JSON_UNQUOTE(JSON_EXTRACT(hot.payload_json, '$.tradingDay'))
-                               WHEN 'true' THEN 1 WHEN 'false' THEN 0
-                           END AS trading_day,
-                           CASE JSON_UNQUOTE(JSON_EXTRACT(hot.payload_json, '$.marketPrice'))
-                               WHEN 'true' THEN 1 WHEN 'false' THEN 0
-                           END AS market_price,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY hot.object_type, hot.object_id, hot.horizon,
-                                   hot.trade_date, hot.indicator_code, hot.component_code
-                               ORDER BY CASE WHEN hot.quality_status IN ('available', 'valid_zero')
-                                             THEN 1 ELSE 0 END DESC,
-                                        hot.available_at DESC, hot.id DESC
-                           ) AS baseline_rank
-                    FROM risk_indicator_observation hot
-                    WHERE hot.id IN (%s)
-                ) ranked
-                WHERE baseline_rank = 1
+                SELECT hot.object_type, hot.object_id, hot.horizon, hot.trade_date,
+                       hot.dimension_code, hot.indicator_code, hot.component_code,
+                       COALESCE(
+                           hot.indicator_value,
+                           CASE WHEN JSON_TYPE(JSON_EXTRACT(hot.payload_json, '$.auditValue'))
+                                     IN ('INTEGER', 'DOUBLE')
+                                THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(
+                                     hot.payload_json, '$.auditValue')) AS DECIMAL(30, 10))
+                           END
+                       ) AS actual_value,
+                       hot.unit, hot.observed_at, hot.available_at, hot.source,
+                       hot.quality_status,
+                       CASE JSON_UNQUOTE(JSON_EXTRACT(
+                           hot.payload_json, '$.alreadyNormalizedRiskScore'))
+                           WHEN 'true' THEN 1 WHEN 'false' THEN 0
+                       END AS already_normalized_risk_score,
+                       JSON_UNQUOTE(JSON_EXTRACT(
+                           hot.payload_json, '$.normalizationContract')) AS normalization_contract,
+                       JSON_UNQUOTE(JSON_EXTRACT(
+                           hot.payload_json, '$.datasetCode')) AS dataset_code,
+                       CASE JSON_UNQUOTE(JSON_EXTRACT(hot.payload_json, '$.tradingDay'))
+                           WHEN 'true' THEN 1 WHEN 'false' THEN 0
+                       END AS trading_day,
+                       CASE JSON_UNQUOTE(JSON_EXTRACT(hot.payload_json, '$.marketPrice'))
+                           WHEN 'true' THEN 1 WHEN 'false' THEN 0
+                       END AS market_price
+                FROM risk_indicator_observation hot
+                WHERE hot.id IN (%s)
+                ON DUPLICATE KEY UPDATE
+                    dimension_code = VALUES(dimension_code),
+                    actual_value = VALUES(actual_value),
+                    unit = VALUES(unit),
+                    observed_at = VALUES(observed_at),
+                    quality_status = VALUES(quality_status),
+                    already_normalized_risk_score = VALUES(already_normalized_risk_score),
+                    normalization_contract = VALUES(normalization_contract),
+                    dataset_code = VALUES(dataset_code),
+                    trading_day = VALUES(trading_day),
+                    market_price = VALUES(market_price)
                 """.formatted(placeholders);
     }
 
@@ -153,7 +149,7 @@ public class RiskObservationStorageTierService {
                 SELECT COUNT(*) AS missing_baseline_rows
                 FROM (
                     SELECT DISTINCT object_type, object_id, horizon, trade_date,
-                           indicator_code, component_code
+                           indicator_code, component_code, available_at, source
                     FROM risk_indicator_observation
                     WHERE id IN (%s)
                 ) pending
@@ -164,6 +160,8 @@ public class RiskObservationStorageTierService {
                  AND baseline.trade_date = pending.trade_date
                  AND baseline.indicator_code = pending.indicator_code
                  AND baseline.component_code = pending.component_code
+                 AND baseline.available_at = pending.available_at
+                 AND baseline.source = pending.source
                 WHERE baseline.id IS NULL
                 """.formatted(placeholders);
     }
@@ -172,7 +170,41 @@ public class RiskObservationStorageTierService {
         return "INSERT INTO risk_indicator_observation_archive (" + ARCHIVE_COLUMNS + ") "
                 + "SELECT " + ARCHIVE_COLUMNS + " FROM risk_indicator_observation "
                 + "WHERE id IN (" + placeholders + ") "
-                + "ON DUPLICATE KEY UPDATE id = VALUES(id)";
+                + "ON DUPLICATE KEY UPDATE "
+                + "id = VALUES(id), object_type = VALUES(object_type), "
+                + "object_id = VALUES(object_id), horizon = VALUES(horizon), "
+                + "trade_date = VALUES(trade_date), dimension_code = VALUES(dimension_code), "
+                + "indicator_code = VALUES(indicator_code), component_code = VALUES(component_code), "
+                + "indicator_value = VALUES(indicator_value), unit = VALUES(unit), "
+                + "observed_at = VALUES(observed_at), available_at = VALUES(available_at), "
+                + "source = VALUES(source), quality_status = VALUES(quality_status), "
+                + "payload_json = VALUES(payload_json), created_at = VALUES(created_at)";
+    }
+
+    private String archiveMismatchCountSql(String placeholders) {
+        return """
+                SELECT COUNT(*) AS mismatched_archive_rows
+                FROM risk_indicator_observation hot
+                LEFT JOIN risk_indicator_observation_archive archive ON archive.id = hot.id
+                WHERE hot.id IN (%s)
+                  AND (archive.id IS NULL OR NOT (
+                      archive.object_type <=> hot.object_type
+                      AND archive.object_id <=> hot.object_id
+                      AND archive.horizon <=> hot.horizon
+                      AND archive.trade_date <=> hot.trade_date
+                      AND archive.dimension_code <=> hot.dimension_code
+                      AND archive.indicator_code <=> hot.indicator_code
+                      AND archive.component_code <=> hot.component_code
+                      AND archive.indicator_value <=> hot.indicator_value
+                      AND archive.unit <=> hot.unit
+                      AND archive.observed_at <=> hot.observed_at
+                      AND archive.available_at <=> hot.available_at
+                      AND archive.source <=> hot.source
+                      AND archive.quality_status <=> hot.quality_status
+                      AND CAST(archive.payload_json AS CHAR) <=> CAST(hot.payload_json AS CHAR)
+                      AND archive.created_at <=> hot.created_at
+                  ))
+                """.formatted(placeholders);
     }
 
     private String placeholders(int size) {
@@ -187,4 +219,3 @@ public class RiskObservationStorageTierService {
     public record ArchiveBatchResult(LocalDate cutoffDate, int archivedRows) {
     }
 }
-

@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.backfill;
 
 import com.jx.tracker.risk.model.RiskHorizon;
+import com.jx.tracker.risk.runtime.RiskStorageTierProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -124,6 +125,21 @@ class JdbcRiskBackfillReadinessRepositoryTest {
         assertThat(data.populationCoverage().marketCoreTradingDayCount()).isZero();
     }
 
+    @Test
+    void tieredReadinessIncludesArchivedObservations() {
+        insertArchiveObservation("stock", "600519.SH", "C2", "advanceRatio", SCORE_START,
+                "available", "1", SCORE_START.atTime(18, 0), SCORE_START.atTime(19, 0));
+        RiskStorageTierProperties properties = new RiskStorageTierProperties();
+        properties.setTieredReadEnabled(true);
+        repository = new JdbcRiskBackfillReadinessRepository(jdbcTemplate, properties);
+
+        RiskBackfillReadinessData data = repository.load(
+                "risk-v1", SCORE_START, END_DATE, AS_OF, List.of("600519.SH"));
+
+        assertThat(data.observedIndicators()).containsOnlyKeys("C2");
+        assertThat(data.observedIndicators().get("C2").observationCount()).isEqualTo(1);
+    }
+
     private void createSchema() {
         jdbcTemplate.execute("""
                 CREATE TABLE risk_object_exposure (
@@ -135,6 +151,14 @@ class JdbcRiskBackfillReadinessRepositoryTest {
                 """);
         jdbcTemplate.execute("""
                 CREATE TABLE risk_indicator_observation (
+                    object_type VARCHAR(16), object_id VARCHAR(64), trade_date DATE,
+                    indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL(30,10), observed_at TIMESTAMP,
+                    available_at TIMESTAMP, source VARCHAR(64), quality_status VARCHAR(32)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE risk_indicator_observation_archive (
                     object_type VARCHAR(16), object_id VARCHAR(64), trade_date DATE,
                     indicator_code VARCHAR(64), component_code VARCHAR(64),
                     indicator_value DECIMAL(30,10), observed_at TIMESTAMP,
@@ -189,6 +213,17 @@ class JdbcRiskBackfillReadinessRepositoryTest {
     ) {
         jdbcTemplate.update("""
                 INSERT INTO risk_indicator_observation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, objectType, objectId, tradeDate, code, component, value,
+                observedAt, availableAt, "risk-derived-gateway", quality);
+    }
+
+    private void insertArchiveObservation(
+            String objectType, String objectId, String code, String component,
+            LocalDate tradeDate, String quality, String value,
+            LocalDateTime observedAt, LocalDateTime availableAt
+    ) {
+        jdbcTemplate.update("""
+                INSERT INTO risk_indicator_observation_archive VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, objectType, objectId, tradeDate, code, component, value,
                 observedAt, availableAt, "risk-derived-gateway", quality);
     }

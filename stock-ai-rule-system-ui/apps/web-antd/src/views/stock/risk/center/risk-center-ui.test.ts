@@ -46,6 +46,18 @@ describe('risk center UI safety contract', () => {
     expect(page).not.toContain('parentName ===');
   });
 
+  it('does not keep a detail selected from the previous stock page', () => {
+    const page = centerFile('index.vue');
+    const changePage = page.slice(
+      page.indexOf('async function changePage'),
+      page.indexOf('async function changeHorizon'),
+    );
+
+    expect(changePage).toContain('resetSelection()');
+    expect(changePage).toContain('stockRows.value[0]');
+    expect(changePage).toContain('loadDetail');
+  });
+
   it.each([
     'risk-overview-panel.vue',
     'risk-sector-matrix.vue',
