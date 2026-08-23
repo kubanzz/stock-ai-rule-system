@@ -13,6 +13,11 @@ CREATE TABLE risk_indicator_baseline (
     available_at DATETIME(3) NOT NULL COMMENT '当前自然键保留版本的可用时间',
     source VARCHAR(64) NOT NULL,
     quality_status VARCHAR(32) NOT NULL,
+    already_normalized_risk_score TINYINT(1) NULL,
+    normalization_contract VARCHAR(32) NULL,
+    dataset_code VARCHAR(64) NULL,
+    trading_day TINYINT(1) NULL,
+    market_price TINYINT(1) NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
         ON UPDATE CURRENT_TIMESTAMP(3),
@@ -55,4 +60,3 @@ CREATE TABLE risk_indicator_observation_archive (
     KEY idx_risk_archive_available_at (available_at),
     CHECK (available_at >= observed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='两年前风险指标完整冷归档';
-

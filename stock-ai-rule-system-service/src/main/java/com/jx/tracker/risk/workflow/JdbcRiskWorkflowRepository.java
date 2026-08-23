@@ -21,6 +21,7 @@ import com.jx.tracker.risk.provider.RiskEvent;
 import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
+import com.jx.tracker.risk.runtime.RiskStorageTierProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -51,10 +52,20 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcOperations namedJdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final RiskStorageTierProperties storageProperties;
 
     @Autowired
+    public JdbcRiskWorkflowRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            RiskStorageTierProperties storageProperties
+    ) {
+        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate), objectMapper, storageProperties);
+    }
+
     public JdbcRiskWorkflowRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate), objectMapper);
+        this(jdbcTemplate, new NamedParameterJdbcTemplate(jdbcTemplate), objectMapper,
+                new RiskStorageTierProperties());
     }
 
     JdbcRiskWorkflowRepository(
@@ -62,9 +73,20 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
             NamedParameterJdbcOperations namedJdbcTemplate,
             ObjectMapper objectMapper
     ) {
+        this(jdbcTemplate, namedJdbcTemplate, objectMapper, new RiskStorageTierProperties());
+    }
+
+    JdbcRiskWorkflowRepository(
+            JdbcTemplate jdbcTemplate,
+            NamedParameterJdbcOperations namedJdbcTemplate,
+            ObjectMapper objectMapper,
+            RiskStorageTierProperties storageProperties
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.namedJdbcTemplate = namedJdbcTemplate;
         this.objectMapper = objectMapper;
+        this.storageProperties = storageProperties == null
+                ? new RiskStorageTierProperties() : storageProperties;
     }
 
     @Override
@@ -89,6 +111,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     }
 
     @Override
+    @Transactional
     public void saveObservation(RiskObservation observation) {
         jdbcTemplate.update("""
                 INSERT INTO risk_indicator_observation (
@@ -133,6 +156,83 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 observation.indicatorCode(), observation.componentCode(), observation.value(), observation.unit(),
                 observation.observedAt(), observation.availableAt(), observation.source(),
                 observation.qualityStatus().getCode(), json(observation.attributes()));
+        saveBaselineObservation(observation);
+    }
+
+    private void saveBaselineObservation(RiskObservation observation) {
+        Map<String, Object> attributes = observation.attributes();
+        BigDecimal actualValue = baselineValue(observation);
+        jdbcTemplate.update("""
+                INSERT INTO risk_indicator_baseline (
+                    object_type, object_id, horizon, trade_date, dimension_code,
+                    indicator_code, component_code, actual_value, unit, observed_at, available_at,
+                    source, quality_status, already_normalized_risk_score,
+                    normalization_contract, dataset_code, trading_day, market_price
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE id = id
+                """,
+                observation.object().objectType().getCode(), observation.object().objectId(),
+                observation.horizon().getCode(), observation.tradeDate(), observation.dimension().getCode(),
+                observation.indicatorCode(), observation.componentCode(), actualValue,
+                observation.unit(), observation.observedAt(), observation.availableAt(), observation.source(),
+                observation.qualityStatus().getCode(), booleanAttribute(attributes, "alreadyNormalizedRiskScore"),
+                stringAttribute(attributes, "normalizationContract"),
+                stringAttribute(attributes, "datasetCode"),
+                booleanAttribute(attributes, "tradingDay"),
+                booleanAttribute(attributes, "marketPrice"));
+        boolean formalQuality = observation.qualityStatus() == RiskDataQualityStatus.AVAILABLE
+                || observation.qualityStatus() == RiskDataQualityStatus.VALID_ZERO;
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("objectType", observation.object().objectType().getCode())
+                .addValue("objectId", observation.object().objectId())
+                .addValue("horizon", observation.horizon().getCode())
+                .addValue("tradeDate", observation.tradeDate())
+                .addValue("dimensionCode", observation.dimension().getCode())
+                .addValue("indicatorCode", observation.indicatorCode())
+                .addValue("componentCode", observation.componentCode())
+                .addValue("actualValue", actualValue)
+                .addValue("unit", observation.unit())
+                .addValue("observedAt", observation.observedAt())
+                .addValue("availableAt", observation.availableAt())
+                .addValue("source", observation.source())
+                .addValue("qualityStatus", observation.qualityStatus().getCode())
+                .addValue("formalQuality", formalQuality)
+                .addValue("alreadyNormalized", booleanAttribute(attributes, "alreadyNormalizedRiskScore"))
+                .addValue("normalizationContract", stringAttribute(attributes, "normalizationContract"))
+                .addValue("datasetCode", stringAttribute(attributes, "datasetCode"))
+                .addValue("tradingDay", booleanAttribute(attributes, "tradingDay"))
+                .addValue("marketPrice", booleanAttribute(attributes, "marketPrice"));
+        namedJdbcTemplate.update("""
+                UPDATE risk_indicator_baseline
+                SET dimension_code = :dimensionCode,
+                    actual_value = :actualValue,
+                    unit = :unit,
+                    observed_at = :observedAt,
+                    available_at = :availableAt,
+                    source = :source,
+                    quality_status = :qualityStatus,
+                    already_normalized_risk_score = :alreadyNormalized,
+                    normalization_contract = :normalizationContract,
+                    dataset_code = :datasetCode,
+                    trading_day = :tradingDay,
+                    market_price = :marketPrice
+                WHERE object_type = :objectType
+                  AND object_id = :objectId
+                  AND horizon = :horizon
+                  AND trade_date = :tradeDate
+                  AND indicator_code = :indicatorCode
+                  AND component_code = :componentCode
+                  AND (
+                      (:formalQuality = TRUE
+                       AND quality_status NOT IN ('available', 'valid_zero'))
+                      OR (:formalQuality = TRUE
+                          AND quality_status IN ('available', 'valid_zero')
+                          AND :availableAt >= available_at)
+                      OR (:formalQuality = FALSE
+                          AND quality_status NOT IN ('available', 'valid_zero')
+                          AND :availableAt >= available_at)
+                  )
+                """, parameters);
     }
 
     @Override
@@ -299,24 +399,69 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
 
     @Override
     public List<RiskObservation> findObservations(RiskWorkflowRequest request) {
+        boolean dailyScoring = request.scoreStartDate().equals(request.endDate());
+        boolean tieredRead = storageProperties.isTieredReadEnabled();
         return objectSqlScopes(request).stream().flatMap(scope -> {
             scope.parameters()
                     .addValue("startDate", request.collectionStartDate())
                     .addValue("endDate", request.endDate())
                     .addValue("asOf", request.asOf())
                     .addValue("horizons", request.horizons().stream().map(RiskHorizon::getCode).toList());
-            return namedJdbcTemplate.query("""
-                    SELECT object_type, object_id, horizon, trade_date, dimension_code,
-                           indicator_code, component_code, indicator_value, unit, observed_at, available_at,
-                           source, quality_status, payload_json
-                    FROM risk_indicator_observation
-                    WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
-                      AND horizon IN (:horizons)
-                      AND quality_status IN ('available', 'valid_zero')
-                    """ + scope.predicate() + """
-                    ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
-                    """, scope.parameters(), this::mapObservation).stream();
+            if (tieredRead && dailyScoring) {
+                return namedJdbcTemplate.query("""
+                        SELECT object_type, object_id, horizon, trade_date, dimension_code,
+                               indicator_code, component_code, actual_value AS indicator_value,
+                               unit, observed_at, available_at, source, quality_status,
+                               already_normalized_risk_score, normalization_contract,
+                               dataset_code, trading_day, market_price
+                        FROM risk_indicator_baseline
+                        WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
+                          AND horizon IN (:horizons)
+                          AND quality_status IN ('available', 'valid_zero')
+                        """ + scope.predicate() + """
+                        ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
+                        """, scope.parameters(), this::mapBaselineObservation).stream();
+            }
+            if (tieredRead) {
+                return namedJdbcTemplate.query(tieredRawObservationSql(scope.predicate()),
+                        scope.parameters(), this::mapObservation).stream();
+            }
+            return namedJdbcTemplate.query(rawObservationSql(scope.predicate()),
+                    scope.parameters(), this::mapObservation).stream();
         }).toList();
+    }
+
+    private String rawObservationSql(String scopePredicate) {
+        return """
+                SELECT object_type, object_id, horizon, trade_date, dimension_code,
+                       indicator_code, component_code, indicator_value, unit, observed_at, available_at,
+                       source, quality_status, payload_json
+                FROM risk_indicator_observation
+                WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
+                  AND horizon IN (:horizons)
+                  AND quality_status IN ('available', 'valid_zero')
+                """ + scopePredicate + """
+                ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at
+                """;
+    }
+
+    private String tieredRawObservationSql(String scopePredicate) {
+        String columns = """
+                object_type, object_id, horizon, trade_date, dimension_code,
+                indicator_code, component_code, indicator_value, unit, observed_at, available_at,
+                source, quality_status, payload_json
+                """;
+        String filters = """
+                trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
+                  AND horizon IN (:horizons)
+                  AND quality_status IN ('available', 'valid_zero')
+                """;
+        return "SELECT " + columns + " FROM risk_indicator_observation hot WHERE "
+                + filters + scopePredicate
+                + " UNION ALL SELECT " + columns
+                + " FROM risk_indicator_observation_archive cold WHERE "
+                + filters + scopePredicate
+                + " ORDER BY trade_date, object_type, object_id, horizon, indicator_code, available_at";
     }
 
     @Override
@@ -539,6 +684,65 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 resultSet.getTimestamp("available_at").toLocalDateTime(), resultSet.getString("source"),
                 RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")),
                 readJson(resultSet.getString("payload_json")));
+    }
+
+    private RiskObservation mapBaselineObservation(ResultSet resultSet, int rowNum) throws SQLException {
+        Map<String, Object> attributes = new HashMap<>();
+        putIfPresent(attributes, "alreadyNormalizedRiskScore",
+                resultSet.getObject("already_normalized_risk_score", Boolean.class));
+        putIfPresent(attributes, "normalizationContract", resultSet.getString("normalization_contract"));
+        putIfPresent(attributes, "datasetCode", resultSet.getString("dataset_code"));
+        putIfPresent(attributes, "tradingDay", resultSet.getObject("trading_day", Boolean.class));
+        putIfPresent(attributes, "marketPrice", resultSet.getObject("market_price", Boolean.class));
+        return new RiskObservation(
+                object(resultSet), RiskHorizon.fromCode(resultSet.getString("horizon")),
+                resultSet.getObject("trade_date", LocalDate.class),
+                RiskDimension.fromCode(resultSet.getString("dimension_code")),
+                resultSet.getString("indicator_code"), resultSet.getString("component_code"),
+                resultSet.getBigDecimal("indicator_value"), resultSet.getString("unit"),
+                resultSet.getTimestamp("observed_at").toLocalDateTime(),
+                resultSet.getTimestamp("available_at").toLocalDateTime(), resultSet.getString("source"),
+                RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")), attributes);
+    }
+
+    private BigDecimal baselineValue(RiskObservation observation) {
+        if (observation.value() != null) {
+            return observation.value();
+        }
+        Object auditValue = observation.attributes().get("auditValue");
+        if (auditValue instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (auditValue instanceof Number number) {
+            return new BigDecimal(number.toString());
+        }
+        if (auditValue instanceof String text && !text.isBlank()) {
+            try {
+                return new BigDecimal(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Boolean booleanAttribute(Map<String, Object> attributes, String key) {
+        Object value = attributes.get(key);
+        if (value == null) {
+            return null;
+        }
+        return value instanceof Boolean flag ? flag : Boolean.valueOf(value.toString());
+    }
+
+    private String stringAttribute(Map<String, Object> attributes, String key) {
+        Object value = attributes.get(key);
+        return value == null ? null : value.toString();
+    }
+
+    private void putIfPresent(Map<String, Object> attributes, String key, Object value) {
+        if (value != null) {
+            attributes.put(key, value);
+        }
     }
 
     private RiskEvent mapEvent(ResultSet resultSet, int rowNum) throws SQLException {

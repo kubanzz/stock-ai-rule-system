@@ -21,6 +21,7 @@ import com.jx.tracker.risk.provider.RiskEvent;
 import com.jx.tracker.risk.provider.RiskIngestionCheckpoint;
 import com.jx.tracker.risk.provider.RiskObservation;
 import com.jx.tracker.risk.provider.RiskProviderBatch;
+import com.jx.tracker.risk.runtime.RiskStorageTierProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -102,12 +103,13 @@ class JdbcRiskWorkflowRepositoryTest {
         repository.saveCheckpoint("provider-a", "dataset-a", "stock:600519.SH", checkpoint, batch);
 
         assertThat(persisted.id()).isEqualTo(42L);
-        assertThat(jdbc.updates).hasSize(7);
+        assertThat(jdbc.updates).hasSize(8);
         assertThat(jdbc.updates).filteredOn(sql -> sql.contains("INSERT INTO"))
                 .allSatisfy(sql -> assertThat(sql).contains("ON DUPLICATE KEY UPDATE"));
         assertThat(jdbc.updates).anySatisfy(sql -> assertThat(sql)
                 .contains("DELETE FROM risk_score_evidence"));
         assertThat(jdbc.updates).anySatisfy(sql -> assertThat(sql).contains("risk_indicator_observation"));
+        assertThat(jdbc.updates).anySatisfy(sql -> assertThat(sql).contains("risk_indicator_baseline"));
         assertThat(jdbc.updates).anySatisfy(sql -> assertThat(sql).contains("risk_event_fact"));
         assertThat(jdbc.updates).anySatisfy(sql -> assertThat(sql).contains("risk_score_snapshot"));
         assertThat(jdbc.updates).anySatisfy(sql -> assertThat(sql).contains("risk_score_evidence"));
@@ -288,6 +290,7 @@ class JdbcRiskWorkflowRepositoryTest {
                     UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
                            component_code, available_at, source))
                 """);
+        createBaselineTable(jdbc);
         LocalDate date = LocalDate.of(2026, 7, 18);
         LocalDateTime firstAvailableAt = date.atTime(18, 0);
         LocalDateTime correctedAvailableAt = date.atTime(19, 0);
@@ -323,6 +326,107 @@ class JdbcRiskWorkflowRepositoryTest {
     }
 
     @Test
+    void observationWriteMaintainsOneCompactLatestBaselineRow() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:risk_observation_baseline;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                "sa", ""));
+        jdbc.execute("DROP ALL OBJECTS");
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_observation (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    indicator_value DECIMAL(30, 10), unit VARCHAR(32), observed_at TIMESTAMP,
+                    available_at TIMESTAMP, source VARCHAR(64), quality_status VARCHAR(32),
+                    payload_json VARCHAR(1024),
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
+                           component_code, available_at, source))
+                """);
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_baseline (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    actual_value DECIMAL(30, 10), unit VARCHAR(32), observed_at TIMESTAMP,
+                    available_at TIMESTAMP, source VARCHAR(64), quality_status VARCHAR(32),
+                    already_normalized_risk_score BOOLEAN, normalization_contract VARCHAR(32),
+                    dataset_code VARCHAR(64), trading_day BOOLEAN, market_price BOOLEAN,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code, component_code))
+                """);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        RiskObjectKey stock = new RiskObjectKey(RiskObjectType.STOCK, "600519.SH");
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(jdbc, new ObjectMapper());
+
+        repository.saveObservation(observation(stock, date, date.atTime(18, 0), "10"));
+        repository.saveObservation(observation(stock, date, date.atTime(20, 0), "20"));
+        repository.saveObservation(observation(stock, date, date.atTime(19, 0), "15"));
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_indicator_observation", Integer.class))
+                .isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_indicator_baseline", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT actual_value FROM risk_indicator_baseline", BigDecimal.class))
+                .isEqualByComparingTo("20");
+        assertThat(jdbc.queryForObject(
+                "SELECT available_at FROM risk_indicator_baseline", LocalDateTime.class))
+                .isEqualTo(date.atTime(20, 0));
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void tieredDailyScoringReadsCompactBaselineOnly() {
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        RiskStorageTierProperties properties = new RiskStorageTierProperties();
+        properties.setTieredReadEnabled(true);
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                new JdbcTemplate(), named, new ObjectMapper(), properties);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+
+        repository.findObservations(dailyRequest(
+                date, date.atTime(20, 0),
+                new RiskObjectKey(RiskObjectType.MARKET, "CN-A")));
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(named).query(sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+        assertThat(sql.getValue())
+                .contains("FROM risk_indicator_baseline")
+                .contains("actual_value AS indicator_value")
+                .doesNotContain("risk_indicator_observation_archive");
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void tieredHistoricalBackfillReadsHotAndColdRawRevisions() {
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        RiskStorageTierProperties properties = new RiskStorageTierProperties();
+        properties.setTieredReadEnabled(true);
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                new JdbcTemplate(), named, new ObjectMapper(), properties);
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        RiskWorkflowRequest request = RiskWorkflowRequest.fiveYearBackfill(
+                date, date.atTime(20, 0),
+                List.of(new RiskCollectionTask(
+                        "provider-a", "dataset-a", "market:CN-A",
+                        List.of(new RiskObjectKey(RiskObjectType.MARKET, "CN-A")))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        repository.findObservations(request);
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(named).query(sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+        assertThat(sql.getValue())
+                .contains("FROM risk_indicator_observation hot")
+                .contains("UNION ALL")
+                .contains("FROM risk_indicator_observation_archive cold")
+                .doesNotContain("risk_indicator_baseline");
+    }
+
+    @Test
     void partialReplayCannotDowngradeExistingFormalObservationOrEvent() {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:risk_partial_replay_quality;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
@@ -339,6 +443,7 @@ class JdbcRiskWorkflowRepositoryTest {
                     UNIQUE(object_type, object_id, horizon, trade_date, indicator_code,
                            component_code, available_at, source))
                 """);
+        createBaselineTable(jdbc);
         jdbc.execute("""
                 CREATE TABLE risk_event_fact (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -386,6 +491,12 @@ class JdbcRiskWorkflowRepositoryTest {
         assertThat(observation)
                 .containsEntry("quality_status", "available");
         assertThat(observation.get("payload_json").toString()).contains("formal");
+        Map<String, Object> baseline = jdbc.queryForMap("""
+                SELECT actual_value, quality_status
+                FROM risk_indicator_baseline
+                """);
+        assertThat(baseline.get("actual_value").toString()).startsWith("0.25");
+        assertThat(baseline).containsEntry("quality_status", "available");
         Map<String, Object> event = jdbc.queryForMap("""
                 SELECT severity_score, quality_status, event_payload
                 FROM risk_event_fact
@@ -749,6 +860,34 @@ class JdbcRiskWorkflowRepositoryTest {
                 List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
     }
 
+    private RiskObservation observation(
+            RiskObjectKey object,
+            LocalDate tradeDate,
+            LocalDateTime availableAt,
+            String value
+    ) {
+        return new RiskObservation(
+                object, RiskHorizon.SHORT_TERM, tradeDate, RiskDimension.STRUCTURAL_FRAGILITY,
+                "V3", new BigDecimal(value), "ratio", tradeDate.atTime(15, 0), availableAt,
+                "source-a", RiskDataQualityStatus.AVAILABLE, Map.of());
+    }
+
+    private void createBaselineTable(JdbcTemplate jdbc) {
+        jdbc.execute("""
+                CREATE TABLE risk_indicator_baseline (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    object_type VARCHAR(16), object_id VARCHAR(64), horizon VARCHAR(16), trade_date DATE,
+                    dimension_code CHAR(1), indicator_code VARCHAR(64), component_code VARCHAR(64),
+                    actual_value DECIMAL(30, 10), unit VARCHAR(32), observed_at TIMESTAMP,
+                    available_at TIMESTAMP, source VARCHAR(64), quality_status VARCHAR(32),
+                    already_normalized_risk_score BOOLEAN, normalization_contract VARCHAR(32),
+                    dataset_code VARCHAR(64), trading_day BOOLEAN, market_price BOOLEAN,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(object_type, object_id, horizon, trade_date, indicator_code, component_code))
+                """);
+    }
+
     private static final class RecordingJdbcTemplate extends JdbcTemplate {
         private final List<String> updates = new ArrayList<>();
         private final List<Object[]> arguments = new ArrayList<>();
@@ -757,6 +896,11 @@ class JdbcRiskWorkflowRepositoryTest {
         public int update(String sql, Object... args) {
             updates.add(sql);
             arguments.add(args);
+            return 1;
+        }
+
+        @Override
+        public int update(org.springframework.jdbc.core.PreparedStatementCreator preparedStatementCreator) {
             return 1;
         }
 
