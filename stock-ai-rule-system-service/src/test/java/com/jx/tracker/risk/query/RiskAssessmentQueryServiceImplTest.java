@@ -9,7 +9,6 @@ import com.jx.tracker.risk.persistence.entity.RiskScoreSnapshotEntity;
 import com.jx.tracker.risk.persistence.mapper.RiskObjectExposureMapper;
 import com.jx.tracker.risk.persistence.mapper.RiskScoreEvidenceMapper;
 import com.jx.tracker.risk.persistence.mapper.RiskScoreSnapshotMapper;
-import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskEvidence;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectDetail;
 import com.jx.tracker.risk.query.dto.RiskAssessmentDto.RiskObjectListItem;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,12 +18,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -38,7 +34,6 @@ class RiskAssessmentQueryServiceImplTest {
     private RiskScoreSnapshotMapper snapshotMapper;
     private RiskScoreEvidenceMapper evidenceMapper;
     private RiskObjectExposureMapper exposureMapper;
-    private ProvisionalRiskEvidenceProvider provisionalEvidenceProvider;
     private RiskAssessmentQueryServiceImpl service;
 
     @BeforeEach
@@ -46,10 +41,7 @@ class RiskAssessmentQueryServiceImplTest {
         snapshotMapper = mock(RiskScoreSnapshotMapper.class);
         evidenceMapper = mock(RiskScoreEvidenceMapper.class);
         exposureMapper = mock(RiskObjectExposureMapper.class);
-        provisionalEvidenceProvider = mock(ProvisionalRiskEvidenceProvider.class);
-        when(provisionalEvidenceProvider.load(any(), anyBoolean())).thenReturn(Map.of());
-        service = new RiskAssessmentQueryServiceImpl(
-                snapshotMapper, evidenceMapper, exposureMapper, provisionalEvidenceProvider);
+        service = new RiskAssessmentQueryServiceImpl(snapshotMapper, evidenceMapper, exposureMapper);
     }
 
     @Test
@@ -168,7 +160,7 @@ class RiskAssessmentQueryServiceImplTest {
     }
 
     @Test
-    void queryOnlyObservationsReplaceMissingStoredEvidenceAndExposeActualCoverage() {
+    void incompleteSnapshotUsesOnlyPersistedEvidenceWithoutQueryTimeRecalculation() {
         RiskScoreSnapshotEntity market = snapshot(
                 32L, "1-5d", "0.00", "insufficient_history", null, "market", "CN-A");
         when(snapshotMapper.selectLatestTradeDate("1-5d")).thenReturn(TRADE_DATE);
@@ -176,31 +168,16 @@ class RiskAssessmentQueryServiceImplTest {
         when(evidenceMapper.selectBySnapshotIds(List.of(32L))).thenReturn(List.of(
                 evidence(321L, 32L, "V", "V3", "insufficient_history")
         ));
-        when(provisionalEvidenceProvider.load(List.of(market), true)).thenReturn(Map.of(
-                32L,
-                List.of(
-                        provisionalEvidence("V3", "V", "72"),
-                        provisionalEvidence("V4", "V", "68"),
-                        provisionalEvidence("C1", "C", "60"),
-                        provisionalEvidence("C3", "C", "57"),
-                        provisionalEvidence("C4", "C", "55"),
-                        provisionalEvidence("C5", "C", "53"),
-                        provisionalEvidence("A3", "A", "50"),
-                        provisionalEvidence("A5", "A", "48")
-                )
-        ));
 
         var snapshot = service.overview("1-5d", null).marketSnapshot();
 
-        assertThat(snapshot.conclusionStatus()).isEqualTo("provisional");
-        assertThat(snapshot.completeness()).isEqualByComparingTo("0.2700");
-        assertThat(snapshot.evidence())
-                .filteredOn(item -> item.indicatorCode().equals("V3"))
-                .singleElement()
-                .satisfies(item -> {
-                    assertThat(item.score()).isEqualByComparingTo("72");
-                    assertThat(item.details()).containsEntry("provisionalOnly", true);
-                });
+        assertThat(snapshot.conclusionStatus()).isEqualTo("insufficient");
+        assertThat(snapshot.completeness()).isEqualByComparingTo("0.00");
+        assertThat(snapshot.evidence()).singleElement().satisfies(item -> {
+            assertThat(item.indicatorCode()).isEqualTo("V3");
+            assertThat(item.score()).isNull();
+            assertThat(item.qualityStatus()).isEqualTo("insufficient_history");
+        });
     }
 
     @Test
@@ -377,7 +354,6 @@ class RiskAssessmentQueryServiceImplTest {
         assertThat(detail.snapshots()).singleElement();
         verify(exposureMapper, never()).selectLatestPublishedParents(
                 "stock", "600519.SH", TRADE_DATE);
-        verify(provisionalEvidenceProvider).load(List.of(longTerm), false);
 
         LocalDate start = LocalDate.of(2026, 7, 1);
         when(snapshotMapper.selectTrend("stock", "600519.SH", "20-60d", start, TRADE_DATE))
@@ -397,20 +373,6 @@ class RiskAssessmentQueryServiceImplTest {
     private RiskScoreSnapshotEntity snapshot(long id, String horizon, String completeness,
                                                String qualityStatus, String level) {
         return snapshot(id, horizon, completeness, qualityStatus, level, "stock", "600519.SH");
-    }
-
-    private RiskEvidence provisionalEvidence(String code, String dimension, String score) {
-        return new RiskEvidence(
-                dimension,
-                code,
-                new BigDecimal(score),
-                new BigDecimal(score),
-                CALCULATED_AT.minusHours(1),
-                CALCULATED_AT,
-                "risk-derived-gateway",
-                "insufficient_history",
-                Map.of("provisionalOnly", true)
-        );
     }
 
     private RiskScoreSnapshotEntity snapshot(long id, String horizon, String completeness,
