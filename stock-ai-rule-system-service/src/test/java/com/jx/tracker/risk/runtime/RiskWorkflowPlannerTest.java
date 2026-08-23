@@ -110,6 +110,24 @@ class RiskWorkflowPlannerTest {
     }
 
     @Test
+    void separatesImmediateSectorDatasetsFromDeferredMarketDatasets() {
+        RiskWorkflowPlan immediate = planner().planMarketImmediate();
+        RiskWorkflowPlan deferred = planner().planMarketDeferred();
+
+        assertThat(immediate.collectionTasks()).extracting(RiskCollectionTask::datasetCode)
+                .containsExactly(
+                        MarketDatasetCode.SW1_MEMBERSHIP.code(),
+                        MarketDatasetCode.MARKET_DAILY.code(),
+                        MarketDatasetCode.CROSS_MARKET.code());
+        assertThat(deferred.collectionTasks()).extracting(RiskCollectionTask::datasetCode)
+                .containsExactly(
+                        MarketDatasetCode.VALUATION.code(),
+                        MarketDatasetCode.BREADTH.code(),
+                        FlowEventDataset.MARGIN_FINANCING.code(),
+                        FlowEventDataset.ETF_FUND_FLOW.code());
+    }
+
+    @Test
     void manualStockSyncDefersTheSlowWholeMarketBreadthRebuild() {
         RiskWorkflowPlan plan = planner().planStockSync("600519.SH");
 

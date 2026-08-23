@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.runtime;
 
 import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
+import com.jx.tracker.risk.data.flow.FlowEventDataset;
 import com.jx.tracker.risk.data.market.MarketDatasetCode;
 import com.jx.tracker.risk.workflow.RiskWarningWorkflow;
 import com.jx.tracker.risk.workflow.RiskWorkflowRequest;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -79,34 +81,46 @@ class RiskRuntimeWorkflowTest {
     }
 
     @Test
-    void manualMarketSyncUsesTheRealCurrentAsOfAndMarketPlan() {
+    void manualMarketSyncPublishesImmediateSectorDataBeforeDeferredMarketData() {
         RiskSignalCandidateReader candidateReader = mock(RiskSignalCandidateReader.class);
         RiskWarningWorkflow coreWorkflow = mock(RiskWarningWorkflow.class);
-        when(coreWorkflow.run(any())).thenReturn(SUMMARY);
+        RiskWorkflowRunSummary deferredSummary =
+                new RiskWorkflowRunSummary(5, 6, 7, 8, 9, 10, 11);
+        when(coreWorkflow.run(any())).thenReturn(SUMMARY, deferredSummary);
         DefaultRiskAfterCloseWorkflow workflow = new DefaultRiskAfterCloseWorkflow(
                 planner(), candidateReader, coreWorkflow, clockAt(DATE.plusDays(1).atTime(10, 0)),
                 properties(false));
 
         RiskWorkflowRunSummary result = workflow.runManualMarket(DATE);
 
-        assertThat(result).isEqualTo(SUMMARY);
+        assertThat(result).isEqualTo(new RiskWorkflowRunSummary(7, 7, 10, 12, 10, 12, 11));
         ArgumentCaptor<RiskWorkflowRequest> requestCaptor =
                 ArgumentCaptor.forClass(RiskWorkflowRequest.class);
-        verify(coreWorkflow).run(requestCaptor.capture());
-        assertThat(requestCaptor.getValue()).satisfies(request -> {
+        verify(coreWorkflow, times(2)).run(requestCaptor.capture());
+        List<RiskWorkflowRequest> requests = requestCaptor.getAllValues();
+        assertThat(requests).allSatisfy(request -> {
             assertThat(request.asOf()).isEqualTo(DATE.plusDays(1).atTime(10, 0));
             assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(6));
             assertThat(request.providerStartDate()).isEqualTo(DATE.minusYears(2));
             assertThat(request.providerResultStartDate()).isEqualTo(DATE);
-            assertThat(request.collectionTasks()).hasSize(7);
-            assertThat(request.collectionTasks()).anyMatch(task ->
-                    task.datasetCode().equals(MarketDatasetCode.BREADTH.code()));
-            assertThat(request.collectionTasks()).anyMatch(task ->
-                    task.datasetCode().equals(MarketDatasetCode.CROSS_MARKET.code()));
             assertThat(request.collectionTasks().stream()
                     .flatMap(task -> task.objects().stream()))
                     .anyMatch(object -> object.objectId().equals("CN-A"));
         });
+        assertThat(requests.getFirst().collectionTasks())
+                .extracting(task -> task.datasetCode())
+                .containsExactly(
+                        MarketDatasetCode.SW1_MEMBERSHIP.code(),
+                        MarketDatasetCode.MARKET_DAILY.code(),
+                        MarketDatasetCode.CROSS_MARKET.code())
+                .doesNotContain(MarketDatasetCode.BREADTH.code());
+        assertThat(requests.getLast().collectionTasks())
+                .extracting(task -> task.datasetCode())
+                .containsExactly(
+                        MarketDatasetCode.VALUATION.code(),
+                        MarketDatasetCode.BREADTH.code(),
+                        FlowEventDataset.MARGIN_FINANCING.code(),
+                        FlowEventDataset.ETF_FUND_FLOW.code());
         verifyNoInteractions(candidateReader);
     }
 

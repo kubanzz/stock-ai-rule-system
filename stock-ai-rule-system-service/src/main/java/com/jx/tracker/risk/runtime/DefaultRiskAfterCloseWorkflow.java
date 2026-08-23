@@ -63,9 +63,14 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
         if (tradeDate == null) {
             throw new IllegalArgumentException("tradeDate must not be null");
         }
-        RiskWorkflowPlan plan = planner.planMarket();
-        return workflow.run(plan.manualMarketSyncRequest(
-                tradeDate, LocalDateTime.now(clock), modelVersion, afterCloseCutoff));
+        LocalDateTime asOf = LocalDateTime.now(clock);
+        RiskWorkflowRunSummary immediate = workflow.run(
+                planner.planMarketImmediate().manualMarketSyncRequest(
+                        tradeDate, asOf, modelVersion, afterCloseCutoff));
+        RiskWorkflowRunSummary deferred = workflow.run(
+                planner.planMarketDeferred().manualMarketSyncRequest(
+                        tradeDate, asOf, modelVersion, afterCloseCutoff));
+        return add(immediate, deferred);
     }
 
     public synchronized RiskWorkflowRunSummary runManualStock(
@@ -84,5 +89,20 @@ public final class DefaultRiskAfterCloseWorkflow implements RiskAfterCloseWorkfl
         LocalDateTime configuredCutoff = tradeDate.atTime(afterCloseCutoff);
         LocalDateTime now = LocalDateTime.now(clock);
         return now.isBefore(configuredCutoff) ? now : configuredCutoff;
+    }
+
+    private RiskWorkflowRunSummary add(
+            RiskWorkflowRunSummary left,
+            RiskWorkflowRunSummary right
+    ) {
+        return new RiskWorkflowRunSummary(
+                Math.addExact(left.observationCount(), right.observationCount()),
+                Math.addExact(left.eventCount(), right.eventCount()),
+                Math.addExact(left.snapshotCount(), right.snapshotCount()),
+                Math.addExact(left.evidenceCount(), right.evidenceCount()),
+                Math.addExact(left.gateCount(), right.gateCount()),
+                Math.addExact(left.checkpointCount(), right.checkpointCount()),
+                Math.addExact(left.unavailableDatasetCount(), right.unavailableDatasetCount())
+        );
     }
 }

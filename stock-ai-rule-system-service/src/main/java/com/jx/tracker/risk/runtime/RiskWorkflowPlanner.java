@@ -87,6 +87,34 @@ public final class RiskWorkflowPlanner {
         return new RiskWorkflowPlan(List.of(), tasks, List.of(RiskHorizon.values()));
     }
 
+    public RiskWorkflowPlan planMarketImmediate() {
+        RiskObjectKey market = objectCatalog.market();
+        List<RiskCollectionTask> tasks = List.of(
+                task(MarketRiskDataProvider.PROVIDER_CODE,
+                        MarketDatasetCode.SW1_MEMBERSHIP.code(), List.of(market)),
+                task(MarketRiskDataProvider.PROVIDER_CODE,
+                        MarketDatasetCode.MARKET_DAILY.code(), List.of(market)),
+                task(MarketRiskDataProvider.PROVIDER_CODE,
+                        MarketDatasetCode.CROSS_MARKET.code(), List.of(market))
+        );
+        return new RiskWorkflowPlan(List.of(), tasks, List.of(RiskHorizon.values()));
+    }
+
+    public RiskWorkflowPlan planMarketDeferred() {
+        RiskObjectKey market = objectCatalog.market();
+        List<RiskCollectionTask> tasks = List.of(
+                task(MarketRiskDataProvider.PROVIDER_CODE,
+                        MarketDatasetCode.VALUATION.code(), List.of(market)),
+                task(MarketRiskDataProvider.PROVIDER_CODE,
+                        MarketDatasetCode.BREADTH.code(), List.of(market)),
+                task(FLOW_EVENT_PROVIDER,
+                        FlowEventDataset.MARGIN_FINANCING.code(), List.of(market)),
+                task(FLOW_EVENT_PROVIDER,
+                        FlowEventDataset.ETF_FUND_FLOW.code(), List.of(market))
+        );
+        return new RiskWorkflowPlan(List.of(), tasks, List.of(RiskHorizon.values()));
+    }
+
     public RiskWorkflowPlan planStockSync(String symbol) {
         RiskWorkflowPlan complete = plan(List.of(symbol));
         List<RiskCollectionTask> fastTasks = complete.collectionTasks().stream()
