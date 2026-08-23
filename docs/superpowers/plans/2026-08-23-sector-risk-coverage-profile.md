@@ -39,7 +39,7 @@
 - 创建：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/engine/RiskCoverageProfile.java`
 - 创建：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/engine/RiskCoverageProfileCatalog.java`
 
-- [ ] **步骤 1：编写失败的覆盖目录测试**
+- [x] **步骤 1：编写失败的覆盖目录测试**
 
 ```java
 @Test
@@ -64,7 +64,7 @@ void keepsLegacySectorAndV2StockOnTheFullCatalog() {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证缺少覆盖目录时失败**
+- [x] **步骤 2：运行测试验证缺少覆盖目录时失败**
 
 运行：
 
@@ -75,7 +75,7 @@ mvn -Dtest=RiskCoverageProfileCatalogTest test
 
 预期：测试编译失败，提示 `RiskCoverageProfile` 或 `RiskCoverageProfileCatalog` 不存在。
 
-- [ ] **步骤 3：实现最小覆盖配置**
+- [x] **步骤 3：实现最小覆盖配置**
 
 `RiskCoverageProfile` 提供以下稳定 API：
 
@@ -97,13 +97,13 @@ private static final Set<String> V2_SECTOR_CODES = Set.of(
         "C1", "C3", "C4", "C5", "A3", "A5");
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`mvn -Dtest=RiskCoverageProfileCatalogTest test`
 
 预期：2 个测试通过，0 失败。
 
-- [ ] **步骤 5：提交覆盖目录**
+- [x] **步骤 5：提交覆盖目录**
 
 ```bash
 git add stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/engine \
@@ -117,7 +117,7 @@ git commit -m "feat(risk): 增加对象类型指标覆盖配置"
 - 修改：`stock-ai-rule-system-service/src/test/java/com/jx/tracker/risk/engine/RiskCoverageGateTest.java`
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/engine/RiskScoringEngine.java`
 
-- [ ] **步骤 1：编写 v2 行业失败测试**
+- [x] **步骤 1：编写 v2 行业失败测试**
 
 新增测试辅助方法，根据行业适用目录生成 AVAILABLE 证据，并构造 `RiskScoreRequest`：
 
@@ -150,13 +150,13 @@ void keepsLegacySectorCompletenessOnTheFiveHundredWeightDenominator() {
 }
 ```
 
-- [ ] **步骤 2：运行测试验证正确失败**
+- [x] **步骤 2：运行测试验证正确失败**
 
 运行：`mvn -Dtest=RiskCoverageGateTest test`
 
 预期：v2 行业完整度仍为 `0.4100` 或正式结论为空，新增测试失败。
 
-- [ ] **步骤 3：修改评分引擎**
+- [x] **步骤 3：修改评分引擎**
 
 在 `score` 开始处解析配置：
 
@@ -176,7 +176,7 @@ RiskCoverageProfile profile = RiskCoverageProfileCatalog.resolve(
 - 总分在适用维度权重之间归一化，完整行业证据全部为 70 分时总分仍为 70 分；
 - 指标级缺失原因只遍历 `profile.definitions()`。
 
-- [ ] **步骤 4：运行引擎测试验证通过且无回归**
+- [x] **步骤 4：运行引擎测试验证通过且无回归**
 
 运行：
 
@@ -186,7 +186,7 @@ mvn -Dtest=RiskCoverageProfileCatalogTest,RiskCoverageGateTest,RiskScoringEngine
 
 预期：所有指定测试通过。
 
-- [ ] **步骤 5：提交评分引擎变更**
+- [x] **步骤 5：提交评分引擎变更**
 
 ```bash
 git add stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/engine/RiskScoringEngine.java \
@@ -203,7 +203,7 @@ git commit -m "feat(risk): 按对象适用指标计算完整度"
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/query/RiskAssessmentQueryServiceImpl.java`
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/query/dto/RiskAssessmentDto.java`
 
-- [ ] **步骤 1：编写查询层失败测试**
+- [x] **步骤 1：编写查询层失败测试**
 
 ```java
 @Test
@@ -225,7 +225,7 @@ void explainsV2SectorCoverageAgainstApplicableIndicators() {
 
 在服务测试中验证 v1 快照仍返回 14%，v2 快照使用 v2 维度适用性。
 
-- [ ] **步骤 2：运行测试验证 API 尚不支持对象上下文**
+- [x] **步骤 2：运行测试验证 API 尚不支持对象上下文**
 
 运行：
 
@@ -235,7 +235,7 @@ mvn -Dtest=ProvisionalRiskAssessmentCalculatorTest,RiskAssessmentQueryServiceImp
 
 预期：编译失败或断言失败，因为 `calculate` 没有对象类型/模型版本参数，DTO 没有 `applicable`。
 
-- [ ] **步骤 3：实现共享覆盖语义**
+- [x] **步骤 3：实现共享覆盖语义**
 
 把查询计算方法调整为：
 
@@ -260,7 +260,7 @@ reason = "当前对象类型不适用该指标";
 
 `RiskDimensionAssessment` 增加 `boolean applicable`，`totalCount` 只统计适用指标。
 
-- [ ] **步骤 4：更新所有调用点并运行测试**
+- [x] **步骤 4：更新所有调用点并运行测试**
 
 运行：
 
@@ -270,7 +270,7 @@ mvn -Dtest=ProvisionalRiskAssessmentCalculatorTest,RiskAssessmentQueryServiceImp
 
 预期：全部通过。
 
-- [ ] **步骤 5：提交查询契约变更**
+- [x] **步骤 5：提交查询契约变更**
 
 ```bash
 git add stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/query \
@@ -284,7 +284,7 @@ git commit -m "feat(risk-api): 区分行业指标不适用与缺失"
 - 修改：`stock-ai-rule-system-service/src/test/java/com/jx/tracker/risk/workflow/JdbcRiskWorkflowRepositoryTest.java`
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/workflow/JdbcRiskWorkflowRepository.java`
 
-- [ ] **步骤 1：编写市场范围失败测试**
+- [x] **步骤 1：编写市场范围失败测试**
 
 插入同一日期的市场、两个行业和一个个股观测，构造仅包含 `market:CN-A` 任务的请求：
 
@@ -298,13 +298,13 @@ assertThat(observations).extracting(item -> item.object().objectType())
 
 同时保留一个明确行业请求测试，确保不会读到其他行业。
 
-- [ ] **步骤 2：运行测试验证行业观测未被读取**
+- [x] **步骤 2：运行测试验证行业观测未被读取**
 
 运行：`mvn -Dtest=JdbcRiskWorkflowRepositoryTest test`
 
 预期：市场范围结果缺少 `RiskObjectType.SECTOR`，断言失败。
 
-- [ ] **步骤 3：最小修改 SQL 对象作用域**
+- [x] **步骤 3：最小修改 SQL 对象作用域**
 
 在 `objectSqlScopes` 中识别：
 
@@ -317,7 +317,7 @@ boolean includeLayerCandidates = containsStock || containsMarket;
 
 首个 SQL scope 在 `includeLayerCandidates` 时加入 `market:CN-A` 与全部 `sector` 谓词；明确行业请求不扩大。
 
-- [ ] **步骤 4：运行仓储与工作流测试**
+- [x] **步骤 4：运行仓储与工作流测试**
 
 运行：
 
@@ -327,7 +327,7 @@ mvn -Dtest=JdbcRiskWorkflowRepositoryTest,RiskWarningWorkflowTest test
 
 预期：全部通过。
 
-- [ ] **步骤 5：提交读取范围修复**
+- [x] **步骤 5：提交读取范围修复**
 
 ```bash
 git add stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/workflow/JdbcRiskWorkflowRepository.java \
@@ -343,7 +343,7 @@ git commit -m "fix(risk): 市场评分加载行业观测"
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/runtime/RiskWorkflowPlanner.java`
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/runtime/DefaultRiskAfterCloseWorkflow.java`
 
-- [ ] **步骤 1：编写计划拆分与执行顺序失败测试**
+- [x] **步骤 1：编写计划拆分与执行顺序失败测试**
 
 ```java
 @Test
@@ -360,13 +360,13 @@ void separatesImmediateSectorDatasetsFromDeferredMarketDatasets() {
 
 在 runtime 测试中捕获两次 `workflow.run` 请求，断言快速请求先于包含 `breadth` 的请求，并断言返回汇总为两次结果逐字段求和。
 
-- [ ] **步骤 2：运行测试验证方法不存在**
+- [x] **步骤 2：运行测试验证方法不存在**
 
 运行：`mvn -Dtest=RiskWorkflowPlannerTest,RiskRuntimeWorkflowTest test`
 
 预期：编译失败，提示新的计划方法不存在。
 
-- [ ] **步骤 3：实现两阶段计划和汇总**
+- [x] **步骤 3：实现两阶段计划和汇总**
 
 新增：
 
@@ -377,7 +377,7 @@ public RiskWorkflowPlan planMarketDeferred();
 
 `DefaultRiskAfterCloseWorkflow.runManualMarket` 在同一 `asOf` 下先后调用两次 `workflow.run`。新增私有 `add` 方法，使用 `Math.addExact` 汇总 `RiskWorkflowRunSummary` 七个计数字段。第二阶段异常继续向上抛出，使同步任务记录失败，但第一阶段已经提交的快照不回滚。
 
-- [ ] **步骤 4：运行 runtime 与同步测试**
+- [x] **步骤 4：运行 runtime 与同步测试**
 
 运行：
 
@@ -387,7 +387,7 @@ mvn -Dtest=RiskWorkflowPlannerTest,RiskRuntimeWorkflowTest,RiskSyncJobServiceTes
 
 预期：全部通过。
 
-- [ ] **步骤 5：提交分阶段同步**
+- [x] **步骤 5：提交分阶段同步**
 
 ```bash
 git add stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/runtime \
@@ -405,7 +405,7 @@ git commit -m "perf(risk): 行业评分先于慢速市场数据发布"
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/sync/RiskSyncJobService.java`
 - 修改：`stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/controller/RiskSyncController.java`
 
-- [ ] **步骤 1：编写两年窗口和同步任务失败测试**
+- [x] **步骤 1：编写两年窗口和同步任务失败测试**
 
 ```java
 @Test
@@ -421,13 +421,13 @@ void buildsAStoredDataOnlyTwoYearSectorRebuildRequest() {
 
 同步服务测试调用 `startSectorRebuild()`，断言 scope 为 `sector:SW1:rebuild`，并验证已有活动任务时返回 409。控制器使用现有 job DTO 返回异步任务。
 
-- [ ] **步骤 2：运行测试验证入口不存在**
+- [x] **步骤 2：运行测试验证入口不存在**
 
 运行：`mvn -Dtest=RiskRuntimeWorkflowTest,RiskSyncJobServiceTest,RiskSyncControllerTest test`
 
 预期：编译失败，提示重建方法不存在。
 
-- [ ] **步骤 3：实现只读重建请求和任务类型**
+- [x] **步骤 3：实现只读重建请求和任务类型**
 
 `RiskWorkflowPlan` 增加：
 
@@ -448,7 +448,7 @@ public RiskWorkflowRequest recentSectorRebuildRequest(
 public AjaxResult rebuildSectors()
 ```
 
-- [ ] **步骤 4：运行重建与同步测试**
+- [x] **步骤 4：运行重建与同步测试**
 
 运行：
 
@@ -458,7 +458,7 @@ mvn -Dtest=RiskRuntimeWorkflowTest,RiskSyncJobServiceTest,RiskSyncControllerTest
 
 预期：全部通过。
 
-- [ ] **步骤 5：提交重建入口**
+- [x] **步骤 5：提交重建入口**
 
 ```bash
 git add stock-ai-rule-system-service/src/main/java/com/jx/tracker/risk/{runtime,sync,controller} \
@@ -475,7 +475,7 @@ git commit -m "feat(risk): 增加两年行业评分重建任务"
 - 创建：`stock-ai-rule-system-ui/apps/web-antd/src/views/stock/risk/shared/risk-applicability-ui.test.ts`
 - 修改：`stock-ai-rule-system-service/src/main/resources/application.yml`
 
-- [ ] **步骤 1：编写前端失败测试**
+- [x] **步骤 1：编写前端失败测试**
 
 增加带 `applicable: false` 的 T 维度 fixture，并验证渲染结果：
 
@@ -486,7 +486,7 @@ expect(wrapper.text()).not.toContain('0/4 可用');
 
 增加 `not_applicable` 指标 fixture，打开弹层后验证“不适用”和“当前对象类型不适用该指标”。
 
-- [ ] **步骤 2：运行前端测试验证类型或展示失败**
+- [x] **步骤 2：运行前端测试验证类型或展示失败**
 
 运行：
 
@@ -497,7 +497,7 @@ pnpm test:unit apps/web-antd/src/views/stock/risk/shared/risk-applicability-ui.t
 
 预期：类型检查或“不适用”断言失败。
 
-- [ ] **步骤 3：实现前端适用性展示**
+- [x] **步骤 3：实现前端适用性展示**
 
 - `RiskIndicatorAvailability` 增加 `not_applicable`；
 - `RiskDimensionAssessment` 增加 `applicable: boolean`；
@@ -511,7 +511,7 @@ pnpm test:unit apps/web-antd/src/views/stock/risk/shared/risk-applicability-ui.t
 model-version: ${RISK_WARNING_MODEL_VERSION:risk-warning-v2}
 ```
 
-- [ ] **步骤 4：运行前端测试与后端配置测试**
+- [x] **步骤 4：运行前端测试与后端配置测试**
 
 运行：
 
@@ -525,7 +525,7 @@ mvn -Dtest=RiskWarningConfigurationTest test
 
 预期：全部通过。
 
-- [ ] **步骤 5：提交前端和版本配置**
+- [x] **步骤 5：提交前端和版本配置**
 
 ```bash
 git add stock-ai-rule-system-ui/apps/web-antd/src \
@@ -539,7 +539,7 @@ git commit -m "feat(risk-ui): 展示行业不适用指标"
 - 检查：本计划列出的全部文件
 - 更新：`docs/superpowers/plans/2026-08-23-sector-risk-coverage-profile.md` 的复选框
 
-- [ ] **步骤 1：运行后端完整测试**
+- [x] **步骤 1：运行后端完整测试**
 
 ```bash
 cd stock-ai-rule-system-service
@@ -548,7 +548,7 @@ mvn test
 
 预期：BUILD SUCCESS，0 failures，0 errors。
 
-- [ ] **步骤 2：运行前端风险中心测试和静态检查**
+- [x] **步骤 2：运行前端风险中心测试和静态检查**
 
 ```bash
 cd stock-ai-rule-system-ui
@@ -559,7 +559,7 @@ pnpm lint
 
 预期：所有命令退出码为 0。
 
-- [ ] **步骤 3：检查版本、差异和敏感内容**
+- [x] **步骤 3：检查版本、差异和敏感内容**
 
 ```bash
 git diff --check
@@ -576,11 +576,11 @@ git diff dev...HEAD --stat
 - 两年重建没有外部 Provider 调用；
 - 风险提示文案未被删除。
 
-- [ ] **步骤 4：执行代码审查并修复必须项**
+- [x] **步骤 4：执行代码审查并修复必须项**
 
 逐项核对设计验收标准、测试证据和最终 diff；发现问题后先补失败测试，再修复实现并重跑相关验证。
 
-- [ ] **步骤 5：提交计划进度更新**
+- [x] **步骤 5：提交计划进度更新**
 
 ```bash
 git add docs/superpowers/plans/2026-08-23-sector-risk-coverage-profile.md
