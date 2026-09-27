@@ -25,6 +25,10 @@ from risk_gateway.time_policy import SHANGHAI
 
 
 DERIVED_REQUEST_HASH_VERSIONS = {
+    # A per-symbol stock_zh_a_hist fallback was added after the original
+    # breadth proxy responses were cached; invalidate those responses so the
+    # fallback can repair currently incomplete requests immediately.
+    "breadth": "breadth-current-universe-proxy-v4",
     # Keep immutable raw partitions, but do not reuse pre-proxy valuation responses.
     "valuation": "valuation-forward-fill-v5",
     # Current SW1 snapshots must not reuse the former cached empty fallback.

@@ -8,7 +8,9 @@ import { Button, Progress, Tag } from 'ant-design-vue';
 const props = defineProps<{
   job?: RiskSyncJob;
   latestDataDate?: null | string;
+  pollError?: string;
   staleTradingDays?: number;
+  stalled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -75,19 +77,25 @@ const phaseLabels: Record<string, string> = {
       </div>
     </div>
 
-    <div v-if="job" class="sync-progress">
+    <div v-if="job || pollError || stalled" class="sync-progress">
       <Progress
         v-if="active"
-        :percent="job.progress"
+        :percent="job?.progress ?? 0"
         :show-info="false"
         size="small"
         status="active"
       />
       <span
-        v-if="job.message"
-        :class="{ 'sync-error': job.status === 'failed' }"
+        v-if="job?.message"
+        :class="{ 'sync-error': job?.status === 'failed' }"
       >
-        {{ job.message }}
+        {{ job?.message }}
+      </span>
+      <span v-else-if="pollError" class="sync-error">
+        同步状态暂时无法查询，将自动重试：{{ pollError }}
+      </span>
+      <span v-else-if="stalled" class="sync-warning">
+        后台任务较长时间没有进度变化，仍在等待后端返回结果。
       </span>
       <span v-else-if="active">后台同步中，当前页面数据仍可正常查看。</span>
     </div>
@@ -137,6 +145,10 @@ const phaseLabels: Record<string, string> = {
 
 .sync-error {
   color: #cf1322;
+}
+
+.sync-warning {
+  color: #ad6800;
 }
 
 @media (max-width: 720px) {

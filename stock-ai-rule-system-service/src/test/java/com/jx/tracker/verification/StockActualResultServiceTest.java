@@ -84,7 +84,7 @@ class StockActualResultServiceTest {
                     if ("selectList".equals(method.getName())) {
                         return fake.selectResponses.isEmpty() ? List.of() : fake.selectResponses.remove();
                     }
-                    if ("insert".equals(method.getName())) {
+                    if ("insert".equals(method.getName()) || "upsertActualResult".equals(method.getName())) {
                         fake.inserted.add((E) args[0]);
                         return 1;
                     }

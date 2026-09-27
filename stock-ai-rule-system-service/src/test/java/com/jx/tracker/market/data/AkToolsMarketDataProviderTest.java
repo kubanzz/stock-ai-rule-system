@@ -83,6 +83,33 @@ class AkToolsMarketDataProviderTest {
     }
 
     @Test
+    void mapsSingleStockHistoryToAllTradingDayQuotes() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith(
+                        "http://127.0.0.1:8090/api/public/stock_zh_a_daily")))
+                .andExpect(queryParam("symbol", "sz000001"))
+                .andExpect(queryParam("start_date", "20260610"))
+                .andExpect(queryParam("end_date", "20260710"))
+                .andRespond(withSuccess("""
+                        [
+                          {"date":"2026-06-10T00:00:00.000","open":10.0,"high":10.8,"low":9.9,"close":10.5,"volume":100000},
+                          {"date":"2026-06-11T00:00:00.000","open":10.5,"high":10.9,"low":10.2,"close":10.7,"volume":110000},
+                          {"date":"2026-06-12T00:00:00.000","open":10.7,"high":11.0,"low":10.4,"close":10.8,"volume":120000}
+                        ]
+                        """, MediaType.APPLICATION_JSON));
+        AkToolsMarketDataProvider provider = provider(builder);
+
+        var rows = provider.fetchDailyQuotes(
+                "000001.SZ", LocalDate.of(2026, 6, 10), LocalDate.of(2026, 7, 10));
+
+        assertThat(rows).hasSize(3).extracting(StockDailyQuoteUpsertDto::getTradeDate)
+                .containsExactly(LocalDate.of(2026, 6, 10), LocalDate.of(2026, 6, 11), LocalDate.of(2026, 6, 12));
+        assertThat(rows.getFirst().getClosePrice()).isEqualByComparingTo("10.5");
+        server.verify();
+    }
+
+    @Test
     void routesHs300ToIndexHistoryAndComputesPreviousClose() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

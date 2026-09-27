@@ -25,6 +25,12 @@ public record RiskWorkflowRequest(
     public static final LocalTime DEFAULT_AFTER_CLOSE_CUTOFF = LocalTime.of(20, 0);
     public static final int BASELINE_COLLECTION_YEARS = 6;
     public static final int BACKFILL_SCORE_YEARS = 5;
+    /**
+     * A five-year percentile needs about 1,250 A-share sessions.  Six calendar
+     * years leave enough room for weekends, holidays and occasional source
+     * gaps while keeping an interactive market read bounded.
+     */
+    public static final int LATEST_READ_CONTEXT_YEARS = 6;
 
     public RiskWorkflowRequest {
         collectionTasks = collectionTasks == null ? List.of() : List.copyOf(collectionTasks);
@@ -117,5 +123,27 @@ public record RiskWorkflowRequest(
             throw new IllegalArgumentException("scoreStartDate must not be null");
         }
         return scoreStartDate.minusYears(BASELINE_COLLECTION_YEARS);
+    }
+
+    /**
+     * Indicates that this request publishes one latest day while retaining a
+     * provider context window.  Daily, stock-sync and backfill requests keep
+     * their normal historical read semantics.
+     */
+    public boolean latestOnlyRead() {
+        return scoreStartDate.equals(endDate)
+                && providerResultStartDate.equals(endDate)
+                && !providerStartDate.isBefore(collectionStartDate);
+    }
+
+    /**
+     * Start date used when reading persisted artifacts for scoring.  Manual
+     * market sync keeps enough persisted history for the rolling percentile
+     * (about 1,250 sessions), without reopening the full backfill window.
+     */
+    public LocalDate readStartDate() {
+        return latestOnlyRead()
+                ? scoreStartDate.minusYears(LATEST_READ_CONTEXT_YEARS)
+                : collectionStartDate;
     }
 }

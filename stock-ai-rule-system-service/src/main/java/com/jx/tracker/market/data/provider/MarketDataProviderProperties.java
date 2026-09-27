@@ -24,6 +24,14 @@ public class MarketDataProviderProperties {
 
     private Duration readTimeout = Duration.ofSeconds(60);
 
+    /**
+     * Breadth is calculated by the derived gateway over the whole A-share
+     * universe and can legitimately take longer than ordinary market-data
+     * requests.  It is applied only to the derived breadth transport; all
+     * other requests continue to use {@link #readTimeout}.
+     */
+    private Duration breadthReadTimeout = Duration.ofMinutes(10);
+
     private int retryCount = 3;
 
     private int minimumStockCount = 4000;

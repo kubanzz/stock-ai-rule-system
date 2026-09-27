@@ -69,7 +69,7 @@ public class StockSignalService {
                 .symbol(symbol)
                 .signalDate(signalDate)
                 .signal(signalScore.signal())
-                .signalDirection(signalScore.signal())
+                .signalDirection(signalScore.signalDirection())
                 .signalLevel(signalScore.signalLevel())
                 .bullishScore(scaleScore(executionResult.bullishScore()))
                 .bearishScore(scaleScore(executionResult.bearishScore()))

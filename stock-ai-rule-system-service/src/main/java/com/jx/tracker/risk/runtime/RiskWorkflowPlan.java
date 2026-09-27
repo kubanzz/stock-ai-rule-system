@@ -52,8 +52,13 @@ public record RiskWorkflowPlan(
             String modelVersion,
             LocalTime afterCloseCutoff
     ) {
+        // Rolling percentile indicators need roughly 1,250 trading sessions.
+        // Keep the latest market publication's provider context at the same
+        // six-year baseline as the bounded repository read window; a two-year
+        // source window is only about 486 sessions and leaves most indicators
+        // in insufficient_history.
         LocalDate collectionStartDate = RiskWorkflowRequest.baselineCollectionStart(tradeDate);
-        LocalDate providerStartDate = tradeDate.minusYears(2);
+        LocalDate providerStartDate = collectionStartDate;
         return new RiskWorkflowRequest(
                 collectionTasks,
                 horizons,

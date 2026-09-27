@@ -14,19 +14,21 @@ class SignalScoringServiceTest {
     private final SignalScoringService scoringService = new SignalScoringService();
 
     @Test
-    void keepsBullishDirectionWhenLegacyRiskScoreIsHigh() {
+    void emitsHighRiskWhilePreservingBullishDirectionWhenRiskScoreIsHigh() {
         SignalScore score = scoringService.score(new BigDecimal("82"), new BigDecimal("15"), new BigDecimal("85"));
 
-        assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
-        assertThat(score.signalLevel()).isEqualTo("强看涨");
-        assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("0.8200"));
+        assertThat(score.signal()).isEqualTo(SignalType.HIGH_RISK.getCode());
+        assertThat(score.signalDirection()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.signalLevel()).isEqualTo("高风险");
+        assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("0.8500"));
     }
 
     @Test
-    void legacyRiskScoreNeverOverridesBullishDirection() {
+    void preservesBullishDirectionWhenRiskScoreIsElevatedButBelowHighRiskThreshold() {
         SignalScore score = scoringService.score(new BigDecimal("72"), BigDecimal.ZERO, new BigDecimal("72"));
 
         assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.signalDirection()).isEqualTo(SignalType.BULLISH.getCode());
         assertThat(score.signalLevel()).isEqualTo("强看涨");
     }
 
@@ -35,6 +37,7 @@ class SignalScoringServiceTest {
         SignalScore score = scoringService.score(new BigDecimal("72"), new BigDecimal("65"), new BigDecimal("30"));
 
         assertThat(score.signal()).isEqualTo(SignalType.WATCH.getCode());
+        assertThat(score.signalDirection()).isEqualTo(SignalType.WATCH.getCode());
         assertThat(score.signalLevel()).isEqualTo("观望");
     }
 
@@ -43,6 +46,7 @@ class SignalScoringServiceTest {
         SignalScore score = scoringService.score(new BigDecimal("76"), new BigDecimal("20"), new BigDecimal("45"));
 
         assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.signalDirection()).isEqualTo(SignalType.BULLISH.getCode());
         assertThat(score.signalLevel()).isEqualTo("强看涨");
         assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("0.7600"));
     }
@@ -52,7 +56,17 @@ class SignalScoringServiceTest {
         SignalScore score = scoringService.score(new BigDecimal("20"), new BigDecimal("64"), new BigDecimal("35"));
 
         assertThat(score.signal()).isEqualTo(SignalType.BEARISH.getCode());
+        assertThat(score.signalDirection()).isEqualTo(SignalType.BEARISH.getCode());
         assertThat(score.signalLevel()).isEqualTo("偏看跌");
         assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("0.6400"));
+    }
+
+    @Test
+    void clampsOutOfRangeScoresBeforeClassifyingSignal() {
+        SignalScore score = scoringService.score(new BigDecimal("150"), new BigDecimal("-5"), new BigDecimal("-10"));
+
+        assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.signalDirection()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("1.0000"));
     }
 }

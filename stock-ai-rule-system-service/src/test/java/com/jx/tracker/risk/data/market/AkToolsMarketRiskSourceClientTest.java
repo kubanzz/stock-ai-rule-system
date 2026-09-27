@@ -160,6 +160,23 @@ class AkToolsMarketRiskSourceClientTest {
     }
 
     @Test
+    void breadthUsesItsDedicatedTransportWithoutChangingOtherDerivedRoutes() {
+        ScriptedTransport nativeTransport = new ScriptedTransport();
+        ScriptedTransport regularDerivedTransport = new ScriptedTransport();
+        ScriptedTransport breadthTransport = new ScriptedTransport();
+        AkToolsMarketRiskSourceClient client = new AkToolsMarketRiskSourceClient(
+                nativeTransport, regularDerivedTransport, breadthTransport, CLOCK);
+
+        RiskProviderBatch result = new MarketRiskDataProvider(client).fetch(
+                MarketDatasetCode.BREADTH.code(), currentRequest(List.of(MARKET)));
+
+        assertThat(result.qualityStatus()).isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
+        assertThat(regularDerivedTransport.calls).isEmpty();
+        assertThat(breadthTransport.calls).singleElement().satisfies(call ->
+                assertThat(call.endpoint()).isEqualTo("/api/risk/breadth"));
+    }
+
+    @Test
     void emptyMarketSnapshotIsInsufficientRatherThanAFormalZeroObservation() {
         ScriptedTransport transport = new ScriptedTransport();
         MarketRiskDataProvider provider = new MarketRiskDataProvider(
@@ -528,6 +545,7 @@ class AkToolsMarketRiskSourceClientTest {
         private List<Map<String, Object>> sw1Components = List.of();
         private List<Map<String, Object>> daily = List.of();
         private List<Map<String, Object>> valuation = List.of();
+        private List<Map<String, Object>> breadth = List.of();
         private String nextCursor;
         private LocalDate earliestAvailableDate = LocalDate.of(2021, 7, 18);
         private boolean historyComplete = true;
@@ -543,6 +561,7 @@ class AkToolsMarketRiskSourceClientTest {
                 case "/api/public/index_component_sw" -> sw1Components;
                 case "/api/risk/market-daily" -> daily;
                 case "/api/risk/valuation" -> valuation;
+                case "/api/risk/breadth" -> breadth;
                 default -> List.of();
             };
         }

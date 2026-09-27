@@ -68,6 +68,9 @@ class RiskSyncControllerTest {
         mockMvc.perform(get("/api/risks/sync/jobs/market-job"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("queued"));
+        mockMvc.perform(get("/api/risks/sync/status/market-job"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.jobId").value("market-job"));
         mockMvc.perform(get("/api/risks/sync/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.latestMarketJob.jobId").value("market-job"))

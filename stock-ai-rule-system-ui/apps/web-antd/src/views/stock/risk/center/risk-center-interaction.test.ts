@@ -251,4 +251,61 @@ describe('risk center interactions', () => {
     container.remove();
     vi.useRealTimers();
   });
+
+  it('keeps polling and exposes transient status errors', async () => {
+    vi.useFakeTimers();
+    const queuedJob = {
+      createdAt: '2026-07-25T10:00:00+08:00',
+      eventCount: 0,
+      evidenceCount: 0,
+      finishedAt: null,
+      jobId: 'market-job-retry',
+      message: null,
+      observationCount: 0,
+      phase: 'syncing_market',
+      progress: 20,
+      scopeKey: 'market:CN-A',
+      snapshotCount: 0,
+      startedAt: '2026-07-25T10:00:01+08:00',
+      status: 'running',
+      tradeDate: '2026-07-24',
+      unavailableDatasetCount: 0,
+    } as const;
+    riskApi.startRiskMarketSync.mockResolvedValue(queuedJob);
+    riskApi.getRiskSyncJob
+      .mockRejectedValueOnce(new Error('status unavailable'))
+      .mockResolvedValueOnce({
+        ...queuedJob,
+        finishedAt: '2026-07-25T10:01:00+08:00',
+        message: '同步完成',
+        phase: 'completed',
+        progress: 100,
+        status: 'succeeded',
+      });
+
+    const container = document.createElement('div');
+    document.body.append(container);
+    const app = createApp(RiskCenter);
+    app.mount(container);
+    await flushAsyncWork();
+
+    const syncButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('同步最新市场数据'),
+    );
+    syncButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushAsyncWork();
+
+    await vi.advanceTimersByTimeAsync(1500);
+    await flushAsyncWork();
+    expect(container.textContent).toContain('同步状态暂时无法查询');
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await flushAsyncWork();
+    expect(riskApi.getRiskSyncJob).toHaveBeenCalledTimes(2);
+    expect(riskApi.getRiskOverview).toHaveBeenCalled();
+
+    app.unmount();
+    container.remove();
+    vi.useRealTimers();
+  });
 });

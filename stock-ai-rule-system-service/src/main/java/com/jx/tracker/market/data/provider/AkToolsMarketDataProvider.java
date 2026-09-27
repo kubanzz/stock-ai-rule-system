@@ -17,13 +17,17 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class AkToolsMarketDataProvider implements MarketDataProvider {
 
     public static final String DATA_SOURCE = "aktools/akshare";
     private static final String A_SHARE_LIST_PATH = "/api/public/stock_info_a_code_name";
     private static final String A_SHARE_SPOT_PATH = "/api/public/stock_zh_a_spot";
+    private static final String A_SHARE_DAILY_PATH = "/api/public/stock_zh_a_daily";
+    private static final String A_SHARE_HISTORY_PATH = "/api/public/stock_zh_a_hist";
     private static final String INDEX_DAILY_PATH = "/api/public/stock_zh_index_daily";
     private static final String TRADE_CALENDAR_PATH = "/api/public/tool_trade_date_hist_sina";
     private static final String HS300_SYMBOL = "000300.SH";
@@ -75,7 +79,7 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
             return fetchHs300Quotes(startDate, endDate);
         }
         if (StringUtils.hasText(normalizedSymbol)) {
-            throw new ServiceException("AKTools 一期仅支持全 A 股快照或沪深 300：" + normalizedSymbol);
+            return fetchSingleStockQuotes(normalizedSymbol, startDate, endDate);
         }
         LocalDate tradeDate = endDate != null ? endDate : startDate;
         if (tradeDate == null) {
@@ -104,6 +108,63 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
             result.add(dto);
         }
         return requireRows(result, "A 股收盘快照");
+    }
+
+    private List<StockDailyQuoteUpsertDto> fetchSingleStockQuotes(
+            String symbol,
+            LocalDate startDate,
+            LocalDate endDate) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("symbol", akToolsSymbol(symbol));
+        if (startDate != null) {
+            params.put("start_date", startDate.format(BASIC_DATE));
+        }
+        if (endDate != null) {
+            params.put("end_date", endDate.format(BASIC_DATE));
+        }
+        params.put("adjust", "qfq");
+
+        JsonNode rows;
+        try {
+            rows = getArray(A_SHARE_DAILY_PATH, params);
+        } catch (RuntimeException dailyException) {
+            // Older AKTools builds expose the same history through the
+            // Eastmoney-compatible endpoint and return HTTP 500 for the Sina
+            // endpoint. Try that endpoint before reporting the sync failure.
+            try {
+                params.put("period", "daily");
+                rows = getArray(A_SHARE_HISTORY_PATH, params);
+            } catch (RuntimeException historyException) {
+                historyException.addSuppressed(dailyException);
+                throw historyException;
+            }
+        }
+
+        List<StockDailyQuoteUpsertDto> result = new ArrayList<>(rows.size());
+        for (JsonNode row : rows) {
+            LocalDate tradeDate = parseDate(firstText(row, "date", "日期", "trade_date", "交易日期"));
+            if (tradeDate == null
+                    || startDate != null && tradeDate.isBefore(startDate)
+                    || endDate != null && tradeDate.isAfter(endDate)) {
+                continue;
+            }
+            StockDailyQuoteUpsertDto dto = new StockDailyQuoteUpsertDto();
+            dto.setSymbol(symbol);
+            dto.setTradeDate(tradeDate);
+            dto.setOpenPrice(firstDecimal(row, "open", "开盘", "open_price"));
+            dto.setHighPrice(firstDecimal(row, "high", "最高", "high_price"));
+            dto.setLowPrice(firstDecimal(row, "low", "最低", "low_price"));
+            dto.setClosePrice(firstDecimal(row, "close", "收盘", "close_price"));
+            dto.setPreClose(firstDecimal(row, "pre_close", "昨收"));
+            dto.setChangePct(firstDecimal(row, "pct_chg", "涨跌幅", "change_pct"));
+            dto.setVolume(firstDecimal(row, "volume", "成交量", "vol"));
+            dto.setAmount(firstDecimal(row, "amount", "成交额"));
+            dto.setDataSource(DATA_SOURCE);
+            dto.setSyncTime(LocalDateTime.now());
+            result.add(dto);
+        }
+        result.sort(Comparator.comparing(StockDailyQuoteUpsertDto::getTradeDate));
+        return requireRows(result, "股票日线：" + symbol);
     }
 
     @Override
@@ -176,11 +237,24 @@ public class AkToolsMarketDataProvider implements MarketDataProvider {
     }
 
     private JsonNode getArray(String path, String symbol) {
+        return getArray(path, Map.of("symbol", symbol));
+    }
+
+    private JsonNode getArray(String path, Map<String, String> params) {
         String response = restClient.get().uri(builder -> {
-            builder.path(path).queryParam("symbol", symbol);
+            builder.path(path);
+            params.forEach((name, value) -> builder.queryParam(name, value));
             return builder.build();
         }).retrieve().body(String.class);
         return readArray(response, path);
+    }
+
+    private String akToolsSymbol(String symbol) {
+        String exchange = SymbolNormalizer.parseExchange(symbol);
+        if (exchange == null || symbol.length() < 7) {
+            return symbol;
+        }
+        return exchange.toLowerCase() + symbol.substring(0, symbol.length() - exchange.length() - 1);
     }
 
     private JsonNode readArray(String response, String operation) {

@@ -31,6 +31,7 @@ _COLUMN_ALIASES = {
     "amount": "amount",
 }
 _MARKET_COLUMNS = ["date", "open", "close", "volume", "amount"]
+_CLOSE_COLUMNS = ["date", "close"]
 
 
 def normalize_object_key(raw: str) -> str:
@@ -111,6 +112,43 @@ def normalize_market_frame(
     return normalized
 
 
+def normalize_close_frame(
+    rows: Sequence[Mapping[str, object]] | pd.DataFrame,
+) -> pd.DataFrame:
+    """Validate a price-only history used by close-based breadth formulas.
+
+    Some public history endpoints expose OHLC and amount but omit volume.  A
+    breadth calculation only needs the closing price, so this deliberately
+    narrow contract avoids inventing a volume value while retaining the same
+    date, duplicate, numeric, and positive-price checks as market histories.
+    """
+    frame = rows.copy() if isinstance(rows, pd.DataFrame) else pd.DataFrame(rows)
+    if frame.empty:
+        return pd.DataFrame(columns=_CLOSE_COLUMNS)
+
+    renamed = frame.rename(columns={column: _COLUMN_ALIASES.get(str(column), str(column)) for column in frame.columns})
+    missing = {"date", "close"}.difference(renamed.columns)
+    if missing:
+        raise InvalidSeries(f"missing required close columns: {sorted(missing)}")
+
+    normalized = renamed[_CLOSE_COLUMNS].copy()
+    try:
+        normalized["date"] = pd.to_datetime(normalized["date"], errors="raise").dt.date
+        normalized["close"] = pd.to_numeric(normalized["close"], errors="raise")
+    except (TypeError, ValueError) as exception:
+        raise InvalidSeries("close series contains an invalid date or numeric value") from exception
+
+    exact = normalized.drop_duplicates()
+    conflicting = exact[exact.duplicated(subset=["date"], keep=False)]
+    if not conflicting.empty:
+        dates = ", ".join(sorted({value.isoformat() for value in conflicting["date"]}))
+        raise AmbiguousRevision(f"conflicting rows for trade date: {dates}")
+    normalized = exact.sort_values("date").reset_index(drop=True)
+    if normalized["close"].isna().any() or (normalized["close"] <= 0).any():
+        raise InvalidSeries("close prices must be positive")
+    return normalized
+
+
 def align_available_series(
     left: pd.DataFrame,
     right: pd.DataFrame,
@@ -151,7 +189,9 @@ def _utc_timestamp(raw: str | datetime) -> pd.Timestamp:
 
 
 def _infer_exchange(symbol: str) -> str:
-    if symbol.startswith(("4", "8")):
+    # Beijing Stock Exchange listings use both the legacy 4/8 prefixes and
+    # the newer 920xxx code range present in the current stock master.
+    if symbol.startswith(("4", "8", "92")):
         return "BJ"
     if symbol.startswith("6"):
         return "SH"

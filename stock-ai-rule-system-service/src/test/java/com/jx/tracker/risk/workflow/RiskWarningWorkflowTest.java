@@ -186,6 +186,47 @@ class RiskWarningWorkflowTest {
     }
 
     @Test
+    void latestMarketCollectionUsesSixYearProviderContextForRollingIndicators() {
+        InMemoryRepository repository = new InMemoryRepository();
+        List<RiskProviderRequest> requests = new ArrayList<>();
+        RiskDataProvider provider = new RiskDataProvider() {
+            @Override
+            public String providerCode() {
+                return "provider-a";
+            }
+
+            @Override
+            public boolean supports(String datasetCode) {
+                return MarketDatasetCode.MARKET_DAILY.code().equals(datasetCode);
+            }
+
+            @Override
+            public RiskProviderBatch fetch(String datasetCode, RiskProviderRequest request) {
+                requests.add(request);
+                return RiskProviderBatch.unavailable(
+                        "source-a", "fixture unavailable", AS_OF);
+            }
+        };
+        LocalDate contextStart = DATE.minusYears(RiskWorkflowRequest.BASELINE_COLLECTION_YEARS);
+        RiskWorkflowRequest request = new RiskWorkflowRequest(
+                List.of(new RiskCollectionTask(
+                        "provider-a", MarketDatasetCode.MARKET_DAILY.code(),
+                        "market:CN-A", List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), contextStart, DATE, DATE, AS_OF,
+                List.of(), "risk-v1", RiskWorkflowRequest.DEFAULT_AFTER_CLOSE_CUTOFF,
+                contextStart, DATE);
+
+        workflow(repository, provider).run(request);
+
+        assertThat(request.latestOnlyRead()).isTrue();
+        assertThat(requests).singleElement().satisfies(actual -> {
+            assertThat(actual.startDate()).isEqualTo(contextStart);
+            assertThat(actual.resultStartDate()).isEqualTo(DATE);
+            assertThat(actual.endDate()).isEqualTo(DATE);
+        });
+    }
+
+    @Test
     void standardDailyFlowCollectionAlsoUsesTheShortLookback() {
         InMemoryRepository repository = new InMemoryRepository();
         List<RiskProviderRequest> requests = new ArrayList<>();
@@ -584,13 +625,50 @@ class RiskWarningWorkflowTest {
 
         workflow(repository, provider).run(request);
 
+        assertThat(provider.requests(MarketDatasetCode.MARKET_DAILY)).hasSize(2);
         assertThat(provider.requests(MarketDatasetCode.MARKET_DAILY))
-                .singleElement()
-                .satisfies(actual -> assertThat(actual.objects()).containsExactly(MARKET, SECTOR));
+                .anySatisfy(actual -> assertThat(actual.objects()).containsExactly(MARKET));
+        assertThat(provider.requests(MarketDatasetCode.MARKET_DAILY))
+                .anySatisfy(actual -> assertThat(actual.objects()).containsExactly(SECTOR));
         assertThat(repository.snapshots.values()).extracting(StoredRiskSnapshot::snapshot)
                 .extracting(RiskSnapshot::object)
                 .contains(MARKET, SECTOR)
                 .doesNotContain(STOCK);
+    }
+
+    @Test
+    void incompleteSectorBatchDoesNotDowngradeMarketBatch() {
+        RiskObjectKey incompleteSector = new RiskObjectKey(RiskObjectType.SECTOR, "SW1:801790");
+        IndustryExposure complete = exposure(
+                SECTOR, DATE, null, AS_OF.minusHours(2), AS_OF.minusHours(1),
+                RiskDataQualityStatus.AVAILABLE);
+        IndustryExposure incomplete = exposure(
+                incompleteSector, DATE, null, AS_OF.minusHours(2), AS_OF.minusHours(1),
+                RiskDataQualityStatus.AVAILABLE);
+        TwoStageMarketProvider provider = new TwoStageMarketProvider(
+                List.of(complete, incomplete), false, Set.of(incompleteSector));
+        InMemoryRepository repository = new InMemoryRepository();
+        RiskWorkflowRequest request = RiskWorkflowRequest.daily(
+                DATE, AS_OF,
+                List.of(
+                        task(MarketDatasetCode.SW1_MEMBERSHIP, List.of(STOCK)),
+                        task(MarketDatasetCode.MARKET_DAILY, List.of(MARKET))),
+                List.of(RiskHorizon.SHORT_TERM), List.of(), "risk-v1");
+
+        workflow(repository, provider, defaultEvaluator(), 1).run(request);
+
+        assertThat(provider.requests(MarketDatasetCode.MARKET_DAILY)).hasSize(3)
+                .allSatisfy(actual -> assertThat(actual.objects()).hasSize(1));
+        assertThat(repository.snapshots.values())
+                .filteredOn(stored -> stored.snapshot().object().equals(MARKET))
+                .singleElement()
+                .extracting(StoredRiskSnapshot::qualityStatus)
+                .isEqualTo(RiskDataQualityStatus.AVAILABLE);
+        assertThat(repository.snapshots.values())
+                .filteredOn(stored -> stored.snapshot().object().equals(incompleteSector))
+                .singleElement()
+                .extracting(StoredRiskSnapshot::qualityStatus)
+                .isEqualTo(RiskDataQualityStatus.INSUFFICIENT_HISTORY);
     }
 
     @Test
@@ -1455,14 +1533,24 @@ class RiskWarningWorkflowTest {
     private static final class TwoStageMarketProvider implements RiskDataProvider {
         private final List<IndustryExposure> memberships;
         private final boolean membershipUnavailable;
+        private final Set<RiskObjectKey> incompleteObjects;
         private final Map<MarketDatasetCode, List<RiskProviderRequest>> requests = new LinkedHashMap<>();
 
         private TwoStageMarketProvider(
                 List<IndustryExposure> memberships,
                 boolean membershipUnavailable
         ) {
+            this(memberships, membershipUnavailable, Set.of());
+        }
+
+        private TwoStageMarketProvider(
+                List<IndustryExposure> memberships,
+                boolean membershipUnavailable,
+                Set<RiskObjectKey> incompleteObjects
+        ) {
             this.memberships = List.copyOf(memberships);
             this.membershipUnavailable = membershipUnavailable;
+            this.incompleteObjects = Set.copyOf(incompleteObjects);
         }
 
         @Override
@@ -1489,22 +1577,31 @@ class RiskWarningWorkflowTest {
                         "aktools", List.of(), List.of(), memberships, null,
                         RiskDataQualityStatus.AVAILABLE, null, AS_OF);
             }
+            RiskDataQualityStatus batchQuality = request.objects().stream()
+                    .anyMatch(incompleteObjects::contains)
+                    ? RiskDataQualityStatus.INSUFFICIENT_HISTORY
+                    : RiskDataQualityStatus.AVAILABLE;
             List<RiskObservation> observations = request.objects().stream()
-                    .map(object -> new RiskObservation(
-                            object, RiskHorizon.SHORT_TERM, DATE,
-                            RiskDimension.STRUCTURAL_FRAGILITY,
-                            dataset.code() + ":" + object.objectType().getCode(),
-                            switch (object.objectType()) {
-                                case MARKET -> new BigDecimal("20");
-                                case SECTOR -> new BigDecimal("40");
-                                case STOCK -> new BigDecimal("80");
-                            },
-                            "score", AS_OF.minusHours(2), AS_OF.minusHours(1),
-                            "aktools", RiskDataQualityStatus.AVAILABLE, Map.of()))
+                    .map(object -> {
+                        RiskDataQualityStatus quality = batchQuality;
+                        BigDecimal value = quality == RiskDataQualityStatus.AVAILABLE
+                                ? switch (object.objectType()) {
+                                    case MARKET -> new BigDecimal("20");
+                                    case SECTOR -> new BigDecimal("40");
+                                    case STOCK -> new BigDecimal("80");
+                                }
+                                : null;
+                        return new RiskObservation(
+                                object, RiskHorizon.SHORT_TERM, DATE,
+                                RiskDimension.STRUCTURAL_FRAGILITY,
+                                dataset.code() + ":" + object.objectType().getCode(),
+                                value, "score", AS_OF.minusHours(2), AS_OF.minusHours(1),
+                                "aktools", quality, Map.of());
+                    })
                     .toList();
             return new RiskProviderBatch(
                     "aktools", observations, List.of(), List.of(), null,
-                    RiskDataQualityStatus.AVAILABLE, null, AS_OF);
+                    batchQuality, null, AS_OF);
         }
 
         private RiskProviderRequest stockRequest(MarketDatasetCode dataset) {

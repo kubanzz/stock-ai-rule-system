@@ -10,6 +10,7 @@ public enum WorkflowRunStatus {
     PENDING("pending", "待执行"),
     RUNNING("running", "执行中"),
     SUCCESS("success", "成功"),
+    PARTIAL("partial", "部分完成"),
     FAILED("failed", "失败"),
     SKIPPED("skipped", "已跳过");
 

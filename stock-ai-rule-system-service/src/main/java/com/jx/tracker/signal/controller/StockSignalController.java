@@ -7,10 +7,13 @@ import com.jx.tracker.common.PageResult;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.dto.SignalGenerateRequestDto;
+import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.vo.StockAnalysisVo;
 import com.jx.tracker.domain.vo.StockSignalItemVo;
+import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.signal.service.StockSignalService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,9 +33,16 @@ public class StockSignalController {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final StockSignalService stockSignalService;
+    private final StockFactorDailyMapper stockFactorDailyMapper;
 
     public StockSignalController(StockSignalService stockSignalService) {
+        this(stockSignalService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public StockSignalController(StockSignalService stockSignalService, StockFactorDailyMapper stockFactorDailyMapper) {
         this.stockSignalService = stockSignalService;
+        this.stockFactorDailyMapper = stockFactorDailyMapper;
     }
 
     @GetMapping("/api/signals")
@@ -68,10 +78,11 @@ public class StockSignalController {
     public AjaxResult analysis(@PathVariable("symbol") String symbol,
                                @RequestParam(value = "date", required = false) LocalDate date) {
         StockSignalDaily signal = stockSignalService.getSignal(symbol, date);
+        Map<String, Object> factors = readFactors(symbol, signal, date);
         if (signal == null) {
             return AjaxResult.success(StockAnalysisVo.builder()
                     .symbol(symbol)
-                    .factors(Map.of())
+                    .factors(factors)
                     .triggeredRules(List.of())
                     .explanation("")
                     .build());
@@ -79,7 +90,7 @@ public class StockSignalController {
         return AjaxResult.success(StockAnalysisVo.builder()
                 .symbol(signal.getSymbol())
                 .signal(signal.getSignal())
-                .factors(Map.of())
+                .factors(factors)
                 .triggeredRules(readTriggeredRules(signal.getTriggeredRules()))
                 .explanation(signal.getExplanation())
                 .riskDisclaimer(riskDisclaimer(signal.getRiskDisclaimer()))
@@ -113,6 +124,26 @@ public class StockSignalController {
             });
         } catch (Exception e) {
             return List.of(triggeredRules);
+        }
+    }
+
+    private Map<String, Object> readFactors(String symbol, StockSignalDaily signal, LocalDate date) {
+        if (stockFactorDailyMapper == null) {
+            return Map.of();
+        }
+        LocalDate factorDate = signal == null ? date : signal.getSignalDate();
+        StockFactorDaily factor = stockFactorDailyMapper.selectOne(new LambdaQueryWrapper<StockFactorDaily>()
+                .eq(StockFactorDaily::getSymbol, symbol)
+                .eq(factorDate != null, StockFactorDaily::getTradeDate, factorDate)
+                .orderByDesc(StockFactorDaily::getTradeDate)
+                .last("LIMIT 1"));
+        if (factor == null || factor.getFactorJson() == null || factor.getFactorJson().isBlank()) {
+            return Map.of();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(factor.getFactorJson(), new TypeReference<Map<String, Object>>() { });
+        } catch (Exception ignored) {
+            return Map.of("raw", factor.getFactorJson());
         }
     }
 }

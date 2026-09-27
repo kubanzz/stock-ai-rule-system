@@ -41,6 +41,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
 
     private final MarketRiskHttpTransport nativeTransport;
     private final MarketRiskHttpTransport derivedTransport;
+    private final MarketRiskHttpTransport breadthTransport;
     private final Clock clock;
     private final AshareRiskObjectCatalog catalog = new AshareRiskObjectCatalog();
     private final Map<String, CachedRows> cache = new LinkedHashMap<>();
@@ -54,11 +55,27 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
             MarketRiskHttpTransport derivedTransport,
             Clock clock
     ) {
+        this(nativeTransport, derivedTransport, derivedTransport, clock);
+    }
+
+    /**
+     * Creates a client with a dedicated transport for the potentially slow
+     * whole-market breadth calculation.  Keeping this transport separate
+     * prevents a long breadth calculation from changing the timeout of the
+     * ordinary derived endpoints.
+     */
+    public AkToolsMarketRiskSourceClient(
+            MarketRiskHttpTransport nativeTransport,
+            MarketRiskHttpTransport derivedTransport,
+            MarketRiskHttpTransport breadthTransport,
+            Clock clock
+    ) {
         if (nativeTransport == null || clock == null) {
             throw new IllegalArgumentException("nativeTransport and clock are required");
         }
         this.nativeTransport = nativeTransport;
         this.derivedTransport = derivedTransport;
+        this.breadthTransport = breadthTransport == null ? derivedTransport : breadthTransport;
         this.clock = clock;
     }
 
@@ -141,7 +158,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                     DERIVED_SOURCE, dataset.code() + " requires the normalized derived gateway", fetchedAt);
         }
         Map<String, String> query = derivedQuery(request);
-        MarketRiskHttpResponse response = derivedPages(DERIVED_ENDPOINTS.get(dataset), query);
+        MarketRiskHttpResponse response = derivedPages(dataset, DERIVED_ENDPOINTS.get(dataset), query);
         List<MarketSourceRecord> records = response.rows().stream()
                 .map(row -> parseDerived(dataset, row))
                 .toList();
@@ -166,7 +183,16 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
                 nextCheckpoint(dataset, request, response.nextCursor(), fetchedAt), fetchedAt);
     }
 
-    private MarketRiskHttpResponse derivedPages(String endpoint, Map<String, String> initialQuery) {
+    private MarketRiskHttpResponse derivedPages(
+            MarketDatasetCode dataset,
+            String endpoint,
+            Map<String, String> initialQuery
+    ) {
+        MarketRiskHttpTransport transport = dataset == MarketDatasetCode.BREADTH
+                && breadthTransport != null ? breadthTransport : derivedTransport;
+        if (transport == null) {
+            throw new IllegalStateException("derived transport is required");
+        }
         List<Map<String, Object>> rows = new ArrayList<>();
         Map<String, String> query = new LinkedHashMap<>(initialQuery);
         Set<String> visitedCursors = new HashSet<>();
@@ -176,7 +202,7 @@ public final class AkToolsMarketRiskSourceClient implements MarketRiskSourceClie
         boolean insufficientHistory = false;
         String historyGapReason = null;
         for (int page = 0; page < 1000; page++) {
-            MarketRiskHttpResponse response = derivedTransport.getResponse(endpoint, Map.copyOf(query));
+            MarketRiskHttpResponse response = transport.getResponse(endpoint, Map.copyOf(query));
             rows.addAll(response.rows());
             everyPageHasEarliest &= response.earliestAvailableDate() != null;
             if (response.earliestAvailableDate() != null

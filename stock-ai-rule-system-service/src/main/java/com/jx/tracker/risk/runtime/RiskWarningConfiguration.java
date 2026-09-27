@@ -95,7 +95,7 @@ public class RiskWarningConfiguration {
         ) {
             return new RestClientMarketRiskHttpTransport(
                     riskProperties.resolvedAkToolsBaseUrl(marketDataProperties.getAkToolsBaseUrl()),
-                    restClientBuilder.clone(),
+                    marketDataRestClientBuilder(restClientBuilder, marketDataProperties),
                     objectMapper
             );
         }
@@ -104,6 +104,7 @@ public class RiskWarningConfiguration {
         AkToolsMarketRiskSourceClient riskMarketSourceClient(
                 RestClientMarketRiskHttpTransport transport,
                 RiskWarningProperties riskProperties,
+                MarketDataProviderProperties marketDataProperties,
                 RestClient.Builder restClientBuilder,
                 ObjectMapper objectMapper,
                 Clock clock
@@ -112,8 +113,21 @@ public class RiskWarningConfiguration {
             RestClientMarketRiskHttpTransport derivedTransport = derivedBaseUrl == null
                     ? null
                     : new RestClientMarketRiskHttpTransport(
-                            derivedBaseUrl, restClientBuilder.clone(), objectMapper);
-            return new AkToolsMarketRiskSourceClient(transport, derivedTransport, clock);
+                            derivedBaseUrl,
+                            marketDataRestClientBuilder(restClientBuilder, marketDataProperties),
+                            objectMapper);
+            RestClientMarketRiskHttpTransport breadthTransport = derivedBaseUrl == null
+                    ? null
+                    : new RestClientMarketRiskHttpTransport(
+                            derivedBaseUrl,
+                            marketDataRestClientBuilder(
+                                    restClientBuilder,
+                                    marketDataProperties,
+                                    marketDataProperties.getBreadthReadTimeout(),
+                                    "breadthReadTimeout"),
+                            objectMapper);
+            return new AkToolsMarketRiskSourceClient(
+                    transport, derivedTransport, breadthTransport, clock);
         }
 
         @Bean
@@ -128,20 +142,10 @@ public class RiskWarningConfiguration {
                 RestClient.Builder restClientBuilder,
                 ObjectMapper objectMapper
         ) {
-            Duration connectTimeout = positiveDuration(
-                    marketDataProperties.getConnectTimeout(), "connectTimeout");
-            Duration readTimeout = positiveDuration(
-                    marketDataProperties.getReadTimeout(), "readTimeout");
-            HttpClient javaHttpClient = HttpClient.newBuilder()
-                    .connectTimeout(connectTimeout)
-                    .build();
-            JdkClientHttpRequestFactory requestFactory =
-                    new JdkClientHttpRequestFactory(javaHttpClient);
-            requestFactory.setReadTimeout(readTimeout);
             return new TushareRiskHttpClient(
                     marketDataProperties.getToken(),
                     marketDataProperties.getApiUrl(),
-                    restClientBuilder.clone().requestFactory(requestFactory),
+                    marketDataRestClientBuilder(restClientBuilder, marketDataProperties),
                     objectMapper
             );
         }
@@ -190,7 +194,7 @@ public class RiskWarningConfiguration {
             return new AkToolsFlowEventSourceClient(
                     riskProperties.resolvedAkToolsBaseUrl(marketDataProperties.getAkToolsBaseUrl()),
                     riskProperties.resolvedDerivedGatewayBaseUrl(),
-                    restClientBuilder.clone(),
+                    marketDataRestClientBuilder(restClientBuilder, marketDataProperties),
                     objectMapper,
                     clock
             );
@@ -259,6 +263,40 @@ public class RiskWarningConfiguration {
                         "market data provider " + field + " must be positive");
             }
             return value;
+        }
+
+        /**
+         * Apply the provider timeouts to every external risk-data client.
+         *
+         * AKTools and the derived gateway are called from the same asynchronous
+         * sync job as TuShare. Leaving their default RestClient request factory
+         * in place makes a stalled upstream request hold the job forever, which
+         * is indistinguishable from a broken sync in the UI.
+         */
+        private RestClient.Builder marketDataRestClientBuilder(
+                RestClient.Builder source,
+                MarketDataProviderProperties properties
+        ) {
+            return marketDataRestClientBuilder(
+                    source, properties, properties.getReadTimeout(), "readTimeout");
+        }
+
+        private RestClient.Builder marketDataRestClientBuilder(
+                RestClient.Builder source,
+                MarketDataProviderProperties properties,
+                Duration readTimeout,
+                String readTimeoutField
+        ) {
+            Duration connectTimeout = positiveDuration(
+                    properties.getConnectTimeout(), "connectTimeout");
+            readTimeout = positiveDuration(readTimeout, readTimeoutField);
+            HttpClient javaHttpClient = HttpClient.newBuilder()
+                    .connectTimeout(connectTimeout)
+                    .build();
+            JdkClientHttpRequestFactory requestFactory =
+                    new JdkClientHttpRequestFactory(javaHttpClient);
+            requestFactory.setReadTimeout(readTimeout);
+            return source.clone().requestFactory(requestFactory);
         }
 
         @Bean

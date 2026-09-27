@@ -8,6 +8,7 @@ import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.RiskObjectType;
 import com.jx.tracker.risk.workflow.RiskCollectionTask;
 import com.jx.tracker.risk.workflow.RiskCollectionScope;
+import com.jx.tracker.risk.workflow.RiskWorkflowRequest;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -154,20 +155,27 @@ class RiskWorkflowPlannerTest {
         assertThat(request.asOf()).isEqualTo(AS_OF);
         assertThat(request.modelVersion()).isEqualTo("risk-runtime-v1");
         assertThat(request.afterCloseCutoff()).isEqualTo(LocalTime.of(19, 0));
+        assertThat(request.latestOnlyRead()).isFalse();
+        assertThat(request.readStartDate()).isEqualTo(request.collectionStartDate());
     }
 
     @Test
-    void manualMarketSyncReadsTheFormalBaselineButOnlyPublishesTheLatestDay() {
+    void manualMarketSyncKeepsProviderContextButBoundsPersistedReadWindow() {
         RiskWorkflowPlan plan = planner().planMarket();
 
         var request = plan.manualMarketSyncRequest(
                 TRADE_DATE, AS_OF, "risk-runtime-v1", LocalTime.of(19, 0));
 
-        assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(6));
-        assertThat(request.providerStartDate()).isEqualTo(TRADE_DATE.minusYears(2));
+        assertThat(request.collectionStartDate())
+                .isEqualTo(TRADE_DATE.minusYears(RiskWorkflowRequest.BASELINE_COLLECTION_YEARS));
+        assertThat(request.providerStartDate())
+                .isEqualTo(TRADE_DATE.minusYears(RiskWorkflowRequest.BASELINE_COLLECTION_YEARS));
         assertThat(request.providerResultStartDate()).isEqualTo(TRADE_DATE);
         assertThat(request.scoreStartDate()).isEqualTo(TRADE_DATE);
         assertThat(request.endDate()).isEqualTo(TRADE_DATE);
+        assertThat(request.latestOnlyRead()).isTrue();
+        assertThat(request.readStartDate())
+                .isEqualTo(TRADE_DATE.minusYears(RiskWorkflowRequest.LATEST_READ_CONTEXT_YEARS));
     }
 
     @Test
@@ -193,6 +201,8 @@ class RiskWorkflowPlannerTest {
         assertThat(request.collectionStartDate()).isEqualTo(TRADE_DATE.minusYears(11));
         assertThat(request.scoreStartDate()).isEqualTo(TRADE_DATE.minusYears(5));
         assertThat(request.endDate()).isEqualTo(TRADE_DATE);
+        assertThat(request.latestOnlyRead()).isFalse();
+        assertThat(request.readStartDate()).isEqualTo(request.collectionStartDate());
     }
 
     @Test

@@ -9,6 +9,7 @@ from risk_gateway.series import (
     align_available_series,
     normalize_market_frame,
     normalize_object_key,
+    normalize_close_frame,
 )
 
 
@@ -18,6 +19,7 @@ def test_object_key_normalizes_supported_market_sector_and_stock_codes():
     assert normalize_object_key("stock:600519.sh") == "stock:600519.SH"
     assert normalize_object_key("000001") == "stock:000001.SZ"
     assert normalize_object_key("430047") == "stock:430047.BJ"
+    assert normalize_object_key("920000") == "stock:920000.BJ"
 
 
 def test_market_frame_converts_chinese_columns_and_sorts_dates():
@@ -76,6 +78,15 @@ def test_close_only_dataset_can_ignore_invalid_unused_open_price():
     )
 
     assert frame.iloc[0]["close"] == 100
+
+
+def test_close_frame_validates_price_only_history_without_volume():
+    frame = normalize_close_frame([
+        {"date": "2026-07-20", "open": 10, "close": "11", "amount": 1000},
+        {"date": "2026-07-17", "open": 9, "close": 10, "amount": 900},
+    ])
+    assert list(frame.columns) == ["date", "close"]
+    assert frame.iloc[-1]["close"] == 11
 
 
 def test_series_alignment_uses_only_dates_available_on_both_sides():

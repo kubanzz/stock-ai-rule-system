@@ -7,9 +7,12 @@ import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.MarketDataSyncRun;
 import com.jx.tracker.domain.entity.RuleDefinition;
+import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockBase;
+import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.entity.TradeCalendar;
 import com.jx.tracker.domain.entity.WorkflowRun;
 import com.jx.tracker.domain.entity.WorkflowStepRun;
 import com.jx.tracker.domain.enums.SignalType;
@@ -19,14 +22,22 @@ import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.MarketDataSyncRunMapper;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
+import com.jx.tracker.mapper.StockActualResultMapper;
 import com.jx.tracker.mapper.StockBaseMapper;
+import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
+import com.jx.tracker.mapper.TradeCalendarMapper;
 import com.jx.tracker.mapper.WorkflowRunMapper;
 import com.jx.tracker.mapper.WorkflowStepRunMapper;
 import com.jx.tracker.service.StockConsoleQueryService;
 import com.jx.tracker.service.StockDashboardQueryService;
+import com.jx.tracker.market.data.dto.DailyQuoteSyncRequestDto;
+import com.jx.tracker.market.data.service.MarketDataSyncService;
+import com.jx.tracker.market.data.util.SymbolNormalizer;
 import lombok.RequiredArgsConstructor;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -36,6 +47,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -49,9 +61,13 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private static final String RISK_DISCLAIMER = StockRiskConstants.SIGNAL_RISK_DISCLAIMER;
     private static final int DEFAULT_LIMIT = 100;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final StockSignalDailyMapper stockSignalDailyMapper;
     private final StockBaseMapper stockBaseMapper;
+    private final StockActualResultMapper stockActualResultMapper;
+    private final StockDailyQuoteMapper stockDailyQuoteMapper;
+    private final TradeCalendarMapper tradeCalendarMapper;
     private final StockFactorDailyMapper stockFactorDailyMapper;
     private final RuleDefinitionMapper ruleDefinitionMapper;
     private final BacktestResultMapper backtestResultMapper;
@@ -61,6 +77,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     private final WorkflowRunMapper workflowRunMapper;
     private final WorkflowStepRunMapper workflowStepRunMapper;
     private final StockDashboardQueryService stockDashboardQueryService;
+    private final MarketDataSyncService marketDataSyncService;
 
     @Override
     public StockConsoleVo.SignalDashboardOverview dashboard(LocalDate date, String market, String poolCode) {
@@ -129,15 +146,18 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     @Override
     public StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date) {
-        StockBase stock = findStockBase(symbol).orElse(StockBase.builder()
-                .symbol(symbol)
-                .name(symbol)
+        String normalizedSymbol = SymbolNormalizer.normalize(symbol);
+        LocalDate requestedDate = date == null ? LocalDate.now() : date;
+        ensureSymbolQuotes(normalizedSymbol, requestedDate);
+        StockBase stock = findStockBase(normalizedSymbol).orElse(StockBase.builder()
+                .symbol(normalizedSymbol)
+                .name(normalizedSymbol)
                 .market("A股")
                 .industry("未分类")
                 .build());
-        StockSignalDaily signal = latestSignal(symbol, date).orElse(null);
-        LocalDate tradeDate = signal == null ? date : signal.getSignalDate();
-        StockFactorDaily factor = latestFactor(symbol, tradeDate).orElse(null);
+        StockSignalDaily signal = latestSignal(normalizedSymbol, date).orElse(null);
+        LocalDate tradeDate = signal == null ? requestedDate : signal.getSignalDate();
+        StockFactorDaily factor = latestFactor(normalizedSymbol, tradeDate).orElse(null);
 
         return new StockConsoleVo.StockResearchDetail(
                 stock.getSymbol(),
@@ -146,15 +166,79 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 stock.getIndustry(),
                 tradeDate,
                 signal == null ? SignalType.WATCH.getCode() : signal.getSignal(),
-                signal == null ? BigDecimal.ZERO : nullToZero(signal.getConfidence()),
+                signal == null ? BigDecimal.ZERO : confidencePercent(signal.getConfidence()),
                 signal == null ? BigDecimal.ZERO : nullToZero(signal.getRiskScore()),
                 RISK_DISCLAIMER,
                 signal == null ? "暂无信号解释，等待因子计算与规则推理。" : signal.getExplanation(),
-                priceSeries(symbol, tradeDate),
+                priceSeries(normalizedSymbol, tradeDate),
                 factorStates(factor, signal),
                 ruleChain(signal),
-                predictionHistory(symbol)
+                predictionHistory(normalizedSymbol)
         );
+    }
+
+    /**
+     * Detail pages are also a recovery path when the scheduled collection was missed.
+     * The sync service is deliberately best-effort here: an unavailable remote source
+     * must not hide the locally persisted research result.
+     */
+    private void ensureSymbolQuotes(String symbol, LocalDate endDate) {
+        if (!StringUtils.hasText(symbol) || endDate == null) {
+            return;
+        }
+        LocalDate startDate = endDate.minusDays(30);
+        Long count = stockDailyQuoteMapper.selectCount(new LambdaQueryWrapper<StockDailyQuote>()
+                .eq(StockDailyQuote::getSymbol, symbol)
+                .ge(StockDailyQuote::getTradeDate, startDate)
+                .le(StockDailyQuote::getTradeDate, endDate));
+        List<LocalDate> expectedDates = tradeCalendarMapper.selectList(new LambdaQueryWrapper<TradeCalendar>()
+                .eq(TradeCalendar::getMarket, "CN")
+                .eq(TradeCalendar::getOpen, true)
+                .ge(TradeCalendar::getTradeDate, startDate)
+                .le(TradeCalendar::getTradeDate, endDate)
+                .select(TradeCalendar::getTradeDate))
+                .stream()
+                .map(TradeCalendar::getTradeDate)
+                .filter(Objects::nonNull)
+                .toList();
+        List<LocalDate> quoteDates = stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
+                .eq(StockDailyQuote::getSymbol, symbol)
+                .ge(StockDailyQuote::getTradeDate, startDate)
+                .le(StockDailyQuote::getTradeDate, endDate)
+                .isNotNull(StockDailyQuote::getClosePrice)
+                .select(StockDailyQuote::getTradeDate))
+                .stream()
+                .map(StockDailyQuote::getTradeDate)
+                .filter(Objects::nonNull)
+                .toList();
+        StockDailyQuote latest = stockDailyQuoteMapper.selectOne(new LambdaQueryWrapper<StockDailyQuote>()
+                .eq(StockDailyQuote::getSymbol, symbol)
+                .le(StockDailyQuote::getTradeDate, endDate)
+                .orderByDesc(StockDailyQuote::getTradeDate)
+                .last("LIMIT 1"));
+        boolean stale = latest == null || latest.getTradeDate() == null
+                || latest.getTradeDate().isBefore(endDate.minusDays(3));
+        boolean complete = !expectedDates.isEmpty()
+                && count != null
+                && count >= expectedDates.size()
+                && new HashSet<>(quoteDates).containsAll(expectedDates);
+        if (complete && !stale) {
+            return;
+        }
+        DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
+        request.setTargetSymbol(symbol);
+        request.setStartDate(startDate);
+        request.setEndDate(endDate);
+        request.setTriggerType("on-demand");
+        request.setTriggerBy("stock-research:" + symbol);
+        try {
+            var result = marketDataSyncService.syncDailyQuotes(request);
+            if (result == null || !"success".equalsIgnoreCase(result.getStatus())) {
+                return;
+            }
+        } catch (RuntimeException ignored) {
+            // Keep detail reads available when the remote market source is unavailable.
+        }
     }
 
     @Override
@@ -323,8 +407,12 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .eq(date != null, WorkflowRun::getBizDate, date)
                 .orderByDesc(WorkflowRun::getStartedAt)
                 .last("LIMIT 1"));
+        if (run == null) {
+            return new StockConsoleVo.RunCenterOverview(date, "unavailable", List.of(), List.of(), null);
+        }
+        LocalDate effectiveDate = run == null ? date : run.getBizDate();
         MarketDataSyncRun syncRun = marketDataSyncRunMapper.selectOne(new LambdaQueryWrapper<MarketDataSyncRun>()
-                .eq(date != null, MarketDataSyncRun::getEndDate, date)
+                .eq(effectiveDate != null, MarketDataSyncRun::getEndDate, effectiveDate)
                 .orderByDesc(MarketDataSyncRun::getStartedAt)
                 .last("LIMIT 1"));
         List<WorkflowStepRun> steps = run == null ? List.of() : workflowStepRunMapper.selectList(new LambdaQueryWrapper<WorkflowStepRun>()
@@ -350,17 +438,28 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 step.getFinishedAt(),
                 Optional.ofNullable(step.getErrorMessage()).orElse(step.getOutputSummary())
         )).toList());
-        String status = run == null ? "normal" : run.getStatus();
+        String status = run == null || !StringUtils.hasText(run.getStatus()) ? "unavailable" : run.getStatus();
         return new StockConsoleVo.RunCenterOverview(
-                run == null ? date : run.getBizDate(),
+                run.getBizDate(),
                 status,
                 List.of(
                         metric("工作流运行", BigDecimal.valueOf(run == null ? 0 : 1), "次", BigDecimal.ZERO, "blue"),
                         metric("同步扫描", BigDecimal.valueOf(syncRun == null || syncRun.getScanned() == null ? 0 : syncRun.getScanned()), "条", BigDecimal.ZERO, "green"),
                         metric("失败数", BigDecimal.valueOf(syncRun == null || syncRun.getFailed() == null ? 0 : syncRun.getFailed()), "条", BigDecimal.ZERO, "red")
                 ),
-                runSteps
+                runSteps,
+                workflowRunId(run)
         );
+    }
+
+    private String workflowRunId(WorkflowRun run) {
+        if (!StringUtils.hasText(run.getTriggerBy())) {
+            return null;
+        }
+        String prefix = "daily-workflow:";
+        return run.getTriggerBy().startsWith(prefix)
+                ? run.getTriggerBy().substring(prefix.length())
+                : run.getTriggerBy();
     }
 
     private Optional<StockBase> findStockBase(String symbol) {
@@ -395,20 +494,42 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     }
 
     private List<StockConsoleVo.PricePoint> priceSeries(String symbol, LocalDate tradeDate) {
-        LocalDate endDate = tradeDate == null ? LocalDate.now() : tradeDate;
-        List<StockConsoleVo.PricePoint> points = new ArrayList<>();
-        for (int index = 9; index >= 0; index--) {
-            points.add(new StockConsoleVo.PricePoint(endDate.minusDays(index), BigDecimal.valueOf(100 + (9 - index) * 1.2), BigDecimal.valueOf(10_000 + index * 120)));
+        if (!StringUtils.hasText(symbol)) {
+            return List.of();
         }
-        return points;
+        LocalDate startDate = tradeDate == null ? null : tradeDate.minusDays(30);
+        return stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
+                        .eq(StockDailyQuote::getSymbol, symbol)
+                        .ge(startDate != null, StockDailyQuote::getTradeDate, startDate)
+                        .le(tradeDate != null, StockDailyQuote::getTradeDate, tradeDate)
+                        .orderByDesc(StockDailyQuote::getTradeDate)
+                        .last("LIMIT 100"))
+                .stream()
+                .filter(quote -> quote.getTradeDate() != null && quote.getClosePrice() != null)
+                .sorted(Comparator.comparing(StockDailyQuote::getTradeDate))
+                .map(quote -> new StockConsoleVo.PricePoint(
+                        quote.getTradeDate(), quote.getClosePrice(), nullToZero(quote.getVolume())))
+                .toList();
     }
 
     private List<StockConsoleVo.FactorState> factorStates(StockFactorDaily factor, StockSignalDaily signal) {
         List<StockConsoleVo.FactorState> states = new ArrayList<>();
-        states.add(new StockConsoleVo.FactorState("RSI(14)", signal == null ? "--" : nullToZero(signal.getRiskScore()).toPlainString(), "风险", signal == null ? BigDecimal.ZERO : nullToZero(signal.getRiskScore()), "风险分越高，越需要回避确定性表达。"));
-        states.add(new StockConsoleVo.FactorState("规则置信度", signal == null ? "--" : nullToZero(signal.getConfidence()).toPlainString(), "辅助", signal == null ? BigDecimal.ZERO : nullToZero(signal.getConfidence()), "综合因子与规则触发后的辅助决策权重。"));
+        if (signal != null) {
+            states.add(new StockConsoleVo.FactorState("风险分", nullToZero(signal.getRiskScore()).toPlainString(), "风险", clampPercent(signal.getRiskScore()), "独立风险影子闸门评分，不覆盖信号方向。"));
+            states.add(new StockConsoleVo.FactorState("规则置信度", confidencePercent(signal.getConfidence()).toPlainString(), "辅助", confidencePercent(signal.getConfidence()), "综合因子与规则触发后的辅助决策权重。"));
+        }
         if (factor != null && StringUtils.hasText(factor.getFactorJson())) {
-            states.add(new StockConsoleVo.FactorState("原始因子", "已同步", "可用", BigDecimal.valueOf(60), factor.getFactorJson()));
+            try {
+                Map<String, Object> rawFactors = OBJECT_MAPPER.readValue(
+                        factor.getFactorJson(), new TypeReference<>() { });
+                rawFactors.forEach((name, value) -> {
+                    if (states.size() >= 10) return;
+                    states.add(new StockConsoleVo.FactorState(
+                            name, String.valueOf(value), "已计算", factorStrength(value), "来自技术因子快照。"));
+                });
+            } catch (Exception ignored) {
+                states.add(new StockConsoleVo.FactorState("因子快照", "解析失败", "不可用", BigDecimal.ZERO, "因子 JSON 无法解析，未使用模拟值替代。"));
+            }
         }
         return states;
     }
@@ -419,7 +540,8 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         }
         List<String> rules = splitRules(signal.getTriggeredRules());
         return rules.stream()
-                .map(ruleCode -> new StockConsoleVo.RuleContribution(ruleCode, ruleCode, "规则触发", BigDecimal.TEN))
+                .map(ruleCode -> new StockConsoleVo.RuleContribution(ruleCode, ruleCode,
+                        "规则引擎已触发（未单独拆分贡献度）", BigDecimal.ZERO))
                 .toList();
     }
 
@@ -429,16 +551,23 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                         .orderByDesc(StockSignalDaily::getSignalDate)
                         .last("LIMIT 6"))
                 .stream()
-                .map(signal -> new StockConsoleVo.PredictionRecord(
-                        signal.getSignalDate(),
-                        signal.getSignal(),
-                        direction(signal.getSignal()),
-                        nullToZero(signal.getConfidence()),
-                        BigDecimal.ZERO,
-                        "待验证",
-                        splitRules(signal.getTriggeredRules())
-                ))
+                .map(this::predictionRecord)
                 .toList();
+    }
+
+    private StockConsoleVo.PredictionRecord predictionRecord(StockSignalDaily signal) {
+        StockActualResult actual = stockActualResultMapper.selectOne(new LambdaQueryWrapper<StockActualResult>()
+                .eq(StockActualResult::getSymbol, signal.getSymbol())
+                .eq(StockActualResult::getSignalDate, signal.getSignalDate())
+                .last("LIMIT 1"));
+        String hitStatus = actual == null || actual.getHit5d() == null
+                ? "待验证" : Boolean.TRUE.equals(actual.getHit5d()) ? "命中" : "未命中";
+        return new StockConsoleVo.PredictionRecord(
+                signal.getSignalDate(), signal.getSignal(),
+                direction(signal.getSignalDirection(), signal.getSignal()),
+                confidencePercent(signal.getConfidence()),
+                        actual == null ? null : percentage(actual.getReturn5d()), hitStatus,
+                splitRules(signal.getTriggeredRules()));
     }
 
     private StockConsoleVo.RuleSummary toRuleSummary(RuleDefinition rule) {
@@ -547,7 +676,26 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         if (!StringUtils.hasText(ruleCodes)) {
             return List.of();
         }
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = OBJECT_MAPPER.readTree(ruleCodes);
+            if (root.isArray()) {
+                List<String> parsed = new ArrayList<>();
+                root.forEach(node -> {
+                    if (node.isTextual() && StringUtils.hasText(node.asText())) {
+                        parsed.add(node.asText());
+                    } else if (node.isObject() && StringUtils.hasText(node.path("rule_code").asText())) {
+                        parsed.add(node.path("rule_code").asText());
+                    }
+                });
+                if (!parsed.isEmpty()) {
+                    return parsed;
+                }
+            }
+        } catch (Exception ignored) {
+            // 兼容早期以逗号/空格分隔的历史文本格式。
+        }
         return Arrays.stream(ruleCodes.split("[,，\\s]+"))
+                .map(value -> value.replaceAll("[\\\"'\\[\\]{}]", ""))
                 .filter(StringUtils::hasText)
                 .toList();
     }
@@ -556,14 +704,35 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         return splitRules(ruleCodes).stream().findFirst().orElse("R_UNKNOWN");
     }
 
-    private String direction(String signal) {
-        if (SignalType.BULLISH.getCode().equals(signal)) {
+    private String direction(String signalDirection, String signal) {
+        String effectiveSignal = StringUtils.hasText(signalDirection) ? signalDirection : signal;
+        if (SignalType.BULLISH.getCode().equals(effectiveSignal)) {
             return "上涨";
         }
-        if (SignalType.BEARISH.getCode().equals(signal) || SignalType.HIGH_RISK.getCode().equals(signal)) {
+        if (SignalType.BEARISH.getCode().equals(effectiveSignal)) {
             return "下跌";
         }
         return "观望";
+    }
+
+    private BigDecimal clampPercent(BigDecimal value) {
+        if (value == null) return BigDecimal.ZERO;
+        return value.max(BigDecimal.ZERO).min(BigDecimal.valueOf(100));
+    }
+
+    private BigDecimal confidencePercent(BigDecimal confidence) {
+        return clampPercent(nullToZero(confidence).multiply(BigDecimal.valueOf(100)));
+    }
+
+    private BigDecimal percentage(BigDecimal ratio) {
+        return ratio == null ? null : ratio.multiply(BigDecimal.valueOf(100));
+    }
+
+    private BigDecimal factorStrength(Object value) {
+        if (value instanceof Number number) {
+            return clampPercent(new BigDecimal(number.toString()));
+        }
+        return BigDecimal.ZERO;
     }
 
     private String poolName(String poolId) {

@@ -10,6 +10,12 @@ import com.jx.tracker.market.data.dto.MarketDataSyncResultDto;
 import com.jx.tracker.market.data.dto.TradeCalendarQueryDto;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
 import com.jx.tracker.market.data.service.TradeCalendarService;
+import com.jx.tracker.domain.entity.StockWatchlist;
+import com.jx.tracker.domain.entity.StockWatchlistItem;
+import com.jx.tracker.mapper.StockWatchlistItemMapper;
+import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -23,12 +29,25 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
 
     private final MarketDataSyncService marketDataSyncService;
     private final TradeCalendarService tradeCalendarService;
+    private final StockWatchlistMapper stockWatchlistMapper;
+    private final StockWatchlistItemMapper stockWatchlistItemMapper;
 
     public MarketDataCollectionStepHandler(
             MarketDataSyncService marketDataSyncService,
             TradeCalendarService tradeCalendarService) {
+        this(marketDataSyncService, tradeCalendarService, null, null);
+    }
+
+    @Autowired
+    public MarketDataCollectionStepHandler(
+            MarketDataSyncService marketDataSyncService,
+            TradeCalendarService tradeCalendarService,
+            StockWatchlistMapper stockWatchlistMapper,
+            StockWatchlistItemMapper stockWatchlistItemMapper) {
         this.marketDataSyncService = marketDataSyncService;
         this.tradeCalendarService = tradeCalendarService;
+        this.stockWatchlistMapper = stockWatchlistMapper;
+        this.stockWatchlistItemMapper = stockWatchlistItemMapper;
     }
 
     @Override
@@ -48,13 +67,24 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
         java.time.LocalDate tradeDate = latestOpenTradeDate(request.getTradeDate());
         request.setTradeDate(tradeDate);
         List<MarketDataSyncResultDto> dailyQuotes = new ArrayList<>();
-        if (request.getSymbols() == null || request.getSymbols().isEmpty()) {
+        List<String> requestedSymbols = request.getSymbols();
+        List<String> watchlistSymbols = requestedSymbols == null || requestedSymbols.isEmpty()
+                ? watchedSymbols() : List.of();
+        if (!watchlistSymbols.isEmpty()) {
+            // 将自动发现的关注股票传给后续因子计算和信号生成步骤，避免只同步行情而不生成信号。
+            request.setSymbols(watchlistSymbols);
+            for (String symbol : watchlistSymbols) {
+                dailyQuotes.add(syncDailyQuotes(
+                        quoteRequest(context, symbol, tradeDate.minusDays(30)), symbol + " 最近30日行情"));
+            }
+        } else if (requestedSymbols == null || requestedSymbols.isEmpty()) {
             dailyQuotes.add(syncDailyQuotes(quoteRequest(context, null, tradeDate), "全市场收盘快照"));
             dailyQuotes.add(syncDailyQuotes(
                     quoteRequest(context, "000300.SH", tradeDate.minusDays(120)), "沪深 300 日线"));
         } else {
-            for (String symbol : request.getSymbols()) {
-                dailyQuotes.add(syncDailyQuotes(quoteRequest(context, symbol, tradeDate), symbol + " 日线"));
+            for (String symbol : requestedSymbols) {
+                dailyQuotes.add(syncDailyQuotes(
+                        quoteRequest(context, symbol, tradeDate.minusDays(30)), symbol + " 最近30日行情"));
             }
         }
         Map<String, Object> details = new LinkedHashMap<>();
@@ -99,6 +129,27 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
 
     private int safeInt(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private List<String> watchedSymbols() {
+        if (stockWatchlistMapper == null || stockWatchlistItemMapper == null) {
+            return List.of();
+        }
+        StockWatchlist watchlist = stockWatchlistMapper.selectOne(Wrappers.<StockWatchlist>lambdaQuery()
+                .eq(StockWatchlist::getPoolCode, "my-follow")
+                .last("LIMIT 1"));
+        if (watchlist == null || watchlist.getId() == null) {
+            return List.of();
+        }
+        return stockWatchlistItemMapper.selectList(Wrappers.<StockWatchlistItem>lambdaQuery()
+                        .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
+                        .orderByAsc(StockWatchlistItem::getSortOrder)
+                        .orderByAsc(StockWatchlistItem::getId))
+                .stream()
+                .map(StockWatchlistItem::getSymbol)
+                .filter(symbol -> symbol != null && !symbol.isBlank())
+                .distinct()
+                .toList();
     }
 
     private java.time.LocalDate latestOpenTradeDate(java.time.LocalDate requestedDate) {

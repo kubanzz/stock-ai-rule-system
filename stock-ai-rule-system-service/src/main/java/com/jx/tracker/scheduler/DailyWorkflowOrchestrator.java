@@ -5,6 +5,14 @@ import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.vo.DailyWorkflowDependencyVo;
 import com.jx.tracker.domain.vo.DailyWorkflowRunResultVo;
 import com.jx.tracker.domain.vo.DailyWorkflowStepResultVo;
+import com.jx.tracker.domain.entity.WorkflowRun;
+import com.jx.tracker.domain.entity.WorkflowStepRun;
+import com.jx.tracker.domain.enums.WorkflowRunStatus;
+import com.jx.tracker.mapper.WorkflowRunMapper;
+import com.jx.tracker.mapper.WorkflowStepRunMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -12,22 +20,43 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public class DailyWorkflowOrchestrator {
 
     private final Map<WorkflowStepCode, DailyWorkflowStepHandler> handlers;
+    private final WorkflowRunMapper workflowRunMapper;
+    private final WorkflowStepRunMapper workflowStepRunMapper;
+    private final ObjectMapper objectMapper;
+    private final boolean persistenceEnabled;
 
     public DailyWorkflowOrchestrator(List<DailyWorkflowStepHandler> handlers) {
         this.handlers = new EnumMap<>(WorkflowStepCode.class);
         handlers.forEach(handler -> this.handlers.put(handler.stepCode(), handler));
+        this.workflowRunMapper = null;
+        this.workflowStepRunMapper = null;
+        this.objectMapper = auditObjectMapper();
+        this.persistenceEnabled = false;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DailyWorkflowOrchestrator(List<DailyWorkflowStepHandler> handlers, WorkflowRunMapper workflowRunMapper, WorkflowStepRunMapper workflowStepRunMapper) {
+        this.handlers = new EnumMap<>(WorkflowStepCode.class);
+        handlers.forEach(handler -> this.handlers.put(handler.stepCode(), handler));
+        this.workflowRunMapper = Objects.requireNonNull(workflowRunMapper, "workflowRunMapper");
+        this.workflowStepRunMapper = Objects.requireNonNull(workflowStepRunMapper, "workflowStepRunMapper");
+        this.objectMapper = auditObjectMapper();
+        this.persistenceEnabled = true;
     }
 
     public DailyWorkflowRunResultVo runDailyWorkflow(DailyWorkflowTriggerDto request, WorkflowTriggerType triggerType) {
         DailyWorkflowTriggerDto safeRequest = request == null ? new DailyWorkflowTriggerDto() : request;
+        WorkflowTriggerType safeTriggerType = triggerType == null ? WorkflowTriggerType.MANUAL : triggerType;
         LocalDateTime startedAt = LocalDateTime.now();
         String runId = UUID.randomUUID().toString();
         boolean dryRun = safeRequest.getDryRun() == null || safeRequest.getDryRun();
@@ -35,7 +64,8 @@ public class DailyWorkflowOrchestrator {
         List<String> symbols = normalizeSymbols(safeRequest.getSymbols());
         safeRequest.setTradeDate(tradeDate);
         safeRequest.setSymbols(symbols);
-        DailyWorkflowContext context = new DailyWorkflowContext(runId, safeRequest, triggerType);
+        DailyWorkflowContext context = new DailyWorkflowContext(runId, safeRequest, safeTriggerType);
+        WorkflowRun persistedRun = persistStart(runId, safeRequest, safeTriggerType, dryRun, startedAt);
 
         List<DailyWorkflowStepResultVo> steps = new ArrayList<>();
         boolean blockedByFailure = false;
@@ -44,22 +74,92 @@ public class DailyWorkflowOrchestrator {
                     ? skipped(step, LocalDateTime.now(), "前置步骤失败，已跳过后续任务。")
                     : runStep(step, context, dryRun);
             steps.add(stepResult);
+            persistStep(persistedRun, step, steps.size(), stepResult, safeRequest);
             blockedByFailure = blockedByFailure || "failed".equals(stepResult.getStatus());
         }
 
         DailyWorkflowRunResultVo result = new DailyWorkflowRunResultVo();
         result.setRunId(runId);
-        result.setTriggerType(triggerType.getCode());
+        result.setTriggerType(safeTriggerType.getCode());
         result.setTradeDate(safeRequest.getTradeDate());
         result.setSymbols(symbols);
         result.setDryRun(dryRun);
-        result.setStatus(resolveStatus(steps));
+        result.setStatus(dryRun ? WorkflowRunStatus.SKIPPED.getCode() : resolveStatus(steps));
         result.setRiskDisclaimer(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
         result.setStartedAt(startedAt);
         result.setFinishedAt(LocalDateTime.now());
         result.setSteps(steps);
         result.setIntegrationDependencies(integrationDependencies());
+        persistFinish(persistedRun, result);
         return result;
+    }
+
+    private WorkflowRun persistStart(String runId, DailyWorkflowTriggerDto request, WorkflowTriggerType triggerType,
+                                     boolean dryRun, LocalDateTime startedAt) {
+        WorkflowRun run = WorkflowRun.builder().bizDate(request.getTradeDate()).status(WorkflowRunStatus.RUNNING.getCode())
+                .triggerType(triggerType.getCode()).triggerBy("daily-workflow:" + runId)
+                .dryRun(dryRun).requestParams(toJson(request)).startedAt(startedAt).build();
+        if (!persistenceEnabled) {
+            return run;
+        }
+        workflowRunMapper.insert(run);
+        return run;
+    }
+
+    private void persistStep(WorkflowRun run, WorkflowStepCode step, int order,
+                             DailyWorkflowStepResultVo result, DailyWorkflowTriggerDto request) {
+        if (!persistenceEnabled) return;
+        if (run.getId() == null) {
+            throw new IllegalStateException("workflow_run 未返回数据库主键，无法持久化步骤记录");
+        }
+        long duration = result.getStartedAt() == null || result.getFinishedAt() == null ? 0 :
+                java.time.Duration.between(result.getStartedAt(), result.getFinishedAt()).toMillis();
+        workflowStepRunMapper.insert(WorkflowStepRun.builder().workflowRunId(run.getId()).stepCode(step.getCode())
+                .stepOrder(order).status(result.getStatus()).inputParams(toJson(request))
+                .outputSummary(toJson(result.getDetails()))
+                .durationMs(duration).startedAt(result.getStartedAt()).finishedAt(result.getFinishedAt())
+                .errorMessage("failed".equals(result.getStatus()) ? result.getMessage() : null).build());
+    }
+
+    private void persistFinish(WorkflowRun run, DailyWorkflowRunResultVo result) {
+        if (!persistenceEnabled) return;
+        run.setStatus(result.getStatus());
+        run.setFinishedAt(result.getFinishedAt());
+        run.setErrorMessage(firstFailureMessage(result.getSteps()));
+        run.setSummary(toJson(stepSummary(result)));
+        workflowRunMapper.updateById(run);
+    }
+
+    private Map<String, Object> stepSummary(DailyWorkflowRunResultVo result) {
+        long success = result.getSteps().stream().filter(step -> "success".equals(step.getStatus())).count();
+        long failed = result.getSteps().stream().filter(step -> "failed".equals(step.getStatus())).count();
+        long skipped = result.getSteps().stream().filter(step -> "skipped".equals(step.getStatus())).count();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("total", result.getSteps().size());
+        summary.put("success", success);
+        summary.put("failed", failed);
+        summary.put("skipped", skipped);
+        summary.put("riskDisclaimer", result.getRiskDisclaimer());
+        return summary;
+    }
+
+    private String firstFailureMessage(List<DailyWorkflowStepResultVo> steps) {
+        return steps.stream()
+                .filter(step -> "failed".equals(step.getStatus()))
+                .map(DailyWorkflowStepResultVo::getMessage)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String toJson(Object value) {
+        try { return objectMapper.writeValueAsString(value); } catch (Exception e) { return "{}"; }
+    }
+
+    private ObjectMapper auditObjectMapper() {
+        return new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     public List<DailyWorkflowDependencyVo> integrationDependencies() {

@@ -54,6 +54,20 @@ public class RiskSyncController {
                 .orElseThrow(() -> new ServiceException("同步任务不存在或已过期", 404)));
     }
 
+    /**
+     * Compatibility route for clients that used the pre-jobs polling URL.
+     *
+     * <p>The canonical route is {@code /jobs/{jobId}}. Keeping this alias is
+     * harmless because it resolves the same in-memory job and prevents an
+     * already-open browser tab from turning a valid job into a 500 response
+     * after a frontend upgrade.</p>
+     */
+    @GetMapping("/status/{jobId}")
+    @Operation(summary = "兼容查询风险同步任务")
+    public AjaxResult legacyJob(@PathVariable("jobId") String jobId) {
+        return job(jobId);
+    }
+
     @GetMapping("/status")
     @Operation(summary = "查询风险同步状态")
     public AjaxResult status() {

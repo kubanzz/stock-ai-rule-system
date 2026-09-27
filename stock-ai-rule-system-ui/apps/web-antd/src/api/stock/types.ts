@@ -31,6 +31,7 @@ export type CandidateRuleStatus = CandidateRuleLifecycleStatus | RuleStatus;
 
 export type RunStatus =
   | 'failed'
+  | 'partial'
   | 'pending'
   | 'running'
   | 'skipped'
@@ -56,6 +57,8 @@ export type WorkflowStepCode =
   | 'factor_calculation'
   | 'market_data_sync'
   | 'prediction_validation'
+  | 'rule_inference'
+  | 'risk_warning'
   | 'rule_signal_generation';
 
 export interface StockSignalQuery {
@@ -404,6 +407,7 @@ export interface RunStep {
 
 export interface RunCenterOverview {
   metrics: MetricCard[];
+  runId?: string;
   serviceStatus: string;
   steps: RunStep[];
   tradeDate?: string;

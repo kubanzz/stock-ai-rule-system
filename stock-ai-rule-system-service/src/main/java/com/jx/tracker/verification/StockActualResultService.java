@@ -44,7 +44,7 @@ public class StockActualResultService {
         List<StockActualResult> results = new ArrayList<>();
         for (StockSignalDaily signal : signals) {
             StockActualResult result = buildActualResult(signal);
-            actualResultMapper.insert(result);
+            actualResultMapper.upsertActualResult(result);
             results.add(result);
         }
         return results;

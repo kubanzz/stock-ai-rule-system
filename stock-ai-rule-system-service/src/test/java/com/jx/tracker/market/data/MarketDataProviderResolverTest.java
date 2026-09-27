@@ -8,9 +8,25 @@ import com.jx.tracker.market.data.provider.MockMarketDataProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MarketDataProviderResolverTest {
+
+    @Test
+    void applicationConfigDoesNotCommitAProviderToken() throws IOException {
+        String application;
+        try (InputStream input = getClass().getResourceAsStream("/application.yml")) {
+            assertThat(input).as("/application.yml").isNotNull();
+            application = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        assertThat(application)
+                .contains("token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:}}");
+    }
 
     @Test
     void usesAkToolsWithoutFallingBackToMockWhenConfiguredExplicitly() {

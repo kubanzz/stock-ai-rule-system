@@ -115,6 +115,25 @@ class RiskWarningConfigurationTest {
     }
 
     @Test
+    void breadthDerivedGatewayUsesDedicatedReadTimeoutWhileOtherRequestsStayBounded() {
+        enabledRunner().withPropertyValues(
+                "stock-ai-rule.risk-warning.derived-gateway-base-url=http://127.0.0.1:18090",
+                "stock-ai-rule.market-data.provider.read-timeout=17s",
+                "stock-ai-rule.market-data.provider.breadth-read-timeout=9m"
+        ).run(context -> {
+            assertThat(context).hasNotFailed();
+            AkToolsMarketRiskSourceClient client =
+                    context.getBean(AkToolsMarketRiskSourceClient.class);
+            Object derivedTransport = ReflectionTestUtils.getField(client, "derivedTransport");
+            Object breadthTransport = ReflectionTestUtils.getField(client, "breadthTransport");
+            assertThat(derivedTransport).isNotNull();
+            assertThat(breadthTransport).isNotNull().isNotSameAs(derivedTransport);
+            assertThat(readTimeout(derivedTransport)).isEqualTo(Duration.ofSeconds(17));
+            assertThat(readTimeout(breadthTransport)).isEqualTo(Duration.ofMinutes(9));
+        });
+    }
+
+    @Test
     void enabledRuntimeRejectsAnUnsupportedRiskPrimarySource() {
         enabledRunner().withPropertyValues(
                 "stock-ai-rule.risk-warning.source.primary=csv"
@@ -329,6 +348,12 @@ class RiskWarningConfigurationTest {
             current = current.getCause();
         }
         return current;
+    }
+
+    private Duration readTimeout(Object transport) {
+        Object restClient = ReflectionTestUtils.getField(transport, "restClient");
+        Object requestFactory = ReflectionTestUtils.getField(restClient, "clientRequestFactory");
+        return (Duration) ReflectionTestUtils.getField(requestFactory, "readTimeout");
     }
 
     @Configuration(proxyBeanMethods = false)

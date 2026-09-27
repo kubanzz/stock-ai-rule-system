@@ -402,13 +402,24 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     @Override
     public List<RiskObservation> findObservations(RiskWorkflowRequest request) {
         boolean dailyScoring = request.scoreStartDate().equals(request.endDate());
+        boolean latestMarketOnly = latestMarketOnlyRead(request);
         boolean tieredRead = storageProperties.isTieredReadEnabled();
         return objectSqlScopes(request).stream().flatMap(scope -> {
             scope.parameters()
-                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("startDate", request.readStartDate())
                     .addValue("endDate", request.endDate())
                     .addValue("asOf", request.asOf())
                     .addValue("horizons", request.horizons().stream().map(RiskHorizon::getCode).toList());
+            // The latest market publication only needs the scalar metadata used
+            // by the scoring path.  Avoid selecting/decoding the original JSON
+            // payload for ~130k historical rows (often several gigabytes),
+            // while retaining the same value, quality, as-of and PIT filters.
+            // The compact path intentionally takes precedence over tiered reads:
+            // the baseline table may not yet cover the complete six-year window.
+            if (latestMarketOnly) {
+                return namedJdbcTemplate.query(latestMarketObservationSql(scope.predicate()),
+                        scope.parameters(), this::mapLatestMarketObservation).stream();
+            }
             if (tieredRead && dailyScoring) {
                 return namedJdbcTemplate.query("""
                         SELECT object_type, object_id, horizon, trade_date, dimension_code,
@@ -429,8 +440,32 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                         scope.parameters(), this::mapObservation).stream();
             }
             return namedJdbcTemplate.query(rawObservationSql(scope.predicate()),
-                    scope.parameters(), this::mapObservation).stream();
+                scope.parameters(), this::mapObservation).stream();
         }).toList();
+    }
+
+    private String latestMarketObservationSql(String scopePredicate) {
+        return """
+                SELECT object_type, object_id, horizon, trade_date, dimension_code,
+                       indicator_code, component_code, indicator_value, unit,
+                       observed_at, available_at, source, quality_status,
+                       JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.datasetCode')) AS dataset_code,
+                       CASE JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.tradingDay'))
+                           WHEN 'true' THEN 1 WHEN 'false' THEN 0
+                       END AS trading_day,
+                       CASE JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.marketPrice'))
+                           WHEN 'true' THEN 1 WHEN 'false' THEN 0
+                       END AS market_price,
+                       CASE JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.alreadyNormalizedRiskScore'))
+                           WHEN 'true' THEN 1 WHEN 'false' THEN 0
+                       END AS already_normalized_risk_score,
+                       JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.normalizationContract'))
+                           AS normalization_contract
+                FROM risk_indicator_observation
+                WHERE trade_date BETWEEN :startDate AND :endDate AND available_at <= :asOf
+                  AND horizon IN (:horizons)
+                  AND quality_status IN ('available', 'valid_zero')
+                """ + scopePredicate;
     }
 
     private String rawObservationSql(String scopePredicate) {
@@ -470,7 +505,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     public List<RiskEvent> findEvents(RiskWorkflowRequest request) {
         return objectSqlScopes(request).stream().flatMap(scope -> {
             scope.parameters()
-                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("startDate", request.readStartDate())
                     .addValue("endDate", request.endDate())
                     .addValue("asOf", request.asOf());
             return namedJdbcTemplate.query("""
@@ -523,7 +558,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
             MapSqlParameterSource parameters = new MapSqlParameterSource()
                     .addValue("stockObjectType", RiskObjectType.STOCK.getCode())
                     .addValue("stockObjectIds", stockIds.subList(offset, end))
-                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("startDate", request.readStartDate())
                     .addValue("endDate", request.endDate())
                     .addValue("asOf", request.asOf());
             exposures.addAll(namedJdbcTemplate.query("""
@@ -543,7 +578,7 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
     public List<RiskSnapshot> findSnapshotHistory(RiskWorkflowRequest request) {
         return objectSqlScopes(request).stream().flatMap(scope -> {
             scope.parameters()
-                    .addValue("startDate", request.collectionStartDate())
+                    .addValue("startDate", request.readStartDate())
                     .addValue("endDate", request.endDate())
                     .addValue("asOf", request.asOf())
                     .addValue("modelVersion", request.modelVersion())
@@ -688,6 +723,29 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                 readJson(resultSet.getString("payload_json")));
     }
 
+    private RiskObservation mapLatestMarketObservation(ResultSet resultSet, int rowNum)
+            throws SQLException {
+        Map<String, Object> attributes = new HashMap<>();
+        putIfPresent(attributes, "datasetCode", resultSet.getString("dataset_code"));
+        putIfPresent(attributes, "tradingDay", booleanColumn(resultSet, "trading_day"));
+        putIfPresent(attributes, "marketPrice", booleanColumn(resultSet, "market_price"));
+        putIfPresent(attributes, "alreadyNormalizedRiskScore",
+                booleanColumn(resultSet, "already_normalized_risk_score"));
+        putIfPresent(attributes, "normalizationContract",
+                resultSet.getString("normalization_contract"));
+        return new RiskObservation(
+                object(resultSet), RiskHorizon.fromCode(resultSet.getString("horizon")),
+                resultSet.getObject("trade_date", LocalDate.class),
+                RiskDimension.fromCode(resultSet.getString("dimension_code")),
+                resultSet.getString("indicator_code"), resultSet.getString("component_code"),
+                resultSet.getBigDecimal("indicator_value"), resultSet.getString("unit"),
+                resultSet.getTimestamp("observed_at").toLocalDateTime(),
+                resultSet.getTimestamp("available_at").toLocalDateTime(),
+                resultSet.getString("source"),
+                RiskDataQualityStatus.fromCode(resultSet.getString("quality_status")),
+                attributes);
+    }
+
     private RiskObservation mapBaselineObservation(ResultSet resultSet, int rowNum) throws SQLException {
         Map<String, Object> attributes = new HashMap<>();
         putIfPresent(attributes, "alreadyNormalizedRiskScore",
@@ -745,6 +803,20 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         if (value != null) {
             attributes.put(key, value);
         }
+    }
+
+    private Boolean booleanColumn(ResultSet resultSet, String column) throws SQLException {
+        Object value = resultSet.getObject(column);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Boolean flag) {
+            return flag;
+        }
+        if (value instanceof Number number) {
+            return number.intValue() != 0;
+        }
+        return Boolean.valueOf(value.toString());
     }
 
     private RiskEvent mapEvent(ResultSet resultSet, int rowNum) throws SQLException {
@@ -820,7 +892,14 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
         boolean containsMarket = requested.stream()
                 .anyMatch(object -> object.objectType() == RiskObjectType.MARKET
                         && "CN-A".equals(object.objectId()));
-        boolean includeLayerCandidates = containsStock || containsMarket;
+        // A latest-only market publication is intentionally scoped to CN-A.
+        // Do not add the broad sector layer predicate here: market evidence is
+        // sufficient for this read and scanning every historical sector row can
+        // exhaust the heap on a large installation. Sector snapshots are still
+        // materialized by the workflow from the point-in-time exposure index
+        // and remain insufficient when no sector observations were read.
+        boolean latestMarketOnly = latestMarketOnlyRead(request);
+        boolean includeLayerCandidates = !latestMarketOnly && (containsStock || containsMarket);
         List<RiskObjectKey> explicit = includeLayerCandidates ? requested.stream()
                 .filter(object -> object.objectType() != RiskObjectType.SECTOR)
                 .filter(object -> object.objectType() != RiskObjectType.MARKET
@@ -836,6 +915,15 @@ public class JdbcRiskWorkflowRepository implements RiskWorkflowRepository {
                     explicit.subList(offset, end), includeLayerCandidates && offset == 0));
         }
         return List.copyOf(scopes);
+    }
+
+    private boolean latestMarketOnlyRead(RiskWorkflowRequest request) {
+        Set<RiskObjectKey> requested = requestedObjects(request);
+        return request.latestOnlyRead()
+                && requested.size() == 1
+                && requested.stream().anyMatch(object ->
+                        object.objectType() == RiskObjectType.MARKET
+                                && "CN-A".equals(object.objectId()));
     }
 
     private ObjectSqlScope objectSqlScope(List<RiskObjectKey> requested, boolean includeLayerCandidates) {

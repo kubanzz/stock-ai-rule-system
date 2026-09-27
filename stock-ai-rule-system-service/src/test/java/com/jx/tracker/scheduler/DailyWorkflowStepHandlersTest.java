@@ -7,7 +7,11 @@ import com.jx.tracker.domain.dto.CandidateRuleDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.entity.TradeCalendar;
+import com.jx.tracker.domain.entity.StockWatchlist;
+import com.jx.tracker.domain.entity.StockWatchlistItem;
 import com.jx.tracker.exception.ServiceException;
+import com.jx.tracker.mapper.StockWatchlistItemMapper;
+import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.domain.dto.AiReviewResponseDto;
 import com.jx.tracker.domain.vo.DailyWorkflowStepResultVo;
 import com.jx.tracker.domain.vo.StockFactorDailyVo;
@@ -80,6 +84,39 @@ class DailyWorkflowStepHandlersTest {
                 LocalDate.of(2026, 6, 26).equals(request.getStartDate())
                         && LocalDate.of(2026, 6, 26).equals(request.getEndDate())));
         verify(syncService, times(2)).syncDailyQuotes(any());
+    }
+
+    @Test
+    void marketDataCollectionUsesMyFollowSymbolsForHistoryAndDownstreamSteps() {
+        MarketDataSyncService syncService = mock(MarketDataSyncService.class);
+        MarketDataSyncResultDto syncResult = new MarketDataSyncResultDto();
+        syncResult.setStatus("success");
+        when(syncService.syncStockList(any())).thenReturn(syncResult);
+        when(syncService.syncTradeCalendar(any())).thenReturn(syncResult);
+        when(syncService.syncDailyQuotes(any())).thenReturn(syncResult);
+
+        StockWatchlistMapper watchlistMapper = mock(StockWatchlistMapper.class);
+        StockWatchlistItemMapper itemMapper = mock(StockWatchlistItemMapper.class);
+        when(watchlistMapper.selectOne(any())).thenReturn(StockWatchlist.builder()
+                .id(1L).poolCode("my-follow").build());
+        when(itemMapper.selectList(any())).thenReturn(List.of(
+                StockWatchlistItem.builder().symbol("000001.SZ").build(),
+                StockWatchlistItem.builder().symbol("600000.SH").build()));
+
+        DailyWorkflowContext context = context(LocalDate.of(2026, 6, 26), List.of());
+        DailyWorkflowStepResultVo result = new MarketDataCollectionStepHandler(
+                syncService,
+                calendarService(LocalDate.of(2026, 6, 26)),
+                watchlistMapper,
+                itemMapper
+        ).execute(context);
+
+        assertThat(result.getDetails()).containsEntry("dailyQuoteSyncCount", 2);
+        assertThat(context.getRequest().getSymbols()).containsExactly("000001.SZ", "600000.SH");
+        verify(syncService).syncDailyQuotes(argThat(request ->
+                "000001.SZ".equals(request.getTargetSymbol())
+                        && LocalDate.of(2026, 5, 27).equals(request.getStartDate())
+                        && LocalDate.of(2026, 6, 26).equals(request.getEndDate())));
     }
 
     @Test
@@ -219,6 +256,10 @@ class DailyWorkflowStepHandlersTest {
     private MarketDataCollectionStepHandler marketDataHandler(
             MarketDataSyncService syncService,
             LocalDate latestTradeDate) {
+        return new MarketDataCollectionStepHandler(syncService, calendarService(latestTradeDate));
+    }
+
+    private TradeCalendarService calendarService(LocalDate latestTradeDate) {
         TradeCalendarService calendarService = mock(TradeCalendarService.class);
         when(calendarService.pageTradeCalendars(any())).thenReturn(new com.jx.tracker.common.PageResult<>(
                 List.of(TradeCalendar.builder()
@@ -227,6 +268,6 @@ class DailyWorkflowStepHandlersTest {
                         .tradeDate(latestTradeDate)
                         .build()),
                 1));
-        return new MarketDataCollectionStepHandler(syncService, calendarService);
+        return calendarService;
     }
 }

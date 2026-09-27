@@ -217,6 +217,7 @@ public class SingleRuleBacktestService implements BacktestService {
                 .symbol(factor.getSymbol())
                 .signalDate(factor.getTradeDate())
                 .signal(signalScore.signal())
+                .signalDirection(signalScore.signalDirection())
                 .signalLevel(signalScore.signalLevel())
                 .bullishScore(executionResult.bullishScore())
                 .bearishScore(executionResult.bearishScore())

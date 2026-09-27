@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { SignalType, StockResearchDetail } from '#/api/stock';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -25,7 +25,9 @@ import { getStockResearchDetail } from '#/api/stock';
 
 const route = useRoute();
 const loading = ref(false);
+const loadError = ref<string>();
 const detail = ref<StockResearchDetail>();
+let loadSequence = 0;
 
 const signalMeta: Record<SignalType, { color: string; label: string }> = {
   bearish: { color: 'red', label: '看跌' },
@@ -39,15 +41,60 @@ const analysisDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : undefined,
 );
 
+const priceBounds = computed(() => {
+  const values = detail.value?.priceSeries.map((point) => point.close) ?? [];
+  if (values.length === 0) return { max: 1, min: 0 };
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const padding = Math.max((max - min) * 0.1, max * 0.01, 0.01);
+  return { max: max + padding, min: Math.max(0, min - padding) };
+});
+
+const priceRange = computed(() => {
+  const values = detail.value?.priceSeries.map((point) => point.close) ?? [];
+  if (values.length === 0) return { max: 0, min: 0 };
+  return { max: Math.max(...values), min: Math.min(...values) };
+});
+
+const priceChartPoints = computed(() => {
+  const points = detail.value?.priceSeries ?? [];
+  const { max, min } = priceBounds.value;
+  const span = max - min || 1;
+  return points
+    .map((point, index) => {
+      const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
+      const y = 92 - ((point.close - min) / span) * 82;
+      return { ...point, x, y };
+    });
+});
+
+const priceChartPolyline = computed(() =>
+  priceChartPoints.value.map((point) => `${point.x},${point.y}`).join(' '),
+);
+
+const priceChartArea = computed(() => {
+  const points = priceChartPoints.value;
+  if (points.length === 0) return '';
+  return `0,100 ${points.map((point) => `${point.x},${point.y}`).join(' ')} 100,100`;
+});
+
 async function loadDetail() {
+  const sequence = ++loadSequence;
   loading.value = true;
+  loadError.value = undefined;
   try {
-    detail.value = await getStockResearchDetail(
+    const result = await getStockResearchDetail(
       symbol.value,
       analysisDate.value,
     );
+    if (sequence === loadSequence) detail.value = result;
+  } catch (error) {
+    if (sequence === loadSequence) {
+      detail.value = undefined;
+      loadError.value = error instanceof Error ? error.message : '股票详情加载失败';
+    }
   } finally {
-    loading.value = false;
+    if (sequence === loadSequence) loading.value = false;
   }
 }
 
@@ -59,8 +106,9 @@ function signalColor(signal?: SignalType) {
   return signal ? signalMeta[signal]?.color : 'gold';
 }
 
-onMounted(loadDetail);
-watch(() => [route.params.symbol, route.query.date], loadDetail);
+watch(() => [route.params.symbol, route.query.date], loadDetail, {
+  immediate: true,
+});
 </script>
 
 <template>
@@ -74,6 +122,13 @@ watch(() => [route.params.symbol, route.query.date], loadDetail);
       class="mb-4"
       show-icon
       type="warning"
+    />
+    <Alert
+      v-if="loadError"
+      :message="loadError"
+      class="mb-4"
+      show-icon
+      type="error"
     />
 
     <Skeleton :loading="loading" active>
@@ -135,21 +190,40 @@ watch(() => [route.params.symbol, route.query.date], loadDetail);
         <Row :gutter="[16, 16]" class="mb-4">
           <Col :lg="14" :xs="24">
             <Card size="small" title="价格走势">
-              <div class="flex h-56 items-end gap-2">
-                <div
-                  v-for="point in detail.priceSeries"
-                  :key="point.date"
-                  class="flex flex-1 flex-col items-center gap-2"
+              <div v-if="priceChartPoints.length" class="price-chart">
+                <svg
+                  aria-label="最近一个月股票收盘价走势"
+                  class="price-chart-svg"
+                  preserveAspectRatio="none"
+                  role="img"
+                  viewBox="0 0 100 100"
                 >
-                  <div
-                    class="w-full rounded bg-blue-500/70"
-                    :style="{ height: `${Math.max(12, point.close / 2)}px` }"
-                  ></div>
-                  <span class="text-xs text-gray-500">{{
-                    point.date.slice(5)
-                  }}</span>
+                  <polygon :points="priceChartArea" class="price-chart-area" />
+                  <polyline
+                    :points="priceChartPolyline"
+                    class="price-chart-line"
+                  />
+                  <circle
+                    v-for="point in priceChartPoints"
+                    :key="point.date"
+                    :cx="point.x"
+                    :cy="point.y"
+                    class="price-chart-point"
+                    r="1.4"
+                  />
+                </svg>
+                <div class="price-chart-labels">
+                  <span>{{ priceChartPoints[0]?.date.slice(5) }}</span>
+                  <span>{{ priceChartPoints.at(-1)?.date.slice(5) }}</span>
+                </div>
+                <div class="price-chart-range">
+                  <span>最低 {{ priceRange.min.toFixed(2) }}</span>
+                  <span>最高 {{ priceRange.max.toFixed(2) }}</span>
                 </div>
               </div>
+              <Typography.Text v-else type="secondary">
+                暂无最近一个月行情数据，详情打开时会尝试补齐行情。
+              </Typography.Text>
             </Card>
           </Col>
           <Col :lg="10" :xs="24">
@@ -251,3 +325,61 @@ watch(() => [route.params.symbol, route.query.date], loadDetail);
     </Skeleton>
   </Page>
 </template>
+
+<style scoped>
+.price-chart {
+  padding: 8px 4px 0;
+}
+
+.price-chart-svg {
+  display: block;
+  width: 100%;
+  height: 220px;
+  overflow: visible;
+  background: linear-gradient(
+    to bottom,
+    transparent 24%,
+    hsl(var(--border) / 0.55) 25%,
+    transparent 26%,
+    transparent 49%,
+    hsl(var(--border) / 0.55) 50%,
+    transparent 51%,
+    transparent 74%,
+    hsl(var(--border) / 0.55) 75%,
+    transparent 76%
+  );
+}
+
+.price-chart-area {
+  fill: #1677ff;
+  opacity: 0.12;
+}
+
+.price-chart-line {
+  fill: none;
+  stroke: #1677ff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-chart-point {
+  fill: #fff;
+  stroke: #1677ff;
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-chart-labels,
+.price-chart-range {
+  display: flex;
+  justify-content: space-between;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.price-chart-range {
+  margin-top: 8px;
+}
+</style>

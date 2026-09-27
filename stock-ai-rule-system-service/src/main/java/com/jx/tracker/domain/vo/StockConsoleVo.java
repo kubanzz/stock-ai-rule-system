@@ -390,7 +390,16 @@ public final class StockConsoleVo {
             LocalDate tradeDate,
             String serviceStatus,
             List<MetricCard> metrics,
-            List<RunStep> steps
+            List<RunStep> steps,
+            String runId
     ) {
+        public RunCenterOverview(
+                LocalDate tradeDate,
+                String serviceStatus,
+                List<MetricCard> metrics,
+                List<RunStep> steps
+        ) {
+            this(tradeDate, serviceStatus, metrics, steps, null);
+        }
     }
 }

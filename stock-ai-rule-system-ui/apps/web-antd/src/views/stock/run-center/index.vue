@@ -73,6 +73,13 @@ function stepStatus(status: string) {
   return 'wait';
 }
 
+function statusColor(status?: string) {
+  if (status === 'failed') return 'red';
+  if (status === 'partial') return 'orange';
+  if (status === 'unavailable') return 'default';
+  return 'green';
+}
+
 onMounted(loadOverview);
 </script>
 
@@ -120,10 +127,13 @@ onMounted(loadOverview);
           <Space align="center">
             <Typography.Text type="secondary">服务状态</Typography.Text>
             <Tag
-              :color="overview?.serviceStatus === 'failed' ? 'red' : 'green'"
+              :color="statusColor(overview?.serviceStatus)"
             >
-              {{ overview?.serviceStatus ?? 'normal' }}
+              {{ overview?.serviceStatus ?? 'unavailable' }}
             </Tag>
+            <Typography.Text v-if="overview?.runId" type="secondary">
+              {{ overview.runId }}
+            </Typography.Text>
           </Space>
           <Steps
             :current="overview?.steps.length ?? 0"
@@ -158,7 +168,7 @@ onMounted(loadOverview);
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.dataIndex === 'status'">
-                <Tag :color="record.status === 'failed' ? 'red' : 'green'">
+                <Tag :color="statusColor(record.status)">
                   {{ record.status }}
                 </Tag>
               </template>

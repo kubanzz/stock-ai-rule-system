@@ -225,8 +225,9 @@ public final class RiskWarningWorkflow {
         if (incrementalFlowStart.isBefore(request.providerStartDate())) {
             incrementalFlowStart = request.providerStartDate();
         }
-        LocalDate calculationContextStart = request.endDate()
-                .minusYears(LATEST_CALCULATION_CONTEXT_YEARS);
+        LocalDate calculationContextStart = request.latestOnlyRead()
+                ? request.providerStartDate()
+                : request.endDate().minusYears(LATEST_CALCULATION_CONTEXT_YEARS);
         if (calculationContextStart.isBefore(request.providerStartDate())) {
             calculationContextStart = request.providerStartDate();
         }
@@ -502,13 +503,29 @@ public final class RiskWarningWorkflow {
         }
         Set<RiskObjectKey> stockSet = Set.copyOf(stocks);
         Set<RiskObjectKey> expanded = new LinkedHashSet<>(task.objects());
+        Set<RiskObjectKey> sectorSet = task.objects().stream()
+                .filter(this::canonicalSector)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         exposures.stream()
                 .filter(exposure -> marketWideDaily || stockSet.contains(exposure.stock()))
                 .filter(exposure -> eligible(exposure, request))
                 .map(IndustryExposure::sector)
                 .filter(this::canonicalSector)
+                .forEach(sectorSet::add);
+        List<RiskObjectKey> sectors = sectorSet.stream()
                 .sorted(Comparator.comparing(RiskObjectKey::objectId))
-                .forEach(expanded::add);
+                .toList();
+        if (marketWideDaily) {
+            // A missing current day for one sector must not downgrade the
+            // complete market series in the same provider batch.  Keep the
+            // market object in its own request and collect sector objects in
+            // independent chunks so their quality is isolated per chunk.
+            List<RiskCollectionTask> separated = new ArrayList<>();
+            separated.addAll(partitionTasks(task, List.of(CN_A)));
+            separated.addAll(partitionTasks(task, sectors));
+            return List.copyOf(separated);
+        }
+        expanded.addAll(sectors);
         return partitionTasks(task, List.copyOf(expanded));
     }
 

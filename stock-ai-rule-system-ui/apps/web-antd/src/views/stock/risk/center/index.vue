@@ -77,11 +77,22 @@ const selected = ref<RiskObjectListItem>();
 const detail = ref<RiskObjectDetail>();
 const trend = ref<RiskTrendPoint[]>([]);
 const syncJob = ref<RiskSyncJob>();
+const syncPollError = ref<string>();
+const syncStalled = ref(false);
 const query = reactive<RiskObjectQuery>(createRiskCenterQuery());
 const centerRequests = createRequestSequence();
 const detailRequests = createRequestSequence();
 const stockRequests = createRequestSequence();
 let syncPollTimer: ReturnType<typeof setTimeout> | undefined;
+let syncPollGeneration = 0;
+let syncTrackedJobId: string | undefined;
+let syncTrackedProgress: number | undefined;
+let syncTrackedStatus: RiskSyncJob['status'] | undefined;
+let syncLastProgressAt = 0;
+
+const SYNC_POLL_INTERVAL_MS = 1500;
+const SYNC_RETRY_INTERVAL_MS = 5000;
+const SYNC_STALL_TIMEOUT_MS = 60_000;
 
 const horizonOptions: Array<{ label: string; value: RiskHorizon }> = [
   { label: '短期（1–5 日）', value: '1-5d' },
@@ -312,21 +323,63 @@ async function search() {
 function clearSyncPolling() {
   clearTimeout(syncPollTimer);
   syncPollTimer = undefined;
+  syncPollGeneration += 1;
 }
 
-function scheduleSyncPolling(jobId: string) {
+function scheduleSyncPolling(
+  jobId: string,
+  delay = SYNC_POLL_INTERVAL_MS,
+) {
   clearSyncPolling();
-  syncPollTimer = setTimeout(() => void pollSyncJob(jobId), 1500);
+  // `clearSyncPolling` invalidates any request that was already in flight. The
+  // generation captured here prevents a late response from an old job from
+  // replacing the status of a newer one.
+  const generation = syncPollGeneration;
+  syncPollTimer = setTimeout(
+    () => void pollSyncJob(jobId, generation),
+    delay,
+  );
 }
 
-async function pollSyncJob(jobId: string) {
+function observeSyncJob(job: RiskSyncJob) {
+  const changed =
+    syncTrackedJobId !== job.jobId ||
+    syncTrackedProgress !== job.progress ||
+    syncTrackedStatus !== job.status;
+  if (changed || syncLastProgressAt === 0) {
+    syncTrackedJobId = job.jobId;
+    syncTrackedProgress = job.progress;
+    syncTrackedStatus = job.status;
+    syncLastProgressAt = Date.now();
+  }
+  syncStalled.value =
+    (job.status === 'queued' || job.status === 'running') &&
+    Date.now() - syncLastProgressAt >= SYNC_STALL_TIMEOUT_MS;
+}
+
+function resetSyncTracking() {
+  syncTrackedJobId = undefined;
+  syncTrackedProgress = undefined;
+  syncTrackedStatus = undefined;
+  syncLastProgressAt = 0;
+  syncStalled.value = false;
+}
+
+async function pollSyncJob(jobId: string, generation = syncPollGeneration) {
   try {
     const result = await getRiskSyncJob(jobId);
+    if (generation !== syncPollGeneration) return;
+    syncPollError.value = undefined;
     syncJob.value = result;
+    observeSyncJob(result);
     if (result.status === 'queued' || result.status === 'running') {
-      scheduleSyncPolling(jobId);
+      scheduleSyncPolling(
+        jobId,
+        syncStalled.value ? SYNC_RETRY_INTERVAL_MS : SYNC_POLL_INTERVAL_MS,
+      );
       return;
     }
+    clearSyncPolling();
     if (result.status === 'failed') {
       message.error(result.message || '风险数据同步失败，已保留原有数据');
       return;
@@ -336,9 +389,23 @@ async function pollSyncJob(jobId: string) {
     } else {
       message.success('风险数据同步完成');
     }
+    resetSyncTracking();
     await loadCenter();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '同步状态查询失败');
+    if (generation !== syncPollGeneration) return;
+    const errorMessage =
+      error instanceof Error ? error.message : '同步状态查询失败';
+    syncPollError.value = errorMessage;
+    // A transient status request failure must not permanently stop polling.
+    // Keep the job visible and retry at a slower cadence until the backend
+    // reports a terminal state.
+    if (syncJob.value?.jobId === jobId && syncActive.value) {
+      syncStalled.value = true;
+      scheduleSyncPolling(jobId, SYNC_RETRY_INTERVAL_MS);
+      return;
+    }
+    clearSyncPolling();
+    message.error(errorMessage);
   }
 }
 
@@ -349,11 +416,20 @@ async function loadInitialSyncStatus() {
       result.activeJobs.find((job) => job.scopeKey === 'market:CN-A') ??
       result.activeJobs[0];
     syncJob.value = active ?? result.latestMarketJob ?? undefined;
+    syncPollError.value = undefined;
+    if (syncJob.value) {
+      observeSyncJob(syncJob.value);
+    } else {
+      resetSyncTracking();
+    }
     if (active) {
       scheduleSyncPolling(active.jobId);
     }
-  } catch {
-    // 同步状态不影响风险数据的正常浏览。
+  } catch (error) {
+    syncPollError.value =
+      error instanceof Error ? error.message : '同步状态查询失败';
+    // 同步状态不影响风险数据的正常浏览，但把错误留在状态卡片中，
+    // 让用户知道为什么无法判断后台任务是否仍在运行。
   }
 }
 
@@ -361,10 +437,16 @@ async function beginSync(request: () => Promise<RiskSyncJob>) {
   if (syncActive.value) return;
   try {
     const result = await request();
+    syncPollError.value = undefined;
+    resetSyncTracking();
     syncJob.value = result;
+    observeSyncJob(result);
     scheduleSyncPolling(result.jobId);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '启动风险同步失败');
+    const errorMessage =
+      error instanceof Error ? error.message : '启动风险同步失败';
+    syncPollError.value = errorMessage;
+    message.error(errorMessage);
   }
 }
 
@@ -381,7 +463,10 @@ async function syncSelectedStock() {
 onMounted(() => {
   void Promise.all([loadCenter(), loadInitialSyncStatus()]);
 });
-onUnmounted(clearSyncPolling);
+onUnmounted(() => {
+  clearSyncPolling();
+  resetSyncTracking();
+});
 </script>
 
 <template>
@@ -395,7 +480,9 @@ onUnmounted(clearSyncPolling);
       <RiskSyncStatus
         :job="syncJob"
         :latest-data-date="overview?.tradeDate"
+        :poll-error="syncPollError"
         :stale-trading-days="overview?.marketSnapshot?.staleTradingDays"
+        :stalled="syncStalled"
         @sync-market="syncLatestMarket"
       />
 

@@ -150,6 +150,7 @@ class FoundationContractTest {
                 "pending",
                 "running",
                 "success",
+                "partial",
                 "failed",
                 "skipped"
         );

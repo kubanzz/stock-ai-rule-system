@@ -99,14 +99,18 @@ stock-ai-rule:
       report-directory: ${RISK_WARNING_BACKFILL_REPORT_DIRECTORY:target/risk-backfill/reports}
   market-data:
     provider:
-      # 可选：mock / csv / tushare。外部 token 缺失时自动降级到 fallback-type。
+      # AKTools 需提供 stock_zh_a_daily 个股历史接口；若部署环境不提供该接口，可切换为 tushare。
+      # mock 仅用于本地测试；生产环境不要依赖 fallback-type 生成模拟行情。
       type: ${MARKET_DATA_PROVIDER:aktools}
       fallback-type: ${MARKET_DATA_FALLBACK_PROVIDER:mock}
-      token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:cf84fa45c5750c6d7115c85f973db90796c37c11641b3a69}}
+      # Token 只能通过外部密钥注入，禁止在仓库中提供默认值。
+      token: ${MARKET_DATA_PROVIDER_TOKEN:${TUSHARE_TOKEN:}}
       api-url: ${MARKET_DATA_PROVIDER_API_URL:https://api.tushare.pro}
       ak-tools-base-url: ${AKTOOLS_BASE_URL:http://127.0.0.1:8090}
       connect-timeout: ${MARKET_DATA_CONNECT_TIMEOUT:5s}
       read-timeout: ${MARKET_DATA_READ_TIMEOUT:60s}
+      # 风险网关 breadth 会遍历全体 A 股；只为该端点单独放宽读取等待时间。
+      breadth-read-timeout: ${MARKET_DATA_BREADTH_READ_TIMEOUT:10m}
       retry-count: ${MARKET_DATA_RETRY_COUNT:3}
       minimum-stock-count: ${MARKET_DATA_MINIMUM_STOCK_COUNT:4000}
       minimum-quote-coverage: ${MARKET_DATA_MINIMUM_QUOTE_COVERAGE:0.95}
@@ -114,7 +118,8 @@ stock-ai-rule:
       daily-quote-csv-path: ${MARKET_DATA_DAILY_QUOTE_CSV_PATH:}
       trade-calendar-csv-path: ${MARKET_DATA_TRADE_CALENDAR_CSV_PATH:}
   scheduler:
-    # 默认禁用自动调度，避免在未显式配置前触发外部行情、AI 或回测任务。
+    # 需要每日自动补齐“我的关注”最近一个月行情时设置 DAILY_WORKFLOW_ENABLED=true。
+    # 默认禁用，避免在未显式配置真实 Provider 前触发外部行情、AI 或回测任务。
     daily-enabled: ${DAILY_WORKFLOW_ENABLED:false}
     daily-cron: ${DAILY_WORKFLOW_CRON:0 0 18 * * MON-FRI}
     zone: Asia/Shanghai

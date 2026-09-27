@@ -623,6 +623,42 @@ class JdbcRiskWorkflowRepositoryTest {
 
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
+    void latestOnlyReadBindsBoundedContextDateForEveryScoringArtifact() {
+        NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
+        doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));
+        JdbcRiskWorkflowRepository repository = new JdbcRiskWorkflowRepository(
+                new JdbcTemplate(), named, new ObjectMapper());
+        LocalDate date = LocalDate.of(2026, 7, 18);
+        RiskObjectKey market = new RiskObjectKey(RiskObjectType.MARKET, "CN-A");
+        LocalDate collectionStart = RiskWorkflowRequest.baselineCollectionStart(date);
+        RiskWorkflowRequest request = new RiskWorkflowRequest(
+                List.of(new RiskCollectionTask(
+                        "provider-a", "market:CN-A", "market:CN-A", List.of(market))),
+                List.of(RiskHorizon.SHORT_TERM),
+                collectionStart, date, date,
+                date.atTime(20, 0), List.of(), "risk-v1", java.time.LocalTime.of(20, 0),
+                collectionStart, date);
+
+        assertThat(request.latestOnlyRead()).isTrue();
+
+        repository.findObservations(request);
+        repository.findEvents(request);
+        repository.findSnapshotHistory(request);
+
+        org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<SqlParameterSource> parameters =
+                org.mockito.ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(named, times(3)).query(sql.capture(), parameters.capture(), any(RowMapper.class));
+        LocalDate expectedStart = date.minusYears(RiskWorkflowRequest.LATEST_READ_CONTEXT_YEARS);
+        assertThat(parameters.getAllValues()).allSatisfy(value ->
+                assertThat(value.getValue("startDate")).isEqualTo(expectedStart));
+        assertThat(sql.getAllValues()).allSatisfy(value -> assertThat(value)
+                .contains("object_type = :scopeObjectType0 AND object_id = :scopeObjectId0")
+                .doesNotContain("layerSectorType"));
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
     void largeObjectScopeUsesBoundedChunksAndAddsLayerCandidatesOnlyOnce() {
         NamedParameterJdbcOperations named = mock(NamedParameterJdbcOperations.class);
         doReturn(List.of()).when(named).query(anyString(), any(SqlParameterSource.class), any(RowMapper.class));

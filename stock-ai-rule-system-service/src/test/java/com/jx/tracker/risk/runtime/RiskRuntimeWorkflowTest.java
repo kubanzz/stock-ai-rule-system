@@ -100,8 +100,10 @@ class RiskRuntimeWorkflowTest {
         List<RiskWorkflowRequest> requests = requestCaptor.getAllValues();
         assertThat(requests).allSatisfy(request -> {
             assertThat(request.asOf()).isEqualTo(DATE.plusDays(1).atTime(10, 0));
-            assertThat(request.collectionStartDate()).isEqualTo(DATE.minusYears(6));
-            assertThat(request.providerStartDate()).isEqualTo(DATE.minusYears(2));
+            assertThat(request.collectionStartDate())
+                    .isEqualTo(DATE.minusYears(RiskWorkflowRequest.BASELINE_COLLECTION_YEARS));
+            assertThat(request.providerStartDate())
+                    .isEqualTo(DATE.minusYears(RiskWorkflowRequest.BASELINE_COLLECTION_YEARS));
             assertThat(request.providerResultStartDate()).isEqualTo(DATE);
             assertThat(request.collectionTasks().stream()
                     .flatMap(task -> task.objects().stream()))
@@ -114,6 +116,12 @@ class RiskRuntimeWorkflowTest {
                         MarketDatasetCode.MARKET_DAILY.code(),
                         MarketDatasetCode.CROSS_MARKET.code())
                 .doesNotContain(MarketDatasetCode.BREADTH.code());
+        assertThat(requests.getFirst().collectionTasks())
+                .filteredOn(task -> task.datasetCode().equals(MarketDatasetCode.MARKET_DAILY.code()))
+                .singleElement()
+                .satisfies(task -> assertThat(task.objects())
+                        .extracting(object -> object.objectId())
+                        .containsExactly("CN-A"));
         assertThat(requests.getLast().collectionTasks())
                 .extracting(task -> task.datasetCode())
                 .containsExactly(

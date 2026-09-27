@@ -3,14 +3,20 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from risk_gateway.aktools import AkToolsSchemaError, AkToolsUnavailable
 from risk_gateway.datasets import DatasetContext, requested_sessions, response
 from risk_gateway.models import GatewayResponse, RiskQuery
-from risk_gateway.series import InvalidSeries, akshare_stock_symbol, normalize_market_frame
+from risk_gateway.series import (
+    InvalidSeries,
+    akshare_stock_symbol,
+    normalize_close_frame,
+    normalize_market_frame,
+)
 from risk_gateway.time_policy import TIME_POLICY_VERSION, market_times
 
 
-SOURCE = "AKTools:stock_info_a_code_name/stock_zh_a_daily"
-CALCULATION_VERSION = "breadth-current-universe-proxy-v1"
+SOURCE = "AKTools:stock_info_a_code_name/stock_zh_a_daily|stock_zh_a_hist|stock_zh_a_hist_tx-close-fallback"
+CALCULATION_VERSION = "breadth-current-universe-proxy-v4"
 BREADTH_DEFINITION = "advanceDecline-250dHighLow-20dMA-v1"
 
 
@@ -135,13 +141,45 @@ class BreadthDataset:
         end: date,
         sessions: tuple[date, ...],
     ) -> dict[date, dict[str, int]]:
-        rows = self.context.client.get("stock_zh_a_daily", {
-            "symbol": akshare_stock_symbol(symbol),
-            "start_date": (start - timedelta(days=550)).strftime("%Y%m%d"),
-            "end_date": end.strftime("%Y%m%d"),
-            "adjust": "qfq",
-        })
-        frame = normalize_market_frame(rows)
+        start_date = (start - timedelta(days=550)).strftime("%Y%m%d")
+        end_date = end.strftime("%Y%m%d")
+        try:
+            rows = self.context.client.get("stock_zh_a_daily", {
+                "symbol": akshare_stock_symbol(symbol),
+                "start_date": start_date,
+                "end_date": end_date,
+                "adjust": "qfq",
+            })
+        except (AkToolsUnavailable, AkToolsSchemaError):
+            # Sina's daily endpoint can reject individual listings (notably
+            # newer STAR/Beijing symbols).  Eastmoney's historical endpoint
+            # has the same OHLCV contract, so retry only transport/schema
+            # failures with its documented six-digit symbol.  InvalidSeries
+            # from either response must still fail the stock history and keep
+            # the strict breadth completeness gate intact.
+            try:
+                rows = self.context.client.get("stock_zh_a_hist", {
+                    "symbol": symbol,
+                    "period": "daily",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "adjust": "qfq",
+                })
+            except (AkToolsUnavailable, AkToolsSchemaError):
+                # Tencent's public history endpoint is a final price-only
+                # fallback for listings rejected by both OHLCV endpoints.
+                # Breadth uses close prices only; do not invent volume.
+                rows = self.context.client.get("stock_zh_a_hist_tx", {
+                    "symbol": akshare_stock_symbol(symbol),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "adjust": "qfq",
+                })
+                frame = normalize_close_frame(rows)
+            else:
+                frame = normalize_market_frame(rows)
+        else:
+            frame = normalize_market_frame(rows)
         del symbol
         enriched = self._enrich(frame[["date", "close"]])
         selected = enriched.loc[enriched["date"].isin(sessions)].copy()
