@@ -261,6 +261,7 @@ public final class StockConsoleVo {
             String industry,
             LocalDate tradeDate,
             String signal,
+            String signalStatus,
             BigDecimal confidence,
             BigDecimal riskScore,
             String riskDisclaimer,

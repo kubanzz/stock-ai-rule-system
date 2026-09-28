@@ -2,6 +2,7 @@ import type { RiskGateDecision, RiskHorizon, RiskSnapshot } from './risk/types';
 
 export type SignalType = 'bearish' | 'bullish' | 'high_risk' | 'watch';
 export type DashboardSignalFilter = 'pending' | SignalType;
+export type ResearchSignalStatus = 'pending' | 'ready';
 
 export type RuleStatus =
   | 'active'
@@ -278,6 +279,7 @@ export interface StockResearchDetail {
   riskScore: number;
   ruleChain: RuleContribution[];
   signal: SignalType;
+  signalStatus: ResearchSignalStatus;
   symbol: string;
   tradeDate?: string;
 }

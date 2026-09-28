@@ -667,6 +667,7 @@ export const mockStockResearchDetail: StockResearchDetail = {
     },
   ],
   signal: 'bullish',
+  signalStatus: 'ready',
   symbol: 'AAPL',
   tradeDate: '2026-06-20',
 };

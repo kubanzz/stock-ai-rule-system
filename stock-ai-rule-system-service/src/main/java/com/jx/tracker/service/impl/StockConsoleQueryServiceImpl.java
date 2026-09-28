@@ -161,12 +161,21 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .industry("未分类")
                 .build());
         StockSignalDaily signal = latestSignal(normalizedSymbol, date).orElse(null);
-        LocalDate tradeDate = signal == null
-                ? (requestedDate == null ? quoteEndDate : requestedDate)
-                : signal.getSignalDate();
-        LocalDate factorDate = latestQuoteDate(normalizedSymbol, tradeDate).orElse(tradeDate);
-        StockFactorDaily factor = latestFactor(normalizedSymbol, factorDate).orElseGet(() -> calculateFactorOnDemand(normalizedSymbol, factorDate));
-        if (factor != null && factor.getTradeDate() != null) tradeDate = factor.getTradeDate();
+        LocalDate analysisUpperBound = requestedDate == null ? quoteEndDate : requestedDate;
+        LocalDate factorDate = latestQuoteDate(normalizedSymbol, analysisUpperBound).orElse(analysisUpperBound);
+        StockFactorDaily factor = latestFactor(normalizedSymbol, factorDate).orElse(null);
+        // A stock may be added after the last workflow run. In that case an old
+        // insufficient-data snapshot can still be found by the as-of query,
+        // which would otherwise prevent the detail page from recalculating it.
+        if (factorNeedsRefresh(normalizedSymbol, factor, factorDate)) {
+            StockFactorDaily refreshedFactor = calculateFactorOnDemand(normalizedSymbol, factorDate);
+            if (refreshedFactor != null) {
+                factor = refreshedFactor;
+            }
+        }
+        LocalDate tradeDate = factor != null && factor.getTradeDate() != null
+                ? factor.getTradeDate() : factorDate;
+        boolean signalReady = signal != null && StringUtils.hasText(signal.getSignal());
 
         return new StockConsoleVo.StockResearchDetail(
                 stock.getSymbol(),
@@ -174,11 +183,12 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 stock.getMarket(),
                 stock.getIndustry(),
                 tradeDate,
-                signal == null ? SignalType.WATCH.getCode() : signal.getSignal(),
-                signal == null ? BigDecimal.ZERO : confidencePercent(signal.getConfidence()),
-                signal == null ? BigDecimal.ZERO : nullToZero(signal.getRiskScore()),
+                signalReady ? signal.getSignal() : SignalType.WATCH.getCode(),
+                signalReady ? "ready" : "pending",
+                signalReady ? confidencePercent(signal.getConfidence()) : BigDecimal.ZERO,
+                signalReady ? nullToZero(signal.getRiskScore()) : BigDecimal.ZERO,
                 RISK_DISCLAIMER,
-                signal == null ? "暂无信号解释，等待因子计算与规则推理。" : signal.getExplanation(),
+                signalReady ? signal.getExplanation() : "暂无信号解释，等待因子计算与规则推理。",
                 priceSeries(normalizedSymbol, priceEndDate),
                 factorStates(factor, signal),
                 ruleChain(signal),
@@ -488,6 +498,41 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
             stockFactorDailyService.calculateAndSave(TechnicalFactorCalculateRequestDto.builder().symbol(symbol).tradeDate(tradeDate).build());
             return latestFactor(symbol, tradeDate).orElse(null);
         } catch (RuntimeException ignored) { return null; }
+    }
+
+    private boolean factorNeedsRefresh(String symbol, StockFactorDaily factor, LocalDate factorDate) {
+        if (factor == null || factor.getTradeDate() == null || factor.getTradeDate().isBefore(factorDate)) {
+            return true;
+        }
+        if (!hasInsufficientDataStatus(factor)) {
+            return false;
+        }
+        return usableQuoteCount(symbol, factorDate) >= MIN_TECHNICAL_HISTORY;
+    }
+
+    private boolean hasInsufficientDataStatus(StockFactorDaily factor) {
+        if (factor == null || !StringUtils.hasText(factor.getFactorJson())) {
+            return false;
+        }
+        try {
+            Map<String, Object> rawFactors = OBJECT_MAPPER.readValue(
+                    factor.getFactorJson(), new TypeReference<>() { });
+            return "insufficient_data".equals(rawFactors.get("data_status"))
+                    || "data_insufficient".equals(rawFactors.get("risk_status"));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private long usableQuoteCount(String symbol, LocalDate endDate) {
+        if (!StringUtils.hasText(symbol) || endDate == null) {
+            return 0;
+        }
+        return stockDailyQuoteMapper.selectCount(new LambdaQueryWrapper<StockDailyQuote>()
+                .eq(StockDailyQuote::getSymbol, symbol)
+                .le(StockDailyQuote::getTradeDate, endDate)
+                .isNotNull(StockDailyQuote::getClosePrice)
+                .isNotNull(StockDailyQuote::getVolume));
     }
 
     private List<StockConsoleVo.PricePoint> priceSeries(String symbol, LocalDate tradeDate) {

@@ -1,7 +1,11 @@
 <script lang="ts" setup>
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { SignalType, StockResearchDetail } from '#/api/stock';
+import type {
+  ResearchSignalStatus,
+  SignalType,
+  StockResearchDetail,
+} from '#/api/stock';
 
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -197,12 +201,14 @@ async function openDefaultWatchlistStock() {
   }
 }
 
-function signalLabel(signal?: SignalType) {
-  return signal ? signalMeta[signal]?.label : '观望';
+function signalLabel(signal?: SignalType, status?: ResearchSignalStatus) {
+  if (status === 'pending') return '待生成信号';
+  return signal ? signalMeta[signal]?.label ?? '观望' : '观望';
 }
 
-function signalColor(signal?: SignalType) {
-  return signal ? signalMeta[signal]?.color : 'gold';
+function signalColor(signal?: SignalType, status?: ResearchSignalStatus) {
+  if (status === 'pending') return 'default';
+  return signal ? signalMeta[signal]?.color ?? 'gold' : 'gold';
 }
 
 watch(() => [route.params.symbol, route.query.date], loadDetail, {
@@ -272,8 +278,8 @@ openDefaultWatchlistStock();
             <Card size="small">
               <Typography.Text type="secondary">当前信号</Typography.Text>
               <div class="mt-2">
-                <Tag :color="signalColor(detail.signal)">
-                  {{ signalLabel(detail.signal) }}
+                <Tag :color="signalColor(detail.signal, detail.signalStatus)">
+                  {{ signalLabel(detail.signal, detail.signalStatus) }}
                 </Tag>
               </div>
             </Card>
