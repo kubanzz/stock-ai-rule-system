@@ -6,18 +6,21 @@ import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.dto.CandidateRuleDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.TradeCalendar;
 import com.jx.tracker.domain.entity.StockWatchlist;
 import com.jx.tracker.domain.entity.StockWatchlistItem;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.domain.dto.AiReviewResponseDto;
 import com.jx.tracker.domain.vo.DailyWorkflowStepResultVo;
 import com.jx.tracker.domain.vo.StockFactorDailyVo;
 import com.jx.tracker.market.data.dto.MarketDataSyncResultDto;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
 import com.jx.tracker.market.data.service.TradeCalendarService;
+import com.jx.tracker.risk.workflow.RiskAfterCloseWorkflow;
 import com.jx.tracker.service.IStockFactorDailyService;
 import com.jx.tracker.signal.service.StockSignalService;
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +38,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class DailyWorkflowStepHandlersTest {
@@ -115,7 +121,7 @@ class DailyWorkflowStepHandlersTest {
         assertThat(context.getRequest().getSymbols()).containsExactly("000001.SZ", "600000.SH");
         verify(syncService).syncDailyQuotes(argThat(request ->
                 "000001.SZ".equals(request.getTargetSymbol())
-                        && LocalDate.of(2026, 5, 27).equals(request.getStartDate())
+                        && LocalDate.of(2026, 4, 27).equals(request.getStartDate())
                         && LocalDate.of(2026, 6, 26).equals(request.getEndDate())));
     }
 
@@ -155,6 +161,36 @@ class DailyWorkflowStepHandlersTest {
     }
 
     @Test
+    void marketDataCollectionFallsBackToCommonLocalQuoteDateWhenRemoteProviderIsUnavailable() {
+        MarketDataSyncService syncService = mock(MarketDataSyncService.class);
+        StockDailyQuoteMapper quoteMapper = mock(StockDailyQuoteMapper.class);
+        when(quoteMapper.selectList(any())).thenReturn(List.of(
+                StockDailyQuote.builder().symbol("000001.SZ").tradeDate(LocalDate.of(2026, 9, 24))
+                        .closePrice(new java.math.BigDecimal("11.30")).build(),
+                StockDailyQuote.builder().symbol("000001.SZ").tradeDate(LocalDate.of(2026, 9, 23))
+                        .closePrice(new java.math.BigDecimal("11.35")).build(),
+                StockDailyQuote.builder().symbol("600519.SH").tradeDate(LocalDate.of(2026, 9, 24))
+                        .closePrice(new java.math.BigDecimal("1500.00")).build()
+        ));
+        DailyWorkflowContext context = context(LocalDate.of(2026, 9, 28),
+                List.of("000001.SZ", "600519.SH"));
+
+        DailyWorkflowStepResultVo result = new MarketDataCollectionStepHandler(
+                syncService,
+                calendarService(LocalDate.of(2026, 9, 24)),
+                null,
+                null,
+                quoteMapper
+        ).execute(context);
+
+        assertThat(result.getStatus()).isEqualTo("success");
+        assertThat(result.getDetails()).containsEntry("localQuoteFallback", true);
+        assertThat(context.getRequest().getTradeDate()).isEqualTo(LocalDate.of(2026, 9, 24));
+        verify(syncService).syncStockList(any());
+        verifyNoMoreInteractions(syncService);
+    }
+
+    @Test
     void factorCalculationHandlerRunsBatchCalculationForRequestedSymbols() {
         IStockFactorDailyService factorService = mock(IStockFactorDailyService.class);
         LocalDate tradeDate = LocalDate.of(2026, 6, 26);
@@ -171,6 +207,19 @@ class DailyWorkflowStepHandlersTest {
         assertThat(result.getStatus()).isEqualTo("success");
         assertThat(result.getDetails()).containsEntry("factorCount", 2);
         verify(factorService).calculateAndSaveBatch(List.of("000001.SZ", "000002.SZ"), tradeDate);
+    }
+
+    @Test
+    void riskWarningSkipsRemoteWorkflowWhenLocalQuoteFallbackWasUsed() {
+        RiskAfterCloseWorkflow remoteRiskWorkflow = mock(RiskAfterCloseWorkflow.class);
+        DailyWorkflowContext context = context(LocalDate.of(2026, 9, 24), List.of("000001.SZ"));
+        context.putAttribute("localQuoteFallback", Boolean.TRUE);
+
+        DailyWorkflowStepResultVo result = new RiskWarningStepHandler(Optional.of(remoteRiskWorkflow)).execute(context);
+
+        assertThat(result.getStatus()).isEqualTo("skipped");
+        assertThat(result.getDetails()).containsEntry("localQuoteFallback", true);
+        verifyNoInteractions(remoteRiskWorkflow);
     }
 
     @Test

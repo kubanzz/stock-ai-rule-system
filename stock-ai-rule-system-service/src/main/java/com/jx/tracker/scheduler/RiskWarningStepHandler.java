@@ -25,6 +25,12 @@ public class RiskWarningStepHandler implements DailyWorkflowStepHandler {
     @Override
     public com.jx.tracker.domain.vo.DailyWorkflowStepResultVo execute(DailyWorkflowContext context) {
         LocalDateTime startedAt = LocalDateTime.now();
+        if (Boolean.TRUE.equals(context.getAttribute("localQuoteFallback", Boolean.class))) {
+            return DailyWorkflowStepResults.skipped(
+                    stepCode(), startedAt,
+                    "本轮使用本地行情完成因子计算，暂不执行依赖远程数据的风险评分。",
+                    Map.of("optional", true, "shadowMode", true, "localQuoteFallback", true));
+        }
         if (workflow.isEmpty()) {
             return DailyWorkflowStepResults.skipped(
                     stepCode(), startedAt,

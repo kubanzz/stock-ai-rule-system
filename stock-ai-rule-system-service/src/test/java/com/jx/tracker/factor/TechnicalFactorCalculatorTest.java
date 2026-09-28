@@ -67,6 +67,23 @@ class TechnicalFactorCalculatorTest {
                 .containsEntry("data_status", "suspended_or_missing");
     }
 
+    @Test
+    void ignoresMockWeekendRowsWhenCountingTechnicalHistory() {
+        LocalDate targetDate = LocalDate.of(2026, 6, 26);
+        List<StockDailyQuote> quotes = risingQuotes("000001.SZ", targetDate.minusDays(24), 25);
+        quotes.add(StockDailyQuote.builder()
+                .symbol("000001.SZ")
+                .tradeDate(LocalDate.of(2026, 6, 21))
+                .closePrice(new BigDecimal("10.50"))
+                .volume(new BigDecimal("100000"))
+                .dataSource("mock")
+                .build());
+
+        TechnicalFactorResult result = calculator.calculate("000001.SZ", targetDate, quotes);
+
+        assertThat(result.factors()).containsEntry("data_status", "insufficient_data");
+    }
+
     private static List<StockDailyQuote> risingQuotes(String symbol, LocalDate startDate, int days) {
         List<StockDailyQuote> quotes = new ArrayList<>();
         for (int i = 0; i < days; i++) {

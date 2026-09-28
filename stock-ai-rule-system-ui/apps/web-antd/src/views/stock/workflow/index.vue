@@ -35,8 +35,10 @@ const workflowResult = ref<DailyWorkflowRunResult>();
 const dependencies = ref<DailyWorkflowDependency[]>([]);
 
 const formState = reactive({
-  dryRun: true,
-  symbols: 'AAPL,MSFT',
+  // 默认执行真实工作流，确保因子计算结果写入数据库；需要演练时再手动开启试运行。
+  dryRun: false,
+  // 留空时由后端读取 my-follow，确保关注列表中的股票一起计算。
+  symbols: '',
   tradeDate: '',
 });
 
@@ -120,15 +122,15 @@ onMounted(loadDependencies);
           <Input
             v-model:value="formState.symbols"
             class="w-64"
-            placeholder="AAPL,MSFT"
+            placeholder="留空使用我的关注列表"
           />
         </Form.Item>
-        <Form.Item label="试运行">
+        <Form.Item label="试运行（不写入）">
           <Switch v-model:checked="formState.dryRun" />
         </Form.Item>
         <Form.Item>
           <Button :loading="loading" type="primary" @click="triggerWorkflow">
-            运行工作流
+            {{ formState.dryRun ? '试运行工作流' : '运行工作流并生成因子' }}
           </Button>
         </Form.Item>
       </Form>

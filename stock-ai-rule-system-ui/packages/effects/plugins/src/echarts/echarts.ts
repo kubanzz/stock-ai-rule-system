@@ -1,8 +1,10 @@
 import { BarChart, LineChart, PieChart, RadarChart } from 'echarts/charts';
 import {
+  DataZoomComponent,
   DatasetComponent,
   GridComponent,
   LegendComponent,
+  MarkPointComponent,
   TitleComponent,
   ToolboxComponent,
   TooltipComponent,
@@ -32,6 +34,8 @@ echarts.use([
   CanvasRenderer,
   LegendComponent,
   ToolboxComponent,
+  DataZoomComponent,
+  MarkPointComponent,
 ]);
 export type { ECOption } from './types';
 

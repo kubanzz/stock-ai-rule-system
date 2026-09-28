@@ -5,6 +5,7 @@ import com.jx.tracker.domain.dto.DailyWorkflowTriggerDto;
 import com.jx.tracker.domain.entity.WorkflowRun;
 import com.jx.tracker.domain.entity.WorkflowStepRun;
 import com.jx.tracker.domain.vo.DailyWorkflowRunResultVo;
+import com.jx.tracker.domain.vo.DailyWorkflowStepResultVo;
 import com.jx.tracker.mapper.WorkflowRunMapper;
 import com.jx.tracker.mapper.WorkflowStepRunMapper;
 import org.junit.jupiter.api.Test;
@@ -84,6 +85,53 @@ class DailyWorkflowOrchestratorTest {
                     assertThat(step.getMessage()).contains("前置步骤失败");
                 });
         verify(factor, never()).execute(any());
+    }
+
+    @Test
+    void runDailyWorkflowExecutesFactorStepWhenDryRunDisabled() {
+        DailyWorkflowStepHandler factor = mock(DailyWorkflowStepHandler.class);
+        when(factor.stepCode()).thenReturn(WorkflowStepCode.FACTOR_CALCULATION);
+        DailyWorkflowStepResultVo success = new DailyWorkflowStepResultVo();
+        success.setStepCode("factor_calculation");
+        success.setStatus("success");
+        success.setMessage("因子计算完成");
+        when(factor.execute(any())).thenReturn(success);
+
+        DailyWorkflowTriggerDto request = new DailyWorkflowTriggerDto();
+        request.setDryRun(false);
+        request.setSymbols(List.of("000001.SZ"));
+
+        DailyWorkflowRunResultVo result = new DailyWorkflowOrchestrator(List.of(factor))
+                .runDailyWorkflow(request, WorkflowTriggerType.MANUAL);
+
+        verify(factor).execute(any());
+        assertThat(result.getDryRun()).isFalse();
+        assertThat(result.getSteps()).filteredOn(step -> "factor_calculation".equals(step.getStepCode()))
+                .singleElement().extracting(DailyWorkflowStepResultVo::getStatus)
+                .isEqualTo("success");
+    }
+
+    @Test
+    void runDailyWorkflowReportsSymbolsResolvedByMarketDataStep() {
+        DailyWorkflowStepHandler marketData = mock(DailyWorkflowStepHandler.class);
+        when(marketData.stepCode()).thenReturn(WorkflowStepCode.MARKET_DATA_COLLECTION);
+        when(marketData.execute(any())).thenAnswer(invocation -> {
+            DailyWorkflowContext context = invocation.getArgument(0);
+            context.getRequest().setSymbols(List.of("000001.SZ", "600519.SH"));
+            DailyWorkflowStepResultVo success = new DailyWorkflowStepResultVo();
+            success.setStepCode("market_data_sync");
+            success.setStatus("success");
+            success.setMessage("行情数据同步完成");
+            return success;
+        });
+
+        DailyWorkflowTriggerDto request = new DailyWorkflowTriggerDto();
+        request.setDryRun(false);
+
+        DailyWorkflowRunResultVo result = new DailyWorkflowOrchestrator(List.of(marketData))
+                .runDailyWorkflow(request, WorkflowTriggerType.MANUAL);
+
+        assertThat(result.getSymbols()).containsExactly("000001.SZ", "600519.SH");
     }
 
     @Test

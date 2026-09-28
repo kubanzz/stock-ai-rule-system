@@ -1,15 +1,20 @@
 <script lang="ts" setup>
+import type { EchartsUIType } from '@vben/plugins/echarts';
+
 import type { SignalType, StockResearchDetail } from '#/api/stock';
 
-import { computed, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, nextTick, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Alert,
+  Button,
   Card,
   Col,
+  Empty,
   List,
   Progress,
   Row,
@@ -21,12 +26,15 @@ import {
   Typography,
 } from 'ant-design-vue';
 
-import { getStockResearchDetail } from '#/api/stock';
+import { getStockResearchDetail, getWatchlists } from '#/api/stock';
 
 const route = useRoute();
+const router = useRouter();
 const loading = ref(false);
 const loadError = ref<string>();
 const detail = ref<StockResearchDetail>();
+const priceChartRef = ref<EchartsUIType>();
+const { renderEcharts } = useEcharts(priceChartRef);
 let loadSequence = 0;
 
 const signalMeta: Record<SignalType, { color: string; label: string }> = {
@@ -36,50 +44,125 @@ const signalMeta: Record<SignalType, { color: string; label: string }> = {
   watch: { color: 'gold', label: '观望' },
 };
 
-const symbol = computed(() => String(route.params.symbol || 'AAPL'));
+const symbol = computed(() =>
+  String(route.params.symbol || route.query.symbol || ''),
+);
 const analysisDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : undefined,
 );
 
-const priceBounds = computed(() => {
-  const values = detail.value?.priceSeries.map((point) => point.close) ?? [];
-  if (values.length === 0) return { max: 1, min: 0 };
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const padding = Math.max((max - min) * 0.1, max * 0.01, 0.01);
-  return { max: max + padding, min: Math.max(0, min - padding) };
-});
-
+const priceSeries = computed(() => detail.value?.priceSeries ?? []);
 const priceRange = computed(() => {
-  const values = detail.value?.priceSeries.map((point) => point.close) ?? [];
+  const values = priceSeries.value.map((point) => point.close);
   if (values.length === 0) return { max: 0, min: 0 };
   return { max: Math.max(...values), min: Math.min(...values) };
 });
 
-const priceChartPoints = computed(() => {
-  const points = detail.value?.priceSeries ?? [];
-  const { max, min } = priceBounds.value;
-  const span = max - min || 1;
-  return points
-    .map((point, index) => {
-      const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-      const y = 92 - ((point.close - min) / span) * 82;
-      return { ...point, x, y };
-    });
-});
-
-const priceChartPolyline = computed(() =>
-  priceChartPoints.value.map((point) => `${point.x},${point.y}`).join(' '),
+const latestPrice = computed(() => priceSeries.value.at(-1)?.close ?? 0);
+const previousPrice = computed(() => priceSeries.value.at(-2)?.close ?? latestPrice.value);
+const latestChange = computed(() =>
+  previousPrice.value
+    ? ((latestPrice.value - previousPrice.value) / previousPrice.value) * 100
+    : 0,
+);
+const latestDate = computed(() => priceSeries.value.at(-1)?.date ?? detail.value?.tradeDate ?? '-');
+const priceRangeLabel = computed(() =>
+  priceSeries.value.length > 1
+    ? `${priceSeries.value[0]?.date.slice(5)} — ${latestDate.value.slice(5)}`
+    : '暂无足够数据',
 );
 
-const priceChartArea = computed(() => {
-  const points = priceChartPoints.value;
-  if (points.length === 0) return '';
-  return `0,100 ${points.map((point) => `${point.x},${point.y}`).join(' ')} 100,100`;
-});
+function renderPriceChart() {
+  const points = priceSeries.value;
+  if (points.length === 0) return;
+  nextTick(() => {
+    renderEcharts({
+      animationDuration: 500,
+      dataZoom: [{ end: 100, start: 0, type: 'inside' }],
+      grid: { bottom: 40, containLabel: true, left: 44, right: 18, top: 22 },
+      series: [
+        {
+          areaStyle: {
+            color: {
+              colorStops: [
+                { color: 'rgba(37, 99, 235, 0.22)', offset: 0 },
+                { color: 'rgba(37, 99, 235, 0.02)', offset: 1 },
+              ],
+              type: 'linear',
+              x: 0,
+              x2: 0,
+              y: 0,
+              y2: 1,
+            },
+          },
+          data: points.map((point) => point.close),
+          emphasis: { focus: 'series' },
+          itemStyle: { color: '#2563eb' },
+          lineStyle: { color: '#2563eb', width: 2.5 },
+          markPoint: {
+            data: [
+              { name: '最高', type: 'max' },
+              { name: '最低', type: 'min' },
+            ],
+            label: { color: '#334155', fontSize: 10 },
+            symbolSize: 32,
+          },
+          showSymbol: false,
+          smooth: 0.2,
+          type: 'line',
+        },
+        {
+          barMaxWidth: 9,
+          data: points.map((point, index) => ({
+            itemStyle: {
+              color:
+                index > 0 && point.close >= points[index - 1]!.close
+                  ? 'rgba(34, 197, 94, 0.38)'
+                  : 'rgba(239, 68, 68, 0.38)',
+            },
+            value: point.volume ?? 0,
+          })),
+          name: '成交量',
+          type: 'bar',
+          yAxisIndex: 1,
+        },
+      ],
+      tooltip: {
+        axisPointer: { type: 'cross' },
+        trigger: 'axis',
+        valueFormatter: (value: unknown) =>
+          typeof value === 'number' ? value.toFixed(2) : String(value ?? '-'),
+      },
+      xAxis: {
+        axisLabel: { color: '#64748b', fontSize: 11, formatter: (value: string) => value.slice(5) },
+        axisLine: { lineStyle: { color: '#cbd5e1' } },
+        boundaryGap: false,
+        data: points.map((point) => point.date),
+        axisTick: { show: false },
+        type: 'category',
+      },
+      yAxis: [
+        {
+          axisLabel: { color: '#64748b', fontSize: 11, formatter: (value: number) => value.toFixed(2) },
+          axisLine: { show: false },
+          scale: true,
+          splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.2)' } },
+          type: 'value',
+        },
+        { max: (value: { max: number }) => value.max * 4, show: false, type: 'value' },
+      ],
+    });
+  });
+}
 
 async function loadDetail() {
   const sequence = ++loadSequence;
+  if (!symbol.value) {
+    detail.value = undefined;
+    loadError.value = undefined;
+    loading.value = false;
+    return;
+  }
   loading.value = true;
   loadError.value = undefined;
   try {
@@ -98,6 +181,22 @@ async function loadDetail() {
   }
 }
 
+async function openDefaultWatchlistStock() {
+  if (symbol.value) return;
+  try {
+    const pools = await getWatchlists({ market: 'A股' });
+    const followPool = pools.find((pool) => pool.poolId === 'my-follow');
+    const firstStock = followPool?.stocks?.[0]?.symbol ?? pools
+      .flatMap((pool) => pool.stocks ?? [])
+      .find((stock) => stock.symbol)?.symbol;
+    if (firstStock) {
+      await router.replace({ name: 'StockDetail', params: { symbol: firstStock } });
+    }
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '关注列表加载失败';
+  }
+}
+
 function signalLabel(signal?: SignalType) {
   return signal ? signalMeta[signal]?.label : '观望';
 }
@@ -109,6 +208,8 @@ function signalColor(signal?: SignalType) {
 watch(() => [route.params.symbol, route.query.date], loadDetail, {
   immediate: true,
 });
+watch(priceSeries, renderPriceChart, { deep: true });
+openDefaultWatchlistStock();
 </script>
 
 <template>
@@ -132,6 +233,11 @@ watch(() => [route.params.symbol, route.query.date], loadDetail, {
     />
 
     <Skeleton :loading="loading" active>
+      <Empty
+        v-if="!detail && !loading && !loadError"
+        :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        description="请选择关注列表中的股票查看研究数据。"
+      />
       <template v-if="detail">
         <Row :gutter="[16, 16]" class="mb-4">
           <Col :lg="4" :sm="12" :xs="24">
@@ -189,40 +295,41 @@ watch(() => [route.params.symbol, route.query.date], loadDetail, {
 
         <Row :gutter="[16, 16]" class="mb-4">
           <Col :lg="14" :xs="24">
-            <Card size="small" title="价格走势">
-              <div v-if="priceChartPoints.length" class="price-chart">
-                <svg
-                  aria-label="最近一个月股票收盘价走势"
-                  class="price-chart-svg"
-                  preserveAspectRatio="none"
-                  role="img"
-                  viewBox="0 0 100 100"
-                >
-                  <polygon :points="priceChartArea" class="price-chart-area" />
-                  <polyline
-                    :points="priceChartPolyline"
-                    class="price-chart-line"
-                  />
-                  <circle
-                    v-for="point in priceChartPoints"
-                    :key="point.date"
-                    :cx="point.x"
-                    :cy="point.y"
-                    class="price-chart-point"
-                    r="1.4"
-                  />
-                </svg>
-                <div class="price-chart-labels">
-                  <span>{{ priceChartPoints[0]?.date.slice(5) }}</span>
-                  <span>{{ priceChartPoints.at(-1)?.date.slice(5) }}</span>
+            <Card class="price-card" size="small">
+              <template #title>
+                <div class="chart-title-row">
+                  <div>
+                    <span>价格走势</span>
+                    <small>{{ priceRangeLabel }} · {{ priceSeries.length }} 个交易日</small>
+                  </div>
+                  <Tag :color="latestChange >= 0 ? 'green' : 'red'">
+                    {{ latestChange >= 0 ? '+' : '' }}{{ latestChange.toFixed(2) }}%
+                  </Tag>
                 </div>
-                <div class="price-chart-range">
-                  <span>最低 {{ priceRange.min.toFixed(2) }}</span>
-                  <span>最高 {{ priceRange.max.toFixed(2) }}</span>
+              </template>
+              <div v-if="priceSeries.length" class="price-chart">
+                <div class="chart-summary">
+                  <div>
+                    <span class="summary-label">最新收盘</span>
+                    <strong>{{ latestPrice.toFixed(2) }}</strong>
+                    <em :class="latestChange >= 0 ? 'positive' : 'negative'">
+                      {{ latestChange >= 0 ? '+' : '' }}{{ latestChange.toFixed(2) }}%
+                    </em>
+                  </div>
+                  <div class="summary-range">
+                    <span>区间最低 <b>{{ priceRange.min.toFixed(2) }}</b></span>
+                    <span>区间最高 <b>{{ priceRange.max.toFixed(2) }}</b></span>
+                    <span>更新于 {{ latestDate }}</span>
+                  </div>
                 </div>
+                <EchartsUI
+                  ref="priceChartRef"
+                  aria-label="最近行情收盘价和成交量走势"
+                  class="price-chart-canvas"
+                />
               </div>
               <Typography.Text v-else type="secondary">
-                暂无最近一个月行情数据，详情打开时会尝试补齐行情。
+                暂无行情数据，页面打开时会自动尝试补齐最新交易日。
               </Typography.Text>
             </Card>
           </Col>
@@ -247,7 +354,7 @@ watch(() => [route.params.symbol, route.query.date], loadDetail, {
         <Row :gutter="[16, 16]" class="mb-4">
           <Col :lg="12" :xs="24">
             <Card size="small" title="因子状态">
-              <List :data-source="detail.factors" size="small">
+              <List v-if="detail.factors?.length" :data-source="detail.factors" size="small">
                 <template #renderItem="{ item }">
                   <List.Item>
                     <List.Item.Meta
@@ -264,6 +371,16 @@ watch(() => [route.params.symbol, route.query.date], loadDetail, {
                   </List.Item>
                 </template>
               </List>
+              <Empty v-else :image="Empty.PRESENTED_IMAGE_SIMPLE" description="当前交易日尚未生成因子数据">
+                <template #footer>
+                  <Typography.Paragraph type="secondary" class="mb-2">
+                    请运行每日工作流完成行情同步和因子计算后再查看。
+                  </Typography.Paragraph>
+                  <Button type="primary" @click="router.push('/stock/workflow')">
+                    去运行工作流
+                  </Button>
+                </template>
+              </Empty>
             </Card>
           </Col>
           <Col :lg="12" :xs="24">
@@ -328,58 +445,65 @@ watch(() => [route.params.symbol, route.query.date], loadDetail, {
 
 <style scoped>
 .price-chart {
-  padding: 8px 4px 0;
+  padding: 4px 4px 0;
 }
 
-.price-chart-svg {
-  display: block;
+.price-chart-canvas {
   width: 100%;
-  height: 220px;
-  overflow: visible;
-  background: linear-gradient(
-    to bottom,
-    transparent 24%,
-    hsl(var(--border) / 0.55) 25%,
-    transparent 26%,
-    transparent 49%,
-    hsl(var(--border) / 0.55) 50%,
-    transparent 51%,
-    transparent 74%,
-    hsl(var(--border) / 0.55) 75%,
-    transparent 76%
-  );
+  height: 290px;
 }
 
-.price-chart-area {
-  fill: #1677ff;
-  opacity: 0.12;
-}
-
-.price-chart-line {
-  fill: none;
-  stroke: #1677ff;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 0.9;
-  vector-effect: non-scaling-stroke;
-}
-
-.price-chart-point {
-  fill: #fff;
-  stroke: #1677ff;
-  stroke-width: 0.8;
-  vector-effect: non-scaling-stroke;
-}
-
-.price-chart-labels,
-.price-chart-range {
+.chart-title-row,
+.chart-summary,
+.summary-range {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  color: hsl(var(--muted-foreground));
+}
+
+.chart-title-row small {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.chart-summary {
+  padding: 4px 0 2px;
+}
+
+.summary-label,
+.summary-range {
+  color: #64748b;
   font-size: 12px;
 }
 
-.price-chart-range {
-  margin-top: 8px;
+.chart-summary strong {
+  display: inline-block;
+  margin: 0 10px 0 8px;
+  color: #0f172a;
+  font-size: 24px;
+  letter-spacing: -0.03em;
 }
+
+.chart-summary em {
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.summary-range {
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  justify-content: flex-end;
+}
+
+.summary-range b {
+  color: #334155;
+  font-weight: 600;
+}
+
+.positive { color: #16a34a; }
+.negative { color: #dc2626; }
 </style>

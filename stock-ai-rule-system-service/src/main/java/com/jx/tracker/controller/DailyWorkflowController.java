@@ -44,7 +44,7 @@ public class DailyWorkflowController {
 
     @GetMapping("/daily-workflow/latest")
     @Operation(summary = "查询每日工作流最近一次运行")
-    public AjaxResult latestDailyWorkflow(@RequestParam(required = false) LocalDate date) {
+    public AjaxResult latestDailyWorkflow(@RequestParam(value = "date", required = false) LocalDate date) {
         if (consoleQueryService == null) {
             return AjaxResult.success(new StockConsoleVo.RunCenterOverview(
                     date, "unavailable", List.of(), List.of()));

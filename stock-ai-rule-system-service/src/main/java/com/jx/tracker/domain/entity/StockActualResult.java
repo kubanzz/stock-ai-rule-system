@@ -30,16 +30,22 @@ public class StockActualResult {
 
     private LocalDate signalDate;
 
+    @TableField("return_1d")
     private BigDecimal return1d;
 
+    @TableField("return_3d")
     private BigDecimal return3d;
 
+    @TableField("return_5d")
     private BigDecimal return5d;
 
+    @TableField("return_10d")
     private BigDecimal return10d;
 
+    @TableField("hit_1d")
     private Boolean hit1d;
 
+    @TableField("hit_5d")
     private Boolean hit5d;
 
     @TableField(value = "created_at", fill = FieldFill.INSERT)

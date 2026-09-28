@@ -107,11 +107,11 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         List<StockSignalDaily> signals = tradeDate == null
                 ? List.of()
                 : stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
-                .eq(StockSignalDaily::getSignalDate, tradeDate)
+                .le(StockSignalDaily::getSignalDate, tradeDate)
                 .in(StockSignalDaily::getSymbol, candidateSymbols));
         Set<String> candidateSymbolSet = Set.copyOf(candidateSymbols);
         Map<String, StockSignalDaily> signalsBySymbol = signals.stream()
-                .filter(signal -> Objects.equals(tradeDate, signal.getSignalDate()))
+                .filter(signal -> signal.getSignalDate() != null && !signal.getSignalDate().isAfter(tradeDate))
                 .filter(signal -> candidateSymbolSet.contains(SymbolNormalizer.normalize(signal.getSymbol())))
                 .collect(Collectors.toMap(
                         signal -> SymbolNormalizer.normalize(signal.getSymbol()),
@@ -123,10 +123,14 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         List<StockDailyQuote> quotes = tradeDate == null
                 ? List.of()
                 : stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
-                .eq(StockDailyQuote::getTradeDate, tradeDate)
+                // Candidates may have different latest trading dates (for
+                // example, suspended stocks). Keep the dashboard date as the
+                // upper bound while selecting each symbol's newest usable bar.
+                .le(StockDailyQuote::getTradeDate, tradeDate)
                 .in(StockDailyQuote::getSymbol, candidateSymbols));
         Map<String, StockDailyQuote> quotesBySymbol = quotes.stream()
-                .filter(quote -> Objects.equals(tradeDate, quote.getTradeDate()))
+                .filter(quote -> quote.getTradeDate() != null && quote.getClosePrice() != null
+                        && !quote.getTradeDate().isAfter(tradeDate))
                 .filter(quote -> candidateSymbolSet.contains(SymbolNormalizer.normalize(quote.getSymbol())))
                 .collect(Collectors.toMap(
                         quote -> SymbolNormalizer.normalize(quote.getSymbol()),
@@ -147,10 +151,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         List<StockActualResult> actualResults = tradeDate == null || signalSymbols.isEmpty()
                 ? List.of()
                 : stockActualResultMapper.selectList(new LambdaQueryWrapper<StockActualResult>()
-                .eq(StockActualResult::getSignalDate, tradeDate)
+                .le(StockActualResult::getSignalDate, tradeDate)
                 .in(StockActualResult::getSymbol, signalSymbols));
         List<StockActualResult> filteredActualResults = actualResults.stream()
-                .filter(result -> Objects.equals(tradeDate, result.getSignalDate()))
+                .filter(result -> result.getSignalDate() != null && !result.getSignalDate().isAfter(tradeDate))
                 .filter(result -> signalSymbolSet.contains(SymbolNormalizer.normalize(result.getSymbol())))
                 .toList();
 
@@ -442,10 +446,18 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     }
 
     private static StockDailyQuote newerQuote(StockDailyQuote first, StockDailyQuote second) {
+        int byTradeDate = compareNullable(first.getTradeDate(), second.getTradeDate());
+        if (byTradeDate != 0) {
+            return byTradeDate >= 0 ? first : second;
+        }
         return compareNullable(first.getSyncTime(), second.getSyncTime()) >= 0 ? first : second;
     }
 
     private static StockSignalDaily newerSignal(StockSignalDaily first, StockSignalDaily second) {
+        int byDate = compareNullable(first.getSignalDate(), second.getSignalDate());
+        if (byDate != 0) {
+            return byDate >= 0 ? first : second;
+        }
         return compareNullable(first.getCreatedTime(), second.getCreatedTime()) >= 0 ? first : second;
     }
 

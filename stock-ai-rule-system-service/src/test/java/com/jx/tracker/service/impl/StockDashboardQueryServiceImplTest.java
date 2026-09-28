@@ -294,7 +294,7 @@ class StockDashboardQueryServiceImplTest {
     }
 
     @Test
-    void joinsDailyQuoteAndKeepsMissingQuoteValuesNull() {
+    void joinsLatestDailyQuoteAtOrBeforeDashboardDate() {
         when(stockBaseMapper.selectList(any())).thenReturn(List.of(
                 stock("000001.SZ", "甲", "A股", "银行"),
                 stock("000002.SZ", "乙", "A股", "科技")
@@ -317,7 +317,7 @@ class StockDashboardQueryServiceImplTest {
         assertThat(priced.price()).isEqualByComparingTo("10.25");
         assertThat(priced.changePct()).isEqualByComparingTo("1.50");
         assertThat(missing.symbol()).isEqualTo("000002.SZ");
-        assertThat(missing.price()).isNull();
+        assertThat(missing.price()).isEqualByComparingTo("99");
         assertThat(missing.changePct()).isNull();
     }
 

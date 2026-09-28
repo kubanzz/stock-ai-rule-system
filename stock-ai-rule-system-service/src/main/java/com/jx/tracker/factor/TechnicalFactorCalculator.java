@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -26,6 +27,10 @@ public class TechnicalFactorCalculator {
                 .filter(Objects::nonNull)
                 .filter(quote -> Objects.equals(symbol, quote.getSymbol()))
                 .filter(quote -> quote.getTradeDate() != null && !quote.getTradeDate().isAfter(targetDate))
+                // The mock provider emits calendar days. Do not let its
+                // weekend placeholders count as trading history when a
+                // persisted row is explicitly marked as mock data.
+                .filter(quote -> !isMockWeekendQuote(quote))
                 .sorted(Comparator.comparing(StockDailyQuote::getTradeDate))
                 .toList();
 
@@ -87,6 +92,14 @@ public class TechnicalFactorCalculator {
                 || quote.getClosePrice() == null
                 || quote.getVolume() == null
                 || quote.getVolume().compareTo(BigDecimal.ZERO) <= 0;
+    }
+
+    private static boolean isMockWeekendQuote(StockDailyQuote quote) {
+        if (!"mock".equalsIgnoreCase(quote.getDataSource()) || quote.getTradeDate() == null) {
+            return false;
+        }
+        DayOfWeek dayOfWeek = quote.getTradeDate().getDayOfWeek();
+        return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
     }
 
     private static Map<String, Object> statusOnlyFactors(

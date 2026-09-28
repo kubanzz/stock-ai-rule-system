@@ -118,11 +118,12 @@ stock-ai-rule:
       daily-quote-csv-path: ${MARKET_DATA_DAILY_QUOTE_CSV_PATH:}
       trade-calendar-csv-path: ${MARKET_DATA_TRADE_CALENDAR_CSV_PATH:}
   scheduler:
-    # 需要每日自动补齐“我的关注”最近一个月行情时设置 DAILY_WORKFLOW_ENABLED=true。
-    # 默认禁用，避免在未显式配置真实 Provider 前触发外部行情、AI 或回测任务。
+    # 每日收盘后补齐关注股票行情。完整工作流仍由 DAILY_WORKFLOW_ENABLED 单独控制。
     daily-enabled: ${DAILY_WORKFLOW_ENABLED:false}
     daily-cron: ${DAILY_WORKFLOW_CRON:0 0 18 * * MON-FRI}
     zone: Asia/Shanghai
+    quote-sync-enabled: ${DAILY_QUOTE_SYNC_ENABLED:true}
+    quote-sync-cron: ${DAILY_QUOTE_SYNC_CRON:0 15 18 * * MON-FRI}
 
 stock:
   dashboard:

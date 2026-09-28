@@ -118,12 +118,12 @@ class StockDashboardQueryPersistenceTest {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     symbol VARCHAR(32) NOT NULL,
                     signal_date DATE NOT NULL,
-                    return1d DECIMAL(18,6),
-                    return3d DECIMAL(18,6),
-                    return5d DECIMAL(18,6),
-                    return10d DECIMAL(18,6),
-                    hit1d BOOLEAN,
-                    hit5d BOOLEAN,
+                    return_1d DECIMAL(18,6),
+                    return_3d DECIMAL(18,6),
+                    return_5d DECIMAL(18,6),
+                    return_10d DECIMAL(18,6),
+                    hit_1d BOOLEAN,
+                    hit_5d BOOLEAN,
                     created_at DATETIME
                 )
                 """);
@@ -280,7 +280,7 @@ class StockDashboardQueryPersistenceTest {
                 VALUES ('000300.SH', '2026-07-12', 4000.00, 2.00, '2026-07-12 15:10:00')
                 """);
         jdbcTemplate.update("""
-                INSERT INTO stock_actual_result(symbol, signal_date, hit5d, created_at)
+                INSERT INTO stock_actual_result(symbol, signal_date, hit_5d, created_at)
                 VALUES ('000001.SZ', '2026-07-10', TRUE, '2026-07-10 15:20:00')
                 """);
         jdbcTemplate.update("""

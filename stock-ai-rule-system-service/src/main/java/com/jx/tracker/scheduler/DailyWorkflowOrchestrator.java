@@ -59,6 +59,8 @@ public class DailyWorkflowOrchestrator {
         WorkflowTriggerType safeTriggerType = triggerType == null ? WorkflowTriggerType.MANUAL : triggerType;
         LocalDateTime startedAt = LocalDateTime.now();
         String runId = UUID.randomUUID().toString();
+        // Keep the API safe when callers omit the flag. The UI and scheduled
+        // task explicitly send false when they intend to persist generated data.
         boolean dryRun = safeRequest.getDryRun() == null || safeRequest.getDryRun();
         LocalDate tradeDate = safeRequest.getTradeDate() == null ? LocalDate.now() : safeRequest.getTradeDate();
         List<String> symbols = normalizeSymbols(safeRequest.getSymbols());
@@ -78,6 +80,12 @@ public class DailyWorkflowOrchestrator {
             blockedByFailure = blockedByFailure || "failed".equals(stepResult.getStatus());
         }
 
+        // M1 may resolve an empty request to the current my-follow pool. Read
+        // the request back after the handlers run so the API reports the
+        // symbols that were actually processed instead of the original empty
+        // input list.
+        symbols = normalizeSymbols(safeRequest.getSymbols());
+        safeRequest.setSymbols(symbols);
         DailyWorkflowRunResultVo result = new DailyWorkflowRunResultVo();
         result.setRunId(runId);
         result.setTriggerType(safeTriggerType.getCode());

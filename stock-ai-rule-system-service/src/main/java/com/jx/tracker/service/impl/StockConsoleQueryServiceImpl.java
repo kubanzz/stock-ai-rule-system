@@ -12,7 +12,6 @@ import com.jx.tracker.domain.entity.StockBase;
 import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
-import com.jx.tracker.domain.entity.TradeCalendar;
 import com.jx.tracker.domain.entity.WorkflowRun;
 import com.jx.tracker.domain.entity.WorkflowStepRun;
 import com.jx.tracker.domain.enums.SignalType;
@@ -27,11 +26,12 @@ import com.jx.tracker.mapper.StockBaseMapper;
 import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
-import com.jx.tracker.mapper.TradeCalendarMapper;
 import com.jx.tracker.mapper.WorkflowRunMapper;
 import com.jx.tracker.mapper.WorkflowStepRunMapper;
 import com.jx.tracker.service.StockConsoleQueryService;
 import com.jx.tracker.service.StockDashboardQueryService;
+import com.jx.tracker.service.IStockFactorDailyService;
+import com.jx.tracker.domain.dto.TechnicalFactorCalculateRequestDto;
 import com.jx.tracker.market.data.dto.DailyQuoteSyncRequestDto;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
@@ -47,7 +47,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,13 +60,13 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private static final String RISK_DISCLAIMER = StockRiskConstants.SIGNAL_RISK_DISCLAIMER;
     private static final int DEFAULT_LIMIT = 100;
+    private static final int MIN_TECHNICAL_HISTORY = 26;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final StockSignalDailyMapper stockSignalDailyMapper;
     private final StockBaseMapper stockBaseMapper;
     private final StockActualResultMapper stockActualResultMapper;
     private final StockDailyQuoteMapper stockDailyQuoteMapper;
-    private final TradeCalendarMapper tradeCalendarMapper;
     private final StockFactorDailyMapper stockFactorDailyMapper;
     private final RuleDefinitionMapper ruleDefinitionMapper;
     private final BacktestResultMapper backtestResultMapper;
@@ -78,6 +77,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     private final WorkflowStepRunMapper workflowStepRunMapper;
     private final StockDashboardQueryService stockDashboardQueryService;
     private final MarketDataSyncService marketDataSyncService;
+    private final IStockFactorDailyService stockFactorDailyService;
 
     @Override
     public StockConsoleVo.SignalDashboardOverview dashboard(LocalDate date, String market, String poolCode) {
@@ -147,8 +147,13 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     @Override
     public StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date) {
         String normalizedSymbol = SymbolNormalizer.normalize(symbol);
-        LocalDate requestedDate = date == null ? LocalDate.now() : date;
-        ensureSymbolQuotes(normalizedSymbol, requestedDate);
+        LocalDate requestedDate = date;
+        // The query date is the point-in-time used for signal/factor analysis. It
+        // must not cap the market series: a detail page opened from an older
+        // dashboard snapshot still needs to recover the latest available quotes.
+        LocalDate quoteEndDate = LocalDate.now();
+        ensureSymbolQuotes(normalizedSymbol, quoteEndDate);
+        LocalDate priceEndDate = latestQuoteDate(normalizedSymbol, quoteEndDate).orElse(quoteEndDate);
         StockBase stock = findStockBase(normalizedSymbol).orElse(StockBase.builder()
                 .symbol(normalizedSymbol)
                 .name(normalizedSymbol)
@@ -156,8 +161,12 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .industry("未分类")
                 .build());
         StockSignalDaily signal = latestSignal(normalizedSymbol, date).orElse(null);
-        LocalDate tradeDate = signal == null ? requestedDate : signal.getSignalDate();
-        StockFactorDaily factor = latestFactor(normalizedSymbol, tradeDate).orElse(null);
+        LocalDate tradeDate = signal == null
+                ? (requestedDate == null ? quoteEndDate : requestedDate)
+                : signal.getSignalDate();
+        LocalDate factorDate = latestQuoteDate(normalizedSymbol, tradeDate).orElse(tradeDate);
+        StockFactorDaily factor = latestFactor(normalizedSymbol, factorDate).orElseGet(() -> calculateFactorOnDemand(normalizedSymbol, factorDate));
+        if (factor != null && factor.getTradeDate() != null) tradeDate = factor.getTradeDate();
 
         return new StockConsoleVo.StockResearchDetail(
                 stock.getSymbol(),
@@ -170,7 +179,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 signal == null ? BigDecimal.ZERO : nullToZero(signal.getRiskScore()),
                 RISK_DISCLAIMER,
                 signal == null ? "暂无信号解释，等待因子计算与规则推理。" : signal.getExplanation(),
-                priceSeries(normalizedSymbol, tradeDate),
+                priceSeries(normalizedSymbol, priceEndDate),
                 factorStates(factor, signal),
                 ruleChain(signal),
                 predictionHistory(normalizedSymbol)
@@ -186,45 +195,18 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         if (!StringUtils.hasText(symbol) || endDate == null) {
             return;
         }
-        LocalDate startDate = endDate.minusDays(30);
-        Long count = stockDailyQuoteMapper.selectCount(new LambdaQueryWrapper<StockDailyQuote>()
+        long usableHistory = stockDailyQuoteMapper.selectCount(new LambdaQueryWrapper<StockDailyQuote>()
                 .eq(StockDailyQuote::getSymbol, symbol)
-                .ge(StockDailyQuote::getTradeDate, startDate)
-                .le(StockDailyQuote::getTradeDate, endDate));
-        List<LocalDate> expectedDates = tradeCalendarMapper.selectList(new LambdaQueryWrapper<TradeCalendar>()
-                .eq(TradeCalendar::getMarket, "CN")
-                .eq(TradeCalendar::getOpen, true)
-                .ge(TradeCalendar::getTradeDate, startDate)
-                .le(TradeCalendar::getTradeDate, endDate)
-                .select(TradeCalendar::getTradeDate))
-                .stream()
-                .map(TradeCalendar::getTradeDate)
-                .filter(Objects::nonNull)
-                .toList();
-        List<LocalDate> quoteDates = stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
-                .eq(StockDailyQuote::getSymbol, symbol)
-                .ge(StockDailyQuote::getTradeDate, startDate)
                 .le(StockDailyQuote::getTradeDate, endDate)
                 .isNotNull(StockDailyQuote::getClosePrice)
-                .select(StockDailyQuote::getTradeDate))
-                .stream()
-                .map(StockDailyQuote::getTradeDate)
-                .filter(Objects::nonNull)
-                .toList();
-        StockDailyQuote latest = stockDailyQuoteMapper.selectOne(new LambdaQueryWrapper<StockDailyQuote>()
-                .eq(StockDailyQuote::getSymbol, symbol)
-                .le(StockDailyQuote::getTradeDate, endDate)
-                .orderByDesc(StockDailyQuote::getTradeDate)
-                .last("LIMIT 1"));
-        boolean stale = latest == null || latest.getTradeDate() == null
-                || latest.getTradeDate().isBefore(endDate.minusDays(3));
-        boolean complete = !expectedDates.isEmpty()
-                && count != null
-                && count >= expectedDates.size()
-                && new HashSet<>(quoteDates).containsAll(expectedDates);
-        if (complete && !stale) {
+                .isNotNull(StockDailyQuote::getVolume));
+        // A few stale local bars are not enough to calculate the technical
+        // factors. Refresh the history when local coverage is below the same
+        // threshold used by TechnicalFactorCalculator.
+        if (usableHistory >= MIN_TECHNICAL_HISTORY) {
             return;
         }
+        LocalDate startDate = endDate.minusDays(60);
         DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
         request.setTargetSymbol(symbol);
         request.setStartDate(startDate);
@@ -477,7 +459,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         }
         return Optional.ofNullable(stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                 .eq(StockSignalDaily::getSymbol, symbol)
-                .eq(date != null, StockSignalDaily::getSignalDate, date)
+                .le(date != null, StockSignalDaily::getSignalDate, date)
                 .orderByDesc(StockSignalDaily::getSignalDate)
                 .last("LIMIT 1")));
     }
@@ -488,9 +470,24 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         }
         return Optional.ofNullable(stockFactorDailyMapper.selectOne(new LambdaQueryWrapper<StockFactorDaily>()
                 .eq(StockFactorDaily::getSymbol, symbol)
-                .eq(date != null, StockFactorDaily::getTradeDate, date)
+                .le(date != null, StockFactorDaily::getTradeDate, date)
                 .orderByDesc(StockFactorDaily::getTradeDate)
                 .last("LIMIT 1")));
+    }
+
+    private Optional<LocalDate> latestQuoteDate(String symbol, LocalDate date) {
+        StockDailyQuote quote = stockDailyQuoteMapper.selectOne(new LambdaQueryWrapper<StockDailyQuote>()
+                .eq(StockDailyQuote::getSymbol, symbol).le(date != null, StockDailyQuote::getTradeDate, date)
+                .isNotNull(StockDailyQuote::getClosePrice).orderByDesc(StockDailyQuote::getTradeDate).last("LIMIT 1"));
+        return Optional.ofNullable(quote == null ? null : quote.getTradeDate());
+    }
+
+    private StockFactorDaily calculateFactorOnDemand(String symbol, LocalDate tradeDate) {
+        if (!StringUtils.hasText(symbol) || tradeDate == null) return null;
+        try {
+            stockFactorDailyService.calculateAndSave(TechnicalFactorCalculateRequestDto.builder().symbol(symbol).tradeDate(tradeDate).build());
+            return latestFactor(symbol, tradeDate).orElse(null);
+        } catch (RuntimeException ignored) { return null; }
     }
 
     private List<StockConsoleVo.PricePoint> priceSeries(String symbol, LocalDate tradeDate) {
@@ -524,14 +521,39 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                         factor.getFactorJson(), new TypeReference<>() { });
                 rawFactors.forEach((name, value) -> {
                     if (states.size() >= 10) return;
+                    String status = factorStatus(rawFactors, name, value);
                     states.add(new StockConsoleVo.FactorState(
-                            name, String.valueOf(value), "已计算", factorStrength(value), "来自技术因子快照。"));
+                            name, String.valueOf(value), status, factorStrength(value), factorDescription(status)));
                 });
             } catch (Exception ignored) {
                 states.add(new StockConsoleVo.FactorState("因子快照", "解析失败", "不可用", BigDecimal.ZERO, "因子 JSON 无法解析，未使用模拟值替代。"));
             }
         }
         return states;
+    }
+
+    private String factorStatus(Map<String, Object> rawFactors, String name, Object value) {
+        if ("risk_disclaimer".equals(name)) {
+            return "说明";
+        }
+        if ("insufficient_data".equals(rawFactors.get("data_status"))
+                || "data_insufficient".equals(rawFactors.get("risk_status"))) {
+            return "数据不足";
+        }
+        if (value == null || "unknown".equals(value) || "suspended".equals(value)
+                || "suspended_or_missing".equals(value)) {
+            return "不可用";
+        }
+        return "已计算";
+    }
+
+    private String factorDescription(String status) {
+        return switch (status) {
+            case "数据不足" -> "历史行情不足 26 个有效交易日，暂不计算完整技术指标。";
+            case "说明" -> "风险提示：因子结果仅用于辅助决策，不保证收益。";
+            case "不可用" -> "当前行情缺失或停牌，未使用模拟值替代。";
+            default -> "来自技术因子快照。";
+        };
     }
 
     private List<StockConsoleVo.RuleContribution> ruleChain(StockSignalDaily signal) {
