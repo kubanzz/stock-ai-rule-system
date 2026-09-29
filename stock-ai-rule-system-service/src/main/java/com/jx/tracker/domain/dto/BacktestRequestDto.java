@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class BacktestRequestDto {
@@ -36,4 +37,16 @@ public class BacktestRequestDto {
     @JsonProperty("slippage_rate")
     @JsonAlias("slippageRate")
     private BigDecimal slippageRate;
+
+    /** 股票池类型：market、watchlist、custom。兼容前端 poolType。 */
+    @JsonProperty("stock_pool_type")
+    @JsonAlias({"stockPoolType", "poolType"})
+    private String stockPoolType;
+
+    @JsonProperty("pool_code")
+    @JsonAlias({"poolCode", "stockPoolCode"})
+    private String poolCode;
+
+    /** 自定义股票池代码列表，建议使用统一的市场后缀格式。 */
+    private List<String> symbols;
 }

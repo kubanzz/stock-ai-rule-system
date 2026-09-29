@@ -10,7 +10,9 @@ import com.jx.tracker.domain.dto.AiReviewSuggestionDto;
 import com.jx.tracker.domain.dto.CandidateRuleDto;
 import com.jx.tracker.domain.entity.AiReviewReport;
 import com.jx.tracker.domain.entity.CandidateRule;
+import com.jx.tracker.domain.enums.BacktestStatus;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
+import com.jx.tracker.domain.enums.RuleVersionApprovalStatus;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.AiReviewReportMapper;
 import com.jx.tracker.mapper.CandidateRuleMapper;
@@ -70,9 +72,15 @@ public class AiReviewServiceImpl implements AiReviewService {
         reportMapper.insert(report);
 
         AtomicInteger sequence = new AtomicInteger(1);
+        Long reviewId = report.getId();
         List<CandidateRuleDto> candidateRules = response.getSuggestions().stream()
                 .filter(this::hasCandidateContent)
-                .map(suggestion -> saveCandidateRule(request, suggestion, sequence.getAndIncrement()))
+                .map(suggestion -> saveCandidateRule(
+                        request,
+                        suggestion,
+                        sequence.getAndIncrement(),
+                        reviewId
+                ))
                 .map(CandidateRuleDto::fromEntity)
                 .toList();
         response.setCandidateRules(candidateRules);
@@ -98,6 +106,9 @@ public class AiReviewServiceImpl implements AiReviewService {
         }
         validateTransition(candidateRule.getStatus(), targetStatus);
         candidateRule.setStatus(targetStatus);
+        if (RuleLifecycleStatus.APPROVED.getCode().equals(targetStatus)) {
+            candidateRule.setApprovalStatus(RuleVersionApprovalStatus.APPROVED.getCode());
+        }
         candidateRuleMapper.updateById(candidateRule);
         return candidateRule;
     }
@@ -123,9 +134,13 @@ public class AiReviewServiceImpl implements AiReviewService {
         return candidateRule;
     }
 
-    private CandidateRule saveCandidateRule(AiReviewRequestDto request, AiReviewSuggestionDto suggestion, int sequence) {
+    private CandidateRule saveCandidateRule(AiReviewRequestDto request,
+                                            AiReviewSuggestionDto suggestion,
+                                            int sequence,
+                                            Long sourceReviewId) {
         CandidateRule candidateRule = CandidateRule.builder()
                 .candidateCode(generateCandidateCode(resolveReviewDate(request), suggestion, sequence))
+                .sourceReviewId(sourceReviewId)
                 .source("AI")
                 .targetRuleCode(suggestion.getRuleId())
                 .changeType(suggestion.getType())
@@ -133,6 +148,8 @@ public class AiReviewServiceImpl implements AiReviewService {
                 .proposedContent(resolveProposedContent(suggestion))
                 .reason(suggestion.getReason())
                 .status(RuleLifecycleStatus.CANDIDATE.getCode())
+                .backtestStatus(BacktestStatus.PENDING.getCode())
+                .approvalStatus(RuleVersionApprovalStatus.PENDING.getCode())
                 .build();
         candidateRuleMapper.insert(candidateRule);
         return candidateRule;

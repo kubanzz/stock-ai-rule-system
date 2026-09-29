@@ -611,15 +611,22 @@ export async function runBacktest(data: BacktestRequest) {
 
 export async function getBacktestReports(
   params: {
+    endDate?: string;
+    holdingPeriod?: number;
     market?: string;
     objectCode?: string;
+    objectType?: BacktestRequest['objectType'];
+    startDate?: string;
+    stockPoolCode?: string;
+    stockPoolType?: BacktestRequest['stockPoolType'];
+    symbols?: string[];
   } = {},
 ) {
   return requestOrMock(
     async () => {
       const response = await baseRequestClient.get<
         RawResponse<StockAjaxResult<BacktestReportOverview>>
-      >('/backtests/reports', { params });
+      >('/backtests/reports', { params, paramsSerializer: 'repeat' });
       return unwrapAjaxResult(response.data);
     },
     () => mockBacktestReportOverview,

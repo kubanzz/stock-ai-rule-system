@@ -347,6 +347,7 @@ export interface BacktestFailureSample {
 
 export interface BacktestReportDetail {
   cumulativeReturns: SeriesPoint[];
+  equityCurve?: SeriesPoint[];
   endDate?: string;
   failureSamples: BacktestFailureSample[];
   metrics: MetricCard[];
@@ -354,14 +355,40 @@ export interface BacktestReportDetail {
   objectType: BacktestObjectType | string;
   reportId: string;
   startDate?: string;
+  status?: RunStatus | string;
+  sampleCount?: number;
+  evaluatedCount?: number;
+  unevaluableCount?: number;
+  resultJson?: string;
 }
 
 export interface BacktestReportOverview {
   comparison: ComparisonMetric[];
+  /**
+   * Legacy aggregate series. New reports should use equityCurve, which is
+   * built from the selected run's historical samples.
+   */
   cumulativeReturns: SeriesPoint[];
+  equityCurve?: SeriesPoint[];
   failureSamples: BacktestFailureSample[];
   metrics: MetricCard[];
+  reportId?: string;
   riskDisclaimer: string;
+  sampleCount?: number;
+  evaluatedCount?: number;
+  unevaluableCount?: number;
+  status?: RunStatus | string;
+  resultJson?: string;
+}
+
+export interface BacktestReportResultPayload {
+  equityCurve?: SeriesPoint[];
+  evaluatedCount?: number;
+  signalCount?: number;
+  skippedCount?: number;
+  status?: RunStatus | string;
+  triggerCount?: number;
+  unevaluableCount?: number;
 }
 
 export interface ErrorCluster {
@@ -488,6 +515,13 @@ export interface BacktestRequest {
   objectCode: string;
   objectType: BacktestObjectType;
   startDate: string;
+  /**
+   * Optional scope for the historical replay.  The backend accepts these
+   * fields to avoid forcing every backtest through the whole market.
+   */
+  stockPoolCode?: string;
+  stockPoolType?: 'custom' | 'market' | 'watchlist';
+  symbols?: string[];
 }
 
 export interface BacktestResult {

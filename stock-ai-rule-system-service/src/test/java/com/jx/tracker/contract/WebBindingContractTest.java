@@ -78,6 +78,61 @@ class WebBindingContractTest {
     }
 
     @Test
+    void backtestRequestAcceptsCustomStockPoolPayload() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+        BacktestRequestDto dto = mapper.readValue("""
+                {
+                  "objectType": "candidate_rule",
+                  "objectCode": "CR_TREND_BEAR_GUARD_001",
+                  "startDate": "2026-01-01",
+                  "endDate": "2026-06-20",
+                  "holdingPeriod": 3,
+                  "stockPoolType": "custom",
+                  "stockPoolCode": "research-small",
+                  "symbols": ["000001.SZ", "600519.SH"]
+                }
+                """, BacktestRequestDto.class);
+
+        assertThat(dto.getStockPoolType()).isEqualTo("custom");
+        assertThat(dto.getPoolCode()).isEqualTo("research-small");
+        assertThat(dto.getSymbols()).containsExactly("000001.SZ", "600519.SH");
+    }
+
+    @Test
+    void backtestRequestAcceptsSnakeCaseStockPoolPayload() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+        BacktestRequestDto dto = mapper.readValue("""
+                {
+                  "object_type": "candidate_rule",
+                  "object_code": "CR_TREND_BEAR_GUARD_001",
+                  "start_date": "2026-01-01",
+                  "end_date": "2026-06-20",
+                  "stock_pool_type": "watchlist",
+                  "pool_code": "core-watchlist",
+                  "symbols": []
+                }
+                """, BacktestRequestDto.class);
+
+        assertThat(dto.getStockPoolType()).isEqualTo("watchlist");
+        assertThat(dto.getPoolCode()).isEqualTo("core-watchlist");
+        assertThat(dto.getSymbols()).isEmpty();
+    }
+
+    @Test
+    void backtestReportEndpointDeclaresHistoricalScopeParams() throws Exception {
+        Method method = Class.forName("com.jx.tracker.controller.StockConsoleController")
+                .getDeclaredMethod("backtestReports", String.class, String.class, String.class,
+                        LocalDate.class, LocalDate.class, Integer.class, String.class, String.class, List.class);
+        List<String> names = java.util.Arrays.stream(method.getParameters())
+                .map(parameter -> parameter.getAnnotation(RequestParam.class))
+                .map(annotation -> namedValue(annotation.value(), annotation.name()))
+                .toList();
+        assertThat(names).contains("stockPoolType", "stockPoolCode", "symbols", "startDate", "endDate", "holdingPeriod");
+    }
+
+    @Test
     void marketDataSyncContractsAcceptCamelCaseAndSnakeCasePayloads() throws Exception {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
 

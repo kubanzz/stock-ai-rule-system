@@ -8,6 +8,7 @@ import com.jx.tracker.domain.dto.CandidateRuleDto;
 import com.jx.tracker.domain.entity.AiReviewReport;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
+import com.jx.tracker.domain.enums.RuleVersionApprovalStatus;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.AiReviewReportMapper;
 import com.jx.tracker.mapper.CandidateRuleMapper;
@@ -54,7 +55,10 @@ class AiReviewServiceImplTest {
                 }
                 """);
         AiReviewService service = new AiReviewServiceImpl(reportMapper, candidateRuleMapper, llmClient, parser, promptTemplate, objectMapper);
-        when(reportMapper.insert(any(AiReviewReport.class))).thenReturn(1);
+        when(reportMapper.insert(any(AiReviewReport.class))).thenAnswer(invocation -> {
+            invocation.<AiReviewReport>getArgument(0).setId(99L);
+            return 1;
+        });
         when(candidateRuleMapper.insert(any(CandidateRule.class))).thenReturn(1);
 
         AiReviewResponseDto response = service.review(reviewRequest());
@@ -77,6 +81,9 @@ class AiReviewServiceImplTest {
         assertThat(candidateRule.getChangeType()).isEqualTo("add_filter");
         assertThat(candidateRule.getProposedContent()).contains("market_status != weak");
         assertThat(candidateRule.getStatus()).isEqualTo(RuleLifecycleStatus.CANDIDATE.getCode());
+        assertThat(candidateRule.getSourceReviewId()).isEqualTo(99L);
+        assertThat(candidateRule.getBacktestStatus()).isEqualTo("pending");
+        assertThat(candidateRule.getApprovalStatus()).isEqualTo(RuleVersionApprovalStatus.PENDING.getCode());
     }
 
     @Test
@@ -123,6 +130,26 @@ class AiReviewServiceImplTest {
     }
 
     @Test
+    void marksCandidateApprovalWhenHumanReviewMovesItToApproved() {
+        LlmClient llmClient = request -> new LlmResponse("mock-llm", "{}");
+        AiReviewService service = new AiReviewServiceImpl(reportMapper, candidateRuleMapper, llmClient, parser, promptTemplate, objectMapper);
+        CandidateRule candidateRule = CandidateRule.builder()
+                .id(11L)
+                .candidateCode("CR_20260620_0002")
+                .status(RuleLifecycleStatus.PAPER_TRADE.getCode())
+                .approvalStatus(RuleVersionApprovalStatus.PENDING.getCode())
+                .build();
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidateRule);
+        when(candidateRuleMapper.updateById(any(CandidateRule.class))).thenReturn(1);
+
+        CandidateRule updated = service.transitionCandidateStatus(
+                candidateRule.getCandidateCode(), RuleLifecycleStatus.APPROVED.getCode());
+
+        assertThat(updated.getStatus()).isEqualTo(RuleLifecycleStatus.APPROVED.getCode());
+        assertThat(updated.getApprovalStatus()).isEqualTo(RuleVersionApprovalStatus.APPROVED.getCode());
+    }
+
+    @Test
     void listsCandidateRulesByStatusAndFindsByCode() {
         LlmClient llmClient = request -> new LlmResponse("mock-llm", "{}");
         AiReviewService service = new AiReviewServiceImpl(reportMapper, candidateRuleMapper, llmClient, parser, promptTemplate, objectMapper);
@@ -141,6 +168,7 @@ class AiReviewServiceImplTest {
     void candidateRuleDtoExposesBacktestSummaryForGovernanceViews() {
         CandidateRule candidateRule = CandidateRule.builder()
                 .candidateCode("CR_20260620_0001")
+                .originalContent("old-content")
                 .backtestStatus("success")
                 .latestBacktestReportId(1001L)
                 .backtestResult("{\"triggerCount\":1,\"winRate\":1.0000}")
@@ -151,6 +179,7 @@ class AiReviewServiceImplTest {
         assertThat(dto.getBacktestStatus()).isEqualTo("success");
         assertThat(dto.getLatestBacktestReportId()).isEqualTo(1001L);
         assertThat(dto.getBacktestResult()).contains("\"triggerCount\":1");
+        assertThat(dto.getOriginalContent()).isEqualTo("old-content");
     }
 
     private AiReviewRequestDto reviewRequest() {

@@ -334,7 +334,13 @@ public final class StockConsoleVo {
             List<MetricCard> metrics,
             List<SeriesPoint> cumulativeReturns,
             List<ComparisonMetric> comparison,
-            List<BacktestFailureSample> failureSamples
+            List<BacktestFailureSample> failureSamples,
+            List<SeriesPoint> equityCurve,
+            String reportId,
+            String status,
+            Integer sampleCount,
+            Integer evaluatedCount,
+            Integer unevaluableCount
     ) {
     }
 
@@ -346,7 +352,12 @@ public final class StockConsoleVo {
             LocalDate endDate,
             List<MetricCard> metrics,
             List<SeriesPoint> cumulativeReturns,
-            List<BacktestFailureSample> failureSamples
+            List<BacktestFailureSample> failureSamples,
+            List<SeriesPoint> equityCurve,
+            String status,
+            Integer sampleCount,
+            Integer evaluatedCount,
+            Integer unevaluableCount
     ) {
     }
 

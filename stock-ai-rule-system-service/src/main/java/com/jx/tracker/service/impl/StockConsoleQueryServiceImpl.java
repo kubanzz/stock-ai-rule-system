@@ -34,6 +34,7 @@ import com.jx.tracker.service.IStockFactorDailyService;
 import com.jx.tracker.domain.dto.TechnicalFactorCalculateRequestDto;
 import com.jx.tracker.market.data.dto.DailyQuoteSyncRequestDto;
 import com.jx.tracker.market.data.service.MarketDataSyncService;
+import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import lombok.RequiredArgsConstructor;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -305,21 +306,139 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .eq(StringUtils.hasText(objectCode), BacktestResult::getObjectCode, objectCode)
                 .orderByDesc(BacktestResult::getCreatedTime)
                 .last("LIMIT " + DEFAULT_LIMIT));
+        return backtestOverview(results);
+    }
+
+    @Override
+    public StockConsoleVo.BacktestReportOverview backtestReports(String objectType, String objectCode,
+                                                                  LocalDate startDate, LocalDate endDate,
+                                                                  Integer holdingPeriod, String stockPoolType,
+                                                                  String stockPoolCode, List<String> symbols) {
+        LambdaQueryWrapper<BacktestResult> query = new LambdaQueryWrapper<BacktestResult>()
+                .eq(StringUtils.hasText(objectType), BacktestResult::getObjectType, objectType)
+                .eq(StringUtils.hasText(objectCode), BacktestResult::getObjectCode, objectCode)
+                .eq(holdingPeriod != null, BacktestResult::getHoldingPeriod, holdingPeriod)
+                .ge(startDate != null, BacktestResult::getStartDate, startDate)
+                .le(endDate != null, BacktestResult::getEndDate, endDate)
+                .orderByDesc(BacktestResult::getCreatedTime);
+        boolean filterByPool = StringUtils.hasText(stockPoolType) || StringUtils.hasText(stockPoolCode)
+                || (symbols != null && !symbols.isEmpty());
+        if (!filterByPool) {
+            query.last("LIMIT " + DEFAULT_LIMIT);
+        }
+        List<BacktestResult> results = backtestResultMapper.selectList(query);
+        if (filterByPool) {
+            results = results.stream()
+                    .filter(result -> matchesBacktestPool(result, stockPoolType, stockPoolCode, symbols))
+                    .limit(DEFAULT_LIMIT)
+                    .toList();
+        }
+        return backtestOverview(results);
+    }
+
+    private StockConsoleVo.BacktestReportOverview backtestOverview(List<BacktestResult> results) {
+        BacktestResult latest = results.isEmpty() ? null : results.getFirst();
+        BacktestJsonSummary summary = latest == null ? BacktestJsonSummary.empty() : parseBacktestJson(latest);
         return new StockConsoleVo.BacktestReportOverview(
                 RISK_DISCLAIMER,
                 backtestMetrics(results),
-                cumulativeReturns(results),
+                List.of(),
                 backtestComparison(results),
-                failureSamplesFromBacktests(results)
+                failureSamplesFromBacktests(results),
+                summary.equityCurve(),
+                latest == null || latest.getId() == null ? null : String.valueOf(latest.getId()),
+                latest == null ? null : latest.getStatus(),
+                summary.sampleCount(),
+                summary.evaluatedCount(),
+                summary.unevaluableCount()
         );
+    }
+
+    private BacktestJsonSummary parseBacktestJson(BacktestResult result) {
+        if (!StringUtils.hasText(result.getResultJson())) {
+            return BacktestJsonSummary.empty();
+        }
+        try {
+            var root = OBJECT_MAPPER.readTree(result.getResultJson());
+            List<StockConsoleVo.SeriesPoint> curve = new ArrayList<>();
+            var equityCurve = root.path("equityCurve");
+            if (equityCurve.isArray()) {
+                for (var point : equityCurve) {
+                    if (StringUtils.hasText(point.path("date").asText()) && point.has("value")) {
+                        curve.add(new StockConsoleVo.SeriesPoint(
+                                LocalDate.parse(point.path("date").asText()),
+                                point.path("value").decimalValue()));
+                    }
+                }
+            }
+            return new BacktestJsonSummary(
+                    curve,
+                    intValue(root, "signalCount"),
+                    intValue(root, "evaluatedCount", root.path("triggerCount").asInt()),
+                    intValue(root, "unevaluableCount", root.path("skippedCount").asInt())
+            );
+        } catch (Exception ignored) {
+            return BacktestJsonSummary.empty();
+        }
+    }
+
+    private int intValue(com.fasterxml.jackson.databind.JsonNode root, String field) {
+        return root.has(field) ? root.path(field).asInt() : 0;
+    }
+
+    private int intValue(com.fasterxml.jackson.databind.JsonNode root, String field, int fallback) {
+        return root.has(field) ? root.path(field).asInt() : fallback;
+    }
+
+    private record BacktestJsonSummary(
+            List<StockConsoleVo.SeriesPoint> equityCurve,
+            int sampleCount,
+            int evaluatedCount,
+            int unevaluableCount
+    ) {
+        private static BacktestJsonSummary empty() {
+            return new BacktestJsonSummary(List.of(), 0, 0, 0);
+        }
+    }
+
+    private boolean matchesBacktestPool(BacktestResult result, String poolType, String poolCode, List<String> symbols) {
+        // Reports without recorded scope cannot be matched reliably to a requested pool.
+        if (!StringUtils.hasText(result.getResultJson())) return false;
+        try {
+            var node = OBJECT_MAPPER.readTree(result.getResultJson());
+            boolean hasScope = StringUtils.hasText(node.path("stockPoolType").asText(null))
+                    || StringUtils.hasText(node.path("stockPoolCode").asText(null))
+                    || (node.path("symbols").isArray() && node.path("symbols").size() > 0);
+            if (!hasScope) return false;
+            if (StringUtils.hasText(poolType) && !poolType.equalsIgnoreCase(node.path("stockPoolType").asText())) return false;
+            String storedPoolCode = node.path("stockPoolCode").asText(null);
+            if (StringUtils.hasText(poolCode)
+                    && !("market".equalsIgnoreCase(poolType) && MarketCodeNormalizer.equivalent(poolCode, storedPoolCode))
+                    && !poolCode.equalsIgnoreCase(storedPoolCode == null ? "" : storedPoolCode)) return false;
+            if (symbols == null || symbols.isEmpty()) return true;
+            var storedSymbols = node.path("symbols");
+            if (!storedSymbols.isArray()) return false;
+            return symbols.stream()
+                    .filter(StringUtils::hasText)
+                    .map(SymbolNormalizer::normalize)
+                    .allMatch(symbol -> {
+                        for (var stored : storedSymbols) {
+                            if (symbol.equals(SymbolNormalizer.normalize(stored.asText(null)))) return true;
+                        }
+                        return false;
+                    });
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     @Override
     public StockConsoleVo.BacktestReportDetail backtestReport(String reportId) {
         BacktestResult result = backtestResultMapper.selectById(reportId);
         if (result == null) {
-            return new StockConsoleVo.BacktestReportDetail(reportId, reportId, "rule", null, null, List.of(), List.of(), List.of());
+            return new StockConsoleVo.BacktestReportDetail(reportId, reportId, "rule", null, null, List.of(), List.of(), List.of(), List.of(), null, 0, 0, 0);
         }
+        BacktestJsonSummary summary = parseBacktestJson(result);
         return new StockConsoleVo.BacktestReportDetail(
                 String.valueOf(result.getId()),
                 result.getObjectCode(),
@@ -327,8 +446,13 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 result.getStartDate(),
                 result.getEndDate(),
                 backtestMetrics(List.of(result)),
-                cumulativeReturns(List.of(result)),
-                failureSamplesFromBacktests(List.of(result))
+                List.of(),
+                failureSamplesFromBacktests(List.of(result)),
+                summary.equityCurve(),
+                result.getStatus(),
+                summary.sampleCount(),
+                summary.evaluatedCount(),
+                summary.unevaluableCount()
         );
     }
 
@@ -674,9 +798,9 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         }
         return List.of(
                 metric("触发次数", BigDecimal.valueOf(results.stream().map(BacktestResult::getTriggerCount).filter(Objects::nonNull).mapToInt(Integer::intValue).sum()), "次", BigDecimal.ZERO, "blue"),
-                metric("5日胜率", average(results.stream().map(BacktestResult::getWinRate).filter(Objects::nonNull).toList()), "%", BigDecimal.ZERO, "green"),
-                metric("平均收益", average(results.stream().map(BacktestResult::getAvgReturn).filter(Objects::nonNull).toList()), "%", BigDecimal.ZERO, "purple"),
-                metric("最大回撤", results.stream().map(BacktestResult::getMaxDrawdown).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO), "%", BigDecimal.ZERO, "red")
+                metric("5日胜率", percentage(average(results.stream().map(BacktestResult::getWinRate).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "green"),
+                metric("平均收益", percentage(average(results.stream().map(BacktestResult::getAvgReturn).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "purple"),
+                metric("最大回撤", percentage(results.stream().map(BacktestResult::getMaxDrawdown).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO)), "%", BigDecimal.ZERO, "red")
         );
     }
 
@@ -697,9 +821,9 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         BacktestResult current = results.get(0);
         BacktestResult candidate = results.get(1);
         return List.of(
-                new StockConsoleVo.ComparisonMetric("胜率", nullToZero(current.getWinRate()), nullToZero(candidate.getWinRate()), "higher"),
-                new StockConsoleVo.ComparisonMetric("平均收益", nullToZero(current.getAvgReturn()), nullToZero(candidate.getAvgReturn()), "higher"),
-                new StockConsoleVo.ComparisonMetric("最大回撤", nullToZero(current.getMaxDrawdown()), nullToZero(candidate.getMaxDrawdown()), "lower")
+                new StockConsoleVo.ComparisonMetric("胜率", percentage(nullToZero(current.getWinRate())), percentage(nullToZero(candidate.getWinRate())), "higher"),
+                new StockConsoleVo.ComparisonMetric("平均收益", percentage(nullToZero(current.getAvgReturn())), percentage(nullToZero(candidate.getAvgReturn())), "higher"),
+                new StockConsoleVo.ComparisonMetric("最大回撤", percentage(nullToZero(current.getMaxDrawdown())), percentage(nullToZero(candidate.getMaxDrawdown())), "lower")
         );
     }
 
@@ -710,7 +834,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                         result.getEndDate() == null ? "" : result.getEndDate().toString(),
                         Optional.ofNullable(result.getSymbol()).orElse(result.getObjectCode()),
                         result.getObjectType(),
-                        result.getAvgReturn(),
+                        percentage(result.getAvgReturn()),
                         "市场环境突变",
                         result.getObjectCode()
                 ))
@@ -795,7 +919,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     }
 
     private BigDecimal percentage(BigDecimal ratio) {
-        return ratio == null ? null : ratio.multiply(BigDecimal.valueOf(100));
+        return ratio == null ? null : ratio.multiply(BigDecimal.valueOf(100)).setScale(4, RoundingMode.HALF_UP);
     }
 
     private BigDecimal factorStrength(Object value) {

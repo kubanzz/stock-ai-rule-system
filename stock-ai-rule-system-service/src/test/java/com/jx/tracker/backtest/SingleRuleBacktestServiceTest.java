@@ -10,6 +10,7 @@ import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.BacktestStatus;
 import com.jx.tracker.domain.enums.RuleObjectType;
 import com.jx.tracker.domain.enums.SignalType;
+import com.jx.tracker.service.IStockFactorDailyService;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
@@ -28,6 +29,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -229,6 +231,84 @@ class SingleRuleBacktestServiceTest {
                 "\"skippedCount\":0");
         assertThat(candidateRuleMapper.updated.getFirst().getBacktestResult())
                 .contains("\"avgReturn\":0.0985", "\"returnSourceQuoteCount\":1");
+    }
+
+    @Test
+    void formalRuleBacktestFallsBackToDailyQuotesWhenActualResultIsMissing() {
+        BacktestRequestDto request = request();
+        StockSignalDaily bullish = signal(1L, "AAPL", LocalDate.of(2026, 1, 2), SignalType.BULLISH.getCode());
+        signalMapper.selectResponses.add(List.of(bullish));
+        actualResultMapper.selectResponses.add(List.of());
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", LocalDate.of(2026, 1, 2), "10.00"),
+                quote("AAPL", LocalDate.of(2026, 1, 5), "10.10"),
+                quote("AAPL", LocalDate.of(2026, 1, 6), "10.20"),
+                quote("AAPL", LocalDate.of(2026, 1, 7), "10.30"),
+                quote("AAPL", LocalDate.of(2026, 1, 8), "10.40"),
+                quote("AAPL", LocalDate.of(2026, 1, 9), "11.00")
+        ));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0985");
+        assertThat(result.getResultJson()).contains(
+                "\"returnSourceActualCount\":0",
+                "\"returnSourceQuoteCount\":1",
+                "\"skippedCount\":0");
+    }
+
+    @Test
+    void customStockPoolFiltersSignalsAndFillsMissingHistoricalFactors() {
+        BacktestRequestDto request = request();
+        request.setStockPoolType("custom");
+        request.setPoolCode("research-small");
+        request.setSymbols(List.of("AAPL"));
+
+        LocalDate signalDate = LocalDate.of(2026, 1, 2);
+        quoteMapper.selectResponses.add(List.of(quote("AAPL", signalDate, "10.00")));
+        factorMapper.selectResponses.add(List.of());
+        signalMapper.selectResponses.add(List.of(
+                signal(1L, "AAPL", signalDate, SignalType.BULLISH.getCode()),
+                signal(2L, "MSFT", signalDate, SignalType.BULLISH.getCode())
+        ));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", signalDate, "0.0200", true)));
+
+        AtomicInteger factorCalculations = new AtomicInteger();
+        IStockFactorDailyService factorService = (IStockFactorDailyService) Proxy.newProxyInstance(
+                IStockFactorDailyService.class.getClassLoader(),
+                new Class<?>[]{IStockFactorDailyService.class},
+                (proxy, method, args) -> {
+                    if ("calculateAndSave".equals(method.getName())) {
+                        factorCalculations.incrementAndGet();
+                    }
+                    return null;
+                }
+        );
+        SingleRuleBacktestService scopedService = new SingleRuleBacktestService(
+                signalMapper.mapper,
+                factorMapper.mapper,
+                actualResultMapper.mapper,
+                quoteMapper.mapper,
+                backtestResultMapper.mapper,
+                candidateRuleMapper.mapper,
+                new JsonRuleEngineExecutor(),
+                new SignalScoringService(),
+                new PredictionHitPolicy(),
+                factorService,
+                null,
+                null,
+                null,
+                null
+        );
+
+        BacktestResult result = scopedService.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(factorCalculations).hasValue(1);
+        assertThat(result.getResultJson()).contains(
+                "\"stockPoolType\":\"custom\"",
+                "\"stockPoolCode\":\"research-small\"");
     }
 
     @Test

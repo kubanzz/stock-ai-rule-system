@@ -18,6 +18,8 @@ public class CandidateRuleDto {
 
     private String changeType;
 
+    private String originalContent;
+
     private String proposedContent;
 
     private String reason;
@@ -41,6 +43,7 @@ public class CandidateRuleDto {
                 .source(candidateRule.getSource())
                 .targetRuleCode(candidateRule.getTargetRuleCode())
                 .changeType(candidateRule.getChangeType())
+                .originalContent(candidateRule.getOriginalContent())
                 .proposedContent(candidateRule.getProposedContent())
                 .reason(candidateRule.getReason())
                 .status(candidateRule.getStatus())

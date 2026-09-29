@@ -794,6 +794,12 @@ export const mockBacktestReportOverview: BacktestReportOverview = {
     { date: '2025-01-01', value: 28.7 },
     { date: '2026-06-20', value: 38.7 },
   ],
+  equityCurve: [
+    { date: '2024-01-01', value: 1 },
+    { date: '2024-06-01', value: 1.124 },
+    { date: '2025-01-01', value: 1.287 },
+    { date: '2026-06-20', value: 1.387 },
+  ],
   failureSamples: [
     {
       actualReturn: -8.21,
@@ -810,7 +816,12 @@ export const mockBacktestReportOverview: BacktestReportOverview = {
     { label: '平均收益', tone: 'purple', unit: '%', value: 1.8 },
     { label: '最大回撤', tone: 'red', unit: '%', value: -9.2 },
   ],
+  reportId: 'mock-backtest-report',
   riskDisclaimer: STOCK_RISK_DISCLAIMER,
+  sampleCount: 842,
+  evaluatedCount: 842,
+  unevaluableCount: 0,
+  status: 'success',
 };
 
 export const mockAiReview: AiReviewReport = {

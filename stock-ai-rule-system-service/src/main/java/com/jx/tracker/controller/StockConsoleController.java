@@ -20,9 +20,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api")
@@ -139,8 +141,21 @@ public class StockConsoleController {
     @GetMapping("/backtests/reports")
     @Operation(summary = "查询回测报告列表与聚合表现")
     public AjaxResult backtestReports(@RequestParam(value = "objectCode", required = false) String objectCode,
-                                      @RequestParam(value = "market", required = false) String market) {
-        return AjaxResult.success(stockConsoleQueryService.backtestReports(objectCode, market));
+                                      @RequestParam(value = "market", required = false) String market,
+                                      @RequestParam(value = "objectType", required = false) String objectType,
+                                      @RequestParam(value = "startDate", required = false) LocalDate startDate,
+                                      @RequestParam(value = "endDate", required = false) LocalDate endDate,
+                                      @RequestParam(value = "holdingPeriod", required = false) Integer holdingPeriod,
+                                      @RequestParam(value = "stockPoolType", required = false) String stockPoolType,
+                                      @RequestParam(value = "stockPoolCode", required = false) String stockPoolCode,
+                                      @RequestParam(value = "symbols", required = false) List<String> symbols) {
+        String effectivePoolCode = stockPoolCode;
+        if (!StringUtils.hasText(effectivePoolCode) && "market".equalsIgnoreCase(stockPoolType)) {
+            effectivePoolCode = market;
+        }
+        return AjaxResult.success(stockConsoleQueryService.backtestReports(
+                objectType, objectCode, startDate, endDate, holdingPeriod,
+                stockPoolType, effectivePoolCode, symbols));
     }
 
     @GetMapping("/backtests/reports/{reportId}")

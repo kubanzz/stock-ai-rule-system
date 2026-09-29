@@ -23,6 +23,13 @@ public interface StockConsoleQueryService {
 
     StockConsoleVo.BacktestReportOverview backtestReports(String objectCode, String market);
 
+    default StockConsoleVo.BacktestReportOverview backtestReports(String objectType, String objectCode,
+                                                                   LocalDate startDate, LocalDate endDate,
+                                                                   Integer holdingPeriod, String stockPoolType,
+                                                                   String stockPoolCode, List<String> symbols) {
+        return backtestReports(objectCode, stockPoolCode);
+    }
+
     StockConsoleVo.BacktestReportDetail backtestReport(String reportId);
 
     List<StockConsoleVo.BacktestFailureSample> backtestFailureSamples(String reportId);
