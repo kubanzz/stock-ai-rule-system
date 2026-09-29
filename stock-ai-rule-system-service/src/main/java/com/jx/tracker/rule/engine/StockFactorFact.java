@@ -33,10 +33,13 @@ public class StockFactorFact {
         this.symbol = request.symbol();
         this.tradeDate = request.tradeDate();
         this.factors = Map.copyOf(inputFactors);
-        this.rsi = decimalFactor(inputFactors, "rsi");
-        this.macd = decimalFactor(inputFactors, "macd");
-        this.priceChange5d = decimalFactor(inputFactors, "price_change_5d", "priceChange5d");
-        this.volumeRatio = decimalFactor(inputFactors, "volume_ratio", "volumeRatio");
+        // TechnicalFactorCalculator uses the more explicit persisted names
+        // (rsi14, macd_histogram and volume_ratio_5d). Keep the shorter
+        // aliases for manually supplied factors and older rule requests.
+        this.rsi = decimalFactor(inputFactors, "rsi", "rsi14");
+        this.macd = decimalFactor(inputFactors, "macd", "macd_histogram");
+        this.priceChange5d = decimalFactor(inputFactors, "price_change_5d", "priceChange5d", "change_pct_5d");
+        this.volumeRatio = decimalFactor(inputFactors, "volume_ratio", "volumeRatio", "volume_ratio_5d");
         this.shortTermTrend = textFactor(inputFactors, "short_term_trend", "shortTermTrend");
         this.volumeStatus = textFactor(inputFactors, "volume_status", "volumeStatus");
         this.technicalStatus = textFactor(inputFactors, "technical_status", "technicalStatus");

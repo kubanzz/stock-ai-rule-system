@@ -285,7 +285,9 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 rule.getVersion(),
                 rule.getStatus(),
                 Optional.ofNullable(rule.getCreatedBy()).orElse("system"),
-                "基于因子状态和行情上下文触发的辅助决策规则。",
+                StringUtils.hasText(rule.getDescription())
+                        ? rule.getDescription()
+                        : "基于因子状态和行情上下文触发的辅助决策规则。",
                 rule.getRuleContent(),
                 extractFactors(rule.getRuleContent()),
                 rulePerformance(rule.getRuleCode()),
@@ -641,6 +643,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         return new StockConsoleVo.RuleSummary(
                 rule.getRuleCode(),
                 rule.getRuleName(),
+                rule.getDescription(),
                 rule.getRuleType(),
                 rule.getVersion(),
                 rule.getStatus(),

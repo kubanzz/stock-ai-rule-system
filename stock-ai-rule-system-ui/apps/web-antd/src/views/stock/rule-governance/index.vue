@@ -47,6 +47,7 @@ const filters = reactive({
 const columns = [
   { title: '规则编号', dataIndex: 'ruleCode', width: 180 },
   { title: '规则名称', dataIndex: 'ruleName' },
+  { title: '规则描述', dataIndex: 'description' },
   { title: '类型', dataIndex: 'ruleType', width: 96 },
   { title: '版本', dataIndex: 'version', width: 90 },
   { title: '状态', dataIndex: 'status', width: 96 },
@@ -61,6 +62,7 @@ const ruleTypeOptions = [
   { label: '技术', value: 'technical' },
   { label: '趋势', value: 'trend' },
   { label: '风险', value: 'risk' },
+  { label: '风险防守', value: 'risk_guard' },
   { label: '情绪', value: 'sentiment' },
 ];
 

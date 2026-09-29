@@ -46,6 +46,7 @@ const formState = reactive<RuleDefinitionUpsert>({
   ruleContent: '',
   ruleFormat: 'json',
   ruleName: '',
+  description: '',
   ruleType: 'trend',
   status: 'draft',
   version: 'v1.0',
@@ -54,6 +55,7 @@ const formState = reactive<RuleDefinitionUpsert>({
 const columns: TableColumnsType<RuleDefinition> = [
   { dataIndex: 'ruleCode', key: 'ruleCode', title: '规则编码', width: 190 },
   { dataIndex: 'ruleName', key: 'ruleName', title: '规则名称' },
+  { dataIndex: 'description', key: 'description', title: '规则描述' },
   { dataIndex: 'ruleType', key: 'ruleType', title: '类型', width: 110 },
   { dataIndex: 'ruleFormat', key: 'ruleFormat', title: '格式', width: 90 },
   { dataIndex: 'status', key: 'status', title: '状态', width: 110 },
@@ -96,6 +98,7 @@ function resetForm() {
     ruleContent: '',
     ruleFormat: 'json',
     ruleName: '',
+    description: '',
     ruleType: 'trend',
     status: 'draft',
     version: 'v1.0',
@@ -117,6 +120,7 @@ function openEdit(record: Record<string, any>) {
     ruleContent: rule.ruleContent,
     ruleFormat: rule.ruleFormat,
     ruleName: rule.ruleName,
+    description: rule.description ?? '',
     ruleType: rule.ruleType,
     status: rule.status,
     version: rule.version,
@@ -207,7 +211,6 @@ watch(
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'ruleCode'">
             <div class="font-medium">{{ record.ruleCode }}</div>
-            <div class="text-xs text-gray-500">{{ record.ruleContent }}</div>
           </template>
           <template v-else-if="column.key === 'status'">
             <Tag :color="statusMeta[record.status]?.color">
@@ -246,6 +249,13 @@ watch(
           <Input
             v-model:value="formState.ruleName"
             placeholder="强势突破看涨"
+          />
+        </Form.Item>
+        <Form.Item label="规则描述">
+          <Input.TextArea
+            v-model:value="formState.description"
+            :rows="2"
+            placeholder="说明规则触发条件、信号含义和风险边界"
           />
         </Form.Item>
         <Space class="w-full" size="middle">

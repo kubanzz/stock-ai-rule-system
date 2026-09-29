@@ -70,6 +70,7 @@ public class RuleDefinitionService {
         return RuleDefinition.builder()
                 .ruleCode(dto.getRuleCode())
                 .ruleName(dto.getRuleName())
+                .description(dto.getDescription())
                 .ruleType(dto.getRuleType())
                 .ruleContent(dto.getRuleContent())
                 .ruleFormat(hasText(dto.getRuleFormat()) ? dto.getRuleFormat() : RuleFormat.JSON.getCode())

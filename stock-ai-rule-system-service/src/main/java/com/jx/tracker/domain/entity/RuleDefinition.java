@@ -28,6 +28,8 @@ public class RuleDefinition {
 
     private String ruleName;
 
+    private String description;
+
     private String ruleType;
 
     private String ruleContent;

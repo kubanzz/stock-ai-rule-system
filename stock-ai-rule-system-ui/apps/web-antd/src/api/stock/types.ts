@@ -286,6 +286,7 @@ export interface StockResearchDetail {
 
 export interface RuleSummary {
   avgReturn: number;
+  description?: string;
   maxDrawdown: number;
   ruleCode: string;
   ruleName: string;
@@ -428,6 +429,7 @@ export interface RuleDefinition {
   createdBy?: string;
   currentVersionId?: number;
   currentVersionNo?: string;
+  description?: string;
   enabled?: boolean;
   priority: number;
   ruleCode: string;
@@ -442,6 +444,7 @@ export interface RuleDefinition {
 }
 
 export interface RuleDefinitionUpsert {
+  description?: string;
   priority: number;
   ruleCode: string;
   ruleContent: string;

@@ -9,6 +9,8 @@ public class RuleDefinitionUpsertDto {
 
     private String ruleName;
 
+    private String description;
+
     private String ruleType;
 
     private String ruleContent;

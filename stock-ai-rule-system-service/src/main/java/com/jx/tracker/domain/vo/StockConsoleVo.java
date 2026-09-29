@@ -276,6 +276,7 @@ public final class StockConsoleVo {
     public record RuleSummary(
             String ruleCode,
             String ruleName,
+            String description,
             String ruleType,
             String version,
             String status,
