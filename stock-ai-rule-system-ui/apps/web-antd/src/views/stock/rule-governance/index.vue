@@ -30,6 +30,7 @@ import {
 import { getRuleGovernance, getRuleGovernanceDetail } from '#/api/stock';
 
 import RiskAlert from '../components/risk-alert.vue';
+import { getRuleTypeLabel, ruleTypeOptions } from '../rule-type';
 
 const loading = ref(false);
 const detailLoading = ref(false);
@@ -58,20 +59,27 @@ const columns = [
   { title: '操作', key: 'actions', width: 96 },
 ];
 
-const ruleTypeOptions = [
-  { label: '技术', value: 'technical' },
-  { label: '趋势', value: 'trend' },
-  { label: '风险', value: 'risk' },
-  { label: '风险防守', value: 'risk_guard' },
-  { label: '情绪', value: 'sentiment' },
-];
-
 const statusOptions = [
   { label: '已上线', value: 'active' },
   { label: '候选中', value: 'candidate' },
   { label: '回测中', value: 'backtesting' },
   { label: '已停用', value: 'disabled' },
 ];
+
+const statusLabels: Record<string, string> = {
+  active: '已上线',
+  approved: '已审核',
+  archived: '已归档',
+  backtesting: '回测中',
+  candidate: '候选中',
+  disabled: '已停用',
+  draft: '草稿',
+  paper_trade: '模拟盘',
+};
+
+function getStatusLabel(status: string): string {
+  return statusLabels[status] ?? status;
+}
 
 async function loadRules() {
   loading.value = true;
@@ -181,8 +189,13 @@ onMounted(loadRules);
               {{ record.ruleCode }}
             </Typography.Link>
           </template>
+          <template v-else-if="column.dataIndex === 'ruleType'">
+            {{ getRuleTypeLabel(record.ruleType) }}
+          </template>
           <template v-else-if="column.dataIndex === 'status'">
-            <Tag :color="statusColor(record.status)">{{ record.status }}</Tag>
+            <Tag :color="statusColor(record.status)">
+              {{ getStatusLabel(record.status) }}
+            </Tag>
           </template>
           <template v-else-if="column.dataIndex === 'winRate5d'">
             {{ record.winRate5d }}%
@@ -217,8 +230,9 @@ onMounted(loadRules);
             </Typography.Title>
             <Space wrap>
               <Tag color="blue">{{ selectedRule.ruleCode }}</Tag>
+              <Tag>{{ getRuleTypeLabel(selectedRule.ruleType) }}</Tag>
               <Tag :color="statusColor(selectedRule.status)">
-                {{ selectedRule.status }}
+                {{ getStatusLabel(selectedRule.status) }}
               </Tag>
               <Tag>{{ selectedRule.version }}</Tag>
             </Space>

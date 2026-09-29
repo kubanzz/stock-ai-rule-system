@@ -31,6 +31,7 @@ import {
 } from '#/api/stock';
 
 import RiskAlert from '../components/risk-alert.vue';
+import { getRuleTypeLabel } from '../rule-type';
 
 const router = useRouter();
 const route = useRoute();
@@ -211,6 +212,9 @@ watch(
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'ruleCode'">
             <div class="font-medium">{{ record.ruleCode }}</div>
+          </template>
+          <template v-else-if="column.key === 'ruleType'">
+            {{ getRuleTypeLabel(record.ruleType) }}
           </template>
           <template v-else-if="column.key === 'status'">
             <Tag :color="statusMeta[record.status]?.color">
