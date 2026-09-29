@@ -1,6 +1,7 @@
 package com.jx.tracker.controller;
 
 import com.jx.tracker.backtest.SingleRuleBacktestService;
+import com.jx.tracker.backtest.HistoricalBacktestQuotePreparationService;
 import com.jx.tracker.common.AjaxResult;
 import com.jx.tracker.domain.dto.BacktestRequestDto;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,14 +17,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class BacktestController {
 
     private final SingleRuleBacktestService backtestService;
+    private final HistoricalBacktestQuotePreparationService quotePreparationService;
 
-    public BacktestController(SingleRuleBacktestService backtestService) {
+    public BacktestController(SingleRuleBacktestService backtestService,
+                              HistoricalBacktestQuotePreparationService quotePreparationService) {
         this.backtestService = backtestService;
+        this.quotePreparationService = quotePreparationService;
     }
 
     @PostMapping
     @Operation(summary = "执行单规则回测并保存结果")
     public AjaxResult runBacktest(@RequestBody BacktestRequestDto request) {
+        quotePreparationService.prepare(request);
         return AjaxResult.success(backtestService.runSingleRuleBacktest(request));
     }
 }

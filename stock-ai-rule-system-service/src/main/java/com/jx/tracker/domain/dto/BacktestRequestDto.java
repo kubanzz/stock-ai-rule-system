@@ -1,6 +1,8 @@
 package com.jx.tracker.domain.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
@@ -9,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Data
+@JsonIgnoreProperties({"forceFactorRecalculation", "force_factor_recalculation"})
 public class BacktestRequestDto {
 
     @JsonProperty("object_type")
@@ -49,4 +52,8 @@ public class BacktestRequestDto {
 
     /** 自定义股票池代码列表，建议使用统一的市场后缀格式。 */
     private List<String> symbols;
+
+    /** 行情准备流程实际更新历史行情后启用；不接受客户端指定。 */
+    @JsonIgnore
+    private boolean forceFactorRecalculation;
 }

@@ -42,9 +42,18 @@ describe('mock backtest report', () => {
       status: 'success',
     });
     expect(JSON.parse(detail.resultJson ?? '{}')).toMatchObject({
+      directionalCount: 842,
+      evaluationBasis: 'rule_direction',
       evaluatedCount: 842,
       signalCount: 842,
+      statisticsVersion: 3,
+      undirectedCount: 0,
+      watchCount: 0,
     });
+    expect(detail.metrics).toContainEqual(expect.objectContaining({
+      label: '1日规则方向命中率',
+      value: 57.2,
+    }));
 
     const overview = await api.getBacktestReports(request);
     expect(overview.reportId).toBe(String(result.id));
@@ -93,6 +102,8 @@ describe('mock backtest report', () => {
       objectCode: 'R_OLD',
       reportId: String(first.id),
     });
+    expect((await api.getBacktestReport(String(first.id))).metrics)
+      .toContainEqual(expect.objectContaining({ label: '3日规则方向命中率' }));
     expect((await api.getBacktestReportHistory({ objectCode: 'R_NEW' })).rows)
       .toHaveLength(1);
     expect((await api.getBacktestReportHistory({
@@ -126,7 +137,9 @@ describe('mock backtest report', () => {
 
     expect(await api.runBacktest(request)).toBe(result);
     expect(await api.getBacktestReport('701')).toBe(detail);
-    expect(requestMocks.post).toHaveBeenCalledWith('/backtests', request);
+    expect(requestMocks.post).toHaveBeenCalledWith('/backtests', request, {
+      timeout: 600_000,
+    });
     expect(requestMocks.get).toHaveBeenCalledWith('/backtests/reports/701');
   });
 });

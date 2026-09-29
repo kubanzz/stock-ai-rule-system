@@ -608,16 +608,21 @@ export async function runBacktest(data: BacktestRequest) {
     async () => {
       const response = await baseRequestClient.post<
         RawResponse<StockAjaxResult<BacktestResult>>
-      >('/backtests', data);
+      >('/backtests', data, { timeout: 600_000 });
       return unwrapAjaxResult(response.data);
     },
     () => {
       const id = nextMockBacktestId++;
       const resultJson = JSON.stringify({
+        directionalCount: mockBacktestReportOverview.sampleCount,
+        evaluationBasis: 'rule_direction',
         equityCurve: mockBacktestReportOverview.equityCurve,
         evaluatedCount: mockBacktestReportOverview.evaluatedCount,
         signalCount: mockBacktestReportOverview.sampleCount,
+        statisticsVersion: 3,
+        undirectedCount: 0,
         unevaluableCount: mockBacktestReportOverview.unevaluableCount,
+        watchCount: 0,
       });
       const result: BacktestResult = {
         ...mockBacktest,
@@ -634,7 +639,11 @@ export async function runBacktest(data: BacktestRequest) {
         evaluatedCount: mockBacktestReportOverview.evaluatedCount,
         failureSamples: mockBacktestReportOverview.failureSamples,
         holdingPeriod: data.holdingPeriod,
-        metrics: mockBacktestReportOverview.metrics,
+        metrics: mockBacktestReportOverview.metrics.map((metric) =>
+          metric.label === '胜率'
+            ? { ...metric, label: `${data.holdingPeriod}日规则方向命中率` }
+            : metric,
+        ),
         objectCode: data.objectCode,
         objectType: data.objectType,
         reportId: String(id),

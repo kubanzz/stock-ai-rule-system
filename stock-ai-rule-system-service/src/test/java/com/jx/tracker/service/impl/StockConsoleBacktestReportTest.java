@@ -77,6 +77,88 @@ class StockConsoleBacktestReportTest {
     }
 
     @Test
+    void watchOnlyReportKeepsMatchesButHasNoPerformanceMetrics() {
+        BacktestResult saved = BacktestResult.builder()
+                .id(28L).objectType("rule").objectCode("R_WATCH")
+                .holdingPeriod(1).triggerCount(21).status("skipped")
+                .resultJson("""
+                        {"statisticsVersion":2,"signalCount":21,"directionalCount":0,
+                         "watchCount":21,"evaluatedCount":0,"unevaluableCount":0,
+                         "emptyReasonCode":"watch_only","equityCurve":[]}
+                        """)
+                .build();
+        when(backtestResultMapper.selectById("28")).thenReturn(saved);
+
+        var report = service.backtestReport("28");
+
+        assertThat(report.sampleCount()).isEqualTo(21);
+        assertThat(report.evaluatedCount()).isZero();
+        assertThat(report.metrics()).filteredOn(metric -> metric.label().equals("触发次数"))
+                .singleElement().extracting(StockConsoleVo.MetricCard::value)
+                .isEqualTo(new BigDecimal("21"));
+        assertThat(report.metrics()).filteredOn(metric -> !metric.label().equals("触发次数"))
+                .allSatisfy(metric -> assertThat(metric.value()).isNull());
+        assertThat(report.equityCurve()).isEmpty();
+    }
+
+    @Test
+    void legacyReportFallsBackToSavedTriggerCountWithoutInventingFailureSamples() {
+        BacktestResult saved = BacktestResult.builder()
+                .id(19L).objectType("candidate_rule").objectCode("R_OLD")
+                .holdingPeriod(5).triggerCount(3).status("success")
+                .avgReturn(new BigDecimal("-0.01"))
+                .resultJson("{}")
+                .build();
+        when(backtestResultMapper.selectById("19")).thenReturn(saved);
+
+        var report = service.backtestReport("19");
+
+        assertThat(report.sampleCount()).isEqualTo(3);
+        assertThat(report.evaluatedCount()).isEqualTo(3);
+        assertThat(report.failureSamples()).isEmpty();
+    }
+
+    @Test
+    void detailShowsSavedPerformanceWithoutFillingMissingSharpeWithZero() {
+        BacktestResult saved = BacktestResult.builder()
+                .id(30L).objectType("rule").objectCode("R_DIRECTIONAL")
+                .holdingPeriod(5).triggerCount(3).status("success")
+                .winRate(new BigDecimal("0.5000"))
+                .avgReturn(new BigDecimal("0.0125"))
+                .maxDrawdown(new BigDecimal("-0.0200"))
+                .totalReturn(new BigDecimal("0.0251"))
+                .resultJson("{\"statisticsVersion\":2,\"signalCount\":3,\"evaluatedCount\":2}")
+                .build();
+        when(backtestResultMapper.selectById("30")).thenReturn(saved);
+
+        var report = service.backtestReport("30");
+
+        assertThat(report.metrics()).filteredOn(metric -> metric.label().equals("样本复合收益"))
+                .singleElement().satisfies(metric -> assertThat(metric.value())
+                        .isEqualByComparingTo(new BigDecimal("2.5100")));
+        assertThat(report.metrics()).filteredOn(metric -> metric.label().equals("样本夏普比率"))
+                .singleElement().satisfies(metric -> assertThat(metric.value()).isNull());
+    }
+
+    @Test
+    void v3ReportLabelsRuleDirectionWinRateSeparatelyFromFinalSignalWinRate() {
+        BacktestResult saved = BacktestResult.builder()
+                .id(31L).objectType("rule").objectCode("R_EVIDENCE")
+                .holdingPeriod(1).triggerCount(2).status("success")
+                .winRate(new BigDecimal("0.5000"))
+                .resultJson("{\"statisticsVersion\":3,\"evaluationBasis\":\"rule_direction\","
+                        + "\"signalCount\":2,\"directionalCount\":2,\"evaluatedCount\":2}")
+                .build();
+        when(backtestResultMapper.selectById("31")).thenReturn(saved);
+
+        var report = service.backtestReport("31");
+
+        assertThat(report.metrics()).filteredOn(metric -> metric.label().equals("1日规则方向命中率"))
+                .singleElement().satisfies(metric -> assertThat(metric.value())
+                        .isEqualByComparingTo(new BigDecimal("50.00")));
+    }
+
+    @Test
     void overviewUsesOnlyNewestSavedRunEvenWhenOlderRunsAlsoMatch() {
         BacktestResult latest = BacktestResult.builder()
                 .id(24L).objectType("rule").objectCode("R1")

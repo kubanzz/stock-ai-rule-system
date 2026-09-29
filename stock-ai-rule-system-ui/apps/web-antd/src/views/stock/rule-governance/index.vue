@@ -267,9 +267,9 @@ onMounted(loadRules);
                 :span="12"
               >
                 <Statistic
-                  :suffix="metric.unit"
+                  :suffix="metric.value == null ? undefined : metric.unit"
                   :title="metric.label"
-                  :value="metric.value"
+                  :value="metric.value ?? '—'"
                 />
               </Col>
             </Row>

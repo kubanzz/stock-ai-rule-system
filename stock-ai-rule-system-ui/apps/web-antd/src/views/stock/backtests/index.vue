@@ -5,11 +5,14 @@ import type {
   BacktestReportOverview,
   BacktestReportResultPayload,
   BacktestRequest,
+  CandidateRule,
+  RuleDefinition,
   WatchlistPool,
 } from '#/api/stock';
 import type { TablePaginationConfig } from 'ant-design-vue';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -30,16 +33,21 @@ import {
   Tag,
   Typography,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import {
   getBacktestReport,
   getBacktestReportHistory,
+  getCandidateRules,
+  getRules,
   getWatchlists,
   runBacktest,
   STOCK_RISK_DISCLAIMER,
 } from '#/api/stock';
 
+const route = useRoute();
 const loading = ref(false);
+const objectLoading = ref(false);
 const historyLoading = ref(false);
 const detailLoading = ref(false);
 const report = ref<BacktestReportOverview>();
@@ -52,9 +60,23 @@ const historyPage = ref(1);
 const historyPageSize = ref(10);
 const historyFilters = reactive({ objectType: 'all', objectCode: '' });
 const watchlists = ref<WatchlistPool[]>([]);
+const objectOptions = ref<{ label: string; value: string }[]>([]);
+let objectRequestId = 0;
 let detailRequestId = 0;
 let historyRequestId = 0;
 let runRequestId = 0;
+
+function queryString(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return '';
+}
+
+function routeObjectType(): BacktestRequest['objectType'] {
+  return queryString(route.query.objectType) === 'candidate_rule'
+    ? 'candidate_rule'
+    : 'rule';
+}
 
 const resultPayload = computed<BacktestReportResultPayload>(() => {
   const resultJson = report.value?.resultJson;
@@ -69,6 +91,40 @@ const resultPayload = computed<BacktestReportResultPayload>(() => {
   } catch {
     return {};
   }
+});
+
+const hasCurrentStatistics = computed(
+  () => [2, 3].includes(resultPayload.value.statisticsVersion ?? 0),
+);
+
+const hasRuleDirectionStatistics = computed(
+  () => resultPayload.value.statisticsVersion === 3
+    && resultPayload.value.evaluationBasis === 'rule_direction',
+);
+
+const legacyStatisticsNotice = computed(() =>
+  report.value?.reportId && !hasCurrentStatistics.value
+    ? '旧报告使用原统计口径，观望信号可能计入收益样本；这里的 0% 不能视为真实方向胜率。历史记录未保存完整方向分布，请重新回测获取新口径结果。'
+    : '',
+);
+
+const reportDirectionalCount = computed(() =>
+  hasCurrentStatistics.value ? resultPayload.value.directionalCount : undefined,
+);
+
+const reportWatchCount = computed(() =>
+  hasCurrentStatistics.value ? resultPayload.value.watchCount : undefined,
+);
+
+const reportUndirectedCount = computed(() =>
+  hasRuleDirectionStatistics.value ? resultPayload.value.undirectedCount : undefined,
+);
+
+const ruleDirectionNotice = computed(() => {
+  if (!report.value?.reportId || !hasRuleDirectionStatistics.value) return '';
+  const period = selectedReport.value?.holdingPeriod;
+  const periodText = period == null ? '持有期' : `${period} 日`;
+  return `本报告的${periodText}规则方向命中率只统计规则自身给出方向、且持有期行情完整的样本。最终综合信号仍可能是观望；规则触发次数不等于可评估样本数。`;
 });
 
 const reportEquityCurve = computed(() => {
@@ -93,30 +149,37 @@ const equityBars = computed(() => {
 });
 
 function metricValue(label: string) {
-  return report.value?.metrics.find((metric) => metric.label === label)?.value;
+  return report.value?.metrics.find((metric) => metric.label === label)?.value ?? undefined;
 }
 
-const reportSampleCount = computed(
-  () =>
-    report.value?.sampleCount ??
-    resultPayload.value.signalCount ??
-    metricValue('触发次数'),
-);
+const reportSampleCount = computed(() => {
+  if (hasCurrentStatistics.value) {
+    return report.value?.sampleCount ?? resultPayload.value.signalCount ?? metricValue('触发次数');
+  }
+  const recordedCount = resultPayload.value.signalCount ?? report.value?.sampleCount;
+  return recordedCount && recordedCount > 0
+    ? recordedCount
+    : (metricValue('触发次数') ?? recordedCount);
+});
 
-const reportEvaluatedCount = computed(
-  () =>
-    report.value?.evaluatedCount ??
-    resultPayload.value.evaluatedCount ??
-    resultPayload.value.triggerCount ??
-    metricValue('触发次数'),
-);
+const reportEvaluatedCount = computed(() => {
+  if (hasCurrentStatistics.value) {
+    return report.value?.evaluatedCount ?? resultPayload.value.evaluatedCount;
+  }
+  const recordedCount = resultPayload.value.evaluatedCount ?? report.value?.evaluatedCount;
+  return recordedCount && recordedCount > 0
+    ? recordedCount
+    : (resultPayload.value.triggerCount ?? metricValue('触发次数') ?? recordedCount);
+});
 
-const reportUnevaluableCount = computed(
-  () =>
-    report.value?.unevaluableCount ??
-    resultPayload.value.unevaluableCount ??
-    resultPayload.value.skippedCount,
-);
+const reportUnevaluableCount = computed(() => {
+  if (hasCurrentStatistics.value) {
+    return report.value?.unevaluableCount ?? resultPayload.value.unevaluableCount;
+  }
+  return resultPayload.value.unevaluableCount
+    ?? (report.value?.unevaluableCount ? report.value.unevaluableCount : undefined)
+    ?? resultPayload.value.skippedCount;
+});
 
 const reportStatus = computed(
   () => report.value?.status ?? resultPayload.value.status,
@@ -129,11 +192,60 @@ const reportNotice = computed(() => {
       ? '暂无已保存的回测报告。设置参数后可开始第一次回测。'
       : '请选择一条历史记录查看报告。';
   }
-  if (reportStatus.value === 'failed') return '本次回测失败，请检查报告状态。';
+  if (reportStatus.value === 'failed') {
+    return resultPayload.value.errorSummary || '本次回测失败，请检查规则内容和历史数据。';
+  }
+  if (hasCurrentStatistics.value) {
+    if (!hasRuleDirectionStatistics.value
+      && (resultPayload.value.emptyReasonCode === 'watch_only'
+        || (reportDirectionalCount.value === 0 && (reportWatchCount.value ?? 0) > 0))) {
+      return '规则已命中，但本次信号全部为观望；没有可计算收益的方向信号，收益指标不适用。';
+    }
+    if (reportSampleCount.value === 0) {
+      return '本次回测没有产生历史预测信号，请检查所选股票池、日期范围和规则条件。';
+    }
+    if (reportDirectionalCount.value === 0) {
+      return hasRuleDirectionStatistics.value
+        ? '本次回测没有产生规则方向样本，收益指标不适用。'
+        : '本次回测没有产生方向信号，收益指标不适用。';
+    }
+    if (resultPayload.value.emptyReason
+      && !(hasRuleDirectionStatistics.value && resultPayload.value.emptyReasonCode === 'watch_only')) {
+      return resultPayload.value.emptyReason;
+    }
+    if (reportEvaluatedCount.value === 0) {
+      return hasRuleDirectionStatistics.value
+        ? '本次回测产生了规则方向样本，但缺少对应持有期的实际行情，暂时无法计算收益。'
+        : '本次回测产生了方向信号，但缺少对应持有期的实际行情，暂时无法计算收益。';
+    }
+  }
+  if (resultPayload.value.emptyReason) return resultPayload.value.emptyReason;
   if (reportStatus.value === 'skipped') {
     return '本次回测未产生可展示的结果，请检查规则和历史数据覆盖范围。';
   }
   return '';
+});
+
+const equityEmptyNotice = computed(() => {
+  if (!hasCurrentStatistics.value) return '旧报告未保存可还原的逐笔收益曲线，建议重新回测。';
+  if (reportSampleCount.value === 0) return '本次没有规则触发信号，暂无收益曲线。';
+  if (reportDirectionalCount.value === 0) return hasRuleDirectionStatistics.value
+    ? '本次没有规则方向样本，没有可计算的收益曲线。'
+    : '本次只有观望信号，没有可计算的收益曲线。';
+  if (reportEvaluatedCount.value === 0) return hasRuleDirectionStatistics.value
+    ? '规则方向样本缺少持有期实际行情，暂无收益曲线。'
+    : '方向信号缺少持有期实际行情，暂无收益曲线。';
+  return '本次回测未保存可展示的收益曲线。';
+});
+
+const emptyWatchlistNotice = computed(() => {
+  if (filters.stockPoolType !== 'watchlist') return '';
+  const selectedPool = watchlists.value.find(
+    (pool) => pool.poolId === filters.stockPoolCode,
+  );
+  return selectedPool?.total === 0
+    ? `“${selectedPool.poolName}”还没有股票。请先添加股票，或改选其他股票范围。`
+    : '';
 });
 
 function countDisplay(value: number | undefined) {
@@ -169,12 +281,12 @@ function statusColor(status: string | undefined) {
 
 const filters = reactive({
   market: 'A股',
-  objectCode: 'R_TREND_BREAKOUT_001',
-  objectType: 'rule' as BacktestRequest['objectType'],
-  range: ['2024-01-01', '2026-06-20'] as [string, string],
-  holdingPeriod: 5,
-  stockPoolType: 'market' as NonNullable<BacktestRequest['stockPoolType']>,
-  stockPoolCode: 'A股',
+  objectCode: '',
+  objectType: routeObjectType(),
+  range: [dayjs().subtract(1, 'year').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD')] as [string, string],
+  holdingPeriod: 1,
+  stockPoolType: 'watchlist' as NonNullable<BacktestRequest['stockPoolType']>,
+  stockPoolCode: 'my-follow',
   symbolsText: '',
 });
 
@@ -203,7 +315,7 @@ function formatScope(item: Pick<BacktestReportHistoryItem, 'stockPoolCode' | 'st
 }
 
 function formatTime(value: null | string | undefined) {
-  return value ? value.replace('T', ' ').slice(0, 16) : '--';
+  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '--';
 }
 
 function objectTypeText(value: string) {
@@ -284,6 +396,74 @@ async function onHistoryPageChange(page: TablePaginationConfig) {
   await loadHistory();
 }
 
+function ruleOption(rule: RuleDefinition) {
+  return {
+    label: `${rule.ruleName}（${rule.ruleCode}）`,
+    value: rule.ruleCode,
+  };
+}
+
+function candidateOption(candidate: CandidateRule) {
+  return {
+    label: `${candidate.candidateCode}（目标规则：${candidate.targetRuleCode}）`,
+    value: candidate.candidateCode,
+  };
+}
+
+async function fetchBacktestObjects(objectType: BacktestRequest['objectType']) {
+  if (objectType === 'rule') {
+    return (await getRules()).rows
+      .filter(
+        (rule) =>
+          rule.status === 'active' &&
+          rule.ruleFormat === 'drools' &&
+          rule.enabled !== false &&
+          rule.ruleContent?.trim(),
+      )
+      .map(ruleOption);
+  }
+  return (await getCandidateRules()).rows
+    .filter((candidate) => candidate.proposedContent?.trim())
+    .map(candidateOption);
+}
+
+async function loadBacktestObjects(preferredCode = '') {
+  const requestId = ++objectRequestId;
+  const objectType = filters.objectType;
+  objectLoading.value = true;
+  objectOptions.value = [];
+  filters.objectCode = '';
+  try {
+    const options = await fetchBacktestObjects(objectType);
+    if (requestId !== objectRequestId) return;
+    objectOptions.value = options;
+    if (preferredCode) {
+      filters.objectCode = options.some((option) => option.value === preferredCode)
+        ? preferredCode
+        : '';
+      if (!filters.objectCode) message.warning('指定的回测对象当前不可用，请重新选择');
+    } else {
+      filters.objectCode = options[0]?.value ?? '';
+    }
+  } finally {
+    if (requestId === objectRequestId) objectLoading.value = false;
+  }
+}
+
+async function refreshObjects(preferredCode = '') {
+  const objectType = filters.objectType;
+  await loadBacktestObjects(preferredCode);
+  if (objectType !== filters.objectType) return;
+}
+
+async function onObjectTypeChange() {
+  try {
+    await refreshObjects();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '回测对象加载失败');
+  }
+}
+
 function parseSymbols() {
   return [
     ...new Set(
@@ -295,9 +475,17 @@ function parseSymbols() {
   ];
 }
 
+function preferredWatchlistPoolCode(pools: WatchlistPool[]) {
+  return (
+    pools.find((pool) => pool.poolId === 'my-follow')?.poolId ??
+    pools.find((pool) => pool.poolId !== 'all')?.poolId ??
+    ''
+  );
+}
+
 async function startBacktest() {
-  if (!filters.objectCode.trim()) {
-    message.warning('请输入规则编码');
+  if (!objectOptions.value.some((option) => option.value === filters.objectCode)) {
+    message.warning('请先选择回测对象');
     return;
   }
   if (!filters.range?.[0] || !filters.range?.[1]) {
@@ -310,6 +498,10 @@ async function startBacktest() {
     );
     if (!selectedPool) {
       message.warning('请选择股票池');
+      return;
+    }
+    if (selectedPool.total === 0) {
+      message.warning(`“${selectedPool.poolName}”还没有股票，请先添加股票或改选其他范围`);
       return;
     }
   }
@@ -397,8 +589,9 @@ async function startBacktest() {
 
 async function loadPage() {
   try {
-    const [pools, history] = await Promise.allSettled([
+    const [pools, objects, history] = await Promise.allSettled([
       getWatchlists({ market: filters.market }),
+      refreshObjects(queryString(route.query.objectCode)),
       loadHistory(),
     ]);
     if (pools.status === 'fulfilled') {
@@ -407,10 +600,13 @@ async function loadPage() {
         filters.stockPoolType === 'watchlist' &&
         !watchlists.value.some((pool) => pool.poolId === filters.stockPoolCode)
       ) {
-        filters.stockPoolCode = watchlists.value.find((pool) => pool.poolId !== 'all')?.poolId ?? '';
+        filters.stockPoolCode = preferredWatchlistPoolCode(watchlists.value);
       }
     } else {
       message.error('股票池加载失败');
+    }
+    if (objects.status === 'rejected') {
+      message.error('回测对象加载失败');
     }
     if (history.status === 'rejected') {
       message.error('历史回测加载失败');
@@ -423,6 +619,25 @@ async function loadPage() {
 onMounted(loadPage);
 
 watch(
+  () => [route.query.objectType, route.query.objectCode],
+  async () => {
+    const code = queryString(route.query.objectCode);
+    if (!code) return;
+    const type = routeObjectType();
+    if (type !== filters.objectType || !objectOptions.value.some((option) => option.value === code)) {
+      filters.objectType = type;
+      try {
+        await refreshObjects(code);
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '回测对象加载失败');
+      }
+      return;
+    }
+    filters.objectCode = code;
+  },
+);
+
+watch(
   () => filters.stockPoolType,
   (stockPoolType) => {
     if (stockPoolType === 'market') {
@@ -433,7 +648,7 @@ watch(
       filters.stockPoolCode = 'custom';
       return;
     }
-    filters.stockPoolCode = watchlists.value.find((pool) => pool.poolId !== 'all')?.poolId ?? '';
+    filters.stockPoolCode = preferredWatchlistPoolCode(watchlists.value);
   },
 );
 
@@ -451,7 +666,7 @@ watch(
           (pool) => pool.poolId === filters.stockPoolCode && pool.poolId !== 'all',
         )
       ) {
-        filters.stockPoolCode = watchlists.value.find((pool) => pool.poolId !== 'all')?.poolId ?? '';
+        filters.stockPoolCode = preferredWatchlistPoolCode(watchlists.value);
       }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '股票池加载失败');
@@ -482,9 +697,6 @@ watch(
 
     <Card class="mb-4" size="small" title="新建回测参数">
       <Form layout="inline">
-        <Form.Item label="回测对象">
-          <Input v-model:value="filters.objectCode" class="w-56" />
-        </Form.Item>
         <Form.Item label="对象类型">
           <Select
             v-model:value="filters.objectType"
@@ -494,6 +706,20 @@ watch(
               { label: '候选规则', value: 'candidate_rule' },
             ]"
             class="w-32"
+            @change="onObjectTypeChange"
+          />
+        </Form.Item>
+        <Form.Item label="回测对象">
+          <Select
+            v-model:value="filters.objectCode"
+            :disabled="loading"
+            :loading="objectLoading"
+            :not-found-content="objectLoading ? '正在加载规则' : '当前类型暂无可回测对象'"
+            :options="objectOptions"
+            :placeholder="objectLoading ? '正在加载规则' : '请选择回测对象'"
+            class="w-80"
+            option-filter-prop="label"
+            show-search
           />
         </Form.Item>
         <Form.Item label="股票范围">
@@ -564,18 +790,25 @@ watch(
         </Form.Item>
         <Form.Item>
           <Button
-            :disabled="!filters.objectCode"
+            :disabled="objectLoading || !filters.objectCode"
             :loading="loading"
             type="primary"
             @click="startBacktest"
           >
-            {{ loading ? '正在回测…' : '开始回测' }}
+            {{ loading ? '正在补齐行情并回测…' : '开始回测' }}
           </Button>
         </Form.Item>
       </Form>
       <Typography.Paragraph class="mb-0 mt-2 text-xs" type="secondary">
-        回测会把规则应用到所选日期范围的历史因子，并计算信号之后的实际涨跌。回测完成后会保存本次结果，可在下方查看历史报告。
+        回测会把规则应用到所选日期范围的历史因子，并计算信号之后的实际涨跌。我的股票池或自定义股票池不超过 20 只、回测区间不超过 3 年时，历史行情不足会尝试从真实数据源补采，再补算因子；无法补齐时会显示原因。
       </Typography.Paragraph>
+      <Alert
+        v-if="emptyWatchlistNotice"
+        :message="emptyWatchlistNotice"
+        class="mt-3"
+        show-icon
+        type="warning"
+      />
     </Card>
 
     <Card class="mb-4" size="small" title="已保存报告">
@@ -672,23 +905,53 @@ watch(
       </Typography.Text>
     </Card>
 
+    <Alert
+      v-if="!detailLoading && legacyStatisticsNotice"
+      :message="legacyStatisticsNotice"
+      class="mb-4"
+      show-icon
+      type="warning"
+    />
+    <Alert
+      v-if="!detailLoading && ruleDirectionNotice"
+      :message="ruleDirectionNotice"
+      class="mb-4"
+      show-icon
+      type="info"
+    />
+
     <Row :gutter="[16, 16]" class="mb-4">
       <Col
         v-for="metric in report?.metrics ?? []"
         :key="metric.label"
-        :lg="6"
+        :lg="8"
         :sm="12"
         :xs="24"
+        :xxl="4"
       >
         <Card size="small">
           <Statistic
-            :suffix="metric.unit"
+            :suffix="metric.value == null ? undefined : metric.unit"
             :title="metric.label"
-            :value="metric.value"
+            :value="metric.value ?? '—'"
           />
         </Card>
       </Col>
     </Row>
+
+    <Typography.Paragraph
+      v-if="report && hasCurrentStatistics"
+      class="mb-4 text-xs"
+      type="secondary"
+    >
+      <template v-if="hasRuleDirectionStatistics">
+        收益类指标仅统计规则给出方向且持有期行情完整的样本；“—”表示没有可计算样本。最终综合信号可能仍是观望。
+      </template>
+      <template v-else>
+        收益类指标仅统计持有期行情完整的最终方向信号；“—”表示没有可计算样本。
+      </template>
+      样本复合收益按样本依次复合，并非实际投资组合收益。
+    </Typography.Paragraph>
 
     <Card v-if="report" class="mb-4" size="small" title="所选报告状态">
       <Space wrap>
@@ -696,18 +959,35 @@ watch(
           状态：{{ statusText(reportStatus) }}
         </Tag>
         <Tag>样本数：{{ countDisplay(reportSampleCount) }}</Tag>
+        <Tag v-if="hasCurrentStatistics" color="cyan">
+          {{ hasRuleDirectionStatistics ? '规则方向样本' : '方向信号' }}：{{ countDisplay(reportDirectionalCount) }}
+        </Tag>
+        <Tag v-if="hasCurrentStatistics" color="default">
+          {{ hasRuleDirectionStatistics ? '最终观望' : '观望' }}：{{ countDisplay(reportWatchCount) }}
+        </Tag>
+        <Tag v-if="hasRuleDirectionStatistics" color="default">
+          无规则方向：{{ countDisplay(reportUndirectedCount) }}
+        </Tag>
         <Tag color="blue">
           可评估：{{ countDisplay(reportEvaluatedCount) }}
         </Tag>
         <Tag :color="reportUnevaluableCount ? 'orange' : 'green'">
-          不可评估：{{ countDisplay(reportUnevaluableCount) }}
+          {{ hasRuleDirectionStatistics ? '缺行情' : '不可评估' }}：{{ countDisplay(reportUnevaluableCount) }}
         </Tag>
         <Tag v-if="report?.reportId" color="default">
           报告：{{ report.reportId }}
         </Tag>
       </Space>
       <Typography.Paragraph class="mb-0 mt-2 text-xs" type="secondary">
-        样本数表示规则在历史因子上产生的信号数量；不可评估样本缺少持有期实际行情，未参与收益统计。
+        <template v-if="hasRuleDirectionStatistics">
+          样本数表示规则在历史因子上的命中次数；规则方向样本由规则本身给出的多空方向决定，最终观望数与规则方向样本可能重叠。可评估数仅包含持有期行情完整的规则方向样本；缺行情数不含无规则方向的样本。
+        </template>
+        <template v-else-if="hasCurrentStatistics">
+          样本数表示规则在历史因子上产生的信号数量；方向信号包含看涨、看跌及按下跌方向评估的高风险信号。可评估数仅包含持有期行情完整的方向信号；不可评估数不含观望信号。
+        </template>
+        <template v-else>
+          旧报告的样本和可评估数量沿用原统计口径，无法准确拆分观望与方向信号。
+        </template>
       </Typography.Paragraph>
     </Card>
 
@@ -731,7 +1011,7 @@ watch(
           </div>
           <Alert
             v-else
-            message="本次回测暂无可评估样本的累计收益序列"
+            :message="equityEmptyNotice"
             show-icon
             type="info"
           />
@@ -740,14 +1020,21 @@ watch(
             class="mb-0 mt-2 text-xs"
             type="secondary"
           >
-              序列以 1.00 为起点，按信号日聚合每笔持有期净收益后累计；它不是逐日持仓净值，也不能代表未来收益。
+            序列以 1.00 为起点，按信号日聚合每笔持有期净收益后累计；它不是逐日持仓净值，也不能代表未来收益。
           </Typography.Paragraph>
         </Card>
       </Col>
     </Row>
 
-    <Card v-if="report" size="small" title="失败样本">
+    <Card v-if="report" size="small" title="逐笔亏损样本">
+      <Alert
+        v-if="report.failureSamples.length === 0"
+        message="本报告未保存逐笔亏损样本。"
+        show-icon
+        type="info"
+      />
       <Table
+        v-else
         :columns="[
           { title: '日期', dataIndex: 'date' },
           { title: '股票', dataIndex: 'symbol' },

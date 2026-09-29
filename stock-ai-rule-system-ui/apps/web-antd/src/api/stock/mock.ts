@@ -812,7 +812,7 @@ export const mockBacktestReportOverview: BacktestReportOverview = {
   ],
   metrics: [
     { label: '触发次数', tone: 'blue', unit: '次', value: 842 },
-    { label: '5日胜率', tone: 'green', unit: '%', value: 57.2 },
+    { label: '胜率', tone: 'green', unit: '%', value: 57.2 },
     { label: '平均收益', tone: 'purple', unit: '%', value: 1.8 },
     { label: '最大回撤', tone: 'red', unit: '%', value: -9.2 },
   ],

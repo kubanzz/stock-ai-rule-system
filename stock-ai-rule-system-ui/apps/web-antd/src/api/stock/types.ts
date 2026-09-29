@@ -94,6 +94,10 @@ export interface MetricCard {
   value: number;
 }
 
+export interface BacktestMetricCard extends Omit<MetricCard, 'value'> {
+  value: null | number;
+}
+
 export interface DashboardMetricCard extends Omit<MetricCard, 'value'> {
   value: null | number;
 }
@@ -308,7 +312,7 @@ export interface RuleGovernanceDetail {
   candidateDiff?: VersionDiff;
   description?: string;
   expression: string;
-  performance: MetricCard[];
+  performance: BacktestMetricCard[];
   relatedFactors: string[];
   ruleCode: string;
   ruleName: string;
@@ -351,7 +355,7 @@ export interface BacktestReportDetail {
   equityCurve?: SeriesPoint[];
   endDate?: string;
   failureSamples: BacktestFailureSample[];
-  metrics: MetricCard[];
+  metrics: BacktestMetricCard[];
   objectCode: string;
   objectType: BacktestObjectType | string;
   reportId: string;
@@ -398,7 +402,7 @@ export interface BacktestReportOverview {
   cumulativeReturns: SeriesPoint[];
   equityCurve?: SeriesPoint[];
   failureSamples: BacktestFailureSample[];
-  metrics: MetricCard[];
+  metrics: BacktestMetricCard[];
   reportId?: string;
   riskDisclaimer: string;
   sampleCount?: number;
@@ -409,13 +413,21 @@ export interface BacktestReportOverview {
 }
 
 export interface BacktestReportResultPayload {
+  directionalCount?: number;
+  emptyReason?: string;
+  emptyReasonCode?: string;
   equityCurve?: SeriesPoint[];
+  errorSummary?: string;
+  evaluationBasis?: 'rule_direction' | 'stored_signal';
   evaluatedCount?: number;
   signalCount?: number;
   skippedCount?: number;
+  statisticsVersion?: number;
   status?: RunStatus | string;
   triggerCount?: number;
+  undirectedCount?: number;
   unevaluableCount?: number;
+  watchCount?: number;
 }
 
 export interface ErrorCluster {
@@ -552,28 +564,28 @@ export interface BacktestRequest {
 }
 
 export interface BacktestResult {
-  avgReturn: number;
-  avgHoldingReturn?: number;
+  avgReturn: null | number;
+  avgHoldingReturn?: null | number;
   candidateRuleId?: number;
   conclusion?: string;
   endDate: string;
   feeRate?: number;
   holdingPeriod?: number;
   id?: number;
-  maxDrawdown: number;
+  maxDrawdown: null | number;
   objectCode: string;
   objectType: BacktestObjectType;
-  profitLossRatio?: number;
+  profitLossRatio?: null | number;
   ruleId?: number;
   resultJson?: string;
-  sharpeRatio: number;
+  sharpeRatio: null | number;
   slippageRate?: number;
   startDate: string;
   status?: RunStatus;
   symbol?: string;
-  totalReturn?: number;
+  totalReturn?: null | number;
   triggerCount: number;
-  winRate: number;
+  winRate: null | number;
 }
 
 export interface TradeCalendar {

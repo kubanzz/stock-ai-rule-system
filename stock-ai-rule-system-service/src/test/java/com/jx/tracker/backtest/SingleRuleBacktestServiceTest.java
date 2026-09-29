@@ -1,23 +1,29 @@
 package com.jx.tracker.backtest;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.domain.dto.BacktestRequestDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
+import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockDailyQuote;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.domain.enums.BacktestStatus;
+import com.jx.tracker.domain.enums.RuleFormat;
+import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.RuleObjectType;
 import com.jx.tracker.domain.enums.SignalType;
-import com.jx.tracker.service.IStockFactorDailyService;
-import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.BacktestResultMapper;
+import com.jx.tracker.mapper.CandidateRuleMapper;
+import com.jx.tracker.mapper.RuleDefinitionMapper;
 import com.jx.tracker.mapper.StockActualResultMapper;
 import com.jx.tracker.mapper.StockDailyQuoteMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
+import com.jx.tracker.rule.engine.DroolsRuleEngineExecutor;
 import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
+import com.jx.tracker.service.IStockFactorDailyService;
 import com.jx.tracker.signal.service.SignalScoringService;
 import com.jx.tracker.verification.PredictionHitPolicy;
 import org.junit.jupiter.api.Test;
@@ -41,6 +47,7 @@ class SingleRuleBacktestServiceTest {
     private final FakeMapper<StockDailyQuoteMapper, StockDailyQuote> quoteMapper = fakeMapper(StockDailyQuoteMapper.class);
     private final FakeMapper<BacktestResultMapper, BacktestResult> backtestResultMapper = fakeMapper(BacktestResultMapper.class);
     private final FakeMapper<CandidateRuleMapper, CandidateRule> candidateRuleMapper = fakeMapper(CandidateRuleMapper.class);
+    private final FakeMapper<RuleDefinitionMapper, RuleDefinition> ruleDefinitionMapper = fakeMapper(RuleDefinitionMapper.class);
     private final SingleRuleBacktestService service = new SingleRuleBacktestService(
             signalMapper.mapper,
             factorMapper.mapper,
@@ -54,17 +61,22 @@ class SingleRuleBacktestServiceTest {
     );
 
     @Test
-    void emptySamplePersistsZeroMetricsWithDefaultCostSettings() {
+    void emptySamplePersistsUnavailableMetricsWithDefaultCostSettings() {
         BacktestRequestDto request = request();
         signalMapper.selectResponses.add(List.of());
 
         BacktestResult result = service.runSingleRuleBacktest(request);
 
         assertThat(result.getTriggerCount()).isZero();
-        assertThat(result.getWinRate()).isEqualByComparingTo("0.0000");
-        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0000");
-        assertThat(result.getMaxDrawdown()).isEqualByComparingTo("0.0000");
-        assertThat(result.getSharpeRatio()).isEqualByComparingTo("0.0000");
+        assertThat(result.getWinRate()).isNull();
+        assertThat(result.getAvgReturn()).isNull();
+        assertThat(result.getMaxDrawdown()).isNull();
+        assertThat(result.getSharpeRatio()).isNull();
+        assertThat(result.getTotalReturn()).isNull();
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getResultJson()).contains(
+                "\"emptyReasonCode\":\"no_historical_quote\"",
+                "\"emptyReason\":");
         assertThat(result.getResultJson()).contains("\"feeRate\":0.0010", "\"slippageRate\":0.0005");
         assertThat(backtestResultMapper.inserted).containsExactly(result);
     }
@@ -83,6 +95,7 @@ class SingleRuleBacktestServiceTest {
         assertThat(result.getObjectType()).isEqualTo(RuleObjectType.RULE.getCode());
         assertThat(result.getObjectCode()).isEqualTo("R_TREND_BREAKOUT_001");
         assertThat(result.getTriggerCount()).isEqualTo(2);
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
         assertThat(result.getWinRate()).isEqualByComparingTo("1.0000");
         assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0135");
         assertThat(result.getMaxDrawdown()).isEqualByComparingTo("0.0000");
@@ -115,7 +128,7 @@ class SingleRuleBacktestServiceTest {
     }
 
     @Test
-    void watchSignalsDoNotPayFeeOrSlippage() {
+    void watchOnlyReportCountsRuleMatchesWithoutTreatingWatchAsATrade() {
         BacktestRequestDto request = request();
         StockSignalDaily watch = signal(1L, "AAPL", LocalDate.of(2026, 1, 2), SignalType.WATCH.getCode());
         signalMapper.selectResponses.add(List.of(watch));
@@ -124,8 +137,163 @@ class SingleRuleBacktestServiceTest {
         BacktestResult result = service.runSingleRuleBacktest(request);
 
         assertThat(result.getTriggerCount()).isEqualTo(1);
-        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0000");
-        assertThat(result.getTotalReturn()).isEqualByComparingTo("0.0000");
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getWinRate()).isNull();
+        assertThat(result.getAvgReturn()).isNull();
+        assertThat(result.getMaxDrawdown()).isNull();
+        assertThat(result.getTotalReturn()).isNull();
+        assertThat(result.getResultJson()).contains(
+                "\"statisticsVersion\":3", "\"evaluationBasis\":\"stored_signal\"",
+                "\"signalCount\":1", "\"triggerCount\":1",
+                "\"watchCount\":1", "\"directionalCount\":0", "\"evaluatedCount\":0",
+                "\"undirectedCount\":1",
+                "\"unevaluableCount\":0", "\"equityCurve\":[]",
+                "\"emptyReasonCode\":\"watch_only\"");
+        assertThat(quoteMapper.selectCalls).isZero();
+        assertThat(actualResultMapper.selectCalls).isZero();
+    }
+
+    @Test
+    void formalRuleDirectionEvaluatesBullishEvidenceEvenWhenFinalSignalIsWatch() {
+        BacktestRequestDto request = request();
+        request.setHoldingPeriod(1);
+        LocalDate signalDate = LocalDate.of(2026, 1, 2);
+        ruleDefinitionMapper.selectOneResponses.add(RuleDefinition.builder()
+                .ruleCode(request.getObjectCode())
+                .ruleName("趋势量能确认")
+                .ruleFormat(RuleFormat.DROOLS.getCode())
+                .status(RuleLifecycleStatus.ACTIVE.getCode())
+                .ruleContent("""
+                        import java.math.BigDecimal;
+                        import com.jx.tracker.rule.engine.StockFactorFact;
+
+                        rule "R_TREND_BREAKOUT_001"
+                        when
+                            $f : StockFactorFact(shortTermTrend == "up")
+                        then
+                            $f.addBullishScore(new BigDecimal("35"));
+                            $f.addRiskScore(new BigDecimal("10"));
+                            $f.addTriggeredRule("R_TREND_BREAKOUT_001");
+                        end
+                        """)
+                .build());
+        factorMapper.selectResponses.add(List.of(factor("AAPL", signalDate,
+                "{\"data_status\":\"normal\",\"short_term_trend\":\"up\"}")));
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", signalDate, "10.00"),
+                quote("AAPL", signalDate.plusDays(3), "11.00")));
+
+        BacktestResult result = replayingRuleService().runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getWinRate()).isEqualByComparingTo("1.0000");
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0985");
+        assertThat(result.getResultJson()).contains(
+                "\"statisticsVersion\":3", "\"evaluationBasis\":\"rule_direction\"",
+                "\"watchCount\":1", "\"directionalCount\":1", "\"undirectedCount\":0",
+                "\"evaluatedCount\":1", "\"returnSourceQuoteCount\":1");
+    }
+
+    @Test
+    void candidateRuleDirectionUsesRawReturnInsteadOfCachedWatchHit() {
+        BacktestRequestDto request = candidateRequestWithActions("\"bearish_score\":35,\"risk_score\":10");
+        request.setHoldingPeriod(1);
+        LocalDate signalDate = LocalDate.of(2026, 1, 2);
+        factorMapper.selectResponses.add(List.of(factor("AAPL", signalDate,
+                "{\"data_status\":\"normal\",\"candidate_momentum\":\"breakout\"}")));
+        StockActualResult actual = actual("AAPL", signalDate, null, false);
+        actual.setReturn1d(new BigDecimal("-0.0200"));
+        actual.setHit1d(false); // Cache was calculated from the final WATCH signal.
+        actualResultMapper.selectResponses.add(List.of(actual));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
+        assertThat(result.getWinRate()).isEqualByComparingTo("1.0000");
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0185");
+        assertThat(result.getResultJson()).contains(
+                "\"evaluationBasis\":\"rule_direction\"", "\"watchCount\":1",
+                "\"directionalCount\":1", "\"returnSourceActualCount\":1");
+    }
+
+    @Test
+    void riskOnlyCandidateMatchHasNoInferredReturnDirection() {
+        assertCandidateHasNoDirection("\"risk_score\":10");
+    }
+
+    @Test
+    void conflictingBullishAndBearishCandidateMatchHasNoInferredReturnDirection() {
+        assertCandidateHasNoDirection("\"bullish_score\":35,\"bearish_score\":35");
+    }
+
+    private void assertCandidateHasNoDirection(String actions) {
+        BacktestRequestDto request = candidateRequestWithActions(actions);
+        factorMapper.selectResponses.add(List.of(factor("AAPL", LocalDate.of(2026, 1, 2),
+                "{\"data_status\":\"normal\",\"candidate_momentum\":\"breakout\"}")));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getWinRate()).isNull();
+        assertThat(result.getAvgReturn()).isNull();
+        assertThat(result.getResultJson()).contains(
+                "\"evaluationBasis\":\"rule_direction\"", "\"directionalCount\":0",
+                "\"undirectedCount\":1", "\"evaluatedCount\":0",
+                "\"emptyReasonCode\":\"no_rule_direction\"");
+        assertThat(quoteMapper.selectCalls).isZero();
+        assertThat(actualResultMapper.selectCalls).isZero();
+    }
+
+    private BacktestRequestDto candidateRequestWithActions(String actions) {
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        request.setObjectCode("CR_DIRECTION_TEST");
+        candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .id(81L)
+                .candidateCode(request.getObjectCode())
+                .proposedContent("""
+                        {"conditions":[{"field":"candidate_momentum","operator":"eq","value":"breakout"}],
+                         "actions":{%s}}
+                        """.formatted(actions))
+                .build()));
+        return request;
+    }
+
+    private SingleRuleBacktestService replayingRuleService() {
+        return new SingleRuleBacktestService(
+                signalMapper.mapper, factorMapper.mapper, actualResultMapper.mapper,
+                quoteMapper.mapper, backtestResultMapper.mapper, candidateRuleMapper.mapper,
+                new DroolsRuleEngineExecutor(), new SignalScoringService(), new PredictionHitPolicy(),
+                null, ruleDefinitionMapper.mapper, null, null, null);
+    }
+
+    @Test
+    void mixedSignalsExcludeWatchFromReturnAndKeepMissingDirectionSeparate() {
+        BacktestRequestDto request = request();
+        LocalDate first = LocalDate.of(2026, 1, 2);
+        LocalDate second = LocalDate.of(2026, 1, 3);
+        LocalDate third = LocalDate.of(2026, 1, 4);
+        signalMapper.selectResponses.add(List.of(
+                signal(1L, "AAPL", first, SignalType.WATCH.getCode()),
+                signal(2L, "MSFT", second, SignalType.BULLISH.getCode()),
+                signal(3L, "NVDA", third, SignalType.BEARISH.getCode())));
+        actualResultMapper.selectResponses.add(List.of(actual("MSFT", second, "0.0200", true)));
+        actualResultMapper.selectResponses.add(List.of(actual("NVDA", third, null, false)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
+        assertThat(result.getTriggerCount()).isEqualTo(3);
+        assertThat(result.getWinRate()).isEqualByComparingTo("1.0000");
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0185");
+        assertThat(result.getTotalReturn()).isEqualByComparingTo("0.0185");
+        assertThat(result.getResultJson()).contains(
+                "\"signalCount\":3", "\"triggerCount\":3", "\"watchCount\":1",
+                "\"directionalCount\":2", "\"evaluatedCount\":1", "\"unevaluableCount\":1",
+                "\"returnSourceActualCount\":1");
+        assertThat(actualResultMapper.selectCalls).isEqualTo(2);
     }
 
     @Test
@@ -137,8 +305,45 @@ class SingleRuleBacktestServiceTest {
 
         BacktestResult result = service.runSingleRuleBacktest(request);
 
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getResultJson()).contains("\"emptyReasonCode\":\"no_forward_quote\"");
+        assertThat(result.getAvgReturn()).isNull();
+        assertThat(result.getResultJson()).contains("\"signalCount\":1", "\"directionalCount\":1",
+                "\"skippedCount\":1", "\"unevaluableCount\":1", "\"evaluatedCount\":0");
+    }
+
+    @Test
+    void candidateBacktestExplainsUnusableHistoricalFactorsInsteadOfReportingSuccess() {
+        BacktestRequestDto request = candidateRequest();
+        factorMapper.selectResponses.add(List.of(factor("AAPL", LocalDate.of(2026, 1, 2), """
+                {"data_status":"insufficient_data","short_term_trend":"unknown"}
+                """)));
+        quoteMapper.selectResponses.add(List.of(quote("AAPL", LocalDate.of(2026, 1, 2), "10.00")));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
         assertThat(result.getTriggerCount()).isZero();
-        assertThat(result.getResultJson()).contains("\"signalCount\":1", "\"skippedCount\":1", "\"unevaluableCount\":1");
+        assertThat(result.getResultJson()).contains("\"emptyReasonCode\":\"no_usable_factor\"");
+        assertThat(candidateRuleMapper.updated.getFirst().getBacktestStatus())
+                .isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(candidateRuleMapper.updated.getFirst().getBacktestResult())
+                .contains("\"emptyReasonCode\":\"no_usable_factor\"");
+    }
+
+    @Test
+    void candidateBacktestExplainsRuleNotTriggeredWhenFactorsAreUsable() {
+        BacktestRequestDto request = candidateRequest();
+        factorMapper.selectResponses.add(List.of(factor("AAPL", LocalDate.of(2026, 1, 2), """
+                {"data_status":"normal","candidate_momentum":"flat"}
+                """)));
+        quoteMapper.selectResponses.add(List.of(quote("AAPL", LocalDate.of(2026, 1, 2), "10.00")));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getResultJson()).contains("\"emptyReasonCode\":\"rule_not_triggered\"");
     }
 
     @Test
@@ -259,6 +464,63 @@ class SingleRuleBacktestServiceTest {
     }
 
     @Test
+    void historicalBacktestPrefersFreshForwardQuoteOverStaleActualReturn() {
+        BacktestRequestDto request = request();
+        request.setHoldingPeriod(1);
+        LocalDate signalDate = LocalDate.of(2026, 1, 2);
+        signalMapper.selectResponses.add(List.of(signal(1L, "AAPL", signalDate, SignalType.BULLISH.getCode())));
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", signalDate, "10.00"),
+                quote("AAPL", signalDate.plusDays(3), "11.00")));
+        StockActualResult stale = actual("AAPL", signalDate, null, false);
+        stale.setReturn1d(new BigDecimal("-0.2000"));
+        actualResultMapper.selectResponses.add(List.of(stale));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0985");
+        assertThat(result.getResultJson()).contains("\"returnSourceQuoteCount\":1");
+        assertThat(actualResultMapper.selectCalls).isZero();
+    }
+
+    @Test
+    void forwardReturnRequiresQuoteOnSignalDate() {
+        BacktestRequestDto request = request();
+        request.setHoldingPeriod(1);
+        LocalDate signalDate = LocalDate.of(2026, 1, 2);
+        signalMapper.selectResponses.add(List.of(signal(1L, "AAPL", signalDate, SignalType.BULLISH.getCode())));
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", signalDate.plusDays(3), "11.00"),
+                quote("AAPL", signalDate.plusDays(4), "12.00")));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", signalDate, null, false)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getResultJson()).contains("\"returnSourceQuoteCount\":0");
+    }
+
+    @Test
+    void forwardReturnDoesNotMixQuoteProviders() {
+        BacktestRequestDto request = request();
+        request.setHoldingPeriod(1);
+        LocalDate signalDate = LocalDate.of(2026, 1, 2);
+        signalMapper.selectResponses.add(List.of(signal(1L, "AAPL", signalDate, SignalType.BULLISH.getCode())));
+        StockDailyQuote base = quote("AAPL", signalDate, "10.00");
+        base.setDataSource("aktools/akshare");
+        StockDailyQuote forward = quote("AAPL", signalDate.plusDays(3), "11.00");
+        forward.setDataSource("tushare");
+        quoteMapper.selectResponses.add(List.of(base, forward));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", signalDate, null, false)));
+
+        BacktestResult result = service.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getResultJson()).contains("\"returnSourceQuoteCount\":0");
+    }
+
+    @Test
     void customStockPoolFiltersSignalsAndFillsMissingHistoricalFactors() {
         BacktestRequestDto request = request();
         request.setStockPoolType("custom");
@@ -312,6 +574,107 @@ class SingleRuleBacktestServiceTest {
     }
 
     @Test
+    void recalculatesInsufficientHistoricalFactorAfterEnoughPastQuotesBecomeAvailable() {
+        assertInsufficientFactorRecalculation(26, 1);
+    }
+
+    @Test
+    void doesNotRecalculateInsufficientFactorWhenOnlyFutureQuoteReachesHistoryThreshold() {
+        assertInsufficientFactorRecalculation(25, 0);
+    }
+
+    @Test
+    void recalculatesPreviouslyNormalFactorWhenHistoricalQuotesWereUpdated() {
+        BacktestRequestDto request = request();
+        request.setStockPoolType("custom");
+        request.setSymbols(List.of("AAPL"));
+        request.setForceFactorRecalculation(true);
+        LocalDate targetDate = LocalDate.of(2026, 1, 30);
+        StockDailyQuote targetQuote = quote("AAPL", targetDate, "10.00");
+        targetQuote.setVolume(BigDecimal.ONE);
+        quoteMapper.selectResponses.add(List.of(targetQuote));
+        factorMapper.selectResponses.add(List.of(factor("AAPL", targetDate,
+                "{\"data_status\":\"normal\",\"ma5\":9.0000}")));
+        signalMapper.selectResponses.add(List.of(signal(1L, "AAPL", targetDate, SignalType.BULLISH.getCode())));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", targetDate, "0.0200", true)));
+
+        AtomicInteger factorCalculations = new AtomicInteger();
+        IStockFactorDailyService factorService = (IStockFactorDailyService) Proxy.newProxyInstance(
+                IStockFactorDailyService.class.getClassLoader(),
+                new Class<?>[]{IStockFactorDailyService.class},
+                (proxy, method, args) -> {
+                    if ("calculateAndSave".equals(method.getName())) {
+                        factorCalculations.incrementAndGet();
+                    }
+                    return null;
+                });
+        SingleRuleBacktestService scopedService = new SingleRuleBacktestService(
+                signalMapper.mapper, factorMapper.mapper, actualResultMapper.mapper,
+                quoteMapper.mapper, backtestResultMapper.mapper, candidateRuleMapper.mapper,
+                new JsonRuleEngineExecutor(), new SignalScoringService(), new PredictionHitPolicy(),
+                factorService, null, null, null, null);
+
+        BacktestResult result = scopedService.runSingleRuleBacktest(request);
+
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(actualResultMapper.selectCalls).isZero();
+        assertThat(factorCalculations).hasValue(1);
+    }
+
+    @Test
+    void clientsCannotRequestForcedFactorRecalculation() throws Exception {
+        BacktestRequestDto request = new ObjectMapper().readValue(
+                "{\"forceFactorRecalculation\":true,\"force_factor_recalculation\":true}",
+                BacktestRequestDto.class);
+
+        assertThat(request.isForceFactorRecalculation()).isFalse();
+    }
+
+    private void assertInsufficientFactorRecalculation(int pastQuoteCount, int expectedCalculations) {
+        BacktestRequestDto request = request();
+        request.setStockPoolType("custom");
+        request.setSymbols(List.of("AAPL"));
+        LocalDate targetDate = LocalDate.of(2026, 1, 30);
+        StockDailyQuote targetQuote = quote("AAPL", targetDate, "10.00");
+        targetQuote.setVolume(BigDecimal.ONE);
+        quoteMapper.selectResponses.add(List.of(targetQuote));
+        factorMapper.selectResponses.add(List.of(factor("AAPL", targetDate,
+                "{\"data_status\":\"insufficient_data\",\"short_term_trend\":\"unknown\"}")));
+        List<StockDailyQuote> lookback = new ArrayList<>();
+        for (int daysAgo = 0; daysAgo < pastQuoteCount; daysAgo++) {
+            StockDailyQuote historical = quote("AAPL", targetDate.minusDays(daysAgo), "10.00");
+            historical.setVolume(BigDecimal.ONE);
+            lookback.add(historical);
+        }
+        StockDailyQuote future = quote("AAPL", targetDate.plusDays(1), "10.00");
+        future.setVolume(BigDecimal.ONE);
+        lookback.add(future);
+        quoteMapper.selectResponses.add(lookback);
+        signalMapper.selectResponses.add(List.of(signal(1L, "AAPL", targetDate, SignalType.BULLISH.getCode())));
+        actualResultMapper.selectResponses.add(List.of(actual("AAPL", targetDate, "0.0200", true)));
+
+        AtomicInteger factorCalculations = new AtomicInteger();
+        IStockFactorDailyService factorService = (IStockFactorDailyService) Proxy.newProxyInstance(
+                IStockFactorDailyService.class.getClassLoader(),
+                new Class<?>[]{IStockFactorDailyService.class},
+                (proxy, method, args) -> {
+                    if ("calculateAndSave".equals(method.getName())) {
+                        factorCalculations.incrementAndGet();
+                    }
+                    return null;
+                });
+        SingleRuleBacktestService scopedService = new SingleRuleBacktestService(
+                signalMapper.mapper, factorMapper.mapper, actualResultMapper.mapper,
+                quoteMapper.mapper, backtestResultMapper.mapper, candidateRuleMapper.mapper,
+                new JsonRuleEngineExecutor(), new SignalScoringService(), new PredictionHitPolicy(),
+                factorService, null, null, null, null);
+
+        scopedService.runSingleRuleBacktest(request);
+
+        assertThat(factorCalculations).hasValue(expectedCalculations);
+    }
+
+    @Test
     void invalidCandidateProposedContentPersistsFailedReportAndCandidateStatus() {
         BacktestRequestDto request = request();
         request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
@@ -327,6 +690,10 @@ class SingleRuleBacktestServiceTest {
 
         assertThat(result.getStatus()).isEqualTo(BacktestStatus.FAILED.getCode());
         assertThat(result.getTriggerCount()).isZero();
+        assertThat(result.getWinRate()).isNull();
+        assertThat(result.getAvgReturn()).isNull();
+        assertThat(result.getTotalReturn()).isNull();
+        assertThat(result.getSharpeRatio()).isNull();
         assertThat(result.getResultJson()).contains("不是可执行 JSON", "\"riskDisclaimer\"");
         assertThat(backtestResultMapper.inserted).containsExactly(result);
         assertThat(factorMapper.selectCalls).isZero();
@@ -370,6 +737,22 @@ class SingleRuleBacktestServiceTest {
         request.setStartDate(LocalDate.of(2026, 1, 1));
         request.setEndDate(LocalDate.of(2026, 1, 31));
         request.setHoldingPeriod(5);
+        return request;
+    }
+
+    private BacktestRequestDto candidateRequest() {
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.CANDIDATE_RULE.getCode());
+        request.setObjectCode("CR_EMPTY_DIAGNOSTIC");
+        candidateRuleMapper.selectResponses.add(List.of(CandidateRule.builder()
+                .id(31L)
+                .candidateCode("CR_EMPTY_DIAGNOSTIC")
+                .targetRuleCode("R_TREND_BREAKOUT_001")
+                .proposedContent("""
+                        {"conditions":[{"field":"candidate_momentum","operator":"eq","value":"breakout"}],
+                         "actions":{"bullish_score":75}}
+                        """)
+                .build()));
         return request;
     }
 
@@ -423,6 +806,10 @@ class SingleRuleBacktestServiceTest {
                         fake.selectCalls++;
                         return fake.selectResponses.isEmpty() ? List.of() : fake.selectResponses.remove();
                     }
+                    if ("selectOne".equals(method.getName())) {
+                        fake.selectCalls++;
+                        return fake.selectOneResponses.poll();
+                    }
                     if ("insert".equals(method.getName())) {
                         if (args[0] instanceof BacktestResult result && result.getId() == null) {
                             result.setId(1001L + fake.inserted.size());
@@ -443,6 +830,7 @@ class SingleRuleBacktestServiceTest {
     private static class FakeMapper<M, E> {
         private M mapper;
         private final Queue<List<E>> selectResponses = new ArrayDeque<>();
+        private final Queue<E> selectOneResponses = new ArrayDeque<>();
         private final List<E> inserted = new ArrayList<>();
         private final List<E> updated = new ArrayList<>();
         private int selectCalls;

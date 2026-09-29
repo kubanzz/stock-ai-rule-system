@@ -355,7 +355,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 backtestMetrics(selected),
                 List.of(),
                 List.of(),
-                failureSamplesFromBacktests(selected),
+                List.of(),
                 summary.equityCurve(),
                 latest == null || latest.getId() == null ? null : String.valueOf(latest.getId()),
                 latest == null ? null : latest.getStatus(),
@@ -459,7 +459,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private BacktestJsonSummary parseBacktestJson(BacktestResult result) {
         if (!StringUtils.hasText(result.getResultJson())) {
-            return BacktestJsonSummary.empty();
+            return BacktestJsonSummary.legacy(result.getTriggerCount());
         }
         try {
             var root = OBJECT_MAPPER.readTree(result.getResultJson());
@@ -476,17 +476,13 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
             }
             return new BacktestJsonSummary(
                     curve,
-                    intValue(root, "signalCount"),
-                    intValue(root, "evaluatedCount", root.path("triggerCount").asInt()),
+                    intValue(root, "signalCount", result.getTriggerCount() == null ? 0 : result.getTriggerCount()),
+                    intValue(root, "evaluatedCount", root.path("triggerCount").asInt(result.getTriggerCount() == null ? 0 : result.getTriggerCount())),
                     intValue(root, "unevaluableCount", root.path("skippedCount").asInt())
             );
         } catch (Exception ignored) {
-            return BacktestJsonSummary.empty();
+            return BacktestJsonSummary.legacy(result.getTriggerCount());
         }
-    }
-
-    private int intValue(com.fasterxml.jackson.databind.JsonNode root, String field) {
-        return root.has(field) ? root.path(field).asInt() : 0;
     }
 
     private int intValue(com.fasterxml.jackson.databind.JsonNode root, String field, int fallback) {
@@ -501,6 +497,11 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     ) {
         private static BacktestJsonSummary empty() {
             return new BacktestJsonSummary(List.of(), 0, 0, 0);
+        }
+
+        private static BacktestJsonSummary legacy(Integer triggerCount) {
+            int count = triggerCount == null ? 0 : triggerCount;
+            return new BacktestJsonSummary(List.of(), count, count, 0);
         }
     }
 
@@ -583,7 +584,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 result.getEndDate(),
                 backtestMetrics(List.of(result)),
                 List.of(),
-                failureSamplesFromBacktests(List.of(result)),
+                List.of(),
                 summary.equityCurve(),
                 result.getStatus(),
                 summary.sampleCount(),
@@ -600,8 +601,9 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     @Override
     public List<StockConsoleVo.BacktestFailureSample> backtestFailureSamples(String reportId) {
-        BacktestResult result = backtestResultMapper.selectById(reportId);
-        return result == null ? List.of() : failureSamplesFromBacktests(List.of(result));
+        // The saved report contains aggregate metrics, not per-signal outcome snapshots.
+        // A negative aggregate return cannot identify an individual losing sample.
+        return List.of();
     }
 
     @Override
@@ -931,23 +933,44 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private List<StockConsoleVo.MetricCard> backtestMetrics(List<BacktestResult> results) {
         Integer holdingPeriod = results.isEmpty() ? null : results.getFirst().getHoldingPeriod();
+        String basis = results.isEmpty() ? null : backtestEvaluationBasis(results.getFirst());
         String winRateLabel = holdingPeriod != null
                 && results.stream().allMatch(result -> holdingPeriod.equals(result.getHoldingPeriod()))
                 ? holdingPeriod + "日胜率" : "胜率";
+        if ("rule_direction".equals(basis)) {
+            winRateLabel = holdingPeriod == null ? "规则方向命中率" : holdingPeriod + "日规则方向命中率";
+        } else if ("stored_signal".equals(basis)) {
+            winRateLabel = holdingPeriod == null ? "最终信号胜率" : holdingPeriod + "日最终信号胜率";
+        }
         if (results.isEmpty()) {
             return List.of(
                     metric("触发次数", BigDecimal.ZERO, "次", BigDecimal.ZERO, "blue"),
-                    metric(winRateLabel, BigDecimal.ZERO, "%", BigDecimal.ZERO, "green"),
-                    metric("平均收益", BigDecimal.ZERO, "%", BigDecimal.ZERO, "purple"),
-                    metric("最大回撤", BigDecimal.ZERO, "%", BigDecimal.ZERO, "red")
+                    nullableMetric(winRateLabel, null, "%", "green"),
+                    nullableMetric("平均收益", null, "%", "purple"),
+                    nullableMetric("最大回撤", null, "%", "red"),
+                    nullableMetric("样本复合收益", null, "%", "cyan"),
+                    nullableMetric("样本夏普比率", null, "", "blue")
             );
         }
         return List.of(
                 metric("触发次数", BigDecimal.valueOf(results.stream().map(BacktestResult::getTriggerCount).filter(Objects::nonNull).mapToInt(Integer::intValue).sum()), "次", BigDecimal.ZERO, "blue"),
-                metric(winRateLabel, percentage(average(results.stream().map(BacktestResult::getWinRate).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "green"),
-                metric("平均收益", percentage(average(results.stream().map(BacktestResult::getAvgReturn).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "purple"),
-                metric("最大回撤", percentage(results.stream().map(BacktestResult::getMaxDrawdown).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO)), "%", BigDecimal.ZERO, "red")
+                nullableMetric(winRateLabel, percentage(averageOrNull(results.stream().map(BacktestResult::getWinRate).filter(Objects::nonNull).toList())), "%", "green"),
+                nullableMetric("平均收益", percentage(averageOrNull(results.stream().map(BacktestResult::getAvgReturn).filter(Objects::nonNull).toList())), "%", "purple"),
+                nullableMetric("最大回撤", percentage(results.stream().map(BacktestResult::getMaxDrawdown).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null)), "%", "red"),
+                nullableMetric("样本复合收益", percentage(averageOrNull(results.stream().map(BacktestResult::getTotalReturn).filter(Objects::nonNull).toList())), "%", "cyan"),
+                nullableMetric("样本夏普比率", averageOrNull(results.stream().map(BacktestResult::getSharpeRatio).filter(Objects::nonNull).toList()), "", "blue")
         );
+    }
+
+    private String backtestEvaluationBasis(BacktestResult result) {
+        if (result == null || !StringUtils.hasText(result.getResultJson())) return null;
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(result.getResultJson());
+            return root.path("statisticsVersion").asInt() >= 3
+                    ? root.path("evaluationBasis").asText(null) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private List<StockConsoleVo.SeriesPoint> cumulativeReturns(List<BacktestResult> results) {
@@ -971,20 +994,6 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 new StockConsoleVo.ComparisonMetric("平均收益", percentage(nullToZero(current.getAvgReturn())), percentage(nullToZero(candidate.getAvgReturn())), "higher"),
                 new StockConsoleVo.ComparisonMetric("最大回撤", percentage(nullToZero(current.getMaxDrawdown())), percentage(nullToZero(candidate.getMaxDrawdown())), "lower")
         );
-    }
-
-    private List<StockConsoleVo.BacktestFailureSample> failureSamplesFromBacktests(List<BacktestResult> results) {
-        return results.stream()
-                .filter(result -> result.getAvgReturn() != null && result.getAvgReturn().signum() < 0)
-                .map(result -> new StockConsoleVo.BacktestFailureSample(
-                        result.getEndDate() == null ? "" : result.getEndDate().toString(),
-                        Optional.ofNullable(result.getSymbol()).orElse(result.getObjectCode()),
-                        result.getObjectType(),
-                        percentage(result.getAvgReturn()),
-                        "市场环境突变",
-                        result.getObjectCode()
-                ))
-                .toList();
     }
 
     private List<StockConsoleVo.ErrorCluster> errorClusters(List<StockConsoleVo.MisjudgementSample> samples) {
@@ -1085,6 +1094,14 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private StockConsoleVo.MetricCard metric(String label, BigDecimal value, String unit, BigDecimal change, String tone) {
         return new StockConsoleVo.MetricCard(label, nullToZero(value), unit, nullToZero(change), tone);
+    }
+
+    private StockConsoleVo.MetricCard nullableMetric(String label, BigDecimal value, String unit, String tone) {
+        return new StockConsoleVo.MetricCard(label, value, unit, null, tone);
+    }
+
+    private BigDecimal averageOrNull(List<BigDecimal> values) {
+        return values.isEmpty() ? null : average(values);
     }
 
     private BigDecimal average(List<BigDecimal> values) {
