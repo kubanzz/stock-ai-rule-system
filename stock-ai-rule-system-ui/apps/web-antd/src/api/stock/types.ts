@@ -347,6 +347,7 @@ export interface BacktestFailureSample {
 
 export interface BacktestReportDetail {
   cumulativeReturns: SeriesPoint[];
+  createdTime?: string;
   equityCurve?: SeriesPoint[];
   endDate?: string;
   failureSamples: BacktestFailureSample[];
@@ -356,10 +357,36 @@ export interface BacktestReportDetail {
   reportId: string;
   startDate?: string;
   status?: RunStatus | string;
+  holdingPeriod?: number;
+  stockPoolType?: BacktestRequest['stockPoolType'] | null;
+  stockPoolCode?: string | null;
+  symbols?: string[];
   sampleCount?: number;
   evaluatedCount?: number;
   unevaluableCount?: number;
   resultJson?: string;
+}
+
+export interface BacktestReportHistoryItem {
+  avgReturn?: number | null;
+  createdTime?: string | null;
+  endDate?: string | null;
+  evaluatedCount?: number | null;
+  holdingPeriod?: number | null;
+  maxDrawdown?: number | null;
+  objectCode: string;
+  objectType: BacktestObjectType | string;
+  reportId: string;
+  sampleCount?: number | null;
+  startDate?: string | null;
+  status?: RunStatus | string | null;
+  stockPoolCode?: string | null;
+  stockPoolType?: BacktestRequest['stockPoolType'] | null;
+  symbols?: string[];
+  totalReturn?: number | null;
+  triggerCount?: number | null;
+  unevaluableCount?: number | null;
+  winRate?: number | null;
 }
 
 export interface BacktestReportOverview {
@@ -532,11 +559,13 @@ export interface BacktestResult {
   endDate: string;
   feeRate?: number;
   holdingPeriod?: number;
+  id?: number;
   maxDrawdown: number;
   objectCode: string;
   objectType: BacktestObjectType;
   profitLossRatio?: number;
   ruleId?: number;
+  resultJson?: string;
   sharpeRatio: number;
   slippageRate?: number;
   startDate: string;

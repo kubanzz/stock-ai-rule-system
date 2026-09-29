@@ -1,5 +1,6 @@
 package com.jx.tracker.service;
 
+import com.jx.tracker.common.PageResult;
 import com.jx.tracker.domain.vo.StockConsoleVo;
 
 import java.time.LocalDate;
@@ -29,6 +30,9 @@ public interface StockConsoleQueryService {
                                                                    String stockPoolCode, List<String> symbols) {
         return backtestReports(objectCode, stockPoolCode);
     }
+
+    PageResult<StockConsoleVo.BacktestReportHistoryRow> backtestReportHistory(
+            StockConsoleVo.BacktestReportHistoryQuery query);
 
     StockConsoleVo.BacktestReportDetail backtestReport(String reportId);
 

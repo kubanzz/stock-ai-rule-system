@@ -1,6 +1,8 @@
 package com.jx.tracker.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.jx.tracker.common.PageResult;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.entity.AiReviewReport;
 import com.jx.tracker.domain.entity.BacktestResult;
@@ -16,6 +18,7 @@ import com.jx.tracker.domain.entity.WorkflowRun;
 import com.jx.tracker.domain.entity.WorkflowStepRun;
 import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.domain.vo.StockConsoleVo;
+import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.AiReviewReportMapper;
 import com.jx.tracker.mapper.BacktestResultMapper;
 import com.jx.tracker.mapper.CandidateRuleMapper;
@@ -38,6 +41,7 @@ import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.market.data.util.SymbolNormalizer;
 import lombok.RequiredArgsConstructor;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -48,12 +52,15 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -61,6 +68,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private static final String RISK_DISCLAIMER = StockRiskConstants.SIGNAL_RISK_DISCLAIMER;
     private static final int DEFAULT_LIMIT = 100;
+    private static final int BACKTEST_HISTORY_SCAN_SIZE = 200;
     private static final int MIN_TECHNICAL_HISTORY = 26;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -305,6 +313,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         List<BacktestResult> results = backtestResultMapper.selectList(new LambdaQueryWrapper<BacktestResult>()
                 .eq(StringUtils.hasText(objectCode), BacktestResult::getObjectCode, objectCode)
                 .orderByDesc(BacktestResult::getCreatedTime)
+                .orderByDesc(BacktestResult::getId)
                 .last("LIMIT " + DEFAULT_LIMIT));
         return backtestOverview(results);
     }
@@ -320,7 +329,8 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .eq(holdingPeriod != null, BacktestResult::getHoldingPeriod, holdingPeriod)
                 .ge(startDate != null, BacktestResult::getStartDate, startDate)
                 .le(endDate != null, BacktestResult::getEndDate, endDate)
-                .orderByDesc(BacktestResult::getCreatedTime);
+                .orderByDesc(BacktestResult::getCreatedTime)
+                .orderByDesc(BacktestResult::getId);
         boolean filterByPool = StringUtils.hasText(stockPoolType) || StringUtils.hasText(stockPoolCode)
                 || (symbols != null && !symbols.isEmpty());
         if (!filterByPool) {
@@ -339,19 +349,112 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     private StockConsoleVo.BacktestReportOverview backtestOverview(List<BacktestResult> results) {
         BacktestResult latest = results.isEmpty() ? null : results.getFirst();
         BacktestJsonSummary summary = latest == null ? BacktestJsonSummary.empty() : parseBacktestJson(latest);
+        List<BacktestResult> selected = latest == null ? List.of() : List.of(latest);
         return new StockConsoleVo.BacktestReportOverview(
                 RISK_DISCLAIMER,
-                backtestMetrics(results),
+                backtestMetrics(selected),
                 List.of(),
-                backtestComparison(results),
-                failureSamplesFromBacktests(results),
+                List.of(),
+                failureSamplesFromBacktests(selected),
                 summary.equityCurve(),
                 latest == null || latest.getId() == null ? null : String.valueOf(latest.getId()),
                 latest == null ? null : latest.getStatus(),
                 summary.sampleCount(),
                 summary.evaluatedCount(),
-                summary.unevaluableCount()
+                summary.unevaluableCount(),
+                latest == null ? null : latest.getResultJson()
         );
+    }
+
+    @Override
+    public PageResult<StockConsoleVo.BacktestReportHistoryRow> backtestReportHistory(
+            StockConsoleVo.BacktestReportHistoryQuery query) {
+        StockConsoleVo.BacktestReportHistoryQuery safeQuery = query == null
+                ? new StockConsoleVo.BacktestReportHistoryQuery(null, null, null, null, null,
+                        null, null, List.of(), null, 1, 20)
+                : query;
+        LambdaQueryWrapper<BacktestResult> filters = backtestHistoryFilters(safeQuery);
+        Set<String> requestedSymbols = normalizedSymbols(safeQuery.symbols());
+        if (requestedSymbols.isEmpty()) {
+            Page<BacktestResult> page = backtestResultMapper.selectPage(
+                    new Page<>(safeQuery.pageNum(), safeQuery.pageSize()), filters);
+            return PageResult.getDataTable(page.getRecords().stream()
+                    .map(this::backtestHistoryRow).toList(), page.getTotal());
+        }
+
+        // Scope is stored in JSON and older runs may have noncanonical symbols.
+        // Scan bounded database pages so set comparison stays correct without
+        // materializing the entire result table in memory.
+        long firstWanted = ((long) safeQuery.pageNum() - 1) * safeQuery.pageSize();
+        long matchingCount = 0;
+        long sourcePage = 1;
+        List<StockConsoleVo.BacktestReportHistoryRow> rows = new ArrayList<>();
+        while (true) {
+            Page<BacktestResult> batch = backtestResultMapper.selectPage(
+                    new Page<>(sourcePage++, BACKTEST_HISTORY_SCAN_SIZE, false), filters);
+            for (BacktestResult result : batch.getRecords()) {
+                if (!matchesBacktestPool(result, safeQuery.stockPoolType(),
+                        safeQuery.stockPoolCode(), safeQuery.symbols())) continue;
+                if (matchingCount >= firstWanted && rows.size() < safeQuery.pageSize()) {
+                    rows.add(backtestHistoryRow(result));
+                }
+                matchingCount++;
+            }
+            if (batch.getRecords().size() < BACKTEST_HISTORY_SCAN_SIZE) break;
+        }
+        return PageResult.getDataTable(rows, matchingCount);
+    }
+
+    private LambdaQueryWrapper<BacktestResult> backtestHistoryFilters(
+            StockConsoleVo.BacktestReportHistoryQuery query) {
+        LambdaQueryWrapper<BacktestResult> filters = new LambdaQueryWrapper<BacktestResult>()
+                .eq(StringUtils.hasText(query.objectType()), BacktestResult::getObjectType, query.objectType())
+                .eq(StringUtils.hasText(query.objectCode()), BacktestResult::getObjectCode, query.objectCode())
+                .eq(query.holdingPeriod() != null, BacktestResult::getHoldingPeriod, query.holdingPeriod())
+                .ge(query.startDate() != null, BacktestResult::getStartDate, query.startDate())
+                .le(query.endDate() != null, BacktestResult::getEndDate, query.endDate())
+                .eq(StringUtils.hasText(query.status()), BacktestResult::getStatus, query.status());
+        if (StringUtils.hasText(query.stockPoolType())) {
+            filters.apply("LOWER(JSON_UNQUOTE(JSON_EXTRACT(result_json, '$.stockPoolType'))) = LOWER({0})",
+                    query.stockPoolType());
+        }
+        if (StringUtils.hasText(query.stockPoolCode())) {
+            if ("market".equalsIgnoreCase(query.stockPoolType())) {
+                List<String> aliases = MarketCodeNormalizer.aliases(query.stockPoolCode());
+                filters.and(scope -> {
+                    for (int i = 0; i < aliases.size(); i++) {
+                        if (i > 0) scope.or();
+                        scope.apply("LOWER(JSON_UNQUOTE(JSON_EXTRACT(result_json, '$.stockPoolCode'))) = LOWER({0})",
+                                aliases.get(i));
+                    }
+                });
+            } else {
+                filters.apply("LOWER(JSON_UNQUOTE(JSON_EXTRACT(result_json, '$.stockPoolCode'))) = LOWER({0})",
+                        query.stockPoolCode());
+            }
+        }
+        return filters.orderByDesc(BacktestResult::getCreatedTime)
+                .orderByDesc(BacktestResult::getId);
+    }
+
+    private Set<String> normalizedSymbols(List<String> symbols) {
+        if (symbols == null) return Set.of();
+        return symbols.stream().filter(StringUtils::hasText)
+                .map(SymbolNormalizer::normalize).filter(StringUtils::hasText)
+                .collect(Collectors.toSet());
+    }
+
+    private StockConsoleVo.BacktestReportHistoryRow backtestHistoryRow(BacktestResult result) {
+        BacktestJsonSummary summary = parseBacktestJson(result);
+        BacktestScope scope = parseBacktestScope(result);
+        return new StockConsoleVo.BacktestReportHistoryRow(
+                String.valueOf(result.getId()), result.getObjectType(), result.getObjectCode(),
+                result.getStartDate(), result.getEndDate(), result.getHoldingPeriod(),
+                result.getStatus(), result.getCreatedTime(), scope.stockPoolType(),
+                scope.stockPoolCode(), scope.symbols(), result.getTriggerCount(),
+                result.getWinRate(), result.getAvgReturn(), result.getMaxDrawdown(),
+                result.getTotalReturn(), summary.sampleCount(), summary.evaluatedCount(),
+                summary.unevaluableCount());
     }
 
     private BacktestJsonSummary parseBacktestJson(BacktestResult result) {
@@ -401,6 +504,32 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
         }
     }
 
+    private BacktestScope parseBacktestScope(BacktestResult result) {
+        if (!StringUtils.hasText(result.getResultJson())) return BacktestScope.empty();
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(result.getResultJson());
+            String poolType = root.path("stockPoolType").asText(null);
+            String poolCode = root.path("stockPoolCode").asText(null);
+            List<String> symbols = new ArrayList<>();
+            JsonNode savedSymbols = root.path("symbols");
+            if (savedSymbols.isArray()) {
+                savedSymbols.forEach(symbol -> {
+                    if (StringUtils.hasText(symbol.asText(null))) symbols.add(symbol.asText());
+                });
+            }
+            return new BacktestScope(StringUtils.hasText(poolType) ? poolType : null,
+                    StringUtils.hasText(poolCode) ? poolCode : null, List.copyOf(symbols));
+        } catch (Exception ignored) {
+            return BacktestScope.empty();
+        }
+    }
+
+    private record BacktestScope(String stockPoolType, String stockPoolCode, List<String> symbols) {
+        private static BacktestScope empty() {
+            return new BacktestScope(null, null, List.of());
+        }
+    }
+
     private boolean matchesBacktestPool(BacktestResult result, String poolType, String poolCode, List<String> symbols) {
         // Reports without recorded scope cannot be matched reliably to a requested pool.
         if (!StringUtils.hasText(result.getResultJson())) return false;
@@ -415,18 +544,24 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
             if (StringUtils.hasText(poolCode)
                     && !("market".equalsIgnoreCase(poolType) && MarketCodeNormalizer.equivalent(poolCode, storedPoolCode))
                     && !poolCode.equalsIgnoreCase(storedPoolCode == null ? "" : storedPoolCode)) return false;
-            if (symbols == null || symbols.isEmpty()) return true;
+            if (symbols == null || symbols.isEmpty()) {
+                return true;
+            }
             var storedSymbols = node.path("symbols");
             if (!storedSymbols.isArray()) return false;
-            return symbols.stream()
+            Set<String> requestedSymbols = symbols.stream()
                     .filter(StringUtils::hasText)
                     .map(SymbolNormalizer::normalize)
-                    .allMatch(symbol -> {
-                        for (var stored : storedSymbols) {
-                            if (symbol.equals(SymbolNormalizer.normalize(stored.asText(null)))) return true;
-                        }
-                        return false;
-                    });
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.toSet());
+            Set<String> persistedSymbols = new HashSet<>();
+            storedSymbols.forEach(stored -> {
+                String normalized = SymbolNormalizer.normalize(stored.asText(null));
+                if (StringUtils.hasText(normalized)) persistedSymbols.add(normalized);
+            });
+            // A custom pool is a concrete selection, so a report from a broader
+            // or different selection must not be reused for this query.
+            return requestedSymbols.equals(persistedSymbols);
         } catch (Exception ignored) {
             return false;
         }
@@ -436,9 +571,10 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     public StockConsoleVo.BacktestReportDetail backtestReport(String reportId) {
         BacktestResult result = backtestResultMapper.selectById(reportId);
         if (result == null) {
-            return new StockConsoleVo.BacktestReportDetail(reportId, reportId, "rule", null, null, List.of(), List.of(), List.of(), List.of(), null, 0, 0, 0);
+            throw new ServiceException("回测报告不存在", 404);
         }
         BacktestJsonSummary summary = parseBacktestJson(result);
+        BacktestScope scope = parseBacktestScope(result);
         return new StockConsoleVo.BacktestReportDetail(
                 String.valueOf(result.getId()),
                 result.getObjectCode(),
@@ -452,7 +588,13 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 result.getStatus(),
                 summary.sampleCount(),
                 summary.evaluatedCount(),
-                summary.unevaluableCount()
+                summary.unevaluableCount(),
+                result.getResultJson(),
+                result.getHoldingPeriod(),
+                result.getCreatedTime(),
+                scope.stockPoolType(),
+                scope.stockPoolCode(),
+                scope.symbols()
         );
     }
 
@@ -788,17 +930,21 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
     }
 
     private List<StockConsoleVo.MetricCard> backtestMetrics(List<BacktestResult> results) {
+        Integer holdingPeriod = results.isEmpty() ? null : results.getFirst().getHoldingPeriod();
+        String winRateLabel = holdingPeriod != null
+                && results.stream().allMatch(result -> holdingPeriod.equals(result.getHoldingPeriod()))
+                ? holdingPeriod + "日胜率" : "胜率";
         if (results.isEmpty()) {
             return List.of(
                     metric("触发次数", BigDecimal.ZERO, "次", BigDecimal.ZERO, "blue"),
-                    metric("5日胜率", BigDecimal.ZERO, "%", BigDecimal.ZERO, "green"),
+                    metric(winRateLabel, BigDecimal.ZERO, "%", BigDecimal.ZERO, "green"),
                     metric("平均收益", BigDecimal.ZERO, "%", BigDecimal.ZERO, "purple"),
                     metric("最大回撤", BigDecimal.ZERO, "%", BigDecimal.ZERO, "red")
             );
         }
         return List.of(
                 metric("触发次数", BigDecimal.valueOf(results.stream().map(BacktestResult::getTriggerCount).filter(Objects::nonNull).mapToInt(Integer::intValue).sum()), "次", BigDecimal.ZERO, "blue"),
-                metric("5日胜率", percentage(average(results.stream().map(BacktestResult::getWinRate).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "green"),
+                metric(winRateLabel, percentage(average(results.stream().map(BacktestResult::getWinRate).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "green"),
                 metric("平均收益", percentage(average(results.stream().map(BacktestResult::getAvgReturn).filter(Objects::nonNull).toList())), "%", BigDecimal.ZERO, "purple"),
                 metric("最大回撤", percentage(results.stream().map(BacktestResult::getMaxDrawdown).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO)), "%", BigDecimal.ZERO, "red")
         );

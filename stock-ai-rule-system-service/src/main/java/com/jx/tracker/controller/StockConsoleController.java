@@ -139,7 +139,7 @@ public class StockConsoleController {
     }
 
     @GetMapping("/backtests/reports")
-    @Operation(summary = "查询回测报告列表与聚合表现")
+    @Operation(summary = "查询匹配条件的最新单次回测报告")
     public AjaxResult backtestReports(@RequestParam(value = "objectCode", required = false) String objectCode,
                                       @RequestParam(value = "market", required = false) String market,
                                       @RequestParam(value = "objectType", required = false) String objectType,
@@ -156,6 +156,25 @@ public class StockConsoleController {
         return AjaxResult.success(stockConsoleQueryService.backtestReports(
                 objectType, objectCode, startDate, endDate, holdingPeriod,
                 stockPoolType, effectivePoolCode, symbols));
+    }
+
+    @GetMapping("/backtests/reports/history")
+    @Operation(summary = "分页查询历史回测报告")
+    public PageResult<StockConsoleVo.BacktestReportHistoryRow> backtestReportHistory(
+            @RequestParam(value = "objectType", required = false) String objectType,
+            @RequestParam(value = "objectCode", required = false) String objectCode,
+            @RequestParam(value = "startDate", required = false) LocalDate startDate,
+            @RequestParam(value = "endDate", required = false) LocalDate endDate,
+            @RequestParam(value = "holdingPeriod", required = false) Integer holdingPeriod,
+            @RequestParam(value = "stockPoolType", required = false) String stockPoolType,
+            @RequestParam(value = "stockPoolCode", required = false) String stockPoolCode,
+            @RequestParam(value = "symbols", required = false) List<String> symbols,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize) {
+        return stockConsoleQueryService.backtestReportHistory(new StockConsoleVo.BacktestReportHistoryQuery(
+                objectType, objectCode, startDate, endDate, holdingPeriod,
+                stockPoolType, stockPoolCode, symbols, status, pageNum, pageSize));
     }
 
     @GetMapping("/backtests/reports/{reportId}")

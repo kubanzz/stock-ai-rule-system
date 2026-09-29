@@ -340,6 +340,49 @@ public final class StockConsoleVo {
             String status,
             Integer sampleCount,
             Integer evaluatedCount,
+            Integer unevaluableCount,
+            String resultJson
+    ) {
+    }
+
+    public record BacktestReportHistoryQuery(
+            String objectType,
+            String objectCode,
+            LocalDate startDate,
+            LocalDate endDate,
+            Integer holdingPeriod,
+            String stockPoolType,
+            String stockPoolCode,
+            List<String> symbols,
+            String status,
+            int pageNum,
+            int pageSize
+    ) {
+        public BacktestReportHistoryQuery {
+            pageNum = Math.max(pageNum, 1);
+            pageSize = pageSize < 1 ? 20 : Math.min(pageSize, 100);
+        }
+    }
+
+    public record BacktestReportHistoryRow(
+            String reportId,
+            String objectType,
+            String objectCode,
+            LocalDate startDate,
+            LocalDate endDate,
+            Integer holdingPeriod,
+            String status,
+            LocalDateTime createdTime,
+            String stockPoolType,
+            String stockPoolCode,
+            List<String> symbols,
+            Integer triggerCount,
+            BigDecimal winRate,
+            BigDecimal avgReturn,
+            BigDecimal maxDrawdown,
+            BigDecimal totalReturn,
+            Integer sampleCount,
+            Integer evaluatedCount,
             Integer unevaluableCount
     ) {
     }
@@ -357,7 +400,13 @@ public final class StockConsoleVo {
             String status,
             Integer sampleCount,
             Integer evaluatedCount,
-            Integer unevaluableCount
+            Integer unevaluableCount,
+            String resultJson,
+            Integer holdingPeriod,
+            LocalDateTime createdTime,
+            String stockPoolType,
+            String stockPoolCode,
+            List<String> symbols
     ) {
     }
 

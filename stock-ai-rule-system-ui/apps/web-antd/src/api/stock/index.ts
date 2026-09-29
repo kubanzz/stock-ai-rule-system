@@ -8,6 +8,7 @@ import type {
   AiReviewReport,
   AiReviewRequest,
   BacktestReportDetail,
+  BacktestReportHistoryItem,
   BacktestReportOverview,
   BacktestRequest,
   BacktestResult,
@@ -73,6 +74,11 @@ interface RawResponse<T> {
 }
 
 const USE_STOCK_MOCK = import.meta.env.VITE_STOCK_USE_MOCK === 'true';
+const mockBacktestRuns = new Map<
+  number,
+  { detail: BacktestReportDetail; request: BacktestRequest; result: BacktestResult }
+>();
+let nextMockBacktestId = 1;
 
 async function requestOrMock<T>(
   request: () => Promise<T>,
@@ -605,7 +611,113 @@ export async function runBacktest(data: BacktestRequest) {
       >('/backtests', data);
       return unwrapAjaxResult(response.data);
     },
-    () => ({ ...mockBacktest, ...data }),
+    () => {
+      const id = nextMockBacktestId++;
+      const resultJson = JSON.stringify({
+        equityCurve: mockBacktestReportOverview.equityCurve,
+        evaluatedCount: mockBacktestReportOverview.evaluatedCount,
+        signalCount: mockBacktestReportOverview.sampleCount,
+        unevaluableCount: mockBacktestReportOverview.unevaluableCount,
+      });
+      const result: BacktestResult = {
+        ...mockBacktest,
+        ...data,
+        id,
+        resultJson,
+        status: 'success',
+      };
+      const detail: BacktestReportDetail = {
+        cumulativeReturns: mockBacktestReportOverview.cumulativeReturns,
+        createdTime: new Date().toISOString(),
+        endDate: data.endDate,
+        equityCurve: mockBacktestReportOverview.equityCurve,
+        evaluatedCount: mockBacktestReportOverview.evaluatedCount,
+        failureSamples: mockBacktestReportOverview.failureSamples,
+        holdingPeriod: data.holdingPeriod,
+        metrics: mockBacktestReportOverview.metrics,
+        objectCode: data.objectCode,
+        objectType: data.objectType,
+        reportId: String(id),
+        resultJson,
+        sampleCount: mockBacktestReportOverview.sampleCount,
+        startDate: data.startDate,
+        status: 'success',
+        stockPoolCode: data.stockPoolCode,
+        stockPoolType: data.stockPoolType,
+        symbols: data.symbols ?? [],
+        unevaluableCount: mockBacktestReportOverview.unevaluableCount,
+      };
+      mockBacktestRuns.set(id, { detail, request: data, result });
+      return result;
+    },
+  );
+}
+
+export async function getBacktestReportHistory(
+  params: {
+    endDate?: string;
+    holdingPeriod?: number;
+    market?: string;
+    objectCode?: string;
+    objectType?: BacktestRequest['objectType'];
+    pageNum?: number;
+    pageSize?: number;
+    startDate?: string;
+    stockPoolCode?: string;
+    stockPoolType?: BacktestRequest['stockPoolType'];
+    symbols?: string[];
+  } = {},
+): Promise<StockPageData<BacktestReportHistoryItem>> {
+  return requestOrMock(
+    async () => {
+      const response = await baseRequestClient.get<
+        RawResponse<StockPageResult<BacktestReportHistoryItem>>
+      >('/backtests/reports/history', { params, paramsSerializer: 'repeat' });
+      return unwrapStockPageResult(response.data);
+    },
+    () => {
+      const normalizedSymbols = (symbols: string[]) =>
+        [...new Set(symbols.map((symbol) => symbol.trim().toUpperCase()))].sort();
+      const rows = [...mockBacktestRuns.values()]
+        .reverse()
+        .filter(({ request }) =>
+          (!params.objectType || request.objectType === params.objectType)
+          && (!params.objectCode || request.objectCode === params.objectCode)
+          && (!params.startDate || request.startDate >= params.startDate)
+          && (!params.endDate || request.endDate <= params.endDate)
+          && (params.holdingPeriod == null || request.holdingPeriod === params.holdingPeriod)
+          && (!params.stockPoolType || request.stockPoolType === params.stockPoolType)
+          && (!params.stockPoolCode || request.stockPoolCode === params.stockPoolCode)
+          && (!params.symbols || JSON.stringify(normalizedSymbols(request.symbols ?? [])) === JSON.stringify(normalizedSymbols(params.symbols))),
+        )
+        .map(({ detail, result }): BacktestReportHistoryItem => ({
+          avgReturn: result.avgReturn,
+          createdTime: detail.createdTime,
+          endDate: detail.endDate,
+          evaluatedCount: detail.evaluatedCount,
+          holdingPeriod: detail.holdingPeriod,
+          maxDrawdown: result.maxDrawdown,
+          objectCode: detail.objectCode,
+          objectType: detail.objectType,
+          reportId: detail.reportId,
+          sampleCount: detail.sampleCount,
+          startDate: detail.startDate,
+          status: detail.status,
+          stockPoolCode: detail.stockPoolCode,
+          stockPoolType: detail.stockPoolType,
+          symbols: detail.symbols,
+          totalReturn: result.totalReturn,
+          triggerCount: result.triggerCount,
+          unevaluableCount: detail.unevaluableCount,
+          winRate: result.winRate,
+        }));
+      const pageNum = Math.max(1, params.pageNum ?? 1);
+      const pageSize = Math.max(1, params.pageSize ?? 20);
+      return {
+        rows: rows.slice((pageNum - 1) * pageSize, pageNum * pageSize),
+        total: rows.length,
+      };
+    },
   );
 }
 
@@ -629,7 +741,47 @@ export async function getBacktestReports(
       >('/backtests/reports', { params, paramsSerializer: 'repeat' });
       return unwrapAjaxResult(response.data);
     },
-    () => mockBacktestReportOverview,
+    () => {
+      const matches = [...mockBacktestRuns.values()].reverse().find(({ request }) =>
+        (!params.objectType || params.objectType === request.objectType)
+        && (!params.objectCode || params.objectCode === request.objectCode)
+        && (!params.startDate || params.startDate <= request.startDate)
+        && (!params.endDate || params.endDate >= request.endDate)
+        && (params.holdingPeriod == null || params.holdingPeriod === request.holdingPeriod)
+        && (!params.stockPoolType || params.stockPoolType === request.stockPoolType)
+        && (!params.stockPoolCode || params.stockPoolCode === request.stockPoolCode)
+        && (!params.symbols || JSON.stringify(params.symbols) === JSON.stringify(request.symbols ?? [])),
+      );
+      if (!matches) {
+        return {
+          ...mockBacktestReportOverview,
+          comparison: [],
+          cumulativeReturns: [],
+          equityCurve: [],
+          evaluatedCount: 0,
+          failureSamples: [],
+          metrics: [],
+          reportId: undefined,
+          sampleCount: 0,
+          status: undefined,
+          unevaluableCount: 0,
+        };
+      }
+      return {
+        ...mockBacktestReportOverview,
+        comparison: [],
+        cumulativeReturns: matches.detail.cumulativeReturns,
+        equityCurve: matches.detail.equityCurve,
+        failureSamples: matches.detail.failureSamples,
+        metrics: matches.detail.metrics,
+        reportId: matches.detail.reportId,
+        resultJson: matches.detail.resultJson,
+        sampleCount: matches.detail.sampleCount,
+        evaluatedCount: matches.detail.evaluatedCount,
+        unevaluableCount: matches.detail.unevaluableCount,
+        status: matches.detail.status,
+      };
+    },
   );
 }
 
@@ -641,16 +793,11 @@ export async function getBacktestReport(reportId: string) {
       >(`/backtests/reports/${reportId}`);
       return unwrapAjaxResult(response.data);
     },
-    () => ({
-      cumulativeReturns: mockBacktestReportOverview.cumulativeReturns,
-      endDate: '2026-06-20',
-      failureSamples: mockBacktestReportOverview.failureSamples,
-      metrics: mockBacktestReportOverview.metrics,
-      objectCode: reportId,
-      objectType: 'rule',
-      reportId,
-      startDate: '2024-01-01',
-    }),
+    () => {
+      const detail = mockBacktestRuns.get(Number(reportId))?.detail;
+      if (!detail) throw new Error(`模拟回测报告不存在：${reportId}`);
+      return detail;
+    },
   );
 }
 
