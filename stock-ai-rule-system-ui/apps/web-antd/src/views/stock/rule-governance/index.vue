@@ -6,6 +6,7 @@ import type {
 } from '#/api/stock';
 
 import { onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -35,6 +36,7 @@ const detailLoading = ref(false);
 const drawerOpen = ref(false);
 const overview = ref<RuleGovernanceOverview>();
 const selectedRule = ref<RuleGovernanceDetail>();
+const router = useRouter();
 
 const filters = reactive({
   keyword: '',
@@ -99,6 +101,10 @@ function statusColor(status: string) {
   return 'gold';
 }
 
+function openCreateRule() {
+  router.push({ name: 'StockRules', query: { create: '1' } });
+}
+
 onMounted(loadRules);
 </script>
 
@@ -152,7 +158,7 @@ onMounted(loadRules);
         <Form.Item>
           <Space>
             <Button type="primary" @click="loadRules">查询</Button>
-            <Button>新建规则</Button>
+            <Button type="primary" @click="openCreateRule">新建规则</Button>
           </Space>
         </Form.Item>
       </Form>

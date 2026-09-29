@@ -3,8 +3,8 @@ import type { TableColumnsType } from 'ant-design-vue';
 
 import type { RuleDefinition, RuleDefinitionUpsert } from '#/api/stock';
 
-import { onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -33,6 +33,7 @@ import {
 import RiskAlert from '../components/risk-alert.vue';
 
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const saving = ref(false);
 const modalOpen = ref(false);
@@ -165,7 +166,23 @@ async function toggleRule(record: Record<string, any>) {
   message.success('规则已启用');
 }
 
-onMounted(loadRules);
+function consumeCreateQuery() {
+  if (route.query.create !== '1') return;
+  openCreate();
+  void router.replace({ name: 'StockRules' });
+}
+
+onMounted(async () => {
+  await loadRules();
+  consumeCreateQuery();
+});
+
+watch(
+  () => route.query.create,
+  (create) => {
+    if (create === '1') consumeCreateQuery();
+  },
+);
 </script>
 
 <template>
