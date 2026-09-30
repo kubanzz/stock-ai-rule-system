@@ -159,6 +159,38 @@ class StockDashboardQueryServiceImplTest {
     }
 
     @Test
+    void countsJsonTriggeredRulesAsArrayItems() {
+        StockSignalDaily signal = signal("000004.SZ", DATE, "bullish", "0.80", 0, null);
+        signal.setTriggeredRules("[\"R_TREND\",\"R_RISK\"]");
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000004.SZ", "丁", "A股", "医药")));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(signal));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(DATE, null, 1, 20, "symbol", "asc"));
+
+        assertThat(result.signals()).singleElement()
+                .extracting(StockConsoleVo.SignalRow::triggeredRuleCount)
+                .isEqualTo(2);
+    }
+
+    @Test
+    void countsLegacySeparatedRuleCodes() {
+        StockSignalDaily signal = signal("000004.SZ", DATE, "bullish", "0.80", 0, null);
+        signal.setTriggeredRules("R_TREND, R_RISK");
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000004.SZ", "丁", "A股", "医药")));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(signal));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(DATE, null, 1, 20, "symbol", "asc"));
+
+        assertThat(result.signals()).singleElement()
+                .extracting(StockConsoleVo.SignalRow::triggeredRuleCount)
+                .isEqualTo(2);
+    }
+
+    @Test
     void appliesPoolMarketDateSignalIndustryConfidenceAndCodeSearch() {
         StockBase pingAn = stock("000001.SZ", "平安银行", "CN", "银行");
         StockBase otherBank = stock("600000.SH", "浦发银行", "A股", "银行");

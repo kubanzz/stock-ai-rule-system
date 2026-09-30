@@ -14,12 +14,16 @@ import com.jx.tracker.domain.enums.BacktestStatus;
 import com.jx.tracker.domain.enums.CandidateRuleStatus;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.domain.enums.RuleObjectType;
+import com.jx.tracker.domain.enums.RuleFormat;
 import com.jx.tracker.domain.enums.RuleVersionApprovalStatus;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
 import com.jx.tracker.mapper.RuleOperationLogMapper;
 import com.jx.tracker.mapper.RuleVersionMapper;
+import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
+import com.jx.tracker.rule.engine.DroolsRuleEngineExecutor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +43,8 @@ import java.util.regex.Pattern;
 public class RulePublishServiceImpl implements RulePublishService {
 
     private static final Pattern VERSION_PATTERN = Pattern.compile("^v?(\\d+)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DROOLS_CONTENT = Pattern.compile(
+            "(?ms)^\\s*rule\\s+(?:\"[^\"]+\"|'[^']+'|[A-Za-z0-9_.:-]+).*?\\bwhen\\b.*?\\bthen\\b");
     private static final String MANUAL_PUBLISH_SOURCE = "manual_publish";
     private static final String PUBLISH_OPERATION = "publish";
     private static final String ROLLBACK_OPERATION = "rollback";
@@ -56,15 +62,61 @@ public class RulePublishServiceImpl implements RulePublishService {
     private final RuleDefinitionMapper ruleDefinitionMapper;
     private final RuleVersionMapper ruleVersionMapper;
     private final RuleOperationLogMapper operationLogMapper;
+    private final JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler;
+    private final DroolsRuleEngineExecutor droolsRuleEngineExecutor;
+    private final RuleSeedDeduplicationService seedDeduplicationService;
 
     public RulePublishServiceImpl(CandidateRuleMapper candidateRuleMapper,
                                   RuleDefinitionMapper ruleDefinitionMapper,
                                   RuleVersionMapper ruleVersionMapper,
                                   RuleOperationLogMapper operationLogMapper) {
+        this(candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                new JsonRuleToDroolsCompiler(), new DroolsRuleEngineExecutor(), null);
+    }
+
+    @Autowired
+    public RulePublishServiceImpl(CandidateRuleMapper candidateRuleMapper,
+                                  RuleDefinitionMapper ruleDefinitionMapper,
+                                  RuleVersionMapper ruleVersionMapper,
+                                  RuleOperationLogMapper operationLogMapper,
+                                  RuleSeedDeduplicationService seedDeduplicationService) {
+        this(candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                new JsonRuleToDroolsCompiler(), new DroolsRuleEngineExecutor(), seedDeduplicationService);
+    }
+
+    public RulePublishServiceImpl(CandidateRuleMapper candidateRuleMapper,
+                                  RuleDefinitionMapper ruleDefinitionMapper,
+                                  RuleVersionMapper ruleVersionMapper,
+                                  RuleOperationLogMapper operationLogMapper,
+                                  JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler,
+                                  DroolsRuleEngineExecutor droolsRuleEngineExecutor) {
+        this(candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                jsonRuleToDroolsCompiler, droolsRuleEngineExecutor, null);
+    }
+
+    public RulePublishServiceImpl(CandidateRuleMapper candidateRuleMapper,
+                                  RuleDefinitionMapper ruleDefinitionMapper,
+                                  RuleVersionMapper ruleVersionMapper,
+                                  RuleOperationLogMapper operationLogMapper,
+                                  JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler,
+                                  DroolsRuleEngineExecutor droolsRuleEngineExecutor,
+                                  RuleSeedDeduplicationService seedDeduplicationService) {
         this.candidateRuleMapper = candidateRuleMapper;
         this.ruleDefinitionMapper = ruleDefinitionMapper;
         this.ruleVersionMapper = ruleVersionMapper;
         this.operationLogMapper = operationLogMapper;
+        this.jsonRuleToDroolsCompiler = jsonRuleToDroolsCompiler;
+        this.droolsRuleEngineExecutor = droolsRuleEngineExecutor;
+        this.seedDeduplicationService = seedDeduplicationService;
+    }
+
+    public RulePublishServiceImpl(CandidateRuleMapper candidateRuleMapper,
+                                  RuleDefinitionMapper ruleDefinitionMapper,
+                                  RuleVersionMapper ruleVersionMapper,
+                                  RuleOperationLogMapper operationLogMapper,
+                                  JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler) {
+        this(candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                jsonRuleToDroolsCompiler, new DroolsRuleEngineExecutor());
     }
 
     @Override
@@ -77,12 +129,14 @@ public class RulePublishServiceImpl implements RulePublishService {
         CandidateRule candidateRule = findCandidateRule(candidateRuleId);
         validateCandidateReadyToPublish(candidateRule);
 
-        RuleDefinition ruleDefinition = findRuleDefinition(candidateRule.getTargetRuleCode());
+        RuleDefinition ruleDefinition = findOrCreateRuleDefinition(candidateRule, actualOperator);
         String versionNo = nextVersionNo(ruleDefinition);
+        String productionContent = jsonRuleToDroolsCompiler.compile(
+                ruleDefinition.getRuleCode(), candidateRule.getProposedContent());
         RuleVersion version = RuleVersion.builder()
                 .ruleId(ruleDefinition.getId())
                 .versionNo(versionNo)
-                .ruleContent(candidateRule.getProposedContent())
+                .ruleContent(productionContent)
                 .changeReason(resolveText(reason, candidateRule.getReason()))
                 .source(MANUAL_PUBLISH_SOURCE)
                 .approvalStatus(RuleVersionApprovalStatus.PUBLISHED.getCode())
@@ -112,6 +166,9 @@ public class RulePublishServiceImpl implements RulePublishService {
                 beforeStatus,
                 CandidateRuleStatus.PUBLISHED.getCode()
         );
+        if (seedDeduplicationService != null) {
+            seedDeduplicationService.disableSupersededSeedRule(candidateRule, ruleDefinition.getRuleContent());
+        }
         return toResult(ruleDefinition, candidateRule.getCandidateCode(), CandidateRuleStatus.PUBLISHED.getCode(), version, operationLog);
     }
 
@@ -132,6 +189,10 @@ public class RulePublishServiceImpl implements RulePublishService {
         String beforeVersionNo = resolveText(ruleDefinition.getCurrentVersionNo(), ruleDefinition.getVersion());
 
         activateRule(ruleDefinition, targetVersion, actualOperator);
+        if (seedDeduplicationService != null) {
+            seedDeduplicationService.assertNoActiveDuplicate(
+                    ruleDefinition.getRuleCode(), ruleDefinition.getRuleContent());
+        }
         String auditReason = buildAuditReason(
                 ruleDefinition.getRuleCode(),
                 targetVersion.getId(),
@@ -188,6 +249,69 @@ public class RulePublishServiceImpl implements RulePublishService {
             throw new ServiceException("规则主键不能为空：" + ruleCode);
         }
         return ruleDefinition;
+    }
+
+    /**
+     * Candidate rules are kept in {@code candidate_rule} until they are
+     * approved.  Older seed data used to create a draft row in
+     * {@code rule_definition} as a placeholder, but a newly generated
+     * candidate must not depend on that production-directory row existing.
+     * Create the production definition only as part of the human publish
+     * transaction when the candidate has passed all gates.
+     */
+    private RuleDefinition findOrCreateRuleDefinition(CandidateRule candidateRule, String operator) {
+        String ruleCode = candidateRule.getTargetRuleCode();
+        if (!StringUtils.hasText(ruleCode)) {
+            throw new ServiceException("候选规则缺少目标规则编码");
+        }
+        RuleDefinition existing = ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getRuleCode, ruleCode));
+        if (existing != null) {
+            if (existing.getId() == null) {
+                throw new ServiceException("规则主键不能为空：" + ruleCode);
+            }
+            return existing;
+        }
+
+        RuleDefinition created = RuleDefinition.builder()
+                .ruleCode(ruleCode)
+                .ruleName(ruleCode)
+                .description(truncate(candidateRule.getReason(), 512))
+                .ruleType("ai_candidate")
+                .ruleContent(null)
+                .ruleFormat(RuleFormat.DROOLS.getCode())
+                .version("v0")
+                .status(RuleLifecycleStatus.DRAFT.getCode())
+                .enabled(false)
+                .priority(0)
+                .createdBy(operator)
+                .updatedBy(operator)
+                .build();
+        try {
+            ensureAffected(ruleDefinitionMapper.insert(created), "保存规则定义失败");
+            if (created.getId() == null) {
+                throw new ServiceException("保存规则定义后未返回主键：" + ruleCode);
+            }
+            return created;
+        } catch (DataIntegrityViolationException e) {
+            // Another publish request may have created the same target between
+            // the select and insert. Re-read it and continue against the
+            // single production definition.
+            RuleDefinition concurrent = ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
+                    .eq(RuleDefinition::getRuleCode, ruleCode));
+            if (concurrent != null && concurrent.getId() != null) {
+                return concurrent;
+            }
+            throw new ServiceException("保存规则定义冲突，请刷新后重试", e);
+        }
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
     }
 
     private RuleVersion findRuleVersion(Long ruleId, String versionId) {
@@ -248,7 +372,24 @@ public class RulePublishServiceImpl implements RulePublishService {
     }
 
     private void activateRule(RuleDefinition ruleDefinition, RuleVersion version, String operator) {
-        ruleDefinition.setRuleContent(version.getRuleContent());
+        String originalContent = version.getRuleContent();
+        boolean converted = !isDroolsContent(originalContent);
+        String productionContent = toProductionContent(ruleDefinition.getRuleCode(), originalContent);
+        validateProductionContent(ruleDefinition.getRuleCode(), productionContent, ruleDefinition.getPriority());
+        version.setRuleContent(productionContent);
+        if (converted && version.getId() != null) {
+            // A rollback may target a legacy JSON version. Persist the compiled
+            // production form when the mapper participates in a real transaction;
+            // old direct unit-test doubles can leave the in-memory version as-is.
+            int affected = ruleVersionMapper.updateById(version);
+            if (affected == 0 && ruleVersionMapper != null) {
+                // BaseMapper implementations return the affected-row count. A
+                // zero result is still a failed persistence operation in production.
+                throw new ServiceException("更新规则版本失败");
+            }
+        }
+        ruleDefinition.setRuleContent(productionContent);
+        ruleDefinition.setRuleFormat(RuleFormat.DROOLS.getCode());
         ruleDefinition.setVersion(version.getVersionNo());
         ruleDefinition.setCurrentVersionId(version.getId());
         ruleDefinition.setCurrentVersionNo(version.getVersionNo());
@@ -256,6 +397,22 @@ public class RulePublishServiceImpl implements RulePublishService {
         ruleDefinition.setEnabled(true);
         ruleDefinition.setUpdatedBy(operator);
         ensureAffected(ruleDefinitionMapper.updateById(ruleDefinition), "更新规则定义失败");
+    }
+
+    private boolean isDroolsContent(String content) {
+        return StringUtils.hasText(content) && DROOLS_CONTENT.matcher(content).find();
+    }
+
+    private String toProductionContent(String ruleCode, String content) {
+        return isDroolsContent(content) ? content : jsonRuleToDroolsCompiler.compile(ruleCode, content);
+    }
+
+    private void validateProductionContent(String ruleCode, String content, Integer priority) {
+        try {
+            droolsRuleEngineExecutor.validateRuleContent(ruleCode, content, priority);
+        } catch (IllegalArgumentException e) {
+            throw new ServiceException("生产规则 Drools 内容校验失败：" + e.getMessage(), e);
+        }
     }
 
     private String nextVersionNo(RuleDefinition ruleDefinition) {

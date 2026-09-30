@@ -7,6 +7,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.dto.BacktestRequestDto;
+import com.jx.tracker.domain.dto.RuleGroupDetailDto;
+import com.jx.tracker.domain.dto.RuleStrategyDetailDto;
+import com.jx.tracker.domain.dto.RuleStrategyGroupDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.RuleDefinition;
@@ -40,8 +43,12 @@ import com.jx.tracker.rule.engine.RuleExecutionRequest;
 import com.jx.tracker.rule.engine.RuleExecutionResult;
 import com.jx.tracker.rule.engine.DroolsRuleEngineExecutor;
 import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
+import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
+import com.jx.tracker.rule.service.RuleGroupService;
+import com.jx.tracker.rule.service.RuleStrategyService;
 import com.jx.tracker.signal.service.SignalScore;
 import com.jx.tracker.signal.service.SignalScoringService;
+import com.jx.tracker.signal.service.StrategyExecutionService;
 import com.jx.tracker.verification.PredictionHitPolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,12 +77,13 @@ public class SingleRuleBacktestService implements BacktestService {
     private static final BigDecimal DEFAULT_FEE_RATE = new BigDecimal("0.0010");
     private static final BigDecimal DEFAULT_SLIPPAGE_RATE = new BigDecimal("0.0005");
     private static final BigDecimal TRADING_DAYS_PER_YEAR = new BigDecimal("252");
-    private static final Set<String> SUPPORTED_CONDITION_OPERATORS = Set.of("eq", "ne", "gt", "gte", "lt", "lte", "in");
     private static final String EMPTY_STOCK_POOL = "__EMPTY_STOCK_POOL__";
     private static final int FACTOR_LOOKBACK_LIMIT = 80;
     private static final int MIN_FACTOR_HISTORY_QUOTES = 26;
     private static final String RULE_DIRECTION_BASIS = "rule_direction";
     private static final String STORED_SIGNAL_BASIS = "stored_signal";
+    private static final String COMBINATION_SIGNAL_BASIS = "combination_signal";
+    private static final int MAX_COMBINATION_CONTRIBUTION_SAMPLES = 100;
 
     private final StockSignalDailyMapper signalMapper;
     private final StockFactorDailyMapper factorMapper;
@@ -85,6 +93,7 @@ public class SingleRuleBacktestService implements BacktestService {
     private final CandidateRuleMapper candidateRuleMapper;
     private final RuleEngineExecutor ruleEngineExecutor;
     private final RuleEngineExecutor candidateRuleEngineExecutor;
+    private final JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler;
     private final SignalScoringService signalScoringService;
     private final PredictionHitPolicy hitPolicy;
     private final IStockFactorDailyService factorDailyService;
@@ -92,6 +101,9 @@ public class SingleRuleBacktestService implements BacktestService {
     private final StockWatchlistMapper watchlistMapper;
     private final StockWatchlistItemMapper watchlistItemMapper;
     private final StockBaseMapper stockBaseMapper;
+    private final RuleGroupService ruleGroupService;
+    private final RuleStrategyService ruleStrategyService;
+    private final StrategyExecutionService strategyExecutionService;
 
     public SingleRuleBacktestService(StockSignalDailyMapper signalMapper,
                                      StockFactorDailyMapper factorMapper,
@@ -104,7 +116,7 @@ public class SingleRuleBacktestService implements BacktestService {
                                      PredictionHitPolicy hitPolicy) {
         this(signalMapper, factorMapper, actualResultMapper, quoteMapper, backtestResultMapper,
                 candidateRuleMapper, ruleEngineExecutor, new JsonRuleEngineExecutor(), signalScoringService, hitPolicy,
-                null, null, null, null, null);
+                new JsonRuleToDroolsCompiler(), null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -128,8 +140,31 @@ public class SingleRuleBacktestService implements BacktestService {
                                      StockBaseMapper stockBaseMapper) {
         this(signalMapper, factorMapper, actualResultMapper, quoteMapper, backtestResultMapper,
                 candidateRuleMapper, ruleEngineExecutor, new JsonRuleEngineExecutor(), signalScoringService,
-                hitPolicy, factorDailyService, ruleDefinitionMapper, watchlistMapper, watchlistItemMapper,
-                stockBaseMapper);
+                hitPolicy, new JsonRuleToDroolsCompiler(), factorDailyService, ruleDefinitionMapper, watchlistMapper, watchlistItemMapper,
+                stockBaseMapper, null, null, null);
+    }
+
+    public SingleRuleBacktestService(StockSignalDailyMapper signalMapper,
+                                     StockFactorDailyMapper factorMapper,
+                                     StockActualResultMapper actualResultMapper,
+                                     StockDailyQuoteMapper quoteMapper,
+                                     BacktestResultMapper backtestResultMapper,
+                                     CandidateRuleMapper candidateRuleMapper,
+                                     DroolsRuleEngineExecutor ruleEngineExecutor,
+                                     JsonRuleEngineExecutor candidateRuleEngineExecutor,
+                                     SignalScoringService signalScoringService,
+                                     PredictionHitPolicy hitPolicy,
+                                     JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler,
+                                     IStockFactorDailyService factorDailyService,
+                                     RuleDefinitionMapper ruleDefinitionMapper,
+                                     StockWatchlistMapper watchlistMapper,
+                                     StockWatchlistItemMapper watchlistItemMapper,
+                                     StockBaseMapper stockBaseMapper) {
+        this(signalMapper, factorMapper, actualResultMapper, quoteMapper, backtestResultMapper,
+                candidateRuleMapper, (RuleEngineExecutor) ruleEngineExecutor,
+                (RuleEngineExecutor) candidateRuleEngineExecutor, signalScoringService,
+                hitPolicy, jsonRuleToDroolsCompiler, factorDailyService, ruleDefinitionMapper, watchlistMapper, watchlistItemMapper,
+                stockBaseMapper, null, null, null);
     }
 
     @Autowired
@@ -143,16 +178,21 @@ public class SingleRuleBacktestService implements BacktestService {
                                      JsonRuleEngineExecutor candidateRuleEngineExecutor,
                                      SignalScoringService signalScoringService,
                                      PredictionHitPolicy hitPolicy,
+                                     JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler,
                                      IStockFactorDailyService factorDailyService,
                                      RuleDefinitionMapper ruleDefinitionMapper,
                                      StockWatchlistMapper watchlistMapper,
                                      StockWatchlistItemMapper watchlistItemMapper,
-                                     StockBaseMapper stockBaseMapper) {
+                                     StockBaseMapper stockBaseMapper,
+                                     RuleGroupService ruleGroupService,
+                                     RuleStrategyService ruleStrategyService,
+                                     StrategyExecutionService strategyExecutionService) {
         this(signalMapper, factorMapper, actualResultMapper, quoteMapper, backtestResultMapper,
                 candidateRuleMapper, (RuleEngineExecutor) ruleEngineExecutor,
-                (RuleEngineExecutor) candidateRuleEngineExecutor, signalScoringService,
-                hitPolicy, factorDailyService, ruleDefinitionMapper, watchlistMapper, watchlistItemMapper,
-                stockBaseMapper);
+                (RuleEngineExecutor) candidateRuleEngineExecutor,
+                signalScoringService, hitPolicy, jsonRuleToDroolsCompiler,
+                factorDailyService, ruleDefinitionMapper, watchlistMapper, watchlistItemMapper,
+                stockBaseMapper, ruleGroupService, ruleStrategyService, strategyExecutionService);
     }
 
     private SingleRuleBacktestService(StockSignalDailyMapper signalMapper,
@@ -165,11 +205,15 @@ public class SingleRuleBacktestService implements BacktestService {
                                       RuleEngineExecutor candidateRuleEngineExecutor,
                                       SignalScoringService signalScoringService,
                                       PredictionHitPolicy hitPolicy,
+                                      JsonRuleToDroolsCompiler jsonRuleToDroolsCompiler,
                                       IStockFactorDailyService factorDailyService,
                                       RuleDefinitionMapper ruleDefinitionMapper,
                                       StockWatchlistMapper watchlistMapper,
                                       StockWatchlistItemMapper watchlistItemMapper,
-                                      StockBaseMapper stockBaseMapper) {
+                                      StockBaseMapper stockBaseMapper,
+                                      RuleGroupService ruleGroupService,
+                                      RuleStrategyService ruleStrategyService,
+                                      StrategyExecutionService strategyExecutionService) {
         this.signalMapper = signalMapper;
         this.factorMapper = factorMapper;
         this.actualResultMapper = actualResultMapper;
@@ -178,6 +222,7 @@ public class SingleRuleBacktestService implements BacktestService {
         this.candidateRuleMapper = candidateRuleMapper;
         this.ruleEngineExecutor = ruleEngineExecutor;
         this.candidateRuleEngineExecutor = candidateRuleEngineExecutor;
+        this.jsonRuleToDroolsCompiler = jsonRuleToDroolsCompiler;
         this.signalScoringService = signalScoringService;
         this.hitPolicy = hitPolicy;
         this.factorDailyService = factorDailyService;
@@ -185,12 +230,17 @@ public class SingleRuleBacktestService implements BacktestService {
         this.watchlistMapper = watchlistMapper;
         this.watchlistItemMapper = watchlistItemMapper;
         this.stockBaseMapper = stockBaseMapper;
+        this.ruleGroupService = ruleGroupService;
+        this.ruleStrategyService = ruleStrategyService;
+        this.strategyExecutionService = strategyExecutionService;
     }
 
     @Transactional(rollbackFor = Exception.class)
     public BacktestResult runSingleRuleBacktest(BacktestRequestDto request) {
         validateRequest(request);
-        CandidateRule candidateRule = resolveCandidateRule(request);
+        boolean combination = isCombination(request);
+        CandidateRule candidateRule = combination ? null : resolveCandidateRule(request);
+        RuleStrategyDetailDto selectedStrategy = combination ? resolveCombination(request) : null;
         BigDecimal feeRate = defaultIfNull(request.getFeeRate(), DEFAULT_FEE_RATE);
         BigDecimal slippageRate = defaultIfNull(request.getSlippageRate(), DEFAULT_SLIPPAGE_RATE);
         Set<String> stockPool = resolveStockPool(request);
@@ -204,9 +254,11 @@ public class SingleRuleBacktestService implements BacktestService {
 
         ReplayResult replay;
         try {
-            replay = candidateRule == null
-                    ? replayRuleSignalsOrStored(request, stockPool)
-                    : replayCandidateSignals(request, candidateRule, stockPool);
+            replay = combination
+                    ? replayCombinationSignals(request, selectedStrategy, stockPool)
+                    : candidateRule == null
+                        ? replayRuleSignalsOrStored(request, stockPool)
+                        : replayCandidateSignals(request, candidateRule, stockPool);
         } catch (IllegalArgumentException e) {
             if (candidateRule != null) {
                 return persistFailedCandidateBacktest(request, candidateRule, feeRate, slippageRate, e.getMessage());
@@ -220,7 +272,8 @@ public class SingleRuleBacktestService implements BacktestService {
         EmptyBacktestReason emptyReason = stats.returns().isEmpty()
                 ? diagnoseEmptyBacktest(request, stockPool, replay, stats)
                 : null;
-        BacktestResult result = buildResult(request, candidateRule, feeRate, slippageRate, stats, emptyReason);
+        BacktestResult result = buildResult(request, candidateRule, feeRate, slippageRate, stats,
+                emptyReason, selectedStrategy, replay);
         backtestResultMapper.insert(result);
         if (candidateRule != null) {
             writeBackCandidateBacktest(candidateRule, result);
@@ -251,8 +304,9 @@ public class SingleRuleBacktestService implements BacktestService {
             throw new IllegalArgumentException("回测请求不能为空");
         }
         if (!RuleObjectType.RULE.getCode().equals(request.getObjectType())
-                && !RuleObjectType.CANDIDATE_RULE.getCode().equals(request.getObjectType())) {
-            throw new IllegalArgumentException("当前接口仅支持单规则或候选规则回测");
+                && !RuleObjectType.CANDIDATE_RULE.getCode().equals(request.getObjectType())
+                && !isCombination(request)) {
+            throw new IllegalArgumentException("回测对象类型不支持：" + request.getObjectType());
         }
         if (request.getObjectCode() == null || request.getObjectCode().isBlank()) {
             throw new IllegalArgumentException("规则编码不能为空");
@@ -266,6 +320,96 @@ public class SingleRuleBacktestService implements BacktestService {
         if (request.getHoldingPeriod() == null) {
             request.setHoldingPeriod(5);
         }
+    }
+
+    private boolean isCombination(BacktestRequestDto request) {
+        return request != null && (RuleObjectType.RULE_GROUP.getCode().equals(request.getObjectType())
+                || RuleObjectType.STRATEGY.getCode().equals(request.getObjectType()));
+    }
+
+    private RuleStrategyDetailDto resolveCombination(BacktestRequestDto request) {
+        if (RuleObjectType.STRATEGY.getCode().equals(request.getObjectType())) {
+            if (ruleStrategyService == null) {
+                throw new IllegalStateException("组合回测服务尚未配置");
+            }
+            return ruleStrategyService.getStrategy(request.getObjectCode());
+        }
+        if (ruleGroupService == null) {
+            throw new IllegalStateException("规则组回测服务尚未配置");
+        }
+        RuleGroupDetailDto group = ruleGroupService.getGroup(request.getObjectCode());
+        RuleStrategyGroupDto selection = new RuleStrategyGroupDto();
+        selection.setGroupCode(group.getGroupCode());
+        selection.setGroupVersion(group.getVersion());
+        selection.setGroup(group);
+        selection.setWeight(BigDecimal.ONE);
+        selection.setRequired(true);
+        RuleStrategyDetailDto strategy = new RuleStrategyDetailDto();
+        strategy.setStrategyCode(group.getGroupCode());
+        strategy.setStrategyName(group.getGroupName());
+        strategy.setVersion(group.getVersion());
+        strategy.setGroups(List.of(selection));
+        return strategy;
+    }
+
+    private ReplayResult replayCombinationSignals(BacktestRequestDto request,
+                                                  RuleStrategyDetailDto strategy,
+                                                  Set<String> stockPool) {
+        if (ruleDefinitionMapper == null || strategyExecutionService == null) {
+            throw new IllegalStateException("组合执行服务尚未配置");
+        }
+        List<RuleDefinition> activeRules = ruleDefinitionMapper.selectList(Wrappers.<RuleDefinition>lambdaQuery()
+                .eq(RuleDefinition::getStatus, RuleLifecycleStatus.ACTIVE.getCode())
+                .eq(RuleDefinition::getRuleFormat, RuleFormat.DROOLS.getCode())
+                .and(wrapper -> wrapper.eq(RuleDefinition::getEnabled, true)
+                        .or().isNull(RuleDefinition::getEnabled))
+                .orderByDesc(RuleDefinition::getPriority));
+        List<RuleDefinition> selectedRules = strategyExecutionService.selectRules(strategy, activeRules);
+        List<StockFactorDaily> factors = factorMapper.selectList(Wrappers.<StockFactorDaily>lambdaQuery()
+                .ge(StockFactorDaily::getTradeDate, request.getStartDate())
+                .le(StockFactorDaily::getTradeDate, request.getEndDate())
+                .orderByAsc(StockFactorDaily::getTradeDate)
+                .orderByAsc(StockFactorDaily::getSymbol))
+                .stream().filter(factor -> isInStockPool(stockPool, factor.getSymbol())).toList();
+        Map<String, String> executedRuleVersions = selectedRules.stream()
+                .collect(Collectors.toMap(RuleDefinition::getRuleCode,
+                        rule -> StringUtils.hasText(rule.getVersion()) ? rule.getVersion() :
+                                Objects.toString(rule.getCurrentVersionNo(), "unversioned"),
+                        (first, ignored) -> first, LinkedHashMap::new));
+        return new ReplayResult(factors.stream()
+                .map(factor -> executeCombination(factor, strategy, selectedRules))
+                .filter(Objects::nonNull).toList(), factors, COMBINATION_SIGNAL_BASIS,
+                executedRuleVersions);
+    }
+
+    private BacktestSignal executeCombination(StockFactorDaily factor,
+                                              RuleStrategyDetailDto strategy,
+                                              List<RuleDefinition> selectedRules) {
+        RuleExecutionResult raw = ruleEngineExecutor.execute(new RuleExecutionRequest(
+                factor.getSymbol(), factor.getTradeDate(), readFactors(factor), selectedRules));
+        StrategyExecutionService.StrategyExecutionResult aggregate =
+                strategyExecutionService.aggregate(strategy, raw);
+        RuleExecutionResult result = aggregate.result();
+        if (result.triggeredRules().isEmpty()) {
+            return null;
+        }
+        SignalScore score = signalScoringService.score(result.bullishScore(),
+                result.bearishScore(), result.riskScore(), strategy);
+        StockSignalDaily signal = StockSignalDaily.builder()
+                .symbol(factor.getSymbol()).signalDate(factor.getTradeDate())
+                .signal(score.signal()).signalDirection(score.signalDirection())
+                .signalLevel(score.signalLevel())
+                .bullishScore(result.bullishScore()).bearishScore(result.bearishScore())
+                .riskScore(result.riskScore()).confidence(score.confidence())
+                .triggeredRules(toJsonArray(result.triggeredRules()))
+                .explanation(String.join("；", result.explanations()))
+                .riskDisclaimer(StockRiskConstants.SIGNAL_RISK_DISCLAIMER)
+                .build();
+        // A high-risk override is a warning, not a directional position to
+        // credit as a profitable bullish or bearish sample.
+        String evaluationDirection = SignalType.HIGH_RISK.getCode().equals(score.signal())
+                ? SignalType.WATCH.getCode() : score.signal();
+        return new BacktestSignal(signal, evaluationDirection, aggregate.trace());
     }
 
     private CandidateRule resolveCandidateRule(BacktestRequestDto request) {
@@ -312,7 +456,7 @@ public class SingleRuleBacktestService implements BacktestService {
                         .or().isNull(RuleDefinition::getEnabled))
                 .last("LIMIT 1"));
         if (rule == null || !StringUtils.hasText(rule.getRuleContent())) {
-            return storedSignalReplay(request, stockPool);
+            throw new IllegalArgumentException("正式规则不存在可执行的 active Drools 定义：" + request.getObjectCode());
         }
         List<StockFactorDaily> factors = factorMapper.selectList(Wrappers.<StockFactorDaily>lambdaQuery()
                 .ge(StockFactorDaily::getTradeDate, request.getStartDate())
@@ -601,6 +745,10 @@ public class SingleRuleBacktestService implements BacktestService {
                                                       EvaluationStats stats) {
         if (stats.signalCount() > 0) {
             if (stats.directionalCount() == 0) {
+                if (COMBINATION_SIGNAL_BASIS.equals(replay.evaluationBasis())) {
+                    return new EmptyBacktestReason("no_final_direction",
+                            "组合已触发，但最终信号均为观望或高风险提示；没有可计算方向收益的样本。");
+                }
                 return RULE_DIRECTION_BASIS.equals(replay.evaluationBasis())
                         ? new EmptyBacktestReason("no_rule_direction", "规则在历史数据中命中，但规则本身没有明确的单一看涨或看跌贡献；胜率和收益指标不适用。")
                         : new EmptyBacktestReason("watch_only", "规则在历史数据中命中，但存储的综合信号仅为观望，没有方向性收益样本；胜率和收益指标不适用。");
@@ -796,7 +944,9 @@ public class SingleRuleBacktestService implements BacktestService {
         EvaluationStats stats = new EvaluationStats(replay.signals().size(), replay.evaluationBasis());
         for (BacktestSignal sample : replay.signals()) {
             StockSignalDaily signal = sample.signal();
-            if (SignalType.WATCH == SignalType.fromCode(signal.getSignal())) {
+            if (SignalType.WATCH == SignalType.fromCode(signal.getSignal())
+                    || COMBINATION_SIGNAL_BASIS.equals(replay.evaluationBasis())
+                    && SignalType.HIGH_RISK == SignalType.fromCode(signal.getSignal())) {
                 stats.markWatch();
             }
             if (!StringUtils.hasText(sample.evaluationDirection())
@@ -811,6 +961,7 @@ public class SingleRuleBacktestService implements BacktestService {
                 continue;
             }
             boolean win = RULE_DIRECTION_BASIS.equals(replay.evaluationBasis())
+                    || COMBINATION_SIGNAL_BASIS.equals(replay.evaluationBasis())
                     ? hitPolicy.isHit(sample.evaluationDirection(), observation.rawReturn())
                     : observation.win();
             stats.add(signal.getSignalDate(), observation,
@@ -824,7 +975,9 @@ public class SingleRuleBacktestService implements BacktestService {
                                        BigDecimal feeRate,
                                        BigDecimal slippageRate,
                                        EvaluationStats stats,
-                                       EmptyBacktestReason emptyReason) {
+                                       EmptyBacktestReason emptyReason,
+                                       RuleStrategyDetailDto selectedStrategy,
+                                       ReplayResult replay) {
         List<BigDecimal> returns = stats.returns();
         int evaluatedCount = returns.size();
         BigDecimal winRate = evaluatedCount == 0 ? null : new BigDecimal(stats.wins()).divide(new BigDecimal(evaluatedCount), 4, RoundingMode.HALF_UP);
@@ -850,7 +1003,8 @@ public class SingleRuleBacktestService implements BacktestService {
                 .slippageRate(scale(slippageRate))
                 .totalReturn(totalReturn == null ? null : scale(totalReturn))
                 .status(emptyReason == null ? BacktestStatus.SUCCESS.getCode() : BacktestStatus.SKIPPED.getCode())
-                .resultJson(resultJson(request, feeRate, slippageRate, stats, totalReturn, emptyReason))
+                .resultJson(resultJson(request, feeRate, slippageRate, stats, totalReturn,
+                        emptyReason, selectedStrategy, replay))
                 .build();
     }
 
@@ -913,7 +1067,9 @@ public class SingleRuleBacktestService implements BacktestService {
                               BigDecimal slippageRate,
                               EvaluationStats stats,
                               BigDecimal totalReturn,
-                              EmptyBacktestReason emptyReason) {
+                              EmptyBacktestReason emptyReason,
+                              RuleStrategyDetailDto selectedStrategy,
+                              ReplayResult replay) {
         Map<String, Object> payload = baseResultPayload(request, feeRate, slippageRate);
         payload.put("statisticsVersion", 3);
         payload.put("evaluationBasis", stats.evaluationBasis());
@@ -929,12 +1085,36 @@ public class SingleRuleBacktestService implements BacktestService {
         payload.put("evaluatedCount", stats.returns().size());
         payload.put("equityCurve", stats.equityCurve());
         payload.put("totalReturnAfterCost", totalReturn == null ? null : scale(totalReturn));
+        if (selectedStrategy != null) {
+            payload.put("combinationSnapshot", selectedStrategy);
+            payload.put("executedRuleVersions", replay.executedRuleVersions());
+            payload.put("combinationContributionCount", replay.signals().size());
+            payload.put("combinationContributions", combinationContributions(replay.signals()));
+        }
         if (emptyReason != null) {
             payload.put("emptyReasonCode", emptyReason.code());
             payload.put("emptyReason", emptyReason.message());
         }
         payload.put("riskDisclaimer", StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
         return toJson(payload);
+    }
+
+    private List<Map<String, Object>> combinationContributions(List<BacktestSignal> signals) {
+        List<Map<String, Object>> details = new ArrayList<>();
+        for (BacktestSignal sample : signals) {
+            if (sample.combinationTrace() == null) continue;
+            if (details.size() >= MAX_COMBINATION_CONTRIBUTION_SAMPLES) break;
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("date", sample.signal().getSignalDate().toString());
+            detail.put("symbol", sample.signal().getSymbol());
+            detail.put("signal", sample.signal().getSignal());
+            detail.put("bullishScore", sample.signal().getBullishScore());
+            detail.put("bearishScore", sample.signal().getBearishScore());
+            detail.put("riskScore", sample.signal().getRiskScore());
+            detail.put("trace", sample.combinationTrace());
+            details.add(detail);
+        }
+        return details;
     }
 
     private Map<String, Object> baseResultPayload(BacktestRequestDto request,
@@ -1015,71 +1195,12 @@ public class SingleRuleBacktestService implements BacktestService {
         if (!StringUtils.hasText(candidateRule.getProposedContent())) {
             return CandidateRuleValidation.failed("候选规则缺少可执行 JSON 内容：" + candidateRule.getCandidateCode());
         }
-        JsonNode root;
         try {
-            root = OBJECT_MAPPER.readTree(candidateRule.getProposedContent());
-        } catch (JsonProcessingException e) {
-            return CandidateRuleValidation.failed("候选规则拟议内容不是可执行 JSON：" + candidateRule.getCandidateCode());
+            jsonRuleToDroolsCompiler.compile(candidateRule.getCandidateCode(), candidateRule.getProposedContent());
+            return CandidateRuleValidation.ok();
+        } catch (RuntimeException e) {
+            return CandidateRuleValidation.failed("候选规则拟议内容不是可执行 JSON：" + e.getMessage());
         }
-        if (!root.isObject()) {
-            return CandidateRuleValidation.failed("候选规则拟议内容不是 JSON 对象：" + candidateRule.getCandidateCode());
-        }
-        CandidateRuleValidation conditionValidation = validateCandidateConditions(candidateRule, root.path("conditions"));
-        if (!conditionValidation.executable()) {
-            return conditionValidation;
-        }
-        return validateCandidateActions(candidateRule, root.path("actions"));
-    }
-
-    private CandidateRuleValidation validateCandidateConditions(CandidateRule candidateRule, JsonNode conditions) {
-        if (conditions.isMissingNode() || conditions.isNull()) {
-            return CandidateRuleValidation.failed("候选规则缺少 conditions 数组：" + candidateRule.getCandidateCode());
-        }
-        if (!conditions.isArray()) {
-            return CandidateRuleValidation.failed("候选规则 conditions 必须是数组：" + candidateRule.getCandidateCode());
-        }
-        for (JsonNode condition : conditions) {
-            if (!condition.isObject()) {
-                return CandidateRuleValidation.failed("候选规则 condition 必须是对象：" + candidateRule.getCandidateCode());
-            }
-            if (!StringUtils.hasText(condition.path("field").asText())) {
-                return CandidateRuleValidation.failed("候选规则 condition 缺少 field：" + candidateRule.getCandidateCode());
-            }
-            String operator = condition.path("operator").asText("eq");
-            if (!SUPPORTED_CONDITION_OPERATORS.contains(operator)) {
-                return CandidateRuleValidation.failed("候选规则 condition 使用了不支持的 operator：" + operator);
-            }
-            if (condition.path("value").isMissingNode()) {
-                return CandidateRuleValidation.failed("候选规则 condition 缺少 value：" + candidateRule.getCandidateCode());
-            }
-            if ("in".equals(operator) && !condition.path("value").isArray()) {
-                return CandidateRuleValidation.failed("候选规则 in 条件的 value 必须是数组：" + candidateRule.getCandidateCode());
-            }
-        }
-        return CandidateRuleValidation.ok();
-    }
-
-    private CandidateRuleValidation validateCandidateActions(CandidateRule candidateRule, JsonNode actions) {
-        if (!actions.isObject()) {
-            return CandidateRuleValidation.failed("候选规则 actions 必须是对象：" + candidateRule.getCandidateCode());
-        }
-        boolean hasScoreAction = false;
-        for (String field : List.of("bullish_score", "bearish_score", "risk_score")) {
-            JsonNode value = actions.path(field);
-            if (value.isMissingNode() || value.isNull()) {
-                continue;
-            }
-            hasScoreAction = true;
-            try {
-                new BigDecimal(value.asText());
-            } catch (NumberFormatException e) {
-                return CandidateRuleValidation.failed("候选规则 actions." + field + " 必须是数值：" + candidateRule.getCandidateCode());
-            }
-        }
-        if (!hasScoreAction) {
-            return CandidateRuleValidation.failed("候选规则 actions 缺少可执行分值字段：" + candidateRule.getCandidateCode());
-        }
-        return CandidateRuleValidation.ok();
     }
 
     private void writeBackCandidateBacktest(CandidateRule candidateRule, BacktestResult result) {
@@ -1153,11 +1274,19 @@ public class SingleRuleBacktestService implements BacktestService {
     private record ReturnObservation(BigDecimal rawReturn, boolean win, ReturnSource source) {
     }
 
-    private record BacktestSignal(StockSignalDaily signal, String evaluationDirection) {
+    private record BacktestSignal(StockSignalDaily signal, String evaluationDirection,
+                                  StrategyExecutionService.StrategyExecutionTrace combinationTrace) {
+        private BacktestSignal(StockSignalDaily signal, String evaluationDirection) {
+            this(signal, evaluationDirection, null);
+        }
     }
 
     private record ReplayResult(List<BacktestSignal> signals, List<StockFactorDaily> factors,
-                                String evaluationBasis) {
+                                String evaluationBasis, Map<String, String> executedRuleVersions) {
+        private ReplayResult(List<BacktestSignal> signals, List<StockFactorDaily> factors,
+                             String evaluationBasis) {
+            this(signals, factors, evaluationBasis, Map.of());
+        }
     }
 
     private record EmptyBacktestReason(String code, String message) {

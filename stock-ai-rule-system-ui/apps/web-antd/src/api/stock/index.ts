@@ -76,7 +76,11 @@ interface RawResponse<T> {
 const USE_STOCK_MOCK = import.meta.env.VITE_STOCK_USE_MOCK === 'true';
 const mockBacktestRuns = new Map<
   number,
-  { detail: BacktestReportDetail; request: BacktestRequest; result: BacktestResult }
+  {
+    detail: BacktestReportDetail;
+    request: BacktestRequest;
+    result: BacktestResult;
+  }
 >();
 let nextMockBacktestId = 1;
 
@@ -420,15 +424,87 @@ export async function getStockAnalysis(symbol: string, date?: string) {
   );
 }
 
-export async function getStockResearchDetail(symbol: string, date?: string) {
+export async function getStockResearchDetail(
+  symbol: string,
+  date?: string,
+  versionNo?: number,
+) {
   return requestOrMock(
     async () => {
       const response = await baseRequestClient.get<
         RawResponse<StockAjaxResult<StockResearchDetail>>
-      >(`/stocks/${symbol}/research`, { params: { date } });
+      >(`/stocks/${symbol}/research`, { params: { date, versionNo } });
       return unwrapAjaxResult(response.data);
     },
-    () => ({ ...mockStockResearchDetail, symbol }),
+    () => {
+      if (versionNo && !date) {
+        throw new Error('查询指定信号版本时必须提供 date');
+      }
+      if (!date || date === mockStockResearchDetail.signalDate) {
+        if (versionNo === 1) {
+          return {
+            ...mockStockResearchDetail,
+            confidence: 68,
+            currentVersionNo: 1,
+            explanation:
+              'v1 历史版本仅保存信号结果与命中规则编码，详细规则轨迹未记录。',
+            factorDate: null,
+            factors: [],
+            riskScore: null,
+            ruleChain: [
+              {
+                condition: '详细轨迹未记录',
+                contribution: null,
+                ruleCode: 'R_TREND_BREAKOUT_001',
+                ruleName: 'R_TREND_BREAKOUT_001',
+              },
+            ],
+            symbol,
+            trace: null,
+            traceStatus: 'legacy',
+          } satisfies StockResearchDetail;
+        }
+        if (versionNo && versionNo !== 2) {
+          throw new Error(`该信号版本不存在：v${versionNo}`);
+        }
+        return { ...mockStockResearchDetail, symbol };
+      }
+      const historical = mockStockResearchDetail.history.find(
+        (record) => record.date === date,
+      );
+      if (versionNo && (!historical || versionNo !== 1)) {
+        throw new Error(`该信号版本不存在：v${versionNo}`);
+      }
+      return {
+        ...mockStockResearchDetail,
+        confidence: historical?.confidence ?? null,
+        currentVersionNo: historical ? 1 : null,
+        explanation: historical
+          ? '该历史信号仅保存结果与命中规则编码，生成时的逐条条件、分数贡献和因子快照未记录。'
+          : '该日暂无已生成的信号。',
+        factorDate: null,
+        factors: [],
+        ruleChain: historical
+          ? historical.triggeredRules.map((ruleCode) => ({
+              condition: '当时的条件与贡献未记录',
+              contribution: null,
+              ruleCode,
+              ruleName: ruleCode,
+            }))
+          : [],
+        riskScore: null,
+        signal: historical?.signal ?? 'watch',
+        signalDate: historical?.date ?? null,
+        signalStatus: historical ? 'ready' : 'pending',
+        symbol,
+        trace: null,
+        traceStatus: 'legacy',
+        tradeDate: date,
+        versions: historical
+          ? [{ availableAt: `${date}T17:00:00`, versionNo: 1 }]
+          : [],
+      } satisfies StockResearchDetail;
+    },
   );
 }
 
@@ -471,24 +547,39 @@ export async function getRuleGovernanceDetail(ruleCode: string) {
       >(`/rules/${ruleCode}/governance`);
       return unwrapAjaxResult(response.data);
     },
-    () => ({
-      candidateDiff: {
-        currentContent: 'close > highest(close, 20)',
-        highlights: ['新增量能过滤', '提高突破阈值'],
-        proposedContent:
-          'close > highest(close, 20) * 1.002 AND volume > ma(volume, 20) * 1.5',
-      },
-      description: '基于趋势突破和量能放大的辅助规则。',
-      expression: 'close > highest(close, 20)',
-      performance: mockRuleGovernanceOverview.metrics,
-      relatedFactors: ['highest(close,20)', 'ma(volume,20)'],
-      ruleCode,
-      ruleName: ruleCode,
-      ruleType: 'trend',
-      source: 'system',
-      status: 'active',
-      version: 'v1.0',
-    }),
+    () => {
+      const rule = mockRules.find((item) => item.ruleCode === ruleCode);
+      const candidate = mockCandidates.find(
+        (item) => item.targetRuleCode === ruleCode,
+      );
+      const productionExecutable = Boolean(
+        rule &&
+        rule.ruleFormat === 'drools' &&
+        rule.status === 'active' &&
+        rule.enabled !== false,
+      );
+      return {
+        candidateDiff: {
+          currentContent: rule?.ruleContent ?? '',
+          highlights: candidate ? [candidate.reason] : [],
+          proposedContent: candidate?.proposedContent ?? '',
+        },
+        description: rule?.description ?? '基于趋势突破和量能放大的辅助规则。',
+        expression: rule?.ruleContent ?? '',
+        performance: mockRuleGovernanceOverview.metrics,
+        relatedFactors: ['highest(close,20)', 'ma(volume,20)'],
+        ruleCode,
+        ruleName: rule?.ruleName ?? ruleCode,
+        ruleType: rule?.ruleType ?? 'trend',
+        source: rule?.createdBy ?? 'system',
+        status: rule?.status ?? 'missing',
+        version: rule?.version ?? 'v1.0',
+        ruleFormat: rule?.ruleFormat ?? 'drools',
+        enabled: rule?.enabled ?? false,
+        priority: rule?.priority ?? 0,
+        productionExecutable,
+      } satisfies RuleGovernanceDetail;
+    },
   );
 }
 
@@ -613,9 +704,11 @@ export async function runBacktest(data: BacktestRequest) {
     },
     () => {
       const id = nextMockBacktestId++;
+      const combination =
+        data.objectType === 'rule_group' || data.objectType === 'strategy';
       const resultJson = JSON.stringify({
         directionalCount: mockBacktestReportOverview.sampleCount,
-        evaluationBasis: 'rule_direction',
+        evaluationBasis: combination ? 'combination_signal' : 'rule_direction',
         equityCurve: mockBacktestReportOverview.equityCurve,
         evaluatedCount: mockBacktestReportOverview.evaluatedCount,
         signalCount: mockBacktestReportOverview.sampleCount,
@@ -641,7 +734,12 @@ export async function runBacktest(data: BacktestRequest) {
         holdingPeriod: data.holdingPeriod,
         metrics: mockBacktestReportOverview.metrics.map((metric) =>
           metric.label === '胜率'
-            ? { ...metric, label: `${data.holdingPeriod}日规则方向命中率` }
+            ? {
+                ...metric,
+                label: combination
+                  ? `${data.holdingPeriod}日组合信号命中率`
+                  : `${data.holdingPeriod}日规则方向命中率`,
+              }
             : metric,
         ),
         objectCode: data.objectCode,
@@ -686,40 +784,51 @@ export async function getBacktestReportHistory(
     },
     () => {
       const normalizedSymbols = (symbols: string[]) =>
-        [...new Set(symbols.map((symbol) => symbol.trim().toUpperCase()))].sort();
+        [
+          ...new Set(symbols.map((symbol) => symbol.trim().toUpperCase())),
+        ].toSorted();
       const rows = [...mockBacktestRuns.values()]
-        .reverse()
-        .filter(({ request }) =>
-          (!params.objectType || request.objectType === params.objectType)
-          && (!params.objectCode || request.objectCode === params.objectCode)
-          && (!params.startDate || request.startDate >= params.startDate)
-          && (!params.endDate || request.endDate <= params.endDate)
-          && (params.holdingPeriod == null || request.holdingPeriod === params.holdingPeriod)
-          && (!params.stockPoolType || request.stockPoolType === params.stockPoolType)
-          && (!params.stockPoolCode || request.stockPoolCode === params.stockPoolCode)
-          && (!params.symbols || JSON.stringify(normalizedSymbols(request.symbols ?? [])) === JSON.stringify(normalizedSymbols(params.symbols))),
+        .toReversed()
+        .filter(
+          ({ request }) =>
+            (!params.objectType || request.objectType === params.objectType) &&
+            (!params.objectCode || request.objectCode === params.objectCode) &&
+            (!params.startDate || request.startDate >= params.startDate) &&
+            (!params.endDate || request.endDate <= params.endDate) &&
+            (params.holdingPeriod === null ||
+              params.holdingPeriod === undefined ||
+              request.holdingPeriod === params.holdingPeriod) &&
+            (!params.stockPoolType ||
+              request.stockPoolType === params.stockPoolType) &&
+            (!params.stockPoolCode ||
+              request.stockPoolCode === params.stockPoolCode) &&
+            (!params.symbols ||
+              JSON.stringify(normalizedSymbols(request.symbols ?? [])) ===
+                JSON.stringify(normalizedSymbols(params.symbols))),
         )
-        .map(({ detail, result }): BacktestReportHistoryItem => ({
-          avgReturn: result.avgReturn,
-          createdTime: detail.createdTime,
-          endDate: detail.endDate,
-          evaluatedCount: detail.evaluatedCount,
-          holdingPeriod: detail.holdingPeriod,
-          maxDrawdown: result.maxDrawdown,
-          objectCode: detail.objectCode,
-          objectType: detail.objectType,
-          reportId: detail.reportId,
-          sampleCount: detail.sampleCount,
-          startDate: detail.startDate,
-          status: detail.status,
-          stockPoolCode: detail.stockPoolCode,
-          stockPoolType: detail.stockPoolType,
-          symbols: detail.symbols,
-          totalReturn: result.totalReturn,
-          triggerCount: result.triggerCount,
-          unevaluableCount: detail.unevaluableCount,
-          winRate: result.winRate,
-        }));
+        .map(
+          ({ detail, result }): BacktestReportHistoryItem => ({
+            avgReturn: result.avgReturn,
+            createdTime: detail.createdTime,
+            endDate: detail.endDate,
+            evaluatedCount: detail.evaluatedCount,
+            holdingPeriod: detail.holdingPeriod,
+            maxDrawdown: result.maxDrawdown,
+            objectCode: detail.objectCode,
+            objectType: detail.objectType,
+            reportId: detail.reportId,
+            sampleCount: detail.sampleCount,
+            startDate: detail.startDate,
+            status: detail.status,
+            stockPoolCode: detail.stockPoolCode,
+            stockPoolType: detail.stockPoolType,
+            symbols: detail.symbols,
+            totalReturn: result.totalReturn,
+            triggerCount: result.triggerCount,
+            unevaluableCount: detail.unevaluableCount,
+            winRate: result.winRate,
+          }),
+        );
       const pageNum = Math.max(1, params.pageNum ?? 1);
       const pageSize = Math.max(1, params.pageSize ?? 20);
       return {
@@ -751,16 +860,25 @@ export async function getBacktestReports(
       return unwrapAjaxResult(response.data);
     },
     () => {
-      const matches = [...mockBacktestRuns.values()].reverse().find(({ request }) =>
-        (!params.objectType || params.objectType === request.objectType)
-        && (!params.objectCode || params.objectCode === request.objectCode)
-        && (!params.startDate || params.startDate <= request.startDate)
-        && (!params.endDate || params.endDate >= request.endDate)
-        && (params.holdingPeriod == null || params.holdingPeriod === request.holdingPeriod)
-        && (!params.stockPoolType || params.stockPoolType === request.stockPoolType)
-        && (!params.stockPoolCode || params.stockPoolCode === request.stockPoolCode)
-        && (!params.symbols || JSON.stringify(params.symbols) === JSON.stringify(request.symbols ?? [])),
-      );
+      const matches = [...mockBacktestRuns.values()]
+        .toReversed()
+        .find(
+          ({ request }) =>
+            (!params.objectType || params.objectType === request.objectType) &&
+            (!params.objectCode || params.objectCode === request.objectCode) &&
+            (!params.startDate || params.startDate <= request.startDate) &&
+            (!params.endDate || params.endDate >= request.endDate) &&
+            (params.holdingPeriod === null ||
+              params.holdingPeriod === undefined ||
+              params.holdingPeriod === request.holdingPeriod) &&
+            (!params.stockPoolType ||
+              params.stockPoolType === request.stockPoolType) &&
+            (!params.stockPoolCode ||
+              params.stockPoolCode === request.stockPoolCode) &&
+            (!params.symbols ||
+              JSON.stringify(params.symbols) ===
+                JSON.stringify(request.symbols ?? [])),
+        );
       if (!matches) {
         return {
           ...mockBacktestReportOverview,

@@ -184,8 +184,8 @@ public class DailyWorkflowOrchestrator {
                         "因子 JSON 结构、空行情处理和未来数据防泄露策略需要统一"),
                 new DailyWorkflowDependencyVo(
                         "M3",
-                        "JSON 规则推理",
-                        "读取因子快照与启用 JSON 规则，输出规则命中结果",
+                        "Drools 规则推理",
+                        "读取因子快照与启用 Drools 规则，输出规则命中结果",
                         "规则状态、优先级、冲突处理和异常隔离策略需要统一"),
                 new DailyWorkflowDependencyVo(
                         "M4",

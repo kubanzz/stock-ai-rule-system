@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -59,6 +60,62 @@ class DroolsRuleEngineExecutorTest {
         assertThat(result.riskScore()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(result.triggeredRules()).containsExactly("R_DROOLS_TREND_BREAKOUT_001");
         assertThat(result.explanations()).containsExactly("Drools 识别短期趋势强且成交量放大，仅作为辅助决策信号");
+        assertThat(result.ruleEvaluations()).hasSize(1);
+        assertThat(result.ruleEvaluations().getFirst().status()).isEqualTo("MATCHED");
+        assertThat(result.ruleEvaluations().getFirst().evidenceStatus()).isEqualTo("PARTIAL");
+        assertThat(result.ruleEvaluations().getFirst().conditions()).singleElement()
+                .satisfies(condition -> {
+                    assertThat(condition.field()).isEqualTo("$drools_rule");
+                    assertThat(condition.actual()).isEqualTo("R_DROOLS_TREND_BREAKOUT_001");
+                    assertThat(condition.status()).isEqualTo("MATCHED");
+                });
+        assertThat(result.ruleEvaluations().getFirst().bullishDelta()).isEqualByComparingTo("35");
+    }
+
+    @Test
+    void executesActiveDroolsRulesInOneSessionUsingPersistedPriorityAsSalience() throws Exception {
+        RuleDefinition lowPriorityRule = droolsRule("R_LOW_PRIORITY", 10, """
+                import java.math.BigDecimal;
+                import com.jx.tracker.rule.engine.StockFactorFact;
+
+                rule "R_LOW_PRIORITY"
+                salience 999
+                when
+                    $f : StockFactorFact(shortTermTrend == "up")
+                then
+                    $f.addBullishScore(new BigDecimal("5"));
+                    $f.addTriggeredRule("R_LOW_PRIORITY");
+                    $f.addExplanation("low priority");
+                end
+                """);
+        RuleDefinition highPriorityRule = droolsRule("R_HIGH_PRIORITY", 100, """
+                import java.math.BigDecimal;
+                import com.jx.tracker.rule.engine.StockFactorFact;
+
+                rule "R_HIGH_PRIORITY"
+                salience -999
+                when
+                    $f : StockFactorFact(shortTermTrend == "up")
+                then
+                    $f.addBullishScore(new BigDecimal("7"));
+                    $f.addTriggeredRule("R_HIGH_PRIORITY");
+                    $f.addExplanation("high priority");
+                end
+                """);
+
+        RuleExecutionResult result = droolsExecutor().execute(new RuleExecutionRequest(
+                "AAPL", LocalDate.of(2026, 6, 20), Map.of("short_term_trend", "up"),
+                List.of(lowPriorityRule, highPriorityRule)));
+
+        assertThat(result.bullishScore()).isEqualByComparingTo("12");
+        assertThat(result.triggeredRules()).containsExactly("R_HIGH_PRIORITY", "R_LOW_PRIORITY");
+        assertThat(result.explanations()).containsExactly("high priority", "low priority");
+        assertThat(result.ruleEvaluations()).extracting(evaluation -> evaluation.code())
+                .containsExactly("R_HIGH_PRIORITY", "R_LOW_PRIORITY");
+        assertThat(result.ruleEvaluations()).allSatisfy(evaluation -> {
+            assertThat(evaluation.status()).isEqualTo("MATCHED");
+            assertThat(evaluation.evidenceStatus()).isEqualTo("PARTIAL");
+        });
     }
 
     @Test
@@ -104,6 +161,8 @@ class DroolsRuleEngineExecutorTest {
         assertThat(result.bullishScore()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(result.bearishScore()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(result.riskScore()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(result.ruleEvaluations()).hasSize(1);
+        assertThat(result.ruleEvaluations().getFirst().status()).isEqualTo("NOT_MATCHED");
     }
 
     @Test
@@ -138,6 +197,32 @@ class DroolsRuleEngineExecutorTest {
 
         assertThat(result.riskScore()).isEqualByComparingTo(new BigDecimal("20"));
         assertThat(result.triggeredRules()).containsExactly("R_DROOLS_ALIAS_001");
+    }
+
+    @Test
+    void missingAndUnavailableNumericAliasesDoNotAbortDroolsEvaluation() throws Exception {
+        RuleDefinition rule = droolsRule("R_INCOMPLETE", 100, """
+                import java.math.BigDecimal;
+                import com.jx.tracker.rule.engine.StockFactorFact;
+
+                rule "R_INCOMPLETE"
+                when
+                    $f : StockFactorFact(rsi < new BigDecimal("30"))
+                then
+                    $f.addRiskScore(new BigDecimal("80"));
+                    $f.addTriggeredRule("R_INCOMPLETE");
+                end
+                """);
+        Map<String, Object> factors = new HashMap<>();
+        factors.put("rsi14", null);
+        factors.put("rsi", "unknown");
+
+        RuleExecutionResult result = droolsExecutor().execute(new RuleExecutionRequest(
+                "AAPL", LocalDate.of(2026, 6, 20), factors, List.of(rule)));
+
+        assertThat(result.triggeredRules()).isEmpty();
+        assertThat(result.riskScore()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(result.ruleEvaluations().getFirst().status()).isEqualTo("NOT_MATCHED");
     }
 
     @Test

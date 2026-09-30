@@ -1,6 +1,8 @@
 package com.jx.tracker.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
 import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockBase;
@@ -48,6 +50,7 @@ import java.util.stream.Collectors;
 public class StockDashboardQueryServiceImpl implements StockDashboardQueryService {
 
     private static final String PENDING_SIGNAL = "pending";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Set<String> SUPPORTED_SIGNALS = Set.of(
             SignalType.BULLISH.getCode(),
             SignalType.BEARISH.getCode(),
@@ -474,11 +477,27 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
     }
 
     private int triggeredRuleCount(String triggeredRules) {
-        return StringUtils.hasText(triggeredRules)
-                ? (int) java.util.Arrays.stream(triggeredRules.split("[,，\\s]+"))
+        if (!StringUtils.hasText(triggeredRules)) {
+            return 0;
+        }
+        try {
+            JsonNode parsed = OBJECT_MAPPER.readTree(triggeredRules);
+            if (parsed.isArray()) {
+                int count = 0;
+                for (JsonNode item : parsed) {
+                    if ((item.isTextual() && StringUtils.hasText(item.asText()))
+                            || (item.isObject() && StringUtils.hasText(item.path("rule_code").asText()))) {
+                        count++;
+                    }
+                }
+                return count;
+            }
+        } catch (Exception ignored) {
+            // Historical rows may contain comma or whitespace separated codes.
+        }
+        return (int) java.util.Arrays.stream(triggeredRules.split("[,，\\s]+"))
                 .filter(StringUtils::hasText)
-                .count()
-                : 0;
+                .count();
     }
 
     private LocalDateTime max(LocalDateTime first, LocalDateTime second) {

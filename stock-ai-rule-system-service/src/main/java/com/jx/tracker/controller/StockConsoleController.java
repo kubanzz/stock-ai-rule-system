@@ -120,8 +120,9 @@ public class StockConsoleController {
     @GetMapping("/stocks/{symbol}/research")
     @Operation(summary = "查询股票研究详情")
     public AjaxResult research(@PathVariable("symbol") String symbol,
-                               @RequestParam(value = "date", required = false) LocalDate date) {
-        return AjaxResult.success(stockConsoleQueryService.research(symbol, date));
+                               @RequestParam(value = "date", required = false) LocalDate date,
+                               @RequestParam(value = "versionNo", required = false) Integer versionNo) {
+        return AjaxResult.success(stockConsoleQueryService.research(symbol, date, versionNo));
     }
 
     @GetMapping("/rules/governance")

@@ -1,6 +1,7 @@
 package com.jx.tracker.domain.vo;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jx.tracker.market.data.util.MarketCodeNormalizer;
 import com.jx.tracker.risk.model.GateDecision;
 import com.jx.tracker.risk.model.RiskHorizon;
@@ -243,6 +244,9 @@ public final class StockConsoleVo {
     public record RuleContribution(String ruleCode, String ruleName, String condition, BigDecimal contribution) {
     }
 
+    public record SignalVersion(long versionNo, LocalDateTime availableAt) {
+    }
+
     public record PredictionRecord(
             LocalDate date,
             String signal,
@@ -269,7 +273,14 @@ public final class StockConsoleVo {
             List<PricePoint> priceSeries,
             List<FactorState> factors,
             List<RuleContribution> ruleChain,
-            List<PredictionRecord> history
+            List<PredictionRecord> history,
+            LocalDate signalDate,
+            LocalDate factorDate,
+            LocalDate quoteDate,
+            String traceStatus,
+            JsonNode trace,
+            Long currentVersionNo,
+            List<SignalVersion> versions
     ) {
     }
 
@@ -284,7 +295,11 @@ public final class StockConsoleVo {
             BigDecimal winRate5d,
             BigDecimal avgReturn,
             BigDecimal maxDrawdown,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            String ruleFormat,
+            Boolean enabled,
+            Integer priority,
+            boolean productionExecutable
     ) {
     }
 
@@ -309,7 +324,11 @@ public final class StockConsoleVo {
             String expression,
             List<String> relatedFactors,
             List<MetricCard> performance,
-            VersionDiff candidateDiff
+            VersionDiff candidateDiff,
+            String ruleFormat,
+            Boolean enabled,
+            Integer priority,
+            boolean productionExecutable
     ) {
     }
 

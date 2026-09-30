@@ -1,5 +1,7 @@
 <script lang="ts" setup>
 import type {
+  BacktestCombinationContribution,
+  BacktestCombinationSnapshot,
   BacktestReportDetail,
   BacktestReportHistoryItem,
   BacktestReportOverview,
@@ -44,6 +46,10 @@ import {
   runBacktest,
   STOCK_RISK_DISCLAIMER,
 } from '#/api/stock';
+import {
+  getRuleGroups,
+  getRuleStrategies,
+} from '#/api/stock/rule-combinations';
 
 const route = useRoute();
 const loading = ref(false);
@@ -73,8 +79,11 @@ function queryString(value: unknown) {
 }
 
 function routeObjectType(): BacktestRequest['objectType'] {
-  return queryString(route.query.objectType) === 'candidate_rule'
-    ? 'candidate_rule'
+  const type = queryString(route.query.objectType);
+  return type === 'candidate_rule' ||
+    type === 'rule_group' ||
+    type === 'strategy'
+    ? type
     : 'rule';
 }
 
@@ -93,13 +102,139 @@ const resultPayload = computed<BacktestReportResultPayload>(() => {
   }
 });
 
-const hasCurrentStatistics = computed(
-  () => [2, 3].includes(resultPayload.value.statisticsVersion ?? 0),
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isScores(
+  value: unknown,
+): value is { bearish: number; bullish: number; risk: number } {
+  return (
+    isRecord(value) &&
+    typeof value.bearish === 'number' &&
+    typeof value.bullish === 'number' &&
+    typeof value.risk === 'number'
+  );
+}
+
+function isCombinationSnapshot(
+  value: unknown,
+): value is BacktestCombinationSnapshot {
+  return (
+    isRecord(value) &&
+    typeof value.strategyCode === 'string' &&
+    typeof value.version === 'string' &&
+    Array.isArray(value.groups) &&
+    value.groups.every(
+      (selection: unknown) =>
+        isRecord(selection) &&
+        typeof selection.groupCode === 'string' &&
+        typeof selection.groupVersion === 'string' &&
+        typeof selection.weight === 'number' &&
+        isRecord(selection.group) &&
+        typeof selection.group.aggregation === 'string' &&
+        typeof selection.group.minMatchedRules === 'number' &&
+        Array.isArray(selection.group.members) &&
+        selection.group.members.every(
+          (member: unknown) =>
+            isRecord(member) &&
+            typeof member.ruleCode === 'string' &&
+            typeof member.weight === 'number',
+        ),
+    )
+  );
+}
+
+function isCombinationContribution(
+  value: unknown,
+): value is BacktestCombinationContribution {
+  return (
+    isRecord(value) &&
+    typeof value.date === 'string' &&
+    typeof value.symbol === 'string' &&
+    isRecord(value.trace) &&
+    Array.isArray(value.trace.groupContributions) &&
+    Array.isArray(value.trace.ruleContributions) &&
+    value.trace.groupContributions.every(
+      (group: unknown) =>
+        isRecord(group) &&
+        typeof group.groupCode === 'string' &&
+        typeof group.groupVersion === 'string' &&
+        typeof group.aggregation === 'string' &&
+        typeof group.eligible === 'boolean' &&
+        typeof group.matchedCount === 'number' &&
+        typeof group.memberCount === 'number' &&
+        Array.isArray(group.countedRules) &&
+        isScores(group.weightedScores),
+    ) &&
+    value.trace.ruleContributions.every(
+      (rule: unknown) =>
+        isRecord(rule) &&
+        typeof rule.ruleCode === 'string' &&
+        isScores(rule.weightedScores),
+    )
+  );
+}
+
+const combinationSnapshot = computed(() => {
+  const value: unknown = resultPayload.value.combinationSnapshot;
+  return isCombinationSnapshot(value) ? value : undefined;
+});
+
+const contributionExamples = computed(() => {
+  const value: unknown = resultPayload.value.combinationContributions;
+  return Array.isArray(value)
+    ? value.filter((item) => isCombinationContribution(item)).slice(0, 3)
+    : [];
+});
+
+const executedRuleVersions = computed(() => {
+  const value: unknown = resultPayload.value.executedRuleVersions;
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  );
+});
+
+const repeatedRuleCodes = computed(() => {
+  const counts = new Map<string, number>();
+  for (const selection of combinationSnapshot.value?.groups ?? []) {
+    for (const member of selection.group.members) {
+      counts.set(member.ruleCode, (counts.get(member.ruleCode) ?? 0) + 1);
+    }
+  }
+  return [...counts].filter(([, count]) => count > 1).map(([code]) => code);
+});
+
+function formatContribution(example: BacktestCombinationContribution) {
+  const rules = example.trace.ruleContributions
+    .filter((rule) => rule.directionGroupCode || rule.riskGroupCode)
+    .map((rule) => {
+      const assignments = [
+        rule.directionGroupCode ? `方向→${rule.directionGroupCode}` : '',
+        rule.riskGroupCode ? `风险→${rule.riskGroupCode}` : '',
+      ]
+        .filter(Boolean)
+        .join('、');
+      return `${rule.ruleCode}（${assignments}；看涨 ${rule.weightedScores.bullish} / 看跌 ${rule.weightedScores.bearish} / 风险 ${rule.weightedScores.risk}）`;
+    });
+  return rules.join('；') || '无计分规则';
+}
+
+const hasCurrentStatistics = computed(() =>
+  [2, 3].includes(resultPayload.value.statisticsVersion ?? 0),
 );
 
 const hasRuleDirectionStatistics = computed(
-  () => resultPayload.value.statisticsVersion === 3
-    && resultPayload.value.evaluationBasis === 'rule_direction',
+  () =>
+    resultPayload.value.statisticsVersion === 3 &&
+    resultPayload.value.evaluationBasis === 'rule_direction',
+);
+
+const hasCombinationStatistics = computed(
+  () => resultPayload.value.evaluationBasis === 'combination_signal',
 );
 
 const legacyStatisticsNotice = computed(() =>
@@ -117,14 +252,22 @@ const reportWatchCount = computed(() =>
 );
 
 const reportUndirectedCount = computed(() =>
-  hasRuleDirectionStatistics.value ? resultPayload.value.undirectedCount : undefined,
+  hasRuleDirectionStatistics.value
+    ? resultPayload.value.undirectedCount
+    : undefined,
 );
 
 const ruleDirectionNotice = computed(() => {
   if (!report.value?.reportId || !hasRuleDirectionStatistics.value) return '';
   const period = selectedReport.value?.holdingPeriod;
-  const periodText = period == null ? '持有期' : `${period} 日`;
+  const periodText =
+    period === null || period === undefined ? '持有期' : `${period} 日`;
   return `本报告的${periodText}规则方向命中率只统计规则自身给出方向、且持有期行情完整的样本。最终综合信号仍可能是观望；规则触发次数不等于可评估样本数。`;
+});
+
+const combinationNotice = computed(() => {
+  if (!report.value?.reportId || !hasCombinationStatistics.value) return '';
+  return '组合信号命中率只统计最终给出看涨或看跌方向、且持有期行情完整的样本；观望和高风险提示计入组合触发次数，但不计入方向命中率和收益。组合配置与组成员版本已保存在报告快照中。';
 });
 
 const reportEquityCurve = computed(() => {
@@ -149,14 +292,22 @@ const equityBars = computed(() => {
 });
 
 function metricValue(label: string) {
-  return report.value?.metrics.find((metric) => metric.label === label)?.value ?? undefined;
+  return (
+    report.value?.metrics.find((metric) => metric.label === label)?.value ??
+    undefined
+  );
 }
 
 const reportSampleCount = computed(() => {
   if (hasCurrentStatistics.value) {
-    return report.value?.sampleCount ?? resultPayload.value.signalCount ?? metricValue('触发次数');
+    return (
+      report.value?.sampleCount ??
+      resultPayload.value.signalCount ??
+      metricValue('触发次数')
+    );
   }
-  const recordedCount = resultPayload.value.signalCount ?? report.value?.sampleCount;
+  const recordedCount =
+    resultPayload.value.signalCount ?? report.value?.sampleCount;
   return recordedCount && recordedCount > 0
     ? recordedCount
     : (metricValue('触发次数') ?? recordedCount);
@@ -166,19 +317,26 @@ const reportEvaluatedCount = computed(() => {
   if (hasCurrentStatistics.value) {
     return report.value?.evaluatedCount ?? resultPayload.value.evaluatedCount;
   }
-  const recordedCount = resultPayload.value.evaluatedCount ?? report.value?.evaluatedCount;
+  const recordedCount =
+    resultPayload.value.evaluatedCount ?? report.value?.evaluatedCount;
   return recordedCount && recordedCount > 0
     ? recordedCount
-    : (resultPayload.value.triggerCount ?? metricValue('触发次数') ?? recordedCount);
+    : (resultPayload.value.triggerCount ??
+        metricValue('触发次数') ??
+        recordedCount);
 });
 
 const reportUnevaluableCount = computed(() => {
   if (hasCurrentStatistics.value) {
-    return report.value?.unevaluableCount ?? resultPayload.value.unevaluableCount;
+    return (
+      report.value?.unevaluableCount ?? resultPayload.value.unevaluableCount
+    );
   }
-  return resultPayload.value.unevaluableCount
-    ?? (report.value?.unevaluableCount ? report.value.unevaluableCount : undefined)
-    ?? resultPayload.value.skippedCount;
+  return (
+    resultPayload.value.unevaluableCount ??
+    report.value?.unevaluableCount ??
+    resultPayload.value.skippedCount
+  );
 });
 
 const reportStatus = computed(
@@ -193,25 +351,30 @@ const reportNotice = computed(() => {
       : '请选择一条历史记录查看报告。';
   }
   if (reportStatus.value === 'failed') {
-    return resultPayload.value.errorSummary || '本次回测失败，请检查规则内容和历史数据。';
+    return (
+      resultPayload.value.errorSummary ||
+      '本次回测失败，请检查规则内容和历史数据。'
+    );
   }
   if (hasCurrentStatistics.value) {
-    if (!hasRuleDirectionStatistics.value
-      && (resultPayload.value.emptyReasonCode === 'watch_only'
-        || (reportDirectionalCount.value === 0 && (reportWatchCount.value ?? 0) > 0))) {
+    if (
+      !hasRuleDirectionStatistics.value &&
+      (resultPayload.value.emptyReasonCode === 'watch_only' ||
+        (reportDirectionalCount.value === 0 &&
+          (reportWatchCount.value ?? 0) > 0))
+    ) {
       return '规则已命中，但本次信号全部为观望；没有可计算收益的方向信号，收益指标不适用。';
     }
     if (reportSampleCount.value === 0) {
       return '本次回测没有产生历史预测信号，请检查所选股票池、日期范围和规则条件。';
     }
+    if (resultPayload.value.emptyReason) {
+      return resultPayload.value.emptyReason;
+    }
     if (reportDirectionalCount.value === 0) {
       return hasRuleDirectionStatistics.value
         ? '本次回测没有产生规则方向样本，收益指标不适用。'
         : '本次回测没有产生方向信号，收益指标不适用。';
-    }
-    if (resultPayload.value.emptyReason
-      && !(hasRuleDirectionStatistics.value && resultPayload.value.emptyReasonCode === 'watch_only')) {
-      return resultPayload.value.emptyReason;
     }
     if (reportEvaluatedCount.value === 0) {
       return hasRuleDirectionStatistics.value
@@ -227,14 +390,21 @@ const reportNotice = computed(() => {
 });
 
 const equityEmptyNotice = computed(() => {
-  if (!hasCurrentStatistics.value) return '旧报告未保存可还原的逐笔收益曲线，建议重新回测。';
-  if (reportSampleCount.value === 0) return '本次没有规则触发信号，暂无收益曲线。';
-  if (reportDirectionalCount.value === 0) return hasRuleDirectionStatistics.value
-    ? '本次没有规则方向样本，没有可计算的收益曲线。'
-    : '本次只有观望信号，没有可计算的收益曲线。';
-  if (reportEvaluatedCount.value === 0) return hasRuleDirectionStatistics.value
-    ? '规则方向样本缺少持有期实际行情，暂无收益曲线。'
-    : '方向信号缺少持有期实际行情，暂无收益曲线。';
+  if (!hasCurrentStatistics.value)
+    return '旧报告未保存可还原的逐笔收益曲线，建议重新回测。';
+  if (reportSampleCount.value === 0)
+    return '本次没有规则触发信号，暂无收益曲线。';
+  if (reportDirectionalCount.value === 0) {
+    if (hasRuleDirectionStatistics.value)
+      return '本次没有规则方向样本，没有可计算的收益曲线。';
+    return hasCombinationStatistics.value
+      ? '本次只有观望或高风险提示，没有可计算的收益曲线。'
+      : '本次只有观望信号，没有可计算的收益曲线。';
+  }
+  if (reportEvaluatedCount.value === 0)
+    return hasRuleDirectionStatistics.value
+      ? '规则方向样本缺少持有期实际行情，暂无收益曲线。'
+      : '方向信号缺少持有期实际行情，暂无收益曲线。';
   return '本次回测未保存可展示的收益曲线。';
 });
 
@@ -256,14 +426,16 @@ function statusText(status: string | undefined) {
   if (!status) {
     return '未返回状态';
   }
-  return {
-    failed: '失败',
-    partial: '部分完成',
-    pending: '等待执行',
-    running: '执行中',
-    skipped: '已跳过',
-    success: '已完成',
-  }[status] ?? status;
+  return (
+    {
+      failed: '失败',
+      partial: '部分完成',
+      pending: '等待执行',
+      running: '执行中',
+      skipped: '已跳过',
+      success: '已完成',
+    }[status] ?? status
+  );
 }
 
 function statusColor(status: string | undefined) {
@@ -283,14 +455,19 @@ const filters = reactive({
   market: 'A股',
   objectCode: '',
   objectType: routeObjectType(),
-  range: [dayjs().subtract(1, 'year').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD')] as [string, string],
+  range: [
+    dayjs().subtract(1, 'year').format('YYYY-MM-DD'),
+    dayjs().format('YYYY-MM-DD'),
+  ] as [string, string],
   holdingPeriod: 1,
   stockPoolType: 'watchlist' as NonNullable<BacktestRequest['stockPoolType']>,
   stockPoolCode: 'my-follow',
   symbolsText: '',
 });
 
-function reportFromDetail(detail: BacktestReportDetail): BacktestReportOverview {
+function reportFromDetail(
+  detail: BacktestReportDetail,
+): BacktestReportOverview {
   return {
     comparison: [],
     cumulativeReturns: detail.cumulativeReturns,
@@ -307,10 +484,18 @@ function reportFromDetail(detail: BacktestReportDetail): BacktestReportOverview 
   };
 }
 
-function formatScope(item: Pick<BacktestReportHistoryItem, 'stockPoolCode' | 'stockPoolType' | 'symbols'>) {
-  if (item.stockPoolType === 'custom') return `自定义：${item.symbols?.join('、') || '未记录股票'}`;
-  if (item.stockPoolType === 'market') return `市场：${item.stockPoolCode || '未记录'}`;
-  if (item.stockPoolType === 'watchlist') return `股票池：${item.stockPoolCode || '未记录'}`;
+function formatScope(
+  item: Pick<
+    BacktestReportHistoryItem,
+    'stockPoolCode' | 'stockPoolType' | 'symbols'
+  >,
+) {
+  if (item.stockPoolType === 'custom')
+    return `自定义：${item.symbols?.join('、') || '未记录股票'}`;
+  if (item.stockPoolType === 'market')
+    return `市场：${item.stockPoolCode || '未记录'}`;
+  if (item.stockPoolType === 'watchlist')
+    return `股票池：${item.stockPoolCode || '未记录'}`;
   return '未记录';
 }
 
@@ -319,7 +504,14 @@ function formatTime(value: null | string | undefined) {
 }
 
 function objectTypeText(value: string) {
-  return value === 'candidate_rule' ? '候选规则' : value === 'rule' ? '正式规则' : value;
+  return (
+    {
+      candidate_rule: '候选规则',
+      rule: '正式规则',
+      rule_group: '规则组',
+      strategy: '应用方案',
+    }[value] ?? value
+  );
 }
 
 async function selectHistoryReport(item: BacktestReportHistoryItem) {
@@ -332,15 +524,19 @@ async function selectHistoryReport(item: BacktestReportHistoryItem) {
   try {
     const detail = await getBacktestReport(item.reportId);
     if (requestId !== detailRequestId) return;
-    if (detail.reportId !== item.reportId || detail.objectCode !== item.objectCode
-      || detail.objectType !== item.objectType) {
+    if (
+      detail.reportId !== item.reportId ||
+      detail.objectCode !== item.objectCode ||
+      detail.objectType !== item.objectType
+    ) {
       throw new Error('报告详情与所选历史记录不匹配');
     }
     selectedReport.value = detail;
     report.value = reportFromDetail(detail);
   } catch (error) {
     if (requestId !== detailRequestId) return;
-    reportMessage.value = error instanceof Error ? error.message : '报告详情加载失败';
+    reportMessage.value =
+      error instanceof Error ? error.message : '报告详情加载失败';
     message.error(reportMessage.value);
   } finally {
     if (requestId === detailRequestId) detailLoading.value = false;
@@ -353,9 +549,10 @@ async function loadHistory(selectFirst = true) {
   try {
     const result = await getBacktestReportHistory({
       objectCode: historyFilters.objectCode.trim() || undefined,
-      objectType: historyFilters.objectType === 'all'
-        ? undefined
-        : historyFilters.objectType as BacktestRequest['objectType'],
+      objectType:
+        historyFilters.objectType === 'all'
+          ? undefined
+          : (historyFilters.objectType as BacktestRequest['objectType']),
       pageNum: historyPage.value,
       pageSize: historyPageSize.value,
     });
@@ -374,8 +571,10 @@ async function loadHistory(selectFirst = true) {
         detailLoading.value = false;
       }
     } else if (selectedHistory.value) {
-      selectedHistory.value = result.rows.find((row) => row.reportId === selectedHistory.value?.reportId)
-        ?? selectedHistory.value;
+      selectedHistory.value =
+        result.rows.find(
+          (row) => row.reportId === selectedHistory.value?.reportId,
+        ) ?? selectedHistory.value;
     }
   } catch (error) {
     if (requestId !== historyRequestId) return;
@@ -412,7 +611,8 @@ function candidateOption(candidate: CandidateRule) {
 
 async function fetchBacktestObjects(objectType: BacktestRequest['objectType']) {
   if (objectType === 'rule') {
-    return (await getRules()).rows
+    const result = await getRules();
+    return result.rows
       .filter(
         (rule) =>
           rule.status === 'active' &&
@@ -420,11 +620,26 @@ async function fetchBacktestObjects(objectType: BacktestRequest['objectType']) {
           rule.enabled !== false &&
           rule.ruleContent?.trim(),
       )
-      .map(ruleOption);
+      .map((rule) => ruleOption(rule));
   }
-  return (await getCandidateRules()).rows
+  if (objectType === 'rule_group') {
+    const result = await getRuleGroups();
+    return result.rows.map((group) => ({
+      label: `${group.groupName}（${group.groupCode} · ${group.version} · ${group.status === 'active' ? '已启用' : '历史配置'}）`,
+      value: group.groupCode,
+    }));
+  }
+  if (objectType === 'strategy') {
+    const result = await getRuleStrategies();
+    return result.rows.map((strategy) => ({
+      label: `${strategy.strategyName}（${strategy.strategyCode} · ${strategy.version} · ${strategy.status === 'active' ? '已应用' : '历史配置'}）`,
+      value: strategy.strategyCode,
+    }));
+  }
+  const result = await getCandidateRules();
+  return result.rows
     .filter((candidate) => candidate.proposedContent?.trim())
-    .map(candidateOption);
+    .map((candidate) => candidateOption(candidate));
 }
 
 async function loadBacktestObjects(preferredCode = '') {
@@ -438,10 +653,13 @@ async function loadBacktestObjects(preferredCode = '') {
     if (requestId !== objectRequestId) return;
     objectOptions.value = options;
     if (preferredCode) {
-      filters.objectCode = options.some((option) => option.value === preferredCode)
+      filters.objectCode = options.some(
+        (option) => option.value === preferredCode,
+      )
         ? preferredCode
         : '';
-      if (!filters.objectCode) message.warning('指定的回测对象当前不可用，请重新选择');
+      if (!filters.objectCode)
+        message.warning('指定的回测对象当前不可用，请重新选择');
     } else {
       filters.objectCode = options[0]?.value ?? '';
     }
@@ -451,9 +669,7 @@ async function loadBacktestObjects(preferredCode = '') {
 }
 
 async function refreshObjects(preferredCode = '') {
-  const objectType = filters.objectType;
   await loadBacktestObjects(preferredCode);
-  if (objectType !== filters.objectType) return;
 }
 
 async function onObjectTypeChange() {
@@ -484,7 +700,9 @@ function preferredWatchlistPoolCode(pools: WatchlistPool[]) {
 }
 
 async function startBacktest() {
-  if (!objectOptions.value.some((option) => option.value === filters.objectCode)) {
+  if (
+    !objectOptions.value.some((option) => option.value === filters.objectCode)
+  ) {
     message.warning('请先选择回测对象');
     return;
   }
@@ -501,7 +719,9 @@ async function startBacktest() {
       return;
     }
     if (selectedPool.total === 0) {
-      message.warning(`“${selectedPool.poolName}”还没有股票，请先添加股票或改选其他范围`);
+      message.warning(
+        `“${selectedPool.poolName}”还没有股票，请先添加股票或改选其他范围`,
+      );
       return;
     }
   }
@@ -531,16 +751,20 @@ async function startBacktest() {
     };
     const runResult = await runBacktest(payload);
     backtestFinished = true;
-    if (runResult.id == null) {
+    if (runResult.id === null || runResult.id === undefined) {
       if (requestId === runRequestId) {
-        message.warning('回测请求已执行，但接口没有返回报告编号，无法确认本次结果。请稍后重新查询。');
+        message.warning(
+          '回测请求已执行，但接口没有返回报告编号，无法确认本次结果。请稍后重新查询。',
+        );
       }
       return;
     }
     const detail = await getBacktestReport(String(runResult.id));
-    if (detail.reportId !== String(runResult.id)
-      || detail.objectCode !== payload.objectCode
-      || detail.objectType !== payload.objectType) {
+    if (
+      detail.reportId !== String(runResult.id) ||
+      detail.objectCode !== payload.objectCode ||
+      detail.objectType !== payload.objectType
+    ) {
       throw new Error('返回的报告与本次回测不匹配，请稍后重新查询');
     }
     if (requestId !== runRequestId || selectionId !== detailRequestId) return;
@@ -624,12 +848,17 @@ watch(
     const code = queryString(route.query.objectCode);
     if (!code) return;
     const type = routeObjectType();
-    if (type !== filters.objectType || !objectOptions.value.some((option) => option.value === code)) {
+    if (
+      type !== filters.objectType ||
+      !objectOptions.value.some((option) => option.value === code)
+    ) {
       filters.objectType = type;
       try {
         await refreshObjects(code);
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '回测对象加载失败');
+        message.error(
+          error instanceof Error ? error.message : '回测对象加载失败',
+        );
       }
       return;
     }
@@ -663,7 +892,8 @@ watch(
       if (
         filters.stockPoolType === 'watchlist' &&
         !watchlists.value.some(
-          (pool) => pool.poolId === filters.stockPoolCode && pool.poolId !== 'all',
+          (pool) =>
+            pool.poolId === filters.stockPoolCode && pool.poolId !== 'all',
         )
       ) {
         filters.stockPoolCode = preferredWatchlistPoolCode(watchlists.value);
@@ -704,6 +934,8 @@ watch(
             :options="[
               { label: '正式规则', value: 'rule' },
               { label: '候选规则', value: 'candidate_rule' },
+              { label: '规则组', value: 'rule_group' },
+              { label: '应用方案', value: 'strategy' },
             ]"
             class="w-32"
             @change="onObjectTypeChange"
@@ -714,7 +946,9 @@ watch(
             v-model:value="filters.objectCode"
             :disabled="loading"
             :loading="objectLoading"
-            :not-found-content="objectLoading ? '正在加载规则' : '当前类型暂无可回测对象'"
+            :not-found-content="
+              objectLoading ? '正在加载规则' : '当前类型暂无可回测对象'
+            "
             :options="objectOptions"
             :placeholder="objectLoading ? '正在加载规则' : '请选择回测对象'"
             class="w-80"
@@ -746,15 +980,20 @@ watch(
             class="w-36"
           />
         </Form.Item>
-        <Form.Item v-else-if="filters.stockPoolType === 'watchlist'" label="股票池">
+        <Form.Item
+          v-else-if="filters.stockPoolType === 'watchlist'"
+          label="股票池"
+        >
           <Select
             v-model:value="filters.stockPoolCode"
             :disabled="loading"
             :options="
-              watchlists.filter((pool) => pool.poolId !== 'all').map((pool) => ({
-                label: `${pool.poolName} (${pool.total})`,
-                value: pool.poolId,
-              }))
+              watchlists
+                .filter((pool) => pool.poolId !== 'all')
+                .map((pool) => ({
+                  label: `${pool.poolName} (${pool.total})`,
+                  value: pool.poolId,
+                }))
             "
             class="w-52"
             placeholder="请选择股票池"
@@ -800,7 +1039,9 @@ watch(
         </Form.Item>
       </Form>
       <Typography.Paragraph class="mb-0 mt-2 text-xs" type="secondary">
-        回测会把规则应用到所选日期范围的历史因子，并计算信号之后的实际涨跌。我的股票池或自定义股票池不超过 20 只、回测区间不超过 3 年时，历史行情不足会尝试从真实数据源补采，再补算因子；无法补齐时会显示原因。
+        回测会把规则应用到所选日期范围的历史因子，并计算信号之后的实际涨跌。我的股票池或自定义股票池不超过
+        20 只、回测区间不超过 3
+        年时，历史行情不足会尝试从真实数据源补采，再补算因子；无法补齐时会显示原因。
       </Typography.Paragraph>
       <Alert
         v-if="emptyWatchlistNotice"
@@ -819,6 +1060,8 @@ watch(
             { label: '全部类型', value: 'all' },
             { label: '正式规则', value: 'rule' },
             { label: '候选规则', value: 'candidate_rule' },
+            { label: '规则组', value: 'rule_group' },
+            { label: '应用方案', value: 'strategy' },
           ]"
           class="w-32"
           @change="searchHistory"
@@ -836,7 +1079,11 @@ watch(
           { title: '报告编号', dataIndex: 'reportId', key: 'reportId' },
           { title: '回测对象', dataIndex: 'objectCode', key: 'objectCode' },
           { title: '回测区间', key: 'range' },
-          { title: '持有天数', dataIndex: 'holdingPeriod', key: 'holdingPeriod' },
+          {
+            title: '持有天数',
+            dataIndex: 'holdingPeriod',
+            key: 'holdingPeriod',
+          },
           { title: '股票范围', key: 'scope' },
           { title: '状态', dataIndex: 'status', key: 'status' },
           { title: '创建时间', dataIndex: 'createdTime', key: 'createdTime' },
@@ -871,7 +1118,9 @@ watch(
             {{ formatScope(record) }}
           </template>
           <template v-else-if="column.key === 'status'">
-            <Tag :color="statusColor(record.status)">{{ statusText(record.status) }}</Tag>
+            <Tag :color="statusColor(record.status)">{{
+              statusText(record.status)
+            }}</Tag>
           </template>
           <template v-else-if="column.key === 'createdTime'">
             {{ formatTime(record.createdTime) }}
@@ -882,19 +1131,35 @@ watch(
               type="link"
               @click="selectHistoryReport(record as BacktestReportHistoryItem)"
             >
-              {{ selectedHistory?.reportId === record.reportId ? '查看中' : '查看报告' }}
+              {{
+                selectedHistory?.reportId === record.reportId
+                  ? '查看中'
+                  : '查看报告'
+              }}
             </Button>
           </template>
         </template>
       </Table>
     </Card>
 
-    <Card class="mb-4" size="small" title="所选报告详情" :loading="detailLoading">
+    <Card
+      class="mb-4"
+      size="small"
+      title="所选报告详情"
+      :loading="detailLoading"
+    >
       <template v-if="selectedReport">
         <Space wrap>
           <Tag>报告：{{ selectedReport.reportId }}</Tag>
-          <Tag>{{ objectTypeText(selectedReport.objectType) }}：{{ selectedReport.objectCode }}</Tag>
-          <Tag>区间：{{ selectedReport.startDate || '--' }} 至 {{ selectedReport.endDate || '--' }}</Tag>
+          <Tag
+            >{{ objectTypeText(selectedReport.objectType) }}：{{
+              selectedReport.objectCode
+            }}</Tag
+          >
+          <Tag
+            >区间：{{ selectedReport.startDate || '--' }} 至
+            {{ selectedReport.endDate || '--' }}</Tag
+          >
           <Tag>持有：{{ selectedReport.holdingPeriod ?? '--' }} 个交易日</Tag>
           <Tag>范围：{{ formatScope(selectedReport) }}</Tag>
           <Tag>创建：{{ formatTime(selectedReport.createdTime) }}</Tag>
@@ -919,6 +1184,137 @@ watch(
       show-icon
       type="info"
     />
+    <Alert
+      v-if="!detailLoading && combinationNotice"
+      :message="combinationNotice"
+      class="mb-4"
+      show-icon
+      type="info"
+    />
+
+    <Card
+      v-if="selectedReport && hasCombinationStatistics"
+      class="mb-4"
+      size="small"
+      title="回测组合配置快照"
+    >
+      <template v-if="combinationSnapshot">
+        <Space wrap>
+          <Tag color="blue">
+            {{
+              selectedReport.objectType === 'rule_group'
+                ? '规则组'
+                : '应用方案'
+            }}：{{
+              combinationSnapshot.strategyName ||
+              combinationSnapshot.strategyCode
+            }}
+            · {{ combinationSnapshot.version }}
+          </Tag>
+          <Tag v-if="combinationSnapshot.bullishThreshold != null"
+            >看涨阈值 {{ combinationSnapshot.bullishThreshold }}</Tag
+          >
+          <Tag v-if="combinationSnapshot.bearishThreshold != null"
+            >看跌阈值 {{ combinationSnapshot.bearishThreshold }}</Tag
+          >
+          <Tag v-if="combinationSnapshot.riskThreshold != null"
+            >风险阈值 {{ combinationSnapshot.riskThreshold }}</Tag
+          >
+        </Space>
+        <div
+          v-for="selection in combinationSnapshot.groups"
+          :key="selection.groupCode"
+          class="mt-3 rounded border p-3"
+        >
+          <Space wrap>
+            <Typography.Text strong>{{
+              selection.group.groupName || selection.groupCode
+            }}</Typography.Text>
+            <Tag>{{ selection.groupCode }} · {{ selection.groupVersion }}</Tag>
+            <Tag>{{ selection.group.aggregation }}</Tag>
+            <Tag>至少命中 {{ selection.group.minMatchedRules }} 条</Tag>
+            <Tag>组权重 {{ selection.weight }}</Tag>
+            <Tag v-if="selection.required" color="orange">必选组</Tag>
+          </Space>
+          <div class="mt-2">
+            <Space wrap>
+              <Tag
+                v-for="member in selection.group.members"
+                :key="member.ruleCode"
+              >
+                {{ member.ruleCode }} · 配置时版本
+                {{ member.ruleVersionNo || '未记录' }} · 执行
+                {{ executedRuleVersions[member.ruleCode] || '未记录' }}
+                {{ selection.group.aggregation === 'WEIGHTED' ? ` · 成员权重 ${member.weight}` : '' }}{{ member.required ? ' · 必选' : '' }}
+              </Tag>
+            </Space>
+          </div>
+        </div>
+        <Typography.Paragraph
+          v-if="repeatedRuleCodes.length"
+          class="mb-0 mt-3 text-xs"
+          type="secondary"
+        >
+          跨组重复规则：{{
+            repeatedRuleCodes.join('、')
+          }}。每次信号按有效权重最高的组归属；方向分与风险分分别去重。成员权重仅在 WEIGHTED 聚合时计入。
+        </Typography.Paragraph>
+        <Typography.Paragraph class="mb-0 mt-2 text-xs" type="secondary">
+          “配置时版本”用于记录当时选择；本报告按“执行”所示的已启用规则版本回放。
+        </Typography.Paragraph>
+      </template>
+      <Alert
+        v-else
+        message="此报告没有可展示的组合配置快照。"
+        show-icon
+        type="info"
+      />
+
+      <div v-if="contributionExamples.length" class="mt-4">
+        <Typography.Text strong
+          >逐样本聚合贡献示例（前
+          {{ contributionExamples.length }} 条）</Typography.Text
+        >
+        <div
+          v-for="example in contributionExamples"
+          :key="`${example.date}-${example.symbol}`"
+          class="mt-2 rounded border p-3"
+        >
+          <Space wrap>
+            <Tag>{{ example.date }} · {{ example.symbol }}</Tag>
+            <Tag>最终信号 {{ example.signal }}</Tag>
+            <Tag
+              :color="
+                example.trace.requiredGroupGatePassed ? 'green' : 'orange'
+              "
+            >
+              {{
+                example.trace.requiredGroupGatePassed
+                  ? '必选组通过'
+                  : '必选组未通过'
+              }}
+            </Tag>
+          </Space>
+          <div
+            v-for="group in example.trace.groupContributions"
+            :key="group.groupCode"
+            class="mt-2 text-sm"
+          >
+            {{ group.groupCode }} · {{ group.groupVersion }} ·
+            {{ group.aggregation }} ·
+            {{ group.eligible ? '成立' : '未成立' }}（命中
+            {{ group.matchedCount }}/{{ group.memberCount }}）： 看涨
+            {{ group.weightedScores.bullish }}、看跌
+            {{ group.weightedScores.bearish }}、风险
+            {{ group.weightedScores.risk }}；计分规则
+            {{ group.countedRules?.join('、') || '无' }}
+          </div>
+          <Typography.Paragraph class="mb-0 mt-2 text-xs" type="secondary">
+            规则贡献：{{ formatContribution(example) }}
+          </Typography.Paragraph>
+        </div>
+      </div>
+    </Card>
 
     <Row :gutter="[16, 16]" class="mb-4">
       <Col
@@ -944,7 +1340,10 @@ watch(
       class="mb-4 text-xs"
       type="secondary"
     >
-      <template v-if="hasRuleDirectionStatistics">
+      <template v-if="hasCombinationStatistics">
+        收益类指标仅统计最终看涨或看跌且持有期行情完整的组合信号；“—”表示没有可计算样本。
+      </template>
+      <template v-else-if="hasRuleDirectionStatistics">
         收益类指标仅统计规则给出方向且持有期行情完整的样本；“—”表示没有可计算样本。最终综合信号可能仍是观望。
       </template>
       <template v-else>
@@ -960,10 +1359,14 @@ watch(
         </Tag>
         <Tag>样本数：{{ countDisplay(reportSampleCount) }}</Tag>
         <Tag v-if="hasCurrentStatistics" color="cyan">
-          {{ hasRuleDirectionStatistics ? '规则方向样本' : '方向信号' }}：{{ countDisplay(reportDirectionalCount) }}
+          {{ hasRuleDirectionStatistics ? '规则方向样本' : '方向信号' }}：{{
+            countDisplay(reportDirectionalCount)
+          }}
         </Tag>
         <Tag v-if="hasCurrentStatistics" color="default">
-          {{ hasRuleDirectionStatistics ? '最终观望' : '观望' }}：{{ countDisplay(reportWatchCount) }}
+          {{ hasRuleDirectionStatistics ? '最终观望' : '观望' }}：{{
+            countDisplay(reportWatchCount)
+          }}
         </Tag>
         <Tag v-if="hasRuleDirectionStatistics" color="default">
           无规则方向：{{ countDisplay(reportUndirectedCount) }}
@@ -972,14 +1375,19 @@ watch(
           可评估：{{ countDisplay(reportEvaluatedCount) }}
         </Tag>
         <Tag :color="reportUnevaluableCount ? 'orange' : 'green'">
-          {{ hasRuleDirectionStatistics ? '缺行情' : '不可评估' }}：{{ countDisplay(reportUnevaluableCount) }}
+          {{ hasRuleDirectionStatistics ? '缺行情' : '不可评估' }}：{{
+            countDisplay(reportUnevaluableCount)
+          }}
         </Tag>
         <Tag v-if="report?.reportId" color="default">
           报告：{{ report.reportId }}
         </Tag>
       </Space>
       <Typography.Paragraph class="mb-0 mt-2 text-xs" type="secondary">
-        <template v-if="hasRuleDirectionStatistics">
+        <template v-if="hasCombinationStatistics">
+          样本数表示组合产生的触发信号数量。方向信号仅包含最终看涨或看跌；观望和高风险提示不计入方向收益。可评估数仅包含持有期行情完整的方向信号。
+        </template>
+        <template v-else-if="hasRuleDirectionStatistics">
           样本数表示规则在历史因子上的命中次数；规则方向样本由规则本身给出的多空方向决定，最终观望数与规则方向样本可能重叠。可评估数仅包含持有期行情完整的规则方向样本；缺行情数不含无规则方向的样本。
         </template>
         <template v-else-if="hasCurrentStatistics">
@@ -1009,18 +1417,14 @@ watch(
               </span>
             </div>
           </div>
-          <Alert
-            v-else
-            :message="equityEmptyNotice"
-            show-icon
-            type="info"
-          />
+          <Alert v-else :message="equityEmptyNotice" show-icon type="info" />
           <Typography.Paragraph
             v-if="equityBars.length > 0"
             class="mb-0 mt-2 text-xs"
             type="secondary"
           >
-            序列以 1.00 为起点，按信号日聚合每笔持有期净收益后累计；它不是逐日持仓净值，也不能代表未来收益。
+            序列以 1.00
+            为起点，按信号日聚合每笔持有期净收益后累计；它不是逐日持仓净值，也不能代表未来收益。
           </Typography.Paragraph>
         </Card>
       </Col>

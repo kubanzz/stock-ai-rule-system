@@ -18,6 +18,10 @@ public interface StockConsoleQueryService {
 
     StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date);
 
+    default StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date, Integer versionNo) {
+        return research(symbol, date);
+    }
+
     StockConsoleVo.RuleGovernanceOverview ruleGovernance(String ruleType, String status, String source);
 
     StockConsoleVo.RuleGovernanceDetail ruleGovernanceDetail(String ruleCode);

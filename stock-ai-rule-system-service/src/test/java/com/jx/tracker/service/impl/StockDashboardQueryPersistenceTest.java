@@ -80,6 +80,7 @@ class StockDashboardQueryPersistenceTest {
                     triggered_rules VARCHAR(512),
                     explanation VARCHAR(512),
                     risk_disclaimer VARCHAR(512),
+                    trace_json VARCHAR(8192),
                     created_at DATETIME
                 )
                 """);

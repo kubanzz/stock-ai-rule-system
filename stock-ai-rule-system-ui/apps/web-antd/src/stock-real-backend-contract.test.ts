@@ -156,11 +156,13 @@ describe('stock real backend contract', () => {
     expect(governancePage).toContain('getRuleGovernance');
     expect(governancePage).toContain('getRuleGovernanceDetail');
     expect(governancePage).toContain('Drawer');
-    expect(governancePage).toContain('候选变更');
+    expect(governancePage).toContain('关联候选记录（含已发布留痕）');
+    expect(governancePage).toContain("execution: 'production'");
+    expect(governancePage).toContain('生产执行中');
     expect(governancePage).toContain('RiskAlert');
-    expect(backtestPage).toContain('getBacktestReports');
-    expect(backtestPage).toContain('规则对比');
-    expect(backtestPage).toContain('失败样本');
+    expect(backtestPage).toContain('getBacktestReportHistory');
+    expect(backtestPage).toContain('getBacktestReport');
+    expect(backtestPage).toContain('逐笔亏损样本');
     expect(aiReviewPage).toContain('getAiReviewOverview');
     expect(aiReviewPage).toContain('getAiMisjudgements');
     expect(aiReviewPage).toContain('createCandidateFromMisjudgement');

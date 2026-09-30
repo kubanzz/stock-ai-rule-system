@@ -1,7 +1,12 @@
 package com.jx.tracker.backtest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jx.tracker.domain.dto.BacktestRequestDto;
+import com.jx.tracker.domain.dto.RuleGroupDetailDto;
+import com.jx.tracker.domain.dto.RuleGroupMemberDto;
+import com.jx.tracker.domain.dto.RuleStrategyDetailDto;
+import com.jx.tracker.domain.dto.RuleStrategyGroupDto;
 import com.jx.tracker.domain.entity.BacktestResult;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.RuleDefinition;
@@ -23,8 +28,12 @@ import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.rule.engine.DroolsRuleEngineExecutor;
 import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
+import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
+import com.jx.tracker.rule.service.RuleGroupService;
+import com.jx.tracker.rule.service.RuleStrategyService;
 import com.jx.tracker.service.IStockFactorDailyService;
 import com.jx.tracker.signal.service.SignalScoringService;
+import com.jx.tracker.signal.service.StrategyExecutionService;
 import com.jx.tracker.verification.PredictionHitPolicy;
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +47,8 @@ import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class SingleRuleBacktestServiceTest {
 
@@ -728,6 +739,202 @@ class SingleRuleBacktestServiceTest {
         assertThat(result.getResultJson()).contains("缺少 conditions 数组");
         assertThat(factorMapper.selectCalls).isZero();
         assertThat(candidateRuleMapper.updated.getFirst().getBacktestStatus()).isEqualTo(BacktestStatus.FAILED.getCode());
+    }
+
+    @Test
+    void ruleGroupReplayCombinesTwoRulesIntoFinalBullishReturn() throws Exception {
+        RuleGroupService groups = mock(RuleGroupService.class);
+        RuleStrategyService strategies = mock(RuleStrategyService.class);
+        RuleGroupDetailDto group = group("G_CONFIRM", "v2", "R_TREND", "R_VOLUME");
+        when(groups.getGroup("G_CONFIRM")).thenReturn(group);
+        ruleDefinitionMapper.selectResponses.add(List.of(
+                productionRule("R_TREND", "v3", "shortTermTrend", "up", "30"),
+                productionRule("R_VOLUME", "v5", "volumeStatus", "high", "30")));
+        LocalDate date = LocalDate.of(2026, 1, 2);
+        factorMapper.selectResponses.add(List.of(factor("AAPL", date,
+                "{\"data_status\":\"normal\",\"short_term_trend\":\"up\",\"volume_status\":\"high\"}")));
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", date, "10.00"), quote("AAPL", date.plusDays(3), "11.00")));
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.RULE_GROUP.getCode());
+        request.setObjectCode("G_CONFIRM");
+        request.setHoldingPeriod(1);
+
+        BacktestResult result = combinationService(groups, strategies).runSingleRuleBacktest(request);
+
+        assertThat(result.getObjectType()).isEqualTo(RuleObjectType.RULE_GROUP.getCode());
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getWinRate()).isEqualByComparingTo("1.0000");
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0985");
+        JsonNode report = new ObjectMapper().readTree(result.getResultJson());
+        assertThat(report.path("evaluationBasis").asText()).isEqualTo("combination_signal");
+        assertThat(report.path("combinationSnapshot").path("groups").get(0)
+                .path("group").path("version").asText()).isEqualTo("v2");
+        assertThat(report.path("executedRuleVersions").path("R_TREND").asText()).isEqualTo("v3");
+        assertThat(report.path("executedRuleVersions").path("R_VOLUME").asText()).isEqualTo("v5");
+        JsonNode contribution = report.path("combinationContributions").get(0);
+        assertThat(contribution.path("signal").asText()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(contribution.path("bullishScore").decimalValue()).isEqualByComparingTo("60");
+        assertThat(contribution.path("trace").path("groupContributions").get(0)
+                .path("weightedScores").path("bullish").decimalValue()).isEqualByComparingTo("60");
+        assertThat(contribution.path("trace").path("ruleContributions").size()).isEqualTo(2);
+    }
+
+    @Test
+    void strategyReplayUsesSelectedGroupsAndThresholdForEachHistoricalSample() throws Exception {
+        RuleGroupService groups = mock(RuleGroupService.class);
+        RuleStrategyService strategies = mock(RuleStrategyService.class);
+        RuleStrategyDetailDto strategy = strategy("S_MIX", "v4", new BigDecimal("70"),
+                selection(group("G_TREND", "v2", "R_TREND"), false),
+                selection(group("G_VOLUME", "v3", "R_VOLUME"), false));
+        when(strategies.getStrategy("S_MIX")).thenReturn(strategy);
+        ruleDefinitionMapper.selectResponses.add(List.of(
+                productionRule("R_TREND", "v6", "shortTermTrend", "up", "40"),
+                productionRule("R_VOLUME", "v7", "volumeStatus", "high", "35")));
+        LocalDate first = LocalDate.of(2026, 1, 2);
+        LocalDate second = LocalDate.of(2026, 1, 5);
+        factorMapper.selectResponses.add(List.of(
+                factor("AAPL", first,
+                        "{\"data_status\":\"normal\",\"short_term_trend\":\"up\",\"volume_status\":\"high\"}"),
+                factor("AAPL", second,
+                        "{\"data_status\":\"normal\",\"short_term_trend\":\"up\",\"volume_status\":\"low\"}")));
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", first, "10.00"), quote("AAPL", second, "11.00")));
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.STRATEGY.getCode());
+        request.setObjectCode("S_MIX");
+        request.setHoldingPeriod(1);
+
+        BacktestResult result = combinationService(groups, strategies).runSingleRuleBacktest(request);
+
+        assertThat(result.getObjectType()).isEqualTo(RuleObjectType.STRATEGY.getCode());
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SUCCESS.getCode());
+        assertThat(result.getTriggerCount()).isEqualTo(2);
+        assertThat(result.getAvgReturn()).isEqualByComparingTo("0.0985");
+        assertThat(quoteMapper.selectCalls).isEqualTo(1);
+        JsonNode report = new ObjectMapper().readTree(result.getResultJson());
+        assertThat(report.path("signalCount").asInt()).isEqualTo(2);
+        assertThat(report.path("watchCount").asInt()).isEqualTo(1);
+        assertThat(report.path("directionalCount").asInt()).isEqualTo(1);
+        assertThat(report.path("evaluatedCount").asInt()).isEqualTo(1);
+        assertThat(report.path("combinationSnapshot").path("version").asText()).isEqualTo("v4");
+        assertThat(report.path("combinationSnapshot").path("bullishThreshold").decimalValue())
+                .isEqualByComparingTo("70");
+        assertThat(report.path("combinationSnapshot").path("groups").get(1)
+                .path("groupVersion").asText()).isEqualTo("v3");
+        assertThat(report.path("combinationContributions").size()).isEqualTo(2);
+        assertThat(report.path("combinationContributions").get(0).path("signal").asText())
+                .isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(report.path("combinationContributions").get(1).path("signal").asText())
+                .isEqualTo(SignalType.WATCH.getCode());
+        assertThat(report.path("combinationContributions").get(1).path("bullishScore").decimalValue())
+                .isEqualByComparingTo("40");
+    }
+
+    @Test
+    void groupBelowFinalThresholdPersistsSkippedReportWithoutChargingReturn() throws Exception {
+        RuleGroupService groups = mock(RuleGroupService.class);
+        RuleStrategyService strategies = mock(RuleStrategyService.class);
+        when(groups.getGroup("G_SINGLE")).thenReturn(group("G_SINGLE", "v1", "R_TREND"));
+        ruleDefinitionMapper.selectResponses.add(List.of(
+                productionRule("R_TREND", "v2", "shortTermTrend", "up", "35")));
+        LocalDate date = LocalDate.of(2026, 1, 2);
+        factorMapper.selectResponses.add(List.of(factor("AAPL", date,
+                "{\"data_status\":\"normal\",\"short_term_trend\":\"up\"}")));
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.RULE_GROUP.getCode());
+        request.setObjectCode("G_SINGLE");
+        request.setHoldingPeriod(1);
+
+        BacktestResult result = combinationService(groups, strategies).runSingleRuleBacktest(request);
+
+        assertThat(result.getStatus()).isEqualTo(BacktestStatus.SKIPPED.getCode());
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        assertThat(result.getWinRate()).isNull();
+        assertThat(result.getAvgReturn()).isNull();
+        assertThat(result.getTotalReturn()).isNull();
+        assertThat(quoteMapper.selectCalls).isZero();
+        assertThat(actualResultMapper.selectCalls).isZero();
+        JsonNode report = new ObjectMapper().readTree(result.getResultJson());
+        assertThat(report.path("emptyReasonCode").asText()).isEqualTo("no_final_direction");
+        assertThat(report.path("combinationContributions").get(0).path("signal").asText())
+                .isEqualTo(SignalType.WATCH.getCode());
+        assertThat(report.path("combinationContributions").get(0).path("bullishScore").decimalValue())
+                .isEqualByComparingTo("35");
+    }
+
+    private SingleRuleBacktestService combinationService(RuleGroupService groups,
+                                                         RuleStrategyService strategies) {
+        return new SingleRuleBacktestService(signalMapper.mapper, factorMapper.mapper,
+                actualResultMapper.mapper, quoteMapper.mapper, backtestResultMapper.mapper,
+                candidateRuleMapper.mapper, new DroolsRuleEngineExecutor(), new JsonRuleEngineExecutor(),
+                new SignalScoringService(), new PredictionHitPolicy(), new JsonRuleToDroolsCompiler(),
+                null, ruleDefinitionMapper.mapper, null, null, null,
+                groups, strategies, new StrategyExecutionService());
+    }
+
+    private RuleDefinition productionRule(String code, String version, String field,
+                                          String expected, String bullishScore) {
+        return RuleDefinition.builder()
+                .ruleCode(code).ruleName(code).version(version)
+                .ruleFormat(RuleFormat.DROOLS.getCode())
+                .status(RuleLifecycleStatus.ACTIVE.getCode()).enabled(true)
+                .ruleContent("""
+                        import java.math.BigDecimal;
+                        import com.jx.tracker.rule.engine.StockFactorFact;
+                        rule "%s"
+                        when
+                            $f : StockFactorFact(%s == "%s")
+                        then
+                            $f.addBullishScore(new BigDecimal("%s"));
+                            $f.addTriggeredRule("%s");
+                        end
+                        """.formatted(code, field, expected, bullishScore, code))
+                .build();
+    }
+
+    private RuleGroupDetailDto group(String code, String version, String... ruleCodes) {
+        RuleGroupDetailDto group = new RuleGroupDetailDto();
+        group.setGroupCode(code);
+        group.setGroupName(code);
+        group.setVersion(version);
+        group.setStatus("active");
+        group.setAggregation("WEIGHTED");
+        group.setMinMatchedRules(1);
+        group.setMembers(java.util.Arrays.stream(ruleCodes).map(ruleCode -> {
+            RuleGroupMemberDto member = new RuleGroupMemberDto();
+            member.setRuleCode(ruleCode);
+            member.setWeight(BigDecimal.ONE);
+            member.setRequired(false);
+            member.setRuleVersionNo("v1");
+            return member;
+        }).toList());
+        return group;
+    }
+
+    private RuleStrategyGroupDto selection(RuleGroupDetailDto group, boolean required) {
+        RuleStrategyGroupDto selected = new RuleStrategyGroupDto();
+        selected.setGroupCode(group.getGroupCode());
+        selected.setGroupVersion(group.getVersion());
+        selected.setGroup(group);
+        selected.setWeight(BigDecimal.ONE);
+        selected.setRequired(required);
+        return selected;
+    }
+
+    private RuleStrategyDetailDto strategy(String code, String version, BigDecimal bullishThreshold,
+                                           RuleStrategyGroupDto... groups) {
+        RuleStrategyDetailDto strategy = new RuleStrategyDetailDto();
+        strategy.setStrategyCode(code);
+        strategy.setStrategyName(code);
+        strategy.setVersion(version);
+        strategy.setStatus("active");
+        strategy.setBullishThreshold(bullishThreshold);
+        strategy.setBearishThreshold(new BigDecimal("60"));
+        strategy.setRiskThreshold(new BigDecimal("80"));
+        strategy.setGroups(List.of(groups));
+        return strategy;
     }
 
     private BacktestRequestDto request() {

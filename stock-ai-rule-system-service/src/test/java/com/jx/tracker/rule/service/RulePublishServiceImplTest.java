@@ -14,6 +14,8 @@ import com.jx.tracker.mapper.CandidateRuleMapper;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
 import com.jx.tracker.mapper.RuleOperationLogMapper;
 import com.jx.tracker.mapper.RuleVersionMapper;
+import com.jx.tracker.rule.engine.DroolsRuleEngineExecutor;
+import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -27,8 +29,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -56,7 +60,7 @@ class RulePublishServiceImplTest {
                 .id(90L)
                 .ruleId(100L)
                 .versionNo("v1")
-                .ruleContent("old-json")
+                .ruleContent(previousJson())
                 .approvalStatus(RuleVersionApprovalStatus.PUBLISHED.getCode())
                 .publishedTime(LocalDateTime.now().minusDays(1))
                 .build()));
@@ -79,7 +83,9 @@ class RulePublishServiceImplTest {
         assertThat(result.getCandidateCode()).isEqualTo("CR_20260706_0001");
         assertThat(result.getVersion().getId()).isEqualTo(200L);
         assertThat(result.getVersion().getVersionNo()).isEqualTo("v2");
-        assertThat(result.getVersion().getRuleContent()).isEqualTo("new-json");
+        assertThat(result.getVersion().getRuleContent())
+                .contains("rule \"R_TREND_BREAKOUT_001\"")
+                .contains("addBullishScore");
         assertThat(result.getVersion().getApprovalStatus()).isEqualTo(RuleVersionApprovalStatus.PUBLISHED.getCode());
         assertThat(result.getOperationLog().getId()).isEqualTo(300L);
         assertThat(result.getOperationLog().getOperation()).isEqualTo("publish");
@@ -94,7 +100,9 @@ class RulePublishServiceImplTest {
 
         ArgumentCaptor<RuleDefinition> ruleCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
         verify(ruleDefinitionMapper).updateById(ruleCaptor.capture());
-        assertThat(ruleCaptor.getValue().getRuleContent()).isEqualTo("new-json");
+        assertThat(ruleCaptor.getValue().getRuleContent())
+                .contains("rule \"R_TREND_BREAKOUT_001\"")
+                .contains("addBullishScore");
         assertThat(ruleCaptor.getValue().getVersion()).isEqualTo("v2");
         assertThat(ruleCaptor.getValue().getCurrentVersionId()).isEqualTo(200L);
         assertThat(ruleCaptor.getValue().getCurrentVersionNo()).isEqualTo("v2");
@@ -105,6 +113,99 @@ class RulePublishServiceImplTest {
         ArgumentCaptor<CandidateRule> candidateCaptor = ArgumentCaptor.forClass(CandidateRule.class);
         verify(candidateRuleMapper).updateById(candidateCaptor.capture());
         assertThat(candidateCaptor.getValue().getStatus()).isEqualTo(CandidateRuleStatus.PUBLISHED.getCode());
+    }
+
+    @Test
+    void createsProductionDefinitionWhenApprovedCandidateHasNoTargetPlaceholder() {
+        CandidateRule candidate = approvedCandidate();
+        candidate.setTargetRuleCode("R_NEW_AI_RULE_001");
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(null);
+        when(ruleDefinitionMapper.insert(any(RuleDefinition.class))).thenAnswer(invocation -> {
+            RuleDefinition definition = invocation.getArgument(0);
+            definition.setId(101L);
+            return 1;
+        });
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenAnswer(invocation -> {
+            RuleVersion version = invocation.getArgument(0);
+            version.setId(201L);
+            return 1;
+        });
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(candidateRuleMapper.updateById(any(CandidateRule.class))).thenReturn(1);
+        when(operationLogMapper.insert(any(RuleOperationLog.class))).thenAnswer(invocation -> {
+            RuleOperationLog log = invocation.getArgument(0);
+            log.setId(301L);
+            return 1;
+        });
+
+        RulePublishResultDto result = service.publishCandidateRule(
+                candidate.getCandidateCode(), "reviewer", "创建并上线新规则");
+
+        assertThat(result.getRuleCode()).isEqualTo("R_NEW_AI_RULE_001");
+        assertThat(result.getVersion().getRuleId()).isEqualTo(101L);
+        verify(ruleDefinitionMapper).insert(any(RuleDefinition.class));
+        ArgumentCaptor<RuleDefinition> definitionCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
+        verify(ruleDefinitionMapper).updateById(definitionCaptor.capture());
+        assertThat(definitionCaptor.getValue().getRuleFormat()).isEqualTo("drools");
+        assertThat(definitionCaptor.getValue().getStatus()).isEqualTo(RuleLifecycleStatus.ACTIVE.getCode());
+        assertThat(definitionCaptor.getValue().getEnabled()).isTrue();
+    }
+
+    @Test
+    void publishCallsSeedDeduplicationWithActivatedContent() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        RuleSeedDeduplicationService deduplication = mock(RuleSeedDeduplicationService.class);
+        RulePublishService guardedService = new RulePublishServiceImpl(
+                candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                new JsonRuleToDroolsCompiler(), new DroolsRuleEngineExecutor(), deduplication);
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenAnswer(invocation -> {
+            RuleVersion version = invocation.getArgument(0);
+            version.setId(201L);
+            return 1;
+        });
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(candidateRuleMapper.updateById(any(CandidateRule.class))).thenReturn(1);
+        when(operationLogMapper.insert(any(RuleOperationLog.class))).thenReturn(1);
+
+        guardedService.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线");
+
+        verify(deduplication).disableSupersededSeedRule(candidate, rule.getRuleContent());
+        assertThat(candidate.getStatus()).isEqualTo(CandidateRuleStatus.PUBLISHED.getCode());
+        assertThat(rule.getRuleContent()).contains("rule \"R_TREND_BREAKOUT_001\"");
+    }
+
+    @Test
+    void publishPropagatesSeedDeduplicationFailureWithinTransaction() {
+        CandidateRule candidate = approvedCandidate();
+        RuleDefinition rule = existingRule();
+        RuleSeedDeduplicationService deduplication = mock(RuleSeedDeduplicationService.class);
+        RulePublishService guardedService = new RulePublishServiceImpl(
+                candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                new JsonRuleToDroolsCompiler(), new DroolsRuleEngineExecutor(), deduplication);
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectList(any())).thenReturn(List.of());
+        when(ruleVersionMapper.insert(any(RuleVersion.class))).thenAnswer(invocation -> {
+            RuleVersion version = invocation.getArgument(0);
+            version.setId(201L);
+            return 1;
+        });
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(candidateRuleMapper.updateById(any(CandidateRule.class))).thenReturn(1);
+        when(operationLogMapper.insert(any(RuleOperationLog.class))).thenReturn(1);
+        doThrow(new ServiceException("去重写入失败"))
+                .when(deduplication).disableSupersededSeedRule(any(CandidateRule.class), anyString());
+
+        assertThatThrownBy(() -> guardedService.publishCandidateRule(
+                candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("去重写入失败");
     }
 
     @ParameterizedTest
@@ -258,7 +359,7 @@ class RulePublishServiceImplTest {
     @Test
     void rollbacksRuleToExistingVersionAndWritesAuditLog() {
         RuleDefinition rule = existingRule();
-        rule.setRuleContent("new-json");
+        rule.setRuleContent(candidateJson());
         rule.setVersion("v2");
         rule.setCurrentVersionId(200L);
         rule.setCurrentVersionNo("v2");
@@ -266,12 +367,13 @@ class RulePublishServiceImplTest {
                 .id(90L)
                 .ruleId(100L)
                 .versionNo("v1")
-                .ruleContent("old-json")
+                .ruleContent(previousJson())
                 .approvalStatus(RuleVersionApprovalStatus.PUBLISHED.getCode())
                 .publishedTime(LocalDateTime.now().minusDays(1))
                 .build();
         when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
         when(ruleVersionMapper.selectById(90L)).thenReturn(targetVersion);
+        when(ruleVersionMapper.updateById(any(RuleVersion.class))).thenReturn(1);
         when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
         when(operationLogMapper.insert(any(RuleOperationLog.class))).thenAnswer(invocation -> {
             RuleOperationLog log = invocation.getArgument(0);
@@ -295,7 +397,9 @@ class RulePublishServiceImplTest {
 
         ArgumentCaptor<RuleDefinition> ruleCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
         verify(ruleDefinitionMapper).updateById(ruleCaptor.capture());
-        assertThat(ruleCaptor.getValue().getRuleContent()).isEqualTo("old-json");
+        assertThat(ruleCaptor.getValue().getRuleContent())
+                .contains("rule \"R_TREND_BREAKOUT_001\"")
+                .contains("addRiskScore");
         assertThat(ruleCaptor.getValue().getVersion()).isEqualTo("v1");
         assertThat(ruleCaptor.getValue().getCurrentVersionId()).isEqualTo(90L);
         assertThat(ruleCaptor.getValue().getCurrentVersionNo()).isEqualTo("v1");
@@ -312,7 +416,7 @@ class RulePublishServiceImplTest {
                 .id(90L)
                 .ruleId(100L)
                 .versionNo("v1")
-                .ruleContent("old-json")
+                .ruleContent(previousJson())
                 .approvalStatus(approvalStatus)
                 .build();
         when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
@@ -333,11 +437,12 @@ class RulePublishServiceImplTest {
                 .id(91L)
                 .ruleId(100L)
                 .versionNo("v2")
-                .ruleContent("approved-json")
+                .ruleContent(previousJson())
                 .approvalStatus(RuleVersionApprovalStatus.APPROVED.getCode())
                 .build();
         when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
         when(ruleVersionMapper.selectById(91L)).thenReturn(targetVersion);
+        when(ruleVersionMapper.updateById(any(RuleVersion.class))).thenReturn(1);
         when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
         when(operationLogMapper.insert(any(RuleOperationLog.class))).thenReturn(1);
 
@@ -348,6 +453,32 @@ class RulePublishServiceImplTest {
         verify(operationLogMapper).insert(any(RuleOperationLog.class));
     }
 
+    @Test
+    void rollbackChecksForActiveDuplicateBeforeWritingAudit() {
+        RuleDefinition rule = existingRule();
+        RuleVersion targetVersion = RuleVersion.builder()
+                .id(91L)
+                .ruleId(100L)
+                .versionNo("v2")
+                .ruleContent(previousJson())
+                .approvalStatus(RuleVersionApprovalStatus.APPROVED.getCode())
+                .build();
+        RuleSeedDeduplicationService deduplication = mock(RuleSeedDeduplicationService.class);
+        RulePublishService guardedService = new RulePublishServiceImpl(
+                candidateRuleMapper, ruleDefinitionMapper, ruleVersionMapper, operationLogMapper,
+                new JsonRuleToDroolsCompiler(), new DroolsRuleEngineExecutor(), deduplication);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(rule);
+        when(ruleVersionMapper.selectById(91L)).thenReturn(targetVersion);
+        when(ruleVersionMapper.updateById(any(RuleVersion.class))).thenReturn(1);
+        when(ruleDefinitionMapper.updateById(any(RuleDefinition.class))).thenReturn(1);
+        when(operationLogMapper.insert(any(RuleOperationLog.class))).thenReturn(1);
+
+        guardedService.rollbackRuleVersion("R_TREND_BREAKOUT_001", "91", "reviewer", "回滚");
+
+        verify(deduplication).assertNoActiveDuplicate(
+                "R_TREND_BREAKOUT_001", rule.getRuleContent());
+    }
+
     private CandidateRule approvedCandidate() {
         return CandidateRule.builder()
                 .id(10L)
@@ -355,7 +486,7 @@ class RulePublishServiceImplTest {
                 .source("AI")
                 .targetRuleCode("R_TREND_BREAKOUT_001")
                 .changeType("add_filter")
-                .proposedContent("new-json")
+                .proposedContent(candidateJson())
                 .reason("减少弱势市场假突破")
                 .status(RuleLifecycleStatus.APPROVED.getCode())
                 .backtestStatus(BacktestStatus.SUCCESS.getCode())
@@ -369,7 +500,7 @@ class RulePublishServiceImplTest {
                 .ruleCode("R_TREND_BREAKOUT_001")
                 .ruleName("趋势突破")
                 .ruleType("signal")
-                .ruleContent("old-json")
+                .ruleContent(previousJson())
                 .ruleFormat("json")
                 .version("v1")
                 .status(RuleLifecycleStatus.APPROVED.getCode())
@@ -378,5 +509,17 @@ class RulePublishServiceImplTest {
                 .enabled(false)
                 .priority(10)
                 .build();
+    }
+
+    private String candidateJson() {
+        return """
+                {"conditions":[{"field":"short_term_trend","operator":"eq","value":"strong_up"}],"actions":{"bullish_score":25,"explanation":"候选规则"}}
+                """.trim();
+    }
+
+    private String previousJson() {
+        return """
+                {"conditions":[{"field":"short_term_trend","operator":"eq","value":"sideways"}],"actions":{"risk_score":10,"explanation":"历史规则"}}
+                """.trim();
     }
 }

@@ -63,7 +63,9 @@ public class HistoricalBacktestQuotePreparationService {
                 || request.getEndDate().isBefore(request.getStartDate())
                 || request.getEndDate().isAfter(LocalDate.now())
                 || (!"rule".equals(request.getObjectType())
-                    && !"candidate_rule".equals(request.getObjectType()))
+                    && !"candidate_rule".equals(request.getObjectType())
+                    && !"rule_group".equals(request.getObjectType())
+                    && !"strategy".equals(request.getObjectType()))
                 || !StringUtils.hasText(request.getObjectCode())) {
             return;
         }
@@ -113,7 +115,9 @@ public class HistoricalBacktestQuotePreparationService {
             syncRequest.setStartDate(warmupStart);
             syncRequest.setEndDate(tailEnd);
             syncRequest.setTriggerType("backtest");
-            syncRequest.setTriggerBy("single_rule_backtest");
+            syncRequest.setTriggerBy("rule_group".equals(request.getObjectType())
+                    || "strategy".equals(request.getObjectType())
+                    ? "combination_backtest" : "single_rule_backtest");
             MarketDataSyncResultDto result = syncService.syncDailyQuotes(syncRequest);
             if (result == null || !"success".equals(result.getStatus())
                     || !selection.dataSource().equals(result.getDataSource())) {

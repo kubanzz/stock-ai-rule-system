@@ -45,7 +45,7 @@ const formState = reactive<RuleDefinitionUpsert>({
   priority: 50,
   ruleCode: '',
   ruleContent: '',
-  ruleFormat: 'json',
+  ruleFormat: 'drools',
   ruleName: '',
   description: '',
   ruleType: 'trend',
@@ -97,7 +97,7 @@ function resetForm() {
     priority: 50,
     ruleCode: '',
     ruleContent: '',
-    ruleFormat: 'json',
+    ruleFormat: 'drools',
     ruleName: '',
     description: '',
     ruleType: 'trend',
@@ -270,7 +270,6 @@ watch(
             <Select
               v-model:value="formState.ruleFormat"
               :options="[
-                { label: 'JSON', value: 'json' },
                 { label: 'Drools', value: 'drools' },
               ]"
               class="w-32"
@@ -299,7 +298,7 @@ watch(
           <Input.TextArea
             v-model:value="formState.ruleContent"
             :rows="5"
-            placeholder="short_term_trend = strong_up AND volume_status = abnormal_high"
+            placeholder='rule "R_TREND_001"\nwhen\n  $f : StockFactorFact(...)\nthen\n  ...\nend'
           />
         </Form.Item>
       </Form>

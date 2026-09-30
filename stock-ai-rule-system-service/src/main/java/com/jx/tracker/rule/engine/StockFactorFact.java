@@ -3,7 +3,10 @@ package com.jx.tracker.rule.engine;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class StockFactorFact {
@@ -32,7 +35,14 @@ public class StockFactorFact {
         Map<String, Object> inputFactors = request.factors() == null ? Map.of() : request.factors();
         this.symbol = request.symbol();
         this.tradeDate = request.tradeDate();
-        this.factors = Map.copyOf(inputFactors);
+        // Null entries are unavailable evidence; Map.copyOf rejects them.
+        Map<String, Object> availableFactors = new HashMap<>();
+        inputFactors.forEach((key, value) -> {
+            if (key != null && value != null) {
+                availableFactors.put(key, value);
+            }
+        });
+        this.factors = Collections.unmodifiableMap(availableFactors);
         // TechnicalFactorCalculator uses the more explicit persisted names
         // (rsi14, macd_histogram and volume_ratio_5d). Keep the shorter
         // aliases for manually supplied factors and older rule requests.
@@ -157,19 +167,55 @@ public class StockFactorFact {
         addExplanation(reason);
     }
 
+    /**
+     * Evaluates a restricted, JSON-compatible condition from a Drools rule.
+     *
+     * <p>This method is intentionally kept on the fact instead of generating
+     * arbitrary MVEL expressions from AI output.  Candidate JSON rules can be
+     * compiled into a small, auditable DRL predicate while production still
+     * runs through the Drools engine.</p>
+     */
+    public boolean matches(String field, String operator, String expected) {
+        if (!hasText(field) || !hasText(operator) || expected == null) {
+            return false;
+        }
+        Object actual = factors.get(field);
+        if (actual == null || isUnavailable(actual)) {
+            return false;
+        }
+        String normalizedOperator = operator.trim().toLowerCase(Locale.ROOT);
+        try {
+            return switch (normalizedOperator) {
+                case "eq" -> String.valueOf(actual).equals(expected);
+                case "ne" -> String.valueOf(actual).equals(expected) ? false : true;
+                case "gt" -> compareDecimal(actual, expected) > 0;
+                case "gte" -> compareDecimal(actual, expected) >= 0;
+                case "lt" -> compareDecimal(actual, expected) < 0;
+                case "lte" -> compareDecimal(actual, expected) <= 0;
+                default -> false;
+            };
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
     private static BigDecimal decimalFactor(Map<String, Object> factors, String... keys) {
         Object value = factorValue(factors, keys);
         if (value == null) {
             return null;
         }
-        if (value instanceof BigDecimal decimal) {
-            return decimal;
+        try {
+            if (value instanceof BigDecimal decimal) {
+                return decimal;
+            }
+            if (value instanceof Number number) {
+                return new BigDecimal(number.toString());
+            }
+            String text = String.valueOf(value).trim();
+            return hasText(text) ? new BigDecimal(text) : null;
+        } catch (NumberFormatException ignored) {
+            return null;
         }
-        if (value instanceof Number number) {
-            return new BigDecimal(number.toString());
-        }
-        String text = String.valueOf(value);
-        return hasText(text) ? new BigDecimal(text) : null;
     }
 
     private static String textFactor(Map<String, Object> factors, String... keys) {
@@ -188,6 +234,22 @@ public class StockFactorFact {
 
     private static BigDecimal safeScore(BigDecimal score) {
         return score == null ? BigDecimal.ZERO : score;
+    }
+
+    private static int compareDecimal(Object actual, String expected) {
+        return new BigDecimal(String.valueOf(actual)).compareTo(new BigDecimal(expected));
+    }
+
+    private static boolean isUnavailable(Object actual) {
+        if (!(actual instanceof CharSequence text)) {
+            return false;
+        }
+        String normalized = text.toString().trim().toLowerCase(Locale.ROOT);
+        return normalized.isEmpty() || "unknown".equals(normalized)
+                || "suspended".equals(normalized)
+                || "suspended_or_missing".equals(normalized)
+                || "insufficient_data".equals(normalized)
+                || "data_insufficient".equals(normalized);
     }
 
     private static boolean hasText(String value) {

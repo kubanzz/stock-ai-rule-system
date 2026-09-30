@@ -48,11 +48,12 @@ class StockSignalPointInTimePersistenceTest {
                     bullish_score DECIMAL(10, 4), bearish_score DECIMAL(10, 4),
                     risk_score DECIMAL(10, 4), confidence DECIMAL(10, 4),
                     triggered_rules VARCHAR(1024), explanation VARCHAR(1024),
-                    risk_disclaimer VARCHAR(512), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    risk_disclaimer VARCHAR(512), trace_json VARCHAR(8192),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     signal_content_fingerprint VARCHAR(4096) GENERATED ALWAYS AS (
                         CONCAT_WS('|', symbol, signal_date, `signal`, signal_direction, signal_level,
                             bullish_score, bearish_score, risk_score, confidence,
-                            triggered_rules, explanation, risk_disclaimer)
+                            triggered_rules, explanation, risk_disclaimer, trace_json)
                     ),
                     UNIQUE (symbol, signal_date)
                 )
@@ -65,7 +66,8 @@ class StockSignalPointInTimePersistenceTest {
                     bullish_score DECIMAL(10, 4), bearish_score DECIMAL(10, 4),
                     risk_score DECIMAL(10, 4), confidence DECIMAL(10, 4),
                     triggered_rules VARCHAR(1024), explanation VARCHAR(1024),
-                    risk_disclaimer VARCHAR(512), content_fingerprint VARCHAR(4096),
+                    risk_disclaimer VARCHAR(512), trace_json VARCHAR(8192),
+                    content_fingerprint VARCHAR(4096),
                     available_at TIMESTAMP, UNIQUE (signal_id, version_no)
                 )
                 """);
@@ -89,10 +91,12 @@ class StockSignalPointInTimePersistenceTest {
                     new SignalScoringService()
             );
 
-            service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
-            service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
-            service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
-            service.generateDailySignal("600519.SH", DATE, java.util.Map.of());
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of("input", 1));
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of("input", 1));
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of("input", 1));
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of("input", 1));
+            // Identical visible scores but a different factor snapshot is a new evidence version.
+            service.generateDailySignal("600519.SH", DATE, java.util.Map.of("input", 2));
         }
 
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM stock_signal_daily", Integer.class)).isEqualTo(1);
@@ -103,11 +107,17 @@ class StockSignalPointInTimePersistenceTest {
         assertThat(jdbc.queryForList(
                 "SELECT signal_direction FROM stock_signal_daily_history ORDER BY id",
                 String.class
-        )).containsExactly("bullish", "bearish", "bullish");
+        )).containsExactly("bullish", "bearish", "bullish", "bullish");
         assertThat(jdbc.queryForList(
                 "SELECT available_at FROM stock_signal_daily_history ORDER BY id",
                 Timestamp.class
         )).allSatisfy(availableAt -> assertThat(availableAt).isNotNull());
+        assertThat(jdbc.queryForList(
+                "SELECT trace_json FROM stock_signal_daily_history ORDER BY id", String.class
+        )).allSatisfy(trace -> assertThat(trace).contains("\"factorDate\":\"2026-07-18\""));
+        assertThat(jdbc.queryForList(
+                "SELECT trace_json FROM stock_signal_daily_history ORDER BY id", String.class
+        )).last().asString().contains("\"input\":2");
     }
 
     @SuppressWarnings("unchecked")

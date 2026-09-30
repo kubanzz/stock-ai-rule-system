@@ -18,7 +18,7 @@ public class RuleInferenceStepHandler implements DailyWorkflowStepHandler {
         return DailyWorkflowStepResults.success(
                 stepCode(),
                 LocalDateTime.now(),
-                "JSON 规则推理由信号生成步骤按因子快照执行。",
+                "生产 Drools 规则由信号生成步骤按因子快照执行；JSON 只用于候选规则回测与发布前编译。",
                 Map.of("delegatedTo", WorkflowStepCode.SIGNAL_GENERATION.getCode())
         );
     }

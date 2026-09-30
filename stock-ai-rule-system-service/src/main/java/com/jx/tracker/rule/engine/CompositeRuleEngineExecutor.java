@@ -1,12 +1,11 @@
 package com.jx.tracker.rule.engine;
 
-import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Primary
 @Component
@@ -14,47 +13,42 @@ public class CompositeRuleEngineExecutor implements RuleEngineExecutor {
 
     public static final String FORMAT_EXECUTOR_QUALIFIER = "formatRuleEngineExecutor";
 
-    private final List<RuleEngineExecutor> executors;
+    /**
+     * The production signal path deliberately has one scoring source.  JSON
+     * rules are still supported by {@link JsonRuleEngineExecutor} for candidate
+     * rule backtests, but they must not be aggregated with production Drools
+     * rules because the same business condition could otherwise score twice.
+     */
+    private final RuleEngineExecutor productionExecutor;
 
-    public CompositeRuleEngineExecutor(@Qualifier(FORMAT_EXECUTOR_QUALIFIER) List<RuleEngineExecutor> executors) {
-        this.executors = executors == null ? List.of() : List.copyOf(executors);
+    @Autowired
+    public CompositeRuleEngineExecutor(DroolsRuleEngineExecutor productionExecutor) {
+        this.productionExecutor = Objects.requireNonNull(productionExecutor, "productionExecutor");
+    }
+
+    /**
+     * Compatibility constructor for unit tests and callers that previously
+     * supplied all format executors.  It intentionally selects Drools only;
+     * passing a mixed JSON/Drools list can no longer cause both engines to run.
+     */
+    @Deprecated
+    public CompositeRuleEngineExecutor(List<RuleEngineExecutor> executors) {
+        this.productionExecutor = selectDroolsExecutor(executors);
     }
 
     @Override
     public RuleExecutionResult execute(RuleExecutionRequest request) {
-        BigDecimal bullishScore = BigDecimal.ZERO;
-        BigDecimal bearishScore = BigDecimal.ZERO;
-        BigDecimal riskScore = BigDecimal.ZERO;
-        List<String> triggeredRules = new ArrayList<>();
-        List<String> explanations = new ArrayList<>();
+        return productionExecutor.execute(request);
+    }
 
-        for (RuleEngineExecutor executor : executors) {
-            RuleExecutionResult result = executor.execute(request);
-            bullishScore = bullishScore.add(safeScore(result.bullishScore()));
-            bearishScore = bearishScore.add(safeScore(result.bearishScore()));
-            riskScore = riskScore.add(safeScore(result.riskScore()));
-            if (result.triggeredRules() != null) {
-                triggeredRules.addAll(result.triggeredRules());
-            }
-            if (result.explanations() != null) {
-                explanations.addAll(result.explanations());
-            }
+    private static RuleEngineExecutor selectDroolsExecutor(List<RuleEngineExecutor> executors) {
+        if (executors == null || executors.isEmpty()) {
+            throw new IllegalArgumentException("At least one Drools rule executor is required");
         }
-
-        return new RuleExecutionResult(
-                normalizeNonNegative(bullishScore),
-                normalizeNonNegative(bearishScore),
-                normalizeNonNegative(riskScore),
-                List.copyOf(triggeredRules),
-                List.copyOf(explanations)
-        );
-    }
-
-    private BigDecimal safeScore(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
-    }
-
-    private BigDecimal normalizeNonNegative(BigDecimal value) {
-        return safeScore(value).max(BigDecimal.ZERO).stripTrailingZeros();
+        return executors.stream()
+                .filter(DroolsRuleEngineExecutor.class::isInstance)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "CompositeRuleEngineExecutor requires a DroolsRuleEngineExecutor"));
     }
 }

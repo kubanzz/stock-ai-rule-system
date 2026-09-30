@@ -15,13 +15,13 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
             INSERT INTO stock_signal_daily (
                 symbol, signal_date, `signal`, signal_direction, signal_level,
                 bullish_score, bearish_score, risk_score, confidence, triggered_rules,
-                explanation, risk_disclaimer
+                explanation, risk_disclaimer, trace_json
             ) VALUES (
                 #{signalRecord.symbol}, #{signalRecord.signalDate},
                 #{signalRecord.signal}, #{signalRecord.signalDirection}, #{signalRecord.signalLevel},
                 #{signalRecord.bullishScore}, #{signalRecord.bearishScore}, #{signalRecord.riskScore},
                 #{signalRecord.confidence}, #{signalRecord.triggeredRules}, #{signalRecord.explanation},
-                #{signalRecord.riskDisclaimer}
+                #{signalRecord.riskDisclaimer}, #{signalRecord.traceJson}
             ) ON DUPLICATE KEY UPDATE
                 `signal` = VALUES(`signal`),
                 signal_direction = VALUES(signal_direction),
@@ -32,7 +32,8 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
                 confidence = VALUES(confidence),
                 triggered_rules = VALUES(triggered_rules),
                 explanation = VALUES(explanation),
-                risk_disclaimer = VALUES(risk_disclaimer)
+                risk_disclaimer = VALUES(risk_disclaimer),
+                trace_json = VALUES(trace_json)
             """)
     int upsertSignal(@Param("signalRecord") StockSignalDaily signal);
 
@@ -40,7 +41,7 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
             INSERT INTO stock_signal_daily_history (
                 signal_id, version_no, symbol, signal_date, `signal`, signal_direction, signal_level,
                 bullish_score, bearish_score, risk_score, confidence, triggered_rules,
-                explanation, risk_disclaimer, content_fingerprint, available_at
+                explanation, risk_disclaimer, trace_json, content_fingerprint, available_at
             )
             SELECT current_signal.id, COALESCE(latest.version_no, 0) + 1,
                    current_signal.symbol, current_signal.signal_date, current_signal.`signal`,
@@ -48,7 +49,8 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
                    current_signal.bullish_score, current_signal.bearish_score,
                    current_signal.risk_score, current_signal.confidence,
                    current_signal.triggered_rules, current_signal.explanation,
-                   current_signal.risk_disclaimer, current_signal.signal_content_fingerprint,
+                   current_signal.risk_disclaimer, current_signal.trace_json,
+                   current_signal.signal_content_fingerprint,
                    #{availableAt}
             FROM stock_signal_daily current_signal
             LEFT JOIN stock_signal_daily_history latest

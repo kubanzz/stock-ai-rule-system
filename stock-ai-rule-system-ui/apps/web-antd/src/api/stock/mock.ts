@@ -620,7 +620,10 @@ export const mockAnalysis: StockAnalysis = {
 
 export const mockStockResearchDetail: StockResearchDetail = {
   confidence: 72,
-  explanation: mockAnalysis.explanation,
+  currentVersionNo: 2,
+  explanation:
+    '短期趋势偏强且量能放大，风险分未达到高风险阈值。该结果仅用于辅助决策。',
+  factorDate: '2026-06-20',
   factors: [
     {
       description: '价格突破 MA20 且量能放大',
@@ -656,20 +659,138 @@ export const mockStockResearchDetail: StockResearchDetail = {
     { close: 189.3, date: '2026-06-17', volume: 6100 },
     { close: 192.2, date: '2026-06-20', volume: 7200 },
   ],
+  quoteDate: '2026-06-20',
   riskDisclaimer: STOCK_RISK_DISCLAIMER,
   riskScore: 18,
   ruleChain: [
     {
-      condition: 'close > ma(close, 20)',
-      contribution: 25,
+      condition: '短期趋势偏强且量能放大',
+      contribution: null,
       ruleCode: 'R_TREND_BREAKOUT_001',
       ruleName: '趋势突破策略',
     },
+    {
+      condition: '风险状态中等',
+      contribution: null,
+      ruleCode: 'R_VOLATILITY_RISK_002',
+      ruleName: '波动风险提示',
+    },
   ],
   signal: 'bullish',
+  signalDate: '2026-06-20',
   signalStatus: 'ready',
   symbol: 'AAPL',
+  traceStatus: 'complete',
+  trace: {
+    factorDate: '2026-06-20',
+    factorSnapshot: {
+      news_sentiment: 'neutral',
+      risk_status: 'moderate',
+      rsi14: 72.3,
+      short_term_trend: 'strong_up',
+      volume_status: 'abnormal_high',
+    },
+    ruleEvaluations: [
+      {
+        bearishDelta: 0,
+        bullishDelta: 72,
+        code: 'R_TREND_BREAKOUT_001',
+        conditions: [
+          {
+            actual: 'strong_up',
+            expected: 'strong_up',
+            field: 'short_term_trend',
+            operator: 'eq',
+            status: 'MATCHED',
+          },
+          {
+            actual: 'abnormal_high',
+            expected: 'abnormal_high',
+            field: 'volume_status',
+            operator: 'eq',
+            status: 'MATCHED',
+          },
+        ],
+        evidenceStatus: 'PARTIAL',
+        explanation: '短期趋势偏强且量能放大。',
+        format: 'drools',
+        name: '趋势突破策略',
+        priority: 80,
+        riskDelta: 0,
+        status: 'MATCHED',
+        version: 'v1.3',
+      },
+      {
+        bearishDelta: 0,
+        bullishDelta: 0,
+        code: 'R_VOLATILITY_RISK_002',
+        conditions: [
+          {
+            actual: 'moderate',
+            expected: 'moderate',
+            field: 'risk_status',
+            operator: 'eq',
+            status: 'MATCHED',
+          },
+        ],
+        evidenceStatus: 'PARTIAL',
+        explanation: '波动风险需要关注。',
+        format: 'drools',
+        name: '波动风险提示',
+        priority: 70,
+        riskDelta: 18,
+        status: 'MATCHED',
+        version: 'v1.0',
+      },
+      {
+        bearishDelta: 0,
+        bullishDelta: 0,
+        code: 'R_NEGATIVE_SENTIMENT_003',
+        conditions: [
+          {
+            actual: 'neutral',
+            expected: 'negative',
+            field: 'news_sentiment',
+            operator: 'eq',
+            status: 'NOT_MATCHED',
+          },
+        ],
+        evidenceStatus: 'PARTIAL',
+        explanation: '负面新闻情绪会增加看跌证据。',
+        format: 'drools',
+        name: '负面情绪观察',
+        priority: 60,
+        riskDelta: 0,
+        status: 'NOT_MATCHED',
+        version: 'v1.0',
+      },
+    ],
+    decision: {
+      confidence: 0.72,
+      conflict: false,
+      direction: 'bullish',
+      effectiveScores: { bearish: 0, bullish: 72, risk: 18 },
+      level: '强看涨',
+      rawScores: { bearish: 0, bullish: 72, risk: 18 },
+      reason: '看涨分 72 达到强看涨阈值 70；风险分 18 未达到高风险阈值 80。',
+      riskOverride: false,
+      signal: 'bullish',
+      signedRuleTotals: { bearish: 0, bullish: 72, risk: 18 },
+      sourceClamps: [
+        {
+          format: 'drools',
+          nonNegativeScores: { bearish: 0, bullish: 72, risk: 18 },
+          signedScores: { bearish: 0, bullish: 72, risk: 18 },
+        },
+      ],
+      thresholds: { bearish: 60, bullish: 55, highRisk: 80, strongBullish: 70 },
+    },
+  },
   tradeDate: '2026-06-20',
+  versions: [
+    { availableAt: '2026-06-20T17:00:00', versionNo: 2 },
+    { availableAt: '2026-06-20T16:30:00', versionNo: 1 },
+  ],
 };
 
 export const mockRules: RuleDefinition[] = [
@@ -678,8 +799,8 @@ export const mockRules: RuleDefinition[] = [
     priority: 80,
     ruleCode: 'R_TREND_BREAKOUT_001',
     ruleContent:
-      'short_term_trend = strong_up AND volume_status = abnormal_high',
-    ruleFormat: 'json',
+      'rule "R_TREND_BREAKOUT_001"\nwhen\n  $f : StockFactorFact(shortTermTrend == "strong_up", volumeStatus == "abnormal_high")\nthen\n  $f.addBullishScore(new BigDecimal("35"));\nend',
+    ruleFormat: 'drools',
     ruleName: '强势突破看涨',
     description: '短期趋势偏强且量能放大时，增加偏看涨的辅助证据。',
     ruleType: 'trend',
@@ -691,8 +812,9 @@ export const mockRules: RuleDefinition[] = [
     createdBy: 'system',
     priority: 95,
     ruleCode: 'R_RISK_OVERBOUGHT_002',
-    ruleContent: 'technical_status = overbought AND risk_score > 70',
-    ruleFormat: 'json',
+    ruleContent:
+      'rule "R_RISK_OVERBOUGHT_002"\nwhen\n  $f : StockFactorFact(technicalStatus == "overbought")\nthen\n  $f.addRiskScore(new BigDecimal("45"));\nend',
+    ruleFormat: 'drools',
     ruleName: '高位过热风险',
     description: '技术状态过热时提示波动与回撤风险。',
     ruleType: 'risk',
@@ -746,9 +868,24 @@ export const mockCandidates: CandidateRule[] = [
 
 export const mockRuleGovernanceOverview: RuleGovernanceOverview = {
   metrics: [
-    { label: '总规则数', tone: 'blue', unit: '条', value: 86 },
-    { label: '已上线', tone: 'green', unit: '条', value: 42 },
-    { label: '候选规则', tone: 'cyan', unit: '条', value: 18 },
+    { label: '总规则数', tone: 'blue', unit: '条', value: mockRules.length },
+    {
+      label: '已上线',
+      tone: 'green',
+      unit: '条',
+      value: mockRules.filter(
+        (rule) =>
+          rule.ruleFormat === 'drools' &&
+          rule.status === 'active' &&
+          rule.enabled !== false,
+      ).length,
+    },
+    {
+      label: '候选记录',
+      tone: 'cyan',
+      unit: '条',
+      value: mockCandidates.length,
+    },
   ],
   riskDisclaimer: STOCK_RISK_DISCLAIMER,
   rules: mockRules.map((rule, index) => ({
@@ -758,6 +895,13 @@ export const mockRuleGovernanceOverview: RuleGovernanceOverview = {
     ruleCode: rule.ruleCode,
     ruleName: rule.ruleName,
     ruleType: rule.ruleType,
+    ruleFormat: rule.ruleFormat,
+    enabled: rule.enabled ?? rule.status === 'active',
+    priority: rule.priority,
+    productionExecutable:
+      rule.ruleFormat === 'drools' &&
+      rule.status === 'active' &&
+      rule.enabled !== false,
     status: rule.status,
     triggerCount30d: 1248 - index * 120,
     updatedAt: rule.updatedTime,

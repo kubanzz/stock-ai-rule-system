@@ -51,6 +51,8 @@ public class StockSignalDaily {
 
     private String riskDisclaimer;
 
+    private String traceJson;
+
     @TableField(value = "created_at", fill = FieldFill.INSERT)
     private LocalDateTime createdTime;
 }

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/backtests")
-@Tag(name = "单规则回测")
+@Tag(name = "规则与组合回测")
 public class BacktestController {
 
     private final SingleRuleBacktestService backtestService;
@@ -26,7 +26,7 @@ public class BacktestController {
     }
 
     @PostMapping
-    @Operation(summary = "执行单规则回测并保存结果")
+    @Operation(summary = "执行规则、规则组或应用方案回测并保存结果")
     public AjaxResult runBacktest(@RequestBody BacktestRequestDto request) {
         quotePreparationService.prepare(request);
         return AjaxResult.success(backtestService.runSingleRuleBacktest(request));

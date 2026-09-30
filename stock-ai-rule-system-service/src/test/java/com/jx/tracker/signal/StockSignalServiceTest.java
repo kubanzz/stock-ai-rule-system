@@ -3,7 +3,13 @@ package com.jx.tracker.signal;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisMapperBuilderAssistant;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.constant.StockRiskConstants;
+import com.jx.tracker.domain.dto.RuleGroupDetailDto;
+import com.jx.tracker.domain.dto.RuleGroupMemberDto;
+import com.jx.tracker.domain.dto.RuleStrategyDetailDto;
+import com.jx.tracker.domain.dto.RuleStrategyGroupDto;
 import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.StockFactorDaily;
 import com.jx.tracker.domain.entity.StockSignalDaily;
@@ -13,11 +19,15 @@ import com.jx.tracker.domain.enums.SignalType;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
 import com.jx.tracker.mapper.StockFactorDailyMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
-import com.jx.tracker.rule.engine.JsonRuleEngineExecutor;
+import com.jx.tracker.rule.engine.DroolsRuleEngineExecutor;
+import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
 import com.jx.tracker.rule.engine.RuleEngineExecutor;
 import com.jx.tracker.rule.engine.RuleExecutionResult;
+import com.jx.tracker.rule.engine.RuleEvaluation;
+import com.jx.tracker.rule.service.RuleStrategyService;
 import com.jx.tracker.signal.service.SignalScoringService;
 import com.jx.tracker.signal.service.StockSignalService;
+import com.jx.tracker.signal.service.StrategyExecutionService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -29,11 +39,68 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class StockSignalServiceTest {
 
     @Test
-    void generatesAndSavesDailySignalWithTriggeredRulesExplanationAndRiskDisclaimer() {
+    void activeStrategyFiltersProductionRulesAndPersistsItsDecisionTrace() throws Exception {
+        RuleDefinition selectedRule = rule("R_SELECTED", 90, "ignored by capturing executor");
+        RuleDefinition excludedRule = rule("R_EXCLUDED", 80, "ignored by capturing executor");
+        RuleGroupMemberDto member = new RuleGroupMemberDto();
+        member.setRuleCode("R_SELECTED");
+        member.setWeight(new BigDecimal("1.5"));
+        RuleGroupDetailDto group = new RuleGroupDetailDto();
+        group.setGroupCode("G_TREND");
+        group.setVersion("v2");
+        group.setAggregation("OR");
+        group.setMinMatchedRules(1);
+        group.setMembers(List.of(member));
+        RuleStrategyGroupDto selected = new RuleStrategyGroupDto();
+        selected.setGroupCode("G_TREND");
+        selected.setGroupVersion("v2");
+        selected.setGroup(group);
+        selected.setWeight(BigDecimal.ONE);
+        RuleStrategyDetailDto strategy = new RuleStrategyDetailDto();
+        strategy.setStrategyCode("S_TREND");
+        strategy.setVersion("v3");
+        strategy.setBullishThreshold(new BigDecimal("65"));
+        strategy.setGroups(List.of(selected));
+        RuleStrategyService strategyService = mock(RuleStrategyService.class);
+        when(strategyService.getActiveStrategy()).thenReturn(strategy);
+
+        AtomicReference<List<String>> executedCodes = new AtomicReference<>();
+        RuleEngineExecutor engine = request -> {
+            executedCodes.set(request.rules().stream().map(RuleDefinition::getRuleCode).toList());
+            RuleEvaluation evaluation = new RuleEvaluation("R_SELECTED", "Selected", "v4", "DROOLS",
+                    90, "MATCHED", List.of(), new BigDecimal("40"), BigDecimal.ZERO,
+                    BigDecimal.ZERO, "趋势满足", "PARTIAL");
+            return new RuleExecutionResult(new BigDecimal("40"), BigDecimal.ZERO, BigDecimal.ZERO,
+                    List.of("R_SELECTED"), List.of("趋势满足"), List.of(evaluation));
+        };
+        AtomicReference<StockSignalDaily> inserted = new AtomicReference<>();
+        StockSignalService service = new StockSignalService(
+                fakeRuleDefinitionMapper(List.of(selectedRule, excludedRule)),
+                fakeStockFactorDailyMapper(List.of()), fakeStockSignalDailyMapper(inserted),
+                engine, new SignalScoringService(), strategyService, new StrategyExecutionService());
+
+        StockSignalDaily signal = service.generateDailySignal("AAPL", LocalDate.of(2026, 9, 30), Map.of());
+
+        assertThat(executedCodes.get()).containsExactly("R_SELECTED");
+        assertThat(signal.getBullishScore()).isEqualByComparingTo("40");
+        assertThat(signal.getSignal()).isEqualTo(SignalType.WATCH.getCode());
+        JsonNode trace = new ObjectMapper().readTree(signal.getTraceJson());
+        assertThat(trace.path("strategyExecution").path("strategyCode").asText()).isEqualTo("S_TREND");
+        assertThat(trace.path("strategyExecution").path("strategyVersion").asText()).isEqualTo("v3");
+        assertThat(trace.path("strategyExecution").path("ruleContributions").get(0)
+                .path("actualRuleVersion").asText()).isEqualTo("v4");
+        assertThat(trace.path("decision").path("thresholds").path("bullish").decimalValue())
+                .isEqualByComparingTo("65");
+    }
+
+    @Test
+    void generatesAndSavesDailySignalWithTriggeredRulesExplanationAndRiskDisclaimer() throws Exception {
         RuleDefinition bullishRule = rule("R_TREND_BREAKOUT_001", 100, """
                 {
                   "conditions": [
@@ -55,7 +122,7 @@ class StockSignalServiceTest {
                 ruleDefinitionMapper,
                 fakeStockFactorDailyMapper(List.of()),
                 stockSignalDailyMapper,
-                new JsonRuleEngineExecutor(),
+                new DroolsRuleEngineExecutor(),
                 new SignalScoringService()
         );
 
@@ -81,6 +148,16 @@ class StockSignalServiceTest {
         assertThat(inserted.getTriggeredRules()).contains("R_TREND_BREAKOUT_001");
         assertThat(inserted.getExplanation()).contains("放量突破且市场环境未明显走弱");
         assertThat(inserted.getRiskDisclaimer()).isEqualTo(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
+        JsonNode trace = new ObjectMapper().readTree(inserted.getTraceJson());
+        assertThat(trace.path("factorDate").asText()).isEqualTo("2026-06-20");
+        assertThat(trace.path("factorSnapshot").path("short_term_trend").asText()).isEqualTo("strong_up");
+        assertThat(trace.path("ruleEvaluations").get(0).path("status").asText()).isEqualTo("MATCHED");
+        assertThat(trace.path("ruleEvaluations").get(0).path("conditions")).hasSize(1);
+        assertThat(trace.path("ruleEvaluations").get(0).path("conditions").get(0).path("field").asText())
+                .isEqualTo("$drools_rule");
+        assertThat(trace.path("decision").path("rawScores").path("bullish").decimalValue())
+                .isEqualByComparingTo("75");
+        assertThat(trace.path("decision").path("reason").asText()).contains("强看涨阈值");
     }
 
     @Test
@@ -108,7 +185,7 @@ class StockSignalServiceTest {
                                 """)
                         .build())),
                 fakeStockSignalDailyMapper(insertedSignal),
-                new JsonRuleEngineExecutor(),
+                new DroolsRuleEngineExecutor(),
                 new SignalScoringService()
         );
 
@@ -123,13 +200,19 @@ class StockSignalServiceTest {
     }
 
     @Test
-    void passesActiveJsonAndDroolsRulesToRuleEngineForSameFactorSnapshot() {
-        RuleDefinition jsonRule = rule("R_JSON_TREND_001", 100, """
+    void passesOnlyActiveDroolsRulesToProductionExecutorForSameFactorSnapshot() {
+        RuleDefinition jsonRule = RuleDefinition.builder()
+                .ruleCode("R_JSON_TREND_001")
+                .ruleName("R_JSON_TREND_001")
+                .ruleFormat(RuleFormat.JSON.getCode())
+                .status(RuleLifecycleStatus.ACTIVE.getCode())
+                .priority(100)
+                .ruleContent("""
                 {
                   "conditions": [{"field": "short_term_trend", "operator": "eq", "value": "strong_up"}],
                   "actions": {"bullish_score": 25, "explanation": "JSON 规则识别趋势偏强"}
                 }
-                """);
+                """).build();
         RuleDefinition droolsRule = rule("R_DROOLS_TREND_001", 90, """
                 import java.math.BigDecimal;
                 import com.jx.tracker.rule.engine.StockFactorFact;
@@ -161,8 +244,9 @@ class StockSignalServiceTest {
                 Map.of("short_term_trend", "strong_up")
         );
 
-        assertThat(ruleEngineExecutor.ruleCodes()).containsExactly("R_JSON_TREND_001", "R_DROOLS_TREND_001");
-        assertThat(saved.getTriggeredRules()).contains("R_JSON_TREND_001", "R_DROOLS_TREND_001");
+        assertThat(ruleEngineExecutor.ruleCodes()).containsExactly("R_DROOLS_TREND_001");
+        assertThat(saved.getTriggeredRules()).contains("R_DROOLS_TREND_001");
+        assertThat(saved.getTriggeredRules()).doesNotContain("R_JSON_TREND_001");
         assertThat(saved.getRiskDisclaimer()).isEqualTo(StockRiskConstants.SIGNAL_RISK_DISCLAIMER);
     }
 
@@ -191,7 +275,7 @@ class StockSignalServiceTest {
                 fakeRuleDefinitionMapper(List.of()),
                 fakeStockFactorDailyMapper(List.of()),
                 stockSignalDailyMapper,
-                new JsonRuleEngineExecutor(),
+                new DroolsRuleEngineExecutor(),
                 new SignalScoringService()
         );
 
@@ -205,16 +289,7 @@ class StockSignalServiceTest {
 
     @SuppressWarnings("unchecked")
     private RuleDefinitionMapper fakeRuleDefinitionMapper(List<RuleDefinition> rules) {
-        return (RuleDefinitionMapper) Proxy.newProxyInstance(
-                RuleDefinitionMapper.class.getClassLoader(),
-                new Class<?>[]{RuleDefinitionMapper.class},
-                (proxy, method, args) -> {
-                    if ("selectList".equals(method.getName())) {
-                        return rules;
-                    }
-                    throw new UnsupportedOperationException(method.getName());
-                }
-        );
+        return fakeRuleDefinitionMapperApplyingRuleFormatFilter(rules);
     }
 
     private StockSignalDailyMapper fakeStockSignalDailyMapper(AtomicReference<StockSignalDaily> insertedSignal) {
@@ -256,12 +331,10 @@ class StockSignalServiceTest {
                                         right.getPriority() == null ? 0 : right.getPriority(),
                                         left.getPriority() == null ? 0 : left.getPriority()))
                                 .toList();
-                        if (sqlSegment.contains("rule_format")) {
-                            return activeRules.stream()
-                                    .filter(rule -> RuleFormat.JSON.getCode().equals(rule.getRuleFormat()))
-                                    .toList();
-                        }
-                        return activeRules;
+                        return activeRules.stream()
+                                .filter(rule -> !sqlSegment.contains("rule_format")
+                                        || RuleFormat.DROOLS.getCode().equals(rule.getRuleFormat()))
+                                .toList();
                     }
                     throw new UnsupportedOperationException(method.getName());
                 }
@@ -305,10 +378,12 @@ class StockSignalServiceTest {
                 .ruleCode(code)
                 .ruleName(code)
                 .ruleType("trend")
-                .ruleFormat(RuleFormat.JSON.getCode())
+                .ruleFormat(RuleFormat.DROOLS.getCode())
                 .status(RuleLifecycleStatus.ACTIVE.getCode())
                 .priority(priority)
-                .ruleContent(content)
+                .ruleContent(content.trim().startsWith("{")
+                        ? new JsonRuleToDroolsCompiler().compile(code, content)
+                        : content)
                 .build();
     }
 
@@ -324,8 +399,8 @@ class StockSignalServiceTest {
                     new BigDecimal("60"),
                     BigDecimal.ZERO,
                     new BigDecimal("20"),
-                    List.of("R_JSON_TREND_001", "R_DROOLS_TREND_001"),
-                    List.of("JSON 规则识别趋势偏强", "Drools 规则补充趋势信号")
+                    List.of("R_DROOLS_TREND_001"),
+                    List.of("Drools 规则补充趋势信号")
             );
         }
 

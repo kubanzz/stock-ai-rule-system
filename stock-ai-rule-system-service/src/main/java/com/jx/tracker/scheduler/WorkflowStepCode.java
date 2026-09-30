@@ -6,8 +6,8 @@ public enum WorkflowStepCode {
 
     MARKET_DATA_COLLECTION("market_data_sync", "行情同步", "M1 真实行情数据同步"),
     FACTOR_CALCULATION("factor_calculation", "因子计算", "M2 技术因子计算"),
-    RULE_INFERENCE("rule_inference", "规则推理", "M3 JSON 规则推理"),
-    SIGNAL_GENERATION("rule_signal_generation", "规则信号生成", "M3/M4 JSON 规则推理与信号输出"),
+    RULE_INFERENCE("rule_inference", "规则推理", "M3 Drools 规则推理"),
+    SIGNAL_GENERATION("rule_signal_generation", "规则信号生成", "M3/M4 Drools 规则推理与信号输出"),
     RISK_WARNING("risk_warning", "风险预警", "风险评分与影子闸门"),
     HISTORICAL_VERIFICATION("prediction_validation", "预测验证", "M5 预测结果验证"),
     AI_REVIEW("ai_review", "AI 复盘", "M6 AI 复盘分析"),

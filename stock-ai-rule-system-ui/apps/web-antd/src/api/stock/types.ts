@@ -16,7 +16,7 @@ export type RuleStatus =
 
 export type RuleFormat = 'drools' | 'json';
 
-export type BacktestObjectType = 'candidate_rule' | 'rule';
+export type BacktestObjectType = 'candidate_rule' | 'rule' | 'rule_group' | 'strategy';
 
 export type CandidateRuleLifecycleStatus =
   | 'approved'
@@ -58,8 +58,8 @@ export type WorkflowStepCode =
   | 'factor_calculation'
   | 'market_data_sync'
   | 'prediction_validation'
-  | 'rule_inference'
   | 'risk_warning'
+  | 'rule_inference'
   | 'rule_signal_generation';
 
 export interface StockSignalQuery {
@@ -255,14 +255,74 @@ export interface FactorState {
 
 export interface RuleContribution {
   condition?: string;
-  contribution: number;
+  contribution?: null | number;
   ruleCode: string;
   ruleName: string;
 }
 
+export interface SignalTraceCondition {
+  actual: unknown;
+  expected: unknown;
+  field: string;
+  operator: string;
+  status: 'INVALID' | 'MATCHED' | 'MISSING' | 'NOT_MATCHED';
+}
+
+export interface SignalTraceRuleEvaluation {
+  bearishDelta: number;
+  bullishDelta: number;
+  code: string;
+  conditions: SignalTraceCondition[];
+  evidenceStatus: 'FULL' | 'PARTIAL' | 'UNAVAILABLE';
+  explanation: string;
+  format: string;
+  name: string;
+  priority: number;
+  riskDelta: number;
+  status: 'MATCHED' | 'NOT_MATCHED';
+  version: string;
+}
+
+export interface SignalTraceScores {
+  bearish: number;
+  bullish: number;
+  risk: number;
+}
+
+export interface SignalTraceDecision {
+  confidence: number;
+  conflict: boolean;
+  direction: SignalType;
+  effectiveScores: SignalTraceScores;
+  level: string;
+  rawScores: SignalTraceScores;
+  reason: string;
+  riskOverride: boolean;
+  signal: SignalType;
+  signedRuleTotals?: SignalTraceScores;
+  sourceClamps?: {
+    format: 'drools' | 'json';
+    nonNegativeScores: SignalTraceScores;
+    signedScores: SignalTraceScores;
+  }[];
+  thresholds: {
+    bearish: number;
+    bullish: number;
+    highRisk: number;
+    strongBullish: number;
+  };
+}
+
+export interface SignalTrace {
+  decision: SignalTraceDecision;
+  factorDate?: null | string;
+  factorSnapshot: Record<string, unknown>;
+  ruleEvaluations: SignalTraceRuleEvaluation[];
+}
+
 export interface PredictionRecord {
   actualReturn?: number;
-  confidence: number;
+  confidence: null | number;
   date: string;
   direction: string;
   hitStatus: string;
@@ -270,31 +330,47 @@ export interface PredictionRecord {
   triggeredRules: string[];
 }
 
+export interface ResearchSignalVersion {
+  availableAt: null | string;
+  versionNo: number;
+}
+
 export interface StockResearchDetail {
-  confidence: number;
+  confidence: null | number;
+  currentVersionNo: null | number;
   explanation: string;
+  factorDate?: null | string;
   factors: FactorState[];
   history: PredictionRecord[];
   industry?: string;
   market?: string;
   name?: string;
   priceSeries: PricePoint[];
+  quoteDate?: null | string;
   riskDisclaimer: string;
-  riskScore: number;
+  riskScore: null | number;
   ruleChain: RuleContribution[];
   signal: SignalType;
+  signalDate?: null | string;
   signalStatus: ResearchSignalStatus;
   symbol: string;
+  trace?: null | SignalTrace;
+  traceStatus?: 'complete' | 'legacy' | 'partial';
   tradeDate?: string;
+  versions: ResearchSignalVersion[];
 }
 
 export interface RuleSummary {
   avgReturn: number;
   description?: string;
+  enabled?: boolean | null;
   maxDrawdown: number;
+  priority?: number;
   ruleCode: string;
+  ruleFormat?: RuleFormat | string;
   ruleName: string;
   ruleType: string;
+  productionExecutable?: boolean;
   status: RuleStatus;
   triggerCount30d: number;
   updatedAt?: string;
@@ -311,12 +387,16 @@ export interface VersionDiff {
 export interface RuleGovernanceDetail {
   candidateDiff?: VersionDiff;
   description?: string;
+  enabled?: boolean | null;
   expression: string;
   performance: BacktestMetricCard[];
+  priority?: number;
   relatedFactors: string[];
   ruleCode: string;
+  ruleFormat?: RuleFormat | string;
   ruleName: string;
   ruleType: string;
+  productionExecutable?: boolean;
   source?: string;
   status: RuleStatus | string;
   version: string;
@@ -412,13 +492,89 @@ export interface BacktestReportOverview {
   resultJson?: string;
 }
 
+export interface BacktestCombinationScores {
+  bearish: number;
+  bullish: number;
+  risk: number;
+}
+
+export interface BacktestCombinationGroupSnapshot {
+  aggregation: 'AND' | 'OR' | 'WEIGHTED';
+  groupCode: string;
+  groupName: string;
+  members: {
+    required: boolean;
+    ruleCode: string;
+    ruleVersionNo?: string;
+    weight: number;
+  }[];
+  minMatchedRules: number;
+  version: string;
+}
+
+export interface BacktestCombinationSnapshot {
+  bearishThreshold?: null | number;
+  bullishThreshold?: null | number;
+  groups: {
+    group: BacktestCombinationGroupSnapshot;
+    groupCode: string;
+    groupVersion: string;
+    required: boolean;
+    weight: number;
+  }[];
+  riskThreshold?: null | number;
+  strategyCode: string;
+  strategyName: string;
+  version: string;
+}
+
+export interface BacktestCombinationTrace {
+  groupContributions: {
+    aggregation: string;
+    countedRules: string[];
+    eligible: boolean;
+    groupCode: string;
+    groupVersion: string;
+    matchedCount: number;
+    memberCount: number;
+    required: boolean;
+    weightedScores: BacktestCombinationScores;
+  }[];
+  requiredGroupGatePassed: boolean;
+  ruleContributions: {
+    actualRuleVersion: string;
+    directionGroupCode: null | string;
+    directionWeight: number;
+    matchStatus: string;
+    originalScores: BacktestCombinationScores;
+    riskGroupCode: null | string;
+    riskWeight: number;
+    ruleCode: string;
+    weightedScores: BacktestCombinationScores;
+  }[];
+  unmetRequiredGroups: string[];
+}
+
+export interface BacktestCombinationContribution {
+  bearishScore: number;
+  bullishScore: number;
+  date: string;
+  riskScore: number;
+  signal: SignalType;
+  symbol: string;
+  trace: BacktestCombinationTrace;
+}
+
 export interface BacktestReportResultPayload {
   directionalCount?: number;
   emptyReason?: string;
   emptyReasonCode?: string;
   equityCurve?: SeriesPoint[];
   errorSummary?: string;
-  evaluationBasis?: 'rule_direction' | 'stored_signal';
+  evaluationBasis?: 'combination_signal' | 'rule_direction' | 'stored_signal';
+  combinationContributions?: BacktestCombinationContribution[];
+  combinationSnapshot?: BacktestCombinationSnapshot;
+  executedRuleVersions?: Record<string, string>;
   evaluatedCount?: number;
   signalCount?: number;
   skippedCount?: number;

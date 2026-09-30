@@ -1,6 +1,7 @@
 package com.jx.tracker.signal;
 
 import com.jx.tracker.domain.enums.SignalType;
+import com.jx.tracker.domain.dto.RuleStrategyDetailDto;
 import com.jx.tracker.signal.service.SignalScore;
 import com.jx.tracker.signal.service.SignalScoringService;
 import org.junit.jupiter.api.Test;
@@ -68,5 +69,23 @@ class SignalScoringServiceTest {
         assertThat(score.signal()).isEqualTo(SignalType.BULLISH.getCode());
         assertThat(score.signalDirection()).isEqualTo(SignalType.BULLISH.getCode());
         assertThat(score.confidence()).isEqualByComparingTo(new BigDecimal("1.0000"));
+    }
+
+    @Test
+    void appliesStrategyThresholdsAndRiskOverride() {
+        RuleStrategyDetailDto strategy = new RuleStrategyDetailDto();
+        strategy.setBullishThreshold(new BigDecimal("65"));
+        strategy.setBearishThreshold(new BigDecimal("75"));
+        strategy.setRiskThreshold(new BigDecimal("50"));
+
+        assertThat(scoringService.score(new BigDecimal("60"), BigDecimal.ZERO,
+                BigDecimal.ZERO, strategy).signal()).isEqualTo(SignalType.WATCH.getCode());
+        SignalScore risk = scoringService.score(new BigDecimal("70"), BigDecimal.ZERO,
+                new BigDecimal("55"), strategy);
+        assertThat(risk.signal()).isEqualTo(SignalType.HIGH_RISK.getCode());
+        assertThat(risk.signalDirection()).isEqualTo(SignalType.BULLISH.getCode());
+        assertThat(scoringService.explain(new BigDecimal("70"), BigDecimal.ZERO,
+                new BigDecimal("55"), risk, java.util.List.of(), strategy)
+                .thresholds().highRisk()).isEqualByComparingTo("50");
     }
 }

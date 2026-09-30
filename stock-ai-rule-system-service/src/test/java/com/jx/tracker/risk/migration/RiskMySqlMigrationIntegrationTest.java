@@ -4,8 +4,11 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
+import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
+import com.jx.tracker.rule.service.RuleSeedDeduplicationService;
 import com.jx.tracker.risk.data.market.IndustryExposure;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
 import com.jx.tracker.risk.model.RiskDimension;
@@ -71,8 +74,10 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult first = flyway.migrate();
             MigrateResult repeated = flyway.migrate();
 
-            assertThat(first.migrationsExecuted).isEqualTo(4);
+            assertThat(first.migrationsExecuted).isEqualTo(12);
             assertThat(repeated.migrationsExecuted).isZero();
+            assertMigratedCandidateDefinitionsAreDrools(schema);
+            assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
             assertObservationCorrectionsRemainPointInTime(schema);
@@ -118,8 +123,10 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult upgraded = flyway.migrate();
             LocalDateTime migrationFinishedAt = databaseNow(schema);
 
-            assertThat(upgraded.migrationsExecuted).isEqualTo(3);
-            assertThat(currentVersion(schema)).isEqualTo("4");
+            assertThat(upgraded.migrationsExecuted).isEqualTo(11);
+            assertThat(currentVersion(schema)).isEqualTo("12");
+            assertMigratedCandidateDefinitionsAreDrools(schema);
+            assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
             assertJsonCheckpointRoundTrip(schema);
             assertCompositeObservationComponentsDoNotOverwrite(schema);
             assertObservationCorrectionsRemainPointInTime(schema);
@@ -131,10 +138,273 @@ class RiskMySqlMigrationIntegrationTest {
         }
     }
 
+    @Test
+    void publishedCandidateDisablesOnlyMatchingUneditedSeedRule() throws Exception {
+        String schema = schemaName();
+        createSchema(schema);
+        try {
+            Flyway.configure()
+                    .dataSource(schemaUrl(schema), username, password)
+                    .locations("classpath:db/migration")
+                    .target("10")
+                    .cleanDisabled(true)
+                    .load()
+                    .migrate();
+            JdbcTemplate database = jdbc(schema);
+            database.update("""
+                    INSERT INTO rule_definition (
+                        rule_code, rule_name, rule_type, rule_content, rule_format, version,
+                        status, enabled, priority, created_by, updated_by
+                    ) VALUES (?, ?, 'ai_candidate', ?, 'drools', 'v2',
+                              'active', 1, 100, 'historical-review', 'human-reviewer')
+                    """, "CR_TREND_BEAR_GUARD_001", "已审核防守规则", "rule \"CR_TREND_BEAR_GUARD_001\" when then end");
+            database.update("""
+                    UPDATE candidate_rule
+                    SET status = 'published', backtest_status = 'success', approval_status = 'approved'
+                    WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
+                    """);
+            database.update("""
+                    INSERT INTO rule_definition (
+                        rule_code, rule_name, rule_type, rule_content, rule_format, version,
+                        status, enabled, priority, created_by, updated_by
+                    ) VALUES (?, ?, 'ai_candidate', ?, 'drools', 'v2',
+                              'active', 1, 90, 'historical-review', 'human-reviewer')
+                    """, "CR_OVERSOLD_RISK_GUARD_001", "已审核超卖规则", "rule \"CR_OVERSOLD_RISK_GUARD_001\" when then end");
+            database.update("""
+                    UPDATE candidate_rule
+                    SET status = 'published', backtest_status = 'success', approval_status = 'approved'
+                    WHERE candidate_code = 'CR_OVERSOLD_RISK_GUARD_001'
+                    """);
+            database.update("""
+                    UPDATE rule_definition
+                    SET rule_content = CONCAT(rule_content, '\\n// reviewed'),
+                        updated_by = 'human-reviewer'
+                    WHERE rule_code = 'R_DROOLS_OVERSOLD_NOTICE_001'
+                    """);
+            database.update("""
+                    INSERT INTO rule_definition (
+                        rule_code, rule_name, rule_type, rule_content, rule_format, version,
+                        status, enabled, priority, created_by, updated_by
+                    ) VALUES (?, ?, 'ai_candidate', ?, 'drools', 'v2',
+                              'active', 1, 70, 'historical-review', 'human-reviewer')
+                    """, "CR_VOLUME_MACD_DIVERGENCE_001", "已审核量价规则",
+                    "rule \"CR_VOLUME_MACD_DIVERGENCE_001\" when then end");
+            database.update("""
+                    UPDATE candidate_rule
+                    SET status = 'published', backtest_status = 'success', approval_status = 'approved'
+                    WHERE candidate_code = 'CR_VOLUME_MACD_DIVERGENCE_001'
+                    """);
+            database.update("""
+                    INSERT INTO rule_strategy (
+                        strategy_code, strategy_name, version, status,
+                        bullish_threshold, bearish_threshold, risk_threshold, snapshot_json
+                    ) VALUES ('S_PRESERVE_SEED', '引用基础规则的应用方案', 'v1', 'active',
+                              60, 60, 70, ?)
+                    """, "{\"groups\":[{\"group\":{\"members\":[{\"ruleCode\":\"R_DROOLS_MACD_VOLUME_DIVERGENCE_001\"}]}}]}");
+
+            assertThat(flywayTo(schema, "11").migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code = 'R_DROOLS_BEARISH_GUARD_001'
+                      AND status = 'disabled' AND enabled = 0
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code IN (
+                        'R_DROOLS_MACD_VOLUME_DIVERGENCE_001',
+                        'R_DROOLS_OVERSOLD_NOTICE_001'
+                    ) AND status = 'active' AND enabled = 1
+                    """, Integer.class)).isEqualTo(2);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_operation_log
+                    WHERE target_id = 'R_DROOLS_BEARISH_GUARD_001'
+                      AND operation = 'disable_duplicate'
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM candidate_rule
+                    WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
+                      AND status = 'published'
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code = 'R_DROOLS_BEARISH_GUARD_001'
+                      AND status = 'disabled' AND enabled = 0
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_operation_log
+                    WHERE target_id = 'R_DROOLS_BEARISH_GUARD_001'
+                      AND operation = 'review_changed_replacement'
+                      AND before_status = 'disabled' AND after_status = 'disabled'
+                    """, Integer.class)).isEqualTo(1);
+        } finally {
+            dropSchema(schema);
+        }
+    }
+
+    @Test
+    void publishingAfterV11RetiresMatchingSeedAndAuditsOnce() throws Exception {
+        String schema = schemaName();
+        createSchema(schema);
+        try {
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(12);
+            JdbcTemplate database = jdbc(schema);
+            String candidateCode = "CR_TREND_BEAR_GUARD_001";
+            String seedCode = "R_DROOLS_BEARISH_GUARD_001";
+            String proposedContent = database.queryForObject("""
+                    SELECT proposed_content FROM candidate_rule WHERE candidate_code = ?
+                    """, String.class, candidateCode);
+            JsonRuleToDroolsCompiler compiler = new JsonRuleToDroolsCompiler();
+            String publishedContent = compiler.compile(candidateCode, proposedContent);
+            database.update("""
+                    INSERT INTO rule_definition (
+                        rule_code, rule_name, rule_type, rule_content, rule_format, version,
+                        status, enabled, priority, created_by, updated_by
+                    ) VALUES (?, '已审核防守规则', 'ai_candidate', ?, 'drools', 'v2',
+                              'active', 1, 100, 'historical-review', 'human-reviewer')
+                    """, candidateCode, publishedContent);
+            database.update("""
+                    UPDATE candidate_rule
+                    SET status = 'published', backtest_status = 'success', approval_status = 'approved'
+                    WHERE candidate_code = ?
+                    """, candidateCode);
+            CandidateRule candidate = CandidateRule.builder()
+                    .candidateCode(candidateCode)
+                    .targetRuleCode(candidateCode)
+                    .status("published")
+                    .backtestStatus("success")
+                    .approvalStatus("approved")
+                    .proposedContent(proposedContent)
+                    .build();
+            RuleSeedDeduplicationService deduplication = new RuleSeedDeduplicationService(database, compiler);
+
+            deduplication.disableSupersededSeedRule(candidate, publishedContent);
+            deduplication.disableSupersededSeedRule(candidate, publishedContent);
+
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code = ? AND status = 'disabled' AND enabled = 0
+                    """, Integer.class, seedCode)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code IN ('R_DROOLS_MACD_VOLUME_DIVERGENCE_001',
+                                        'R_DROOLS_OVERSOLD_NOTICE_001')
+                      AND status = 'active' AND enabled = 1
+                    """, Integer.class)).isEqualTo(2);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_operation_log
+                    WHERE target_id = ? AND operation = 'disable_duplicate'
+                      AND operator = 'rule-publish-dedup'
+                    """, Integer.class, seedCode)).isEqualTo(1);
+        } finally {
+            dropSchema(schema);
+        }
+    }
+
+    @Test
+    void v12AuditsChangedReplacementWithoutReactivatingOverlappingSeed() throws Exception {
+        String schema = schemaName();
+        createSchema(schema);
+        try {
+            assertThat(flywayTo(schema, "8").migrate().migrationsExecuted).isEqualTo(8);
+            JdbcTemplate database = jdbc(schema);
+            for (String code : List.of(
+                    "CR_TREND_BEAR_GUARD_001",
+                    "CR_VOLUME_MACD_DIVERGENCE_001",
+                    "CR_OVERSOLD_RISK_GUARD_001")) {
+                database.update("""
+                        UPDATE candidate_rule
+                        SET status = 'published', backtest_status = 'success', approval_status = 'approved'
+                        WHERE candidate_code = ?
+                        """, code);
+                database.update("""
+                        UPDATE rule_definition
+                        SET status = 'active', enabled = 1, version = 'v2', updated_by = 'human-reviewer'
+                        WHERE rule_code = ?
+                        """, code);
+            }
+            database.update("""
+                    UPDATE rule_definition
+                    SET rule_content = REPLACE(rule_content,
+                        'matches("rsi14", "lte", "30")',
+                        'matches("rsi14", "lte", "25")')
+                    WHERE rule_code = 'CR_OVERSOLD_RISK_GUARD_001'
+                    """);
+
+            assertThat(flywayTo(schema, "11").migrate().migrationsExecuted).isEqualTo(3);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code IN (
+                        'R_DROOLS_BEARISH_GUARD_001',
+                        'R_DROOLS_MACD_VOLUME_DIVERGENCE_001',
+                        'R_DROOLS_OVERSOLD_NOTICE_001'
+                    ) AND status = 'disabled' AND enabled = 0
+                    """, Integer.class)).isEqualTo(3);
+            // A later deliberate deactivation of the published counterpart does
+            // not trigger an audit or reactivate its original seed.
+            database.update("""
+                    UPDATE rule_definition SET status = 'disabled', enabled = 0
+                    WHERE rule_code = 'CR_VOLUME_MACD_DIVERGENCE_001'
+                    """);
+            // A candidate record is historical text; editing it alone must not
+            // trigger an audit while actual production Drools is unchanged.
+            database.update("""
+                    UPDATE candidate_rule
+                    SET proposed_content = REPLACE(proposed_content, '"risk_score":15', '"risk_score":25')
+                    WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
+                    """);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM candidate_rule
+                    WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
+                      AND SHA2(proposed_content, 256) <>
+                          '895fd65abd4d759a5de4232033d283d0b6a45ce8ccb1f7bb9e807f7cd4f68b5e'
+                    """, Integer.class)).isEqualTo(1);
+
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code = 'R_DROOLS_OVERSOLD_NOTICE_001'
+                      AND status = 'disabled' AND enabled = 0
+                      AND updated_by = 'rule-dedup-v11'
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code IN (
+                        'R_DROOLS_BEARISH_GUARD_001',
+                        'R_DROOLS_MACD_VOLUME_DIVERGENCE_001',
+                        'R_DROOLS_OVERSOLD_NOTICE_001'
+                    ) AND status = 'disabled' AND enabled = 0
+                    """, Integer.class)).isEqualTo(3);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_operation_log
+                    WHERE operation = 'review_changed_replacement'
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_operation_log
+                    WHERE target_id = 'R_DROOLS_OVERSOLD_NOTICE_001'
+                      AND operation = 'review_changed_replacement'
+                      AND before_status = 'disabled' AND after_status = 'disabled'
+                    """, Integer.class)).isEqualTo(1);
+        } finally {
+            dropSchema(schema);
+        }
+    }
+
     private Flyway flyway(String schema) {
         return Flyway.configure()
                 .dataSource(schemaUrl(schema), username, password)
                 .locations("classpath:db/migration")
+                .baselineVersion("1")
+                .baselineOnMigrate(false)
+                .cleanDisabled(true)
+                .load();
+    }
+
+    private Flyway flywayTo(String schema, String target) {
+        return Flyway.configure()
+                .dataSource(schemaUrl(schema), username, password)
+                .locations("classpath:db/migration")
+                .target(target)
                 .baselineVersion("1")
                 .baselineOnMigrate(false)
                 .cleanDisabled(true)
@@ -169,6 +439,42 @@ class RiskMySqlMigrationIntegrationTest {
             assertThat(result.next()).isTrue();
             assertThat(result.getString(1)).isEqualTo("2026-07-18");
         }
+    }
+
+    private void assertMigratedCandidateDefinitionsAreDrools(String schema) {
+        List<Map<String, Object>> definitions = jdbc(schema).queryForList("""
+                SELECT rule_code, rule_format, rule_content
+                FROM rule_definition
+                WHERE rule_code LIKE 'CR\\_%'
+                ORDER BY rule_code
+                """);
+        // V10 removes the legacy V5 production placeholders. Candidate JSON
+        // remains in candidate_rule and is compiled only when published.
+        assertThat(definitions).isEmpty();
+        assertThat(jdbc(schema).queryForObject("""
+                SELECT COUNT(*) FROM rule_definition
+                WHERE rule_code LIKE 'R_DROOLS\\_%'
+                  AND rule_format = 'drools'
+                  AND status = 'active'
+                  AND enabled = 1
+                """, Integer.class)).isEqualTo(5);
+        assertThat(jdbc(schema).queryForObject("""
+                SELECT COUNT(*) FROM candidate_rule
+                WHERE candidate_code LIKE 'CR\\_%'
+                  AND proposed_content IS NOT NULL
+                  AND JSON_VALID(proposed_content) = 1
+                """, Integer.class)).isEqualTo(5);
+    }
+
+    private void assertUnpublishedCandidatesDoNotDisableSeedRules(String schema) {
+        assertThat(jdbc(schema).queryForObject("""
+                SELECT COUNT(*) FROM rule_definition
+                WHERE rule_code IN (
+                    'R_DROOLS_BEARISH_GUARD_001',
+                    'R_DROOLS_MACD_VOLUME_DIVERGENCE_001',
+                    'R_DROOLS_OVERSOLD_NOTICE_001'
+                ) AND status = 'active' AND enabled = 1
+                """, Integer.class)).isEqualTo(3);
     }
 
     private void assertCompositeObservationComponentsDoNotOverwrite(String schema) throws Exception {

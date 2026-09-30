@@ -161,6 +161,80 @@ class RiskMigrationContractTest {
         assertThat(migration).doesNotContain("COALESCE(created_at, CURRENT_TIMESTAMP(3))");
     }
 
+    @Test
+    void productionRuleMigrationConvertsSeededJsonDefinitionsWithoutChangingCandidateDsl() throws IOException {
+        String migration = resource("/db/migration/V8__migrate_json_rules_to_drools.sql");
+
+        assertThat(migration).contains(
+                "SET rule_format = 'drools'",
+                "$f.matches",
+                "CR_TREND_BEAR_GUARD_001",
+                "CR_OVERSOLD_RISK_GUARD_001",
+                "CR_SIDEWAYS_MACD_RECOVERY_001",
+                "CR_VOLUME_MACD_DIVERGENCE_001",
+                "CR_WEAK_VOLUME_CONTINUATION_001",
+                "AND rule_format = 'json'",
+                "candidate_rule.proposed_content");
+        assertThat(migration).doesNotContain("DELETE FROM rule_definition");
+    }
+
+    @Test
+    void candidateRuleMigrationRemovesOnlyLegacyUnpublishedProductionPlaceholders() throws IOException {
+        String migration = resource("/db/migration/V10__separate_candidate_rule_definitions.sql");
+
+        assertThat(migration).contains(
+                "DELETE rd",
+                "INNER JOIN candidate_rule cr",
+                "rd.created_by = 'historical-review'",
+                "rd.status = 'draft'",
+                "rd.enabled = 0",
+                "cr.status NOT IN ('published', 'active')",
+                "NOT EXISTS",
+                "FROM rule_version rv"
+        );
+        assertThat(migration).contains("candidate_rule.proposed_content").doesNotContain("DELETE FROM candidate_rule");
+    }
+
+    @Test
+    void duplicateRuleMigrationPreservesPublishedHistoryAndOnlyDisablesUntouchedSeeds() throws IOException {
+        String migration = resource("/db/migration/V11__disable_superseded_seed_rules.sql");
+
+        assertThat(migration).contains(
+                "seed.created_by = 'system-seed'",
+                "seed.updated_by = 'system-seed'",
+                "SHA2(seed.rule_content, 256) = duplicate_pair.content_sha256",
+                "FROM rule_version version WHERE version.rule_id = seed.id",
+                "candidate.status = 'published'",
+                "candidate.approval_status = 'approved'",
+                "candidate.backtest_status = 'success'",
+                "JSON_SEARCH(strategy.snapshot_json, 'one', seed.rule_code)",
+                "seed.status = 'disabled'",
+                "seed.enabled = 0",
+                "INSERT INTO rule_operation_log");
+        assertThat(migration).doesNotContain("DELETE FROM rule_definition", "DELETE FROM candidate_rule");
+    }
+
+    @Test
+    void duplicateRuleCorrectionAuditsChangedReplacementsWithoutReactivation() throws IOException {
+        String migration = resource("/db/migration/V12__audit_changed_duplicate_replacements.sql");
+
+        assertThat(migration).contains(
+                "seed.updated_by = 'rule-dedup-v11'",
+                "SHA2(seed.rule_content, 256) = replacement.seed_sha256",
+                "FROM rule_version version WHERE version.rule_id = seed.id",
+                "log.operation = 'disable_duplicate'",
+                "published.status = 'active'",
+                "published.enabled = 1",
+                "candidate.status = 'published'",
+                "COALESCE(SHA2(published.rule_content, 256), '') <> replacement.published_sha256",
+                "review_changed_replacement",
+                "'disabled', 'disabled'"
+        );
+        assertThat(migration).doesNotContain(
+                "UPDATE rule_definition", "DELETE FROM rule_definition", "DELETE FROM candidate_rule",
+                "'disabled', 'active'");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(path)) {
             assertThat(input).as(path).isNotNull();
