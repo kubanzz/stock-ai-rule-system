@@ -4,6 +4,8 @@
 
 **尚未提取到可证明在正常股票组达到 65% 的生产级一日持有看涨规则、规则组或应用方案。** 按用户更新后的目标，主要指标是发出看涨信号后、从 T+1 开盘到 T+2 开盘的**毛方向准确率**；扣费做多净胜率与可成交性分别报告。扩大至三批已揭盲开发股票、历史时点样本以及 2010—2026 年沪深 300 日线后，可解释单规则、AND/投票组、股票子组和概率模型都没有得到跨年稳定且覆盖充分的 65% 看涨结果。因此当前不发布或启用新规则组及应用方案。
 
+本轮已把接近 65% 但未通过稳定性闸门的规则、固定投票组、跨期失败证据和市场状态组合单独归档：[候选规则目录](phase7/CANDIDATE_CATALOG.md) 与 [市场状态诊断报告](phase7/MARKET_CALENDAR_REPORT.md)。目录中的候选只用于后续冻结、前瞻纸面和真实成交验证，不能直接作为生产信号。
+
 ## 股票组与判断口径
 
 “正常股”用固定的 `mainboard_liquid_stable_v1` 判断，信号日 T 只读取当日及以前数据：沪深主板、至少 252 条有效日线、T 日成交额不少于 2000 万元、最近 20 日成交额中位数不少于 5000 万元、20 日收益波动率不高于 4%、最大绝对单日收益严格小于 8%；另要求既有因子风险状态为 `normal`。该定义在开发结果产生前固定，不能从后来表现倒选资格。
@@ -30,7 +32,7 @@
 | 更早历史时段固定规则组检验 | 从 2010 与 2014 年当时的历史主板名单先冻结 100 股，逐日未复权行情截至 2019-01-07，共 170,750 行；保持第五阶段同一条 2/3 看涨投票组，不在新样本上调参 | 2010—2018 年 **164/288＝56.94%**，日期簇 95% 下界 **47.82%**；分段 2010—2013 为 **54.17%**、2014—2016 为 **68.82%**、2017—2018 为 **48.48%**。扣费净做多胜率 **53.85%**。与主要开发股票代码无交集，但有 10 股与第三阶段退市压力样本重叠；旧市场日期与 2020—2026 年诊断期不重合。固定候选未达 65% 目标。 |
 | 同日股票对照 | 对第五阶段已固定规则的 2024—2026 年 209 个非重叠看涨信号，按每个入场日匹配 PIT100 同日其他正常合格股票，不改变信号或样本 | 规则 **140/209＝66.99%**；同日其他股看涨比例 **66.31%**，仅高 **0.68 个百分点**，按入场日整簇抽样的差值区间跨零。2025 年规则 **55.81%**，同日其他股 **63.21%**。合计高值主要反映发信号的市场日期，不能证明选股有稳定增量。 |
 
-完整研究见 [首轮独立验证](EXTERNAL_VALIDATION.md)、[做多搜索](phase2/LONG_SEARCH.md)、[市场状态搜索](phase2/REGIME_SEARCH.md)、[指定股票组检验](phase2/CALIBRATED_GROUP.md)、[共识组检验](phase3/CONSENSUS_GROUP_REPORT.md)、[看涨规则组检验](phase4/BULLISH_GROUP_REPORT.md)、[看涨概率模型检验](phase4/BULLISH_PROBABILITY_REPORT.md)、[股票子组检验](phase4/SUBGROUP_REPORT.md)、[新增数据与退市股压力测试](phase3/data_quality/README.md)、[历史样本扩展](phase4/README.md)、[第四阶段审计](phase4/AUDIT_REPORT.md)、[历史时点 100 股样本](phase5/README.md)、[扩展市场状态](phase5/MARKET_REGIME_REPORT.md)、[交易所本地指数](phase5/EXCHANGE_INDEX_REPORT.md)、[开盘订单条件](phase5/OPENING_AUCTION_REPORT.md)、[更早历史时段固定规则组检验](phase6/REPORT.md)、[同日对照审查](phase6/AUDIT_NOTES.md)及[执行口径审计](phase3/METHOD_AUDIT.md)。第二轮预先划分的 **100 只封存股票**未用于任何规则结果分析；因为开发阶段没有可信候选，保持封存，供以后冻结的可信候选一次性验证。
+完整研究见 [首轮独立验证](EXTERNAL_VALIDATION.md)、[做多搜索](phase2/LONG_SEARCH.md)、[市场状态搜索](phase2/REGIME_SEARCH.md)、[指定股票组检验](phase2/CALIBRATED_GROUP.md)、[共识组检验](phase3/CONSENSUS_GROUP_REPORT.md)、[看涨规则组检验](phase4/BULLISH_GROUP_REPORT.md)、[看涨概率模型检验](phase4/BULLISH_PROBABILITY_REPORT.md)、[股票子组检验](phase4/SUBGROUP_REPORT.md)、[新增数据与退市股压力测试](phase3/data_quality/README.md)、[历史样本扩展](phase4/README.md)、[第四阶段审计](phase4/AUDIT_REPORT.md)、[历史时点 100 股样本](phase5/README.md)、[扩展市场状态](phase5/MARKET_REGIME_REPORT.md)、[交易所本地指数](phase5/EXCHANGE_INDEX_REPORT.md)、[开盘订单条件](phase5/OPENING_AUCTION_REPORT.md)、[更早历史时段固定规则组检验](phase6/REPORT.md)、[同日对照审查](phase6/AUDIT_NOTES.md)、[候选规则目录](phase7/CANDIDATE_CATALOG.md)、[市场状态诊断](phase7/MARKET_CALENDAR_REPORT.md)及[执行口径审计](phase3/METHOD_AUDIT.md)。第二轮预先划分的 **100 只封存股票**未用于任何规则结果分析；因为开发阶段没有可信候选，保持封存，供以后冻结的可信候选一次性验证。
 
 ## 规则组和应用方案设计
 

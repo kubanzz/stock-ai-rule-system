@@ -1,0 +1,112 @@
+{
+  "catalog_version": "phase7-2026-09-30",
+  "purpose": "近似65%看涨候选的只读目录；仅使用已揭盲结果，sealed100未读取",
+  "common": {
+    "universe": "mainboard_liquid_stable_v1 AND risk_status=normal",
+    "signal_time": "T close",
+    "target": "strict T+1 market open to T+2 market open direction; missing opens count wrong",
+    "accuracy": "gross direction accuracy on non-overlapping predictions",
+    "candidate_status": "research_only",
+    "sealed_validation_read": false
+  },
+  "candidates": [
+    {
+      "id": "C1",
+      "name": "SZ gap with weak HS300 close",
+      "logic": "AND",
+      "conditions": [
+        {"field": "open_gap", "op": ">=", "value": 0.01},
+        {"field": "index_close_position", "op": "<=", "value": 0.2, "index": "HS300"},
+        {"field": "exchange", "op": "=", "value": "SZ"}
+      ],
+      "stock_group": "normal mainboard stocks listed in SZ",
+      "stage": "phase3 exposed development search; 2023 fit, 2024-2026 diagnostics",
+      "metrics": {"pooled_2024_2026": {"correct": 548, "predictions": 840, "accuracy": 0.65238, "net_long_win_rate": 0.6131, "symbols": 234, "entry_dates": 125, "top_date_share": 0.14167}, "year_accuracy": {"2024": 0.71429, "2025": 0.63272, "2026": 0.57754}, "year_predictions": {"2024": 329, "2025": 324, "2026": 187}, "wilson95_lower_pooled": 0.61955, "date_cluster_bootstrap95": [0.53968, 0.73441], "fraction_bootstrap_at_least_65": 0.4861},
+      "why_candidate_only": "pooled value is date-sensitive; removing the busiest date gives 61.30% and removing five gives 54.26%; 2026 is 57.75%"
+    },
+    {
+      "id": "C2",
+      "name": "five-day drawdown plus low close plus weak index trend",
+      "logic": "AND",
+      "conditions": [
+        {"field": "change_pct_5d", "op": "<=", "value": -0.1},
+        {"field": "close_position", "op": "<=", "value": 0.2},
+        {"field": "index_vs_ma20", "op": "<=", "value": -0.02, "index": "HS300"}
+      ],
+      "stock_group": "all normal mainboard stocks",
+      "stage": "phase4 bullish group; phase2dev200 fit 2020-2023, exposed 2024-2026",
+      "metrics": {"pooled_2024_2026": {"correct": 328, "predictions": 502, "accuracy": 0.65339, "net_long_win_rate": 0.61753, "symbols": 310, "entry_dates": 46, "top_date_share": 0.17928}, "year_accuracy": {"2024": 0.74306, "2025": 0.56436, "2026": 0.63813}, "year_predictions": {"2024": 144, "2025": 101, "2026": 257}, "wilson95_lower_pooled": 0.61073, "date_cluster95_lower": 0.52239},
+      "why_candidate_only": "2025 has only six signal dates and 56.44%; the pooled result is not cross-year stable"
+    },
+    {
+      "id": "C3",
+      "name": "deep oversold, low close, low amount and weak HS300 close",
+      "logic": "AND",
+      "conditions": [
+        {"field": "return_20d", "op": "<=", "value": -0.15},
+        {"field": "close_position", "op": "<=", "value": 0.3},
+        {"field": "amount_ratio20", "op": "<=", "value": 0.5},
+        {"field": "index_close_position", "op": "<=", "value": 0.2, "index": "HS300"}
+      ],
+      "stock_group": "all normal mainboard stocks",
+      "stage": "phase4 bullish group; fit 120 events, exposed 2024-2026",
+      "metrics": {"pooled_2024_2026": {"correct": 107, "predictions": 163, "accuracy": 0.65644, "net_long_win_rate": 0.62577, "symbols": 128, "entry_dates": 57, "top_date_share": 0.10429}, "year_accuracy": {"2024": 0.46939, "2025": 0.71053, "2026": 0.75}, "year_predictions": {"2024": 49, "2025": 38, "2026": 76}, "wilson95_lower_pooled": 0.58069, "date_cluster95_lower": 0.50989, "coverage": 0.001013},
+      "why_candidate_only": "very sparse and 2024 is 46.94%; confidence and date-cluster lower bounds are below 65%"
+    },
+    {
+      "id": "C4",
+      "name": "fixed two-of-three bullish vote",
+      "logic": "at_least_2_of_3",
+      "conditions": [
+        {"field": "change_pct_5d", "op": "<=", "value": -0.1},
+        {"field": "open_gap", "op": ">=", "value": 0.02},
+        {"field": "index_close_position", "op": "<=", "value": 0.2, "index": "HS300"}
+      ],
+      "stock_group": "all normal mainboard stocks",
+      "stage": "phase4 frozen fit-ranked vote; phase5 PIT100 and phase6 older PIT100 stress",
+      "metrics": {"exposed_2024_2026": {"correct": 810, "predictions": 1277, "accuracy": 0.6343, "net_long_win_rate": 0.60063, "symbols": 440, "entry_dates": 142, "top_date_share": 0.12843}, "pit100_2024_2026": {"correct": 140, "predictions": 209, "accuracy": 0.66986, "net_long_win_rate": 0.62679, "symbols": 80, "entry_dates": 66, "date_cluster95_lower": 0.54187}, "pit100_2025": {"correct": 24, "predictions": 43, "accuracy": 0.55814, "net_long_win_rate": 0.48837, "entry_dates": 16}, "older_pit_2010_2018": {"correct": 164, "predictions": 288, "accuracy": 0.56944, "net_long_win_rate": 0.53846, "symbols": 81, "entry_dates": 147, "date_cluster95_lower": 0.47823}, "older_segments_accuracy": {"2010_2013": 0.54167, "2014_2016": 0.68817, "2017": 0.41667, "2018": 0.50667, "2017_2018_pooled": 0.48485}},
+      "why_candidate_only": "development cohort is 63.43%; 2025 PIT100 is 55.81%; older PIT100 is 56.94%; matched-date lift is near zero"
+    },
+    {
+      "id": "C5",
+      "name": "C4 cross-period stress record",
+      "logic": "same_as_C4",
+      "conditions": "same as C4",
+      "stock_group": "phase5 PIT100 and phase6 older PIT100",
+      "stage": "phase5/phase6 early pressure tests",
+      "metrics": {"phase5_2025": {"correct": 24, "predictions": 43, "accuracy": 0.55814, "net_long_win_rate": 0.48837}, "phase6_2010_2018": {"correct": 164, "predictions": 288, "accuracy": 0.56944, "net_long_win_rate": 0.53846, "date_cluster95_lower": 0.47823}},
+      "why_candidate_only": "retained as a negative stability record, not a production candidate"
+    },
+    {
+      "id": "C6",
+      "name": "HS300 five-day drawdown and low close market-timing state",
+      "logic": "AND market state; all eligible stocks on triggered dates",
+      "conditions": [
+        {"field": "market_5d_return", "op": "<=", "value": -0.05, "index": "HS300"},
+        {"field": "market_close_position", "op": "<=", "value": 0.2, "index": "HS300"}
+      ],
+      "stock_group": "all normal mainboard stocks on triggered dates; no individual stock selection",
+      "stage": "phase7 market-calendar state diagnostic",
+      "metrics": {"pooled_2011_2026": {"correct": 393, "predictions": 610, "accuracy": 0.64426, "net_long_win_rate": 0.59672, "symbols": 161, "entry_dates": 55, "wilson95_lower": 0.60548, "date_cluster95_lower": 0.54899, "top_date_share": 0.07377}, "period_accuracy": {"2011_2016": 0.66827, "2017_2018": 0.53757, "2020_2023": 0.65909, "2024_2026": 0.76289}},
+      "why_candidate_only": "market-timing reference only; 2017-2018 is 53.76%, recent support is four entry dates, and there is no stock-selection lift"
+    }
+  ],
+  "source_files": [
+    "../phase3/rare_signal_normal_results.json",
+    "../phase3/rare_signal_robustness.json",
+    "../phase4/bullish_group_results.json",
+    "../phase5/pit_fixed_vote_stress.json",
+    "../phase6/pit_older_fixed_vote_stress.json"
+    ,"./market_calendar_rule_results.json"
+    ,"./market_calendar_rule_search.py"
+  ],
+  "source_sha256": {
+    "../phase3/rare_signal_normal_results.json": "58f9c7de4cad687b24d3814b41707bee0d9694c6090fa344307fa5d6393f8401",
+    "../phase3/rare_signal_robustness.json": "8f0a945b117b5a5353c9a8afc47135a5a0ecd128ffb17fb561d6fd677f424362",
+    "../phase4/bullish_group_results.json": "9c4bd808c4246a13668d2c5db83a45f7e3ab336a72046a34b407c85b14af29cc",
+    "../phase5/pit_fixed_vote_stress.json": "b4501775cb5e57982648624b6400d3312be0a2a5e80467fbc77e71631651d8a7",
+    "../phase6/pit_older_fixed_vote_stress.json": "8dc21e08f7605d9e76777c1cd6e185461ec41a5d80bb1863887be1fc4b81e200"
+    ,"./market_calendar_rule_results.json": "9f198d6a880342498ed782159f2a376c5ed6f947a4f236f597fec63342d8d8d4"
+    ,"./market_calendar_rule_search.py": "0d4bde6b2e67b6271097490f83e7332b0524ae32f5f511d75cb3c63172106a0a"
+  }
+}
