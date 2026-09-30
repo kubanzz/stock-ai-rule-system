@@ -1,0 +1,1175 @@
+{
+  "protocol": "T-close normal-stock event; 2020-23 phase2dev200 fit ranks 15 point-in-time stock subgroups for each of four fixed bullish signal families. Top two per family reach 2024 calibration. One is frozen before 2025/26 exposed diagnostics.",
+  "prediction": "T+2 open > T+1 open, with missing opens counted wrong",
+  "blind_validation_used": false,
+  "source_sha256": {
+    "development200": "9a3c55e012363b9b8695b3bd5952125b867989b7144203cbbf32d672b7727fdb",
+    "old166": "fed79b170894f7e19d23e74b661978908f78b60a7edeb70fd762bdb1dc9691b2",
+    "external250": "97d8336bd7a338ee11afc7f0446744cff8fb3e3f9ca68e146ebdbc31eaedb1c4"
+  },
+  "hs300_sha256": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24",
+  "configuration_count": 60,
+  "fit_ranked": {
+    "all_normal": [
+      {
+        "configuration": {
+          "signal": "all_normal",
+          "subgroup": "high_vol_025"
+        },
+        "fit": {
+          "predictions": 8804,
+          "correct": 4162,
+          "accuracy": 0.47274,
+          "wilson95_lower": 0.462325,
+          "symbols": 182,
+          "entry_dates": 953,
+          "top_date_share": 0.002953,
+          "top_symbol_share": 0.016697,
+          "year_n": {
+            "2020": 2202,
+            "2021": 2400,
+            "2022": 3050,
+            "2023": 1152
+          },
+          "year_accuracy": {
+            "2020": 0.478656,
+            "2021": 0.48875,
+            "2022": 0.458033,
+            "2023": 0.467014
+          },
+          "selection_score": 0.460179
+        }
+      },
+      {
+        "configuration": {
+          "signal": "all_normal",
+          "subgroup": "high_vol_020"
+        },
+        "fit": {
+          "predictions": 17943,
+          "correct": 8422,
+          "accuracy": 0.469375,
+          "wilson95_lower": 0.46208,
+          "symbols": 183,
+          "entry_dates": 954,
+          "top_date_share": 0.002341,
+          "top_symbol_share": 0.01449,
+          "year_n": {
+            "2020": 4143,
+            "2021": 4472,
+            "2022": 5889,
+            "2023": 3439
+          },
+          "year_accuracy": {
+            "2020": 0.475501,
+            "2021": 0.484794,
+            "2022": 0.460859,
+            "2023": 0.456528
+          },
+          "selection_score": 0.459304
+        }
+      },
+      {
+        "configuration": {
+          "signal": "all_normal",
+          "subgroup": "price_high_10"
+        },
+        "fit": {
+          "predictions": 18051,
+          "correct": 8328,
+          "accuracy": 0.461359,
+          "wilson95_lower": 0.454096,
+          "symbols": 122,
+          "entry_dates": 955,
+          "top_date_share": 0.00277,
+          "top_symbol_share": 0.024098,
+          "year_n": {
+            "2020": 3354,
+            "2021": 3841,
+            "2022": 4905,
+            "2023": 5951
+          },
+          "year_accuracy": {
+            "2020": 0.482111,
+            "2021": 0.475657,
+            "2022": 0.449337,
+            "2023": 0.450344
+          },
+          "selection_score": 0.451716
+        }
+      },
+      {
+        "configuration": {
+          "signal": "all_normal",
+          "subgroup": "SZ"
+        },
+        "fit": {
+          "predictions": 18476,
+          "correct": 8457,
+          "accuracy": 0.457729,
+          "wilson95_lower": 0.450555,
+          "symbols": 94,
+          "entry_dates": 943,
+          "top_date_share": 0.002381,
+          "top_symbol_share": 0.023544,
+          "year_n": {
+            "2020": 3722,
+            "2021": 4112,
+            "2022": 4997,
+            "2023": 5645
+          },
+          "year_accuracy": {
+            "2020": 0.462654,
+            "2021": 0.476654,
+            "2022": 0.44947,
+            "2023": 0.448007
+          },
+          "selection_score": 0.449281
+        }
+      },
+      {
+        "configuration": {
+          "signal": "all_normal",
+          "subgroup": "all"
+        },
+        "fit": {
+          "predictions": 35174,
+          "correct": 15963,
+          "accuracy": 0.45383,
+          "wilson95_lower": 0.448632,
+          "symbols": 185,
+          "entry_dates": 955,
+          "top_date_share": 0.002189,
+          "top_symbol_share": 0.013391,
+          "year_n": {
+            "2020": 6698,
+            "2021": 7511,
+            "2022": 9759,
+            "2023": 11206
+          },
+          "year_accuracy": {
+            "2020": 0.462825,
+            "2021": 0.468646,
+            "2022": 0.445435,
+            "2023": 0.445833
+          },
+          "selection_score": 0.447034
+        }
+      }
+    ],
+    "gap_market_pullback": [
+      {
+        "configuration": {
+          "signal": "gap_market_pullback",
+          "subgroup": "price_high_20"
+        },
+        "fit": {
+          "predictions": 203,
+          "correct": 120,
+          "accuracy": 0.591133,
+          "wilson95_lower": 0.522421,
+          "symbols": 42,
+          "entry_dates": 98,
+          "top_date_share": 0.078818,
+          "top_symbol_share": 0.093596,
+          "year_n": {
+            "2020": 42,
+            "2021": 34,
+            "2022": 66,
+            "2023": 61
+          },
+          "year_accuracy": {
+            "2020": 0.666667,
+            "2021": 0.588235,
+            "2022": 0.545455,
+            "2023": 0.590164
+          },
+          "selection_score": 0.522421
+        }
+      },
+      {
+        "configuration": {
+          "signal": "gap_market_pullback",
+          "subgroup": "price_high_10"
+        },
+        "fit": {
+          "predictions": 535,
+          "correct": 302,
+          "accuracy": 0.564486,
+          "wilson95_lower": 0.522159,
+          "symbols": 103,
+          "entry_dates": 156,
+          "top_date_share": 0.072897,
+          "top_symbol_share": 0.035514,
+          "year_n": {
+            "2020": 120,
+            "2021": 86,
+            "2022": 177,
+            "2023": 152
+          },
+          "year_accuracy": {
+            "2020": 0.516667,
+            "2021": 0.5,
+            "2022": 0.564972,
+            "2023": 0.638158
+          },
+          "selection_score": 0.51108
+        }
+      },
+      {
+        "configuration": {
+          "signal": "gap_market_pullback",
+          "subgroup": "low_vol_025"
+        },
+        "fit": {
+          "predictions": 658,
+          "correct": 379,
+          "accuracy": 0.575988,
+          "wilson95_lower": 0.537894,
+          "symbols": 162,
+          "entry_dates": 160,
+          "top_date_share": 0.120061,
+          "top_symbol_share": 0.019757,
+          "year_n": {
+            "2020": 111,
+            "2021": 88,
+            "2022": 210,
+            "2023": 249
+          },
+          "year_accuracy": {
+            "2020": 0.477477,
+            "2021": 0.511364,
+            "2022": 0.585714,
+            "2023": 0.634538
+          },
+          "selection_score": 0.507686
+        }
+      },
+      {
+        "configuration": {
+          "signal": "gap_market_pullback",
+          "subgroup": "all"
+        },
+        "fit": {
+          "predictions": 986,
+          "correct": 559,
+          "accuracy": 0.566937,
+          "wilson95_lower": 0.535808,
+          "symbols": 170,
+          "entry_dates": 184,
+          "top_date_share": 0.085193,
+          "top_symbol_share": 0.01927,
+          "year_n": {
+            "2020": 218,
+            "2021": 158,
+            "2022": 327,
+            "2023": 283
+          },
+          "year_accuracy": {
+            "2020": 0.477064,
+            "2021": 0.518987,
+            "2022": 0.59633,
+            "2023": 0.628975
+          },
+          "selection_score": 0.506436
+        }
+      },
+      {
+        "configuration": {
+          "signal": "gap_market_pullback",
+          "subgroup": "SH"
+        },
+        "fit": {
+          "predictions": 445,
+          "correct": 245,
+          "accuracy": 0.550562,
+          "wilson95_lower": 0.504108,
+          "symbols": 80,
+          "entry_dates": 143,
+          "top_date_share": 0.074157,
+          "top_symbol_share": 0.042697,
+          "year_n": {
+            "2020": 90,
+            "2021": 69,
+            "2022": 150,
+            "2023": 136
+          },
+          "year_accuracy": {
+            "2020": 0.511111,
+            "2021": 0.550725,
+            "2022": 0.6,
+            "2023": 0.522059
+          },
+          "selection_score": 0.504108
+        }
+      }
+    ],
+    "stock_reversal": [
+      {
+        "configuration": {
+          "signal": "stock_reversal",
+          "subgroup": "low_vol_025"
+        },
+        "fit": {
+          "predictions": 1839,
+          "correct": 939,
+          "accuracy": 0.510604,
+          "wilson95_lower": 0.487758,
+          "symbols": 174,
+          "entry_dates": 472,
+          "top_date_share": 0.021207,
+          "top_symbol_share": 0.015226,
+          "year_n": {
+            "2020": 336,
+            "2021": 323,
+            "2022": 685,
+            "2023": 495
+          },
+          "year_accuracy": {
+            "2020": 0.517857,
+            "2021": 0.526316,
+            "2022": 0.483212,
+            "2023": 0.533333
+          },
+          "selection_score": 0.485485
+        }
+      },
+      {
+        "configuration": {
+          "signal": "stock_reversal",
+          "subgroup": "price_low_10"
+        },
+        "fit": {
+          "predictions": 1490,
+          "correct": 773,
+          "accuracy": 0.518792,
+          "wilson95_lower": 0.493406,
+          "symbols": 117,
+          "entry_dates": 445,
+          "top_date_share": 0.01745,
+          "top_symbol_share": 0.030872,
+          "year_n": {
+            "2020": 346,
+            "2021": 323,
+            "2022": 571,
+            "2023": 250
+          },
+          "year_accuracy": {
+            "2020": 0.552023,
+            "2021": 0.547988,
+            "2022": 0.476357,
+            "2023": 0.532
+          },
+          "selection_score": 0.484881
+        }
+      },
+      {
+        "configuration": {
+          "signal": "stock_reversal",
+          "subgroup": "SH"
+        },
+        "fit": {
+          "predictions": 1422,
+          "correct": 725,
+          "accuracy": 0.509845,
+          "wilson95_lower": 0.483871,
+          "symbols": 87,
+          "entry_dates": 477,
+          "top_date_share": 0.017581,
+          "top_symbol_share": 0.031646,
+          "year_n": {
+            "2020": 258,
+            "2021": 288,
+            "2022": 569,
+            "2023": 307
+          },
+          "year_accuracy": {
+            "2020": 0.542636,
+            "2021": 0.506944,
+            "2022": 0.485062,
+            "2023": 0.530945
+          },
+          "selection_score": 0.483871
+        }
+      },
+      {
+        "configuration": {
+          "signal": "stock_reversal",
+          "subgroup": "amount_300m"
+        },
+        "fit": {
+          "predictions": 910,
+          "correct": 471,
+          "accuracy": 0.517582,
+          "wilson95_lower": 0.485111,
+          "symbols": 93,
+          "entry_dates": 416,
+          "top_date_share": 0.010989,
+          "top_symbol_share": 0.048352,
+          "year_n": {
+            "2020": 197,
+            "2021": 229,
+            "2022": 289,
+            "2023": 195
+          },
+          "year_accuracy": {
+            "2020": 0.482234,
+            "2021": 0.567686,
+            "2022": 0.50519,
+            "2023": 0.512821
+          },
+          "selection_score": 0.483672
+        }
+      },
+      {
+        "configuration": {
+          "signal": "stock_reversal",
+          "subgroup": "high_vol_020"
+        },
+        "fit": {
+          "predictions": 2614,
+          "correct": 1325,
+          "accuracy": 0.506886,
+          "wilson95_lower": 0.487724,
+          "symbols": 180,
+          "entry_dates": 603,
+          "top_date_share": 0.014537,
+          "top_symbol_share": 0.016067,
+          "year_n": {
+            "2020": 604,
+            "2021": 615,
+            "2022": 1005,
+            "2023": 390
+          },
+          "year_accuracy": {
+            "2020": 0.504967,
+            "2021": 0.536585,
+            "2022": 0.479602,
+            "2023": 0.533333
+          },
+          "selection_score": 0.483663
+        }
+      }
+    ],
+    "oversold_close": [
+      {
+        "configuration": {
+          "signal": "oversold_close",
+          "subgroup": "amount_100m"
+        },
+        "fit": {
+          "predictions": 1636,
+          "correct": 853,
+          "accuracy": 0.521394,
+          "wilson95_lower": 0.497166,
+          "symbols": 143,
+          "entry_dates": 499,
+          "top_date_share": 0.018949,
+          "top_symbol_share": 0.022616,
+          "year_n": {
+            "2020": 284,
+            "2021": 316,
+            "2022": 580,
+            "2023": 456
+          },
+          "year_accuracy": {
+            "2020": 0.53169,
+            "2021": 0.515823,
+            "2022": 0.5,
+            "2023": 0.546053
+          },
+          "selection_score": 0.497166
+        }
+      },
+      {
+        "configuration": {
+          "signal": "oversold_close",
+          "subgroup": "SH"
+        },
+        "fit": {
+          "predictions": 1181,
+          "correct": 623,
+          "accuracy": 0.527519,
+          "wilson95_lower": 0.499003,
+          "symbols": 86,
+          "entry_dates": 425,
+          "top_date_share": 0.021169,
+          "top_symbol_share": 0.033023,
+          "year_n": {
+            "2020": 158,
+            "2021": 218,
+            "2022": 459,
+            "2023": 346
+          },
+          "year_accuracy": {
+            "2020": 0.487342,
+            "2021": 0.513761,
+            "2022": 0.498911,
+            "2023": 0.592486
+          },
+          "selection_score": 0.493172
+        }
+      },
+      {
+        "configuration": {
+          "signal": "oversold_close",
+          "subgroup": "liquid_low_vol"
+        },
+        "fit": {
+          "predictions": 694,
+          "correct": 366,
+          "accuracy": 0.527378,
+          "wilson95_lower": 0.490185,
+          "symbols": 107,
+          "entry_dates": 296,
+          "top_date_share": 0.028818,
+          "top_symbol_share": 0.030259,
+          "year_n": {
+            "2020": 99,
+            "2021": 112,
+            "2022": 189,
+            "2023": 294
+          },
+          "year_accuracy": {
+            "2020": 0.565657,
+            "2021": 0.5,
+            "2022": 0.492063,
+            "2023": 0.547619
+          },
+          "selection_score": 0.490185
+        }
+      },
+      {
+        "configuration": {
+          "signal": "oversold_close",
+          "subgroup": "low_vol_025"
+        },
+        "fit": {
+          "predictions": 1990,
+          "correct": 1026,
+          "accuracy": 0.515578,
+          "wilson95_lower": 0.493612,
+          "symbols": 171,
+          "entry_dates": 490,
+          "top_date_share": 0.01809,
+          "top_symbol_share": 0.01608,
+          "year_n": {
+            "2020": 301,
+            "2021": 329,
+            "2022": 660,
+            "2023": 700
+          },
+          "year_accuracy": {
+            "2020": 0.488372,
+            "2021": 0.519757,
+            "2022": 0.484848,
+            "2023": 0.554286
+          },
+          "selection_score": 0.48923
+        }
+      },
+      {
+        "configuration": {
+          "signal": "oversold_close",
+          "subgroup": "low_vol_020"
+        },
+        "fit": {
+          "predictions": 1201,
+          "correct": 620,
+          "accuracy": 0.516236,
+          "wilson95_lower": 0.487967,
+          "symbols": 156,
+          "entry_dates": 356,
+          "top_date_share": 0.023314,
+          "top_symbol_share": 0.021649,
+          "year_n": {
+            "2020": 163,
+            "2021": 175,
+            "2022": 332,
+            "2023": 531
+          },
+          "year_accuracy": {
+            "2020": 0.503067,
+            "2021": 0.508571,
+            "2022": 0.48494,
+            "2023": 0.542373
+          },
+          "selection_score": 0.486454
+        }
+      }
+    ]
+  },
+  "calibration_finalists": [
+    {
+      "configuration": {
+        "signal": "all_normal",
+        "subgroup": "high_vol_025"
+      },
+      "fit": {
+        "predictions": 8804,
+        "correct": 4162,
+        "accuracy": 0.47274,
+        "wilson95_lower": 0.462325,
+        "symbols": 182,
+        "entry_dates": 953,
+        "top_date_share": 0.002953,
+        "top_symbol_share": 0.016697,
+        "year_n": {
+          "2020": 2202,
+          "2021": 2400,
+          "2022": 3050,
+          "2023": 1152
+        },
+        "year_accuracy": {
+          "2020": 0.478656,
+          "2021": 0.48875,
+          "2022": 0.458033,
+          "2023": 0.467014
+        },
+        "selection_score": 0.460179
+      },
+      "calibration": {
+        "predictions": 2694,
+        "correct": 1258,
+        "accuracy": 0.466964,
+        "wilson95_lower": 0.448185,
+        "symbols": 168,
+        "entry_dates": 239,
+        "top_date_share": 0.012249,
+        "top_symbol_share": 0.023385,
+        "year_n": {
+          "2024": 2694
+        },
+        "year_accuracy": {
+          "2024": 0.466964
+        }
+      }
+    },
+    {
+      "configuration": {
+        "signal": "all_normal",
+        "subgroup": "high_vol_020"
+      },
+      "fit": {
+        "predictions": 17943,
+        "correct": 8422,
+        "accuracy": 0.469375,
+        "wilson95_lower": 0.46208,
+        "symbols": 183,
+        "entry_dates": 954,
+        "top_date_share": 0.002341,
+        "top_symbol_share": 0.01449,
+        "year_n": {
+          "2020": 4143,
+          "2021": 4472,
+          "2022": 5889,
+          "2023": 3439
+        },
+        "year_accuracy": {
+          "2020": 0.475501,
+          "2021": 0.484794,
+          "2022": 0.460859,
+          "2023": 0.456528
+        },
+        "selection_score": 0.459304
+      },
+      "calibration": {
+        "predictions": 5185,
+        "correct": 2402,
+        "accuracy": 0.463259,
+        "wilson95_lower": 0.449719,
+        "symbols": 185,
+        "entry_dates": 239,
+        "top_date_share": 0.012729,
+        "top_symbol_share": 0.016586,
+        "year_n": {
+          "2024": 5185
+        },
+        "year_accuracy": {
+          "2024": 0.463259
+        }
+      }
+    },
+    {
+      "configuration": {
+        "signal": "stock_reversal",
+        "subgroup": "low_vol_025"
+      },
+      "fit": {
+        "predictions": 1839,
+        "correct": 939,
+        "accuracy": 0.510604,
+        "wilson95_lower": 0.487758,
+        "symbols": 174,
+        "entry_dates": 472,
+        "top_date_share": 0.021207,
+        "top_symbol_share": 0.015226,
+        "year_n": {
+          "2020": 336,
+          "2021": 323,
+          "2022": 685,
+          "2023": 495
+        },
+        "year_accuracy": {
+          "2020": 0.517857,
+          "2021": 0.526316,
+          "2022": 0.483212,
+          "2023": 0.533333
+        },
+        "selection_score": 0.485485
+      },
+      "calibration": {
+        "predictions": 654,
+        "correct": 315,
+        "accuracy": 0.481651,
+        "wilson95_lower": 0.443576,
+        "symbols": 153,
+        "entry_dates": 116,
+        "top_date_share": 0.076453,
+        "top_symbol_share": 0.018349,
+        "year_n": {
+          "2024": 654
+        },
+        "year_accuracy": {
+          "2024": 0.481651
+        }
+      }
+    },
+    {
+      "configuration": {
+        "signal": "stock_reversal",
+        "subgroup": "price_low_10"
+      },
+      "fit": {
+        "predictions": 1490,
+        "correct": 773,
+        "accuracy": 0.518792,
+        "wilson95_lower": 0.493406,
+        "symbols": 117,
+        "entry_dates": 445,
+        "top_date_share": 0.01745,
+        "top_symbol_share": 0.030872,
+        "year_n": {
+          "2020": 346,
+          "2021": 323,
+          "2022": 571,
+          "2023": 250
+        },
+        "year_accuracy": {
+          "2020": 0.552023,
+          "2021": 0.547988,
+          "2022": 0.476357,
+          "2023": 0.532
+        },
+        "selection_score": 0.484881
+      },
+      "calibration": {
+        "predictions": 565,
+        "correct": 270,
+        "accuracy": 0.477876,
+        "wilson95_lower": 0.436977,
+        "symbols": 113,
+        "entry_dates": 104,
+        "top_date_share": 0.067257,
+        "top_symbol_share": 0.040708,
+        "year_n": {
+          "2024": 565
+        },
+        "year_accuracy": {
+          "2024": 0.477876
+        }
+      }
+    },
+    {
+      "configuration": {
+        "signal": "oversold_close",
+        "subgroup": "amount_100m"
+      },
+      "fit": {
+        "predictions": 1636,
+        "correct": 853,
+        "accuracy": 0.521394,
+        "wilson95_lower": 0.497166,
+        "symbols": 143,
+        "entry_dates": 499,
+        "top_date_share": 0.018949,
+        "top_symbol_share": 0.022616,
+        "year_n": {
+          "2020": 284,
+          "2021": 316,
+          "2022": 580,
+          "2023": 456
+        },
+        "year_accuracy": {
+          "2020": 0.53169,
+          "2021": 0.515823,
+          "2022": 0.5,
+          "2023": 0.546053
+        },
+        "selection_score": 0.497166
+      },
+      "calibration": {
+        "predictions": 510,
+        "correct": 234,
+        "accuracy": 0.458824,
+        "wilson95_lower": 0.416045,
+        "symbols": 101,
+        "entry_dates": 109,
+        "top_date_share": 0.060784,
+        "top_symbol_share": 0.041176,
+        "year_n": {
+          "2024": 510
+        },
+        "year_accuracy": {
+          "2024": 0.458824
+        }
+      }
+    },
+    {
+      "configuration": {
+        "signal": "oversold_close",
+        "subgroup": "SH"
+      },
+      "fit": {
+        "predictions": 1181,
+        "correct": 623,
+        "accuracy": 0.527519,
+        "wilson95_lower": 0.499003,
+        "symbols": 86,
+        "entry_dates": 425,
+        "top_date_share": 0.021169,
+        "top_symbol_share": 0.033023,
+        "year_n": {
+          "2020": 158,
+          "2021": 218,
+          "2022": 459,
+          "2023": 346
+        },
+        "year_accuracy": {
+          "2020": 0.487342,
+          "2021": 0.513761,
+          "2022": 0.498911,
+          "2023": 0.592486
+        },
+        "selection_score": 0.493172
+      },
+      "calibration": {
+        "predictions": 422,
+        "correct": 190,
+        "accuracy": 0.450237,
+        "wilson95_lower": 0.40343,
+        "symbols": 77,
+        "entry_dates": 102,
+        "top_date_share": 0.052133,
+        "top_symbol_share": 0.037915,
+        "year_n": {
+          "2024": 422
+        },
+        "year_accuracy": {
+          "2024": 0.450237
+        }
+      }
+    }
+  ],
+  "selected": {
+    "configuration": {
+      "signal": "all_normal",
+      "subgroup": "high_vol_020"
+    },
+    "fit": {
+      "predictions": 17943,
+      "correct": 8422,
+      "accuracy": 0.469375,
+      "wilson95_lower": 0.46208,
+      "symbols": 183,
+      "entry_dates": 954,
+      "top_date_share": 0.002341,
+      "top_symbol_share": 0.01449,
+      "year_n": {
+        "2020": 4143,
+        "2021": 4472,
+        "2022": 5889,
+        "2023": 3439
+      },
+      "year_accuracy": {
+        "2020": 0.475501,
+        "2021": 0.484794,
+        "2022": 0.460859,
+        "2023": 0.456528
+      },
+      "selection_score": 0.459304
+    },
+    "calibration": {
+      "predictions": 5185,
+      "correct": 2402,
+      "accuracy": 0.463259,
+      "wilson95_lower": 0.449719,
+      "symbols": 185,
+      "entry_dates": 239,
+      "top_date_share": 0.012729,
+      "top_symbol_share": 0.016586,
+      "year_n": {
+        "2024": 5185
+      },
+      "year_accuracy": {
+        "2024": 0.463259
+      }
+    }
+  },
+  "production_candidate": null,
+  "production_candidate_reason": "No calibration finalist reaches 65% bullish gross accuracy, so no subgroup passes the requested threshold before later diagnostics.",
+  "diagnostics": {
+    "development200_2024": {
+      "predictions": 5185,
+      "correct": 2402,
+      "accuracy": 0.463259,
+      "wilson95_lower": 0.449719,
+      "symbols": 185,
+      "entry_dates": 239,
+      "top_date_share": 0.012729,
+      "top_symbol_share": 0.016586,
+      "year_n": {
+        "2024": 5185
+      },
+      "year_accuracy": {
+        "2024": 0.463259
+      },
+      "date_cluster_bootstrap95": [
+        0.422564,
+        0.50226
+      ],
+      "remove_busiest_date": {
+        "predictions": 5119,
+        "correct": 2341,
+        "accuracy": 0.457316
+      },
+      "unobservable": 2,
+      "entry_unexecutable": 4,
+      "long_net_win_rate": 0.420961
+    },
+    "development200_2025": {
+      "predictions": 4730,
+      "correct": 2284,
+      "accuracy": 0.482875,
+      "wilson95_lower": 0.468654,
+      "symbols": 179,
+      "entry_dates": 241,
+      "top_date_share": 0.012262,
+      "top_symbol_share": 0.023044,
+      "year_n": {
+        "2025": 4730
+      },
+      "year_accuracy": {
+        "2025": 0.482875
+      },
+      "date_cluster_bootstrap95": [
+        0.445177,
+        0.520551
+      ],
+      "remove_busiest_date": {
+        "predictions": 4672,
+        "correct": 2280,
+        "accuracy": 0.488014
+      },
+      "unobservable": 2,
+      "entry_unexecutable": 4,
+      "long_net_win_rate": 0.433136
+    },
+    "development200_2026": {
+      "predictions": 4921,
+      "correct": 2349,
+      "accuracy": 0.477342,
+      "wilson95_lower": 0.46341,
+      "symbols": 186,
+      "entry_dates": 178,
+      "top_date_share": 0.011177,
+      "top_symbol_share": 0.014834,
+      "year_n": {
+        "2026": 4921
+      },
+      "year_accuracy": {
+        "2026": 0.477342
+      },
+      "date_cluster_bootstrap95": [
+        0.439396,
+        0.515068
+      ],
+      "remove_busiest_date": {
+        "predictions": 4866,
+        "correct": 2311,
+        "accuracy": 0.474928
+      },
+      "unobservable": 1,
+      "entry_unexecutable": 8,
+      "long_net_win_rate": 0.428659
+    },
+    "old166_2024": {
+      "predictions": 1867,
+      "correct": 879,
+      "accuracy": 0.470809,
+      "wilson95_lower": 0.44825,
+      "symbols": 73,
+      "entry_dates": 229,
+      "top_date_share": 0.010712,
+      "top_symbol_share": 0.041243,
+      "year_n": {
+        "2024": 1867
+      },
+      "year_accuracy": {
+        "2024": 0.470809
+      },
+      "date_cluster_bootstrap95": [
+        0.427503,
+        0.512071
+      ],
+      "remove_busiest_date": {
+        "predictions": 1847,
+        "correct": 867,
+        "accuracy": 0.46941
+      },
+      "unobservable": 0,
+      "entry_unexecutable": 0,
+      "long_net_win_rate": 0.432244
+    },
+    "old166_2025": {
+      "predictions": 1817,
+      "correct": 865,
+      "accuracy": 0.476059,
+      "wilson95_lower": 0.45317,
+      "symbols": 78,
+      "entry_dates": 241,
+      "top_date_share": 0.010457,
+      "top_symbol_share": 0.034673,
+      "year_n": {
+        "2025": 1817
+      },
+      "year_accuracy": {
+        "2025": 0.476059
+      },
+      "date_cluster_bootstrap95": [
+        0.438924,
+        0.514351
+      ],
+      "remove_busiest_date": {
+        "predictions": 1798,
+        "correct": 864,
+        "accuracy": 0.480534
+      },
+      "unobservable": 0,
+      "entry_unexecutable": 1,
+      "long_net_win_rate": 0.430617
+    },
+    "old166_2026": {
+      "predictions": 1889,
+      "correct": 876,
+      "accuracy": 0.463737,
+      "wilson95_lower": 0.441345,
+      "symbols": 75,
+      "entry_dates": 178,
+      "top_date_share": 0.011117,
+      "top_symbol_share": 0.032292,
+      "year_n": {
+        "2026": 1889
+      },
+      "year_accuracy": {
+        "2026": 0.463737
+      },
+      "date_cluster_bootstrap95": [
+        0.422468,
+        0.505491
+      ],
+      "remove_busiest_date": {
+        "predictions": 1868,
+        "correct": 860,
+        "accuracy": 0.460385
+      },
+      "unobservable": 1,
+      "entry_unexecutable": 2,
+      "long_net_win_rate": 0.430843
+    },
+    "external250_2024": {
+      "predictions": 5726,
+      "correct": 2793,
+      "accuracy": 0.487775,
+      "wilson95_lower": 0.474841,
+      "symbols": 227,
+      "entry_dates": 231,
+      "top_date_share": 0.011701,
+      "top_symbol_share": 0.013447,
+      "year_n": {
+        "2024": 5726
+      },
+      "year_accuracy": {
+        "2024": 0.487775
+      },
+      "date_cluster_bootstrap95": [
+        0.446399,
+        0.529652
+      ],
+      "remove_busiest_date": {
+        "predictions": 5659,
+        "correct": 2729,
+        "accuracy": 0.482241
+      },
+      "unobservable": 0,
+      "entry_unexecutable": 4,
+      "long_net_win_rate": 0.447221
+    },
+    "external250_2025": {
+      "predictions": 5583,
+      "correct": 2689,
+      "accuracy": 0.481641,
+      "wilson95_lower": 0.468551,
+      "symbols": 230,
+      "entry_dates": 241,
+      "top_date_share": 0.012538,
+      "top_symbol_share": 0.013255,
+      "year_n": {
+        "2025": 5583
+      },
+      "year_accuracy": {
+        "2025": 0.481641
+      },
+      "date_cluster_bootstrap95": [
+        0.446105,
+        0.518143
+      ],
+      "remove_busiest_date": {
+        "predictions": 5513,
+        "correct": 2688,
+        "accuracy": 0.487575
+      },
+      "unobservable": 0,
+      "entry_unexecutable": 2,
+      "long_net_win_rate": 0.435406
+    },
+    "external250_2026": {
+      "predictions": 6394,
+      "correct": 3087,
+      "accuracy": 0.482796,
+      "wilson95_lower": 0.470562,
+      "symbols": 233,
+      "entry_dates": 178,
+      "top_date_share": 0.010791,
+      "top_symbol_share": 0.011261,
+      "year_n": {
+        "2026": 6394
+      },
+      "year_accuracy": {
+        "2026": 0.482796
+      },
+      "date_cluster_bootstrap95": [
+        0.445967,
+        0.518625
+      ],
+      "remove_busiest_date": {
+        "predictions": 6325,
+        "correct": 3035,
+        "accuracy": 0.479842
+      },
+      "unobservable": 2,
+      "entry_unexecutable": 3,
+      "long_net_win_rate": 0.442497
+    }
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "purpose": "source quality and point-in-time normal-stock coverage only; no labels or outcomes",
+  "source_sha256": "8f93664ac0051ba8a862b52f5c54c5f9c6a4897c0d15055851c8122c3ed659e9",
+  "assignment_sha256": "1f0e70e2c0c226da9b171721f772e0bbf41a65af7bd4688065b9c40c2d300b5b",
+  "assigned_symbols": 80,
+  "raw_rows": 111440,
+  "traded_rows": 111311,
+  "valid_traded_rows": 111311,
+  "invalid_or_missing_traded_rows": 0,
+  "ohlc_outside_tolerance_rows": 0,
+  "amount_div_volume_outside_daily_low_high_rows": 0,
+  "normal_nonST_rows": 38983,
+  "normal_nonST_symbols": 77,
+  "normal_nonST_dates": 1628,
+  "by_snapshot_year": {
+    "2019-01-02_2019": {
+      "valid_traded_rows": 9735,
+      "normal_nonST_rows": 0,
+      "normal_nonST_symbols": 0,
+      "normal_nonST_dates": 0
+    },
+    "2019-01-02_2020": {
+      "valid_traded_rows": 9708,
+      "normal_nonST_rows": 2954,
+      "normal_nonST_symbols": 36,
+      "normal_nonST_dates": 236
+    },
+    "2019-01-02_2021": {
+      "valid_traded_rows": 9708,
+      "normal_nonST_rows": 3202,
+      "normal_nonST_symbols": 35,
+      "normal_nonST_dates": 243
+    },
+    "2019-01-02_2022": {
+      "valid_traded_rows": 9664,
+      "normal_nonST_rows": 3845,
+      "normal_nonST_symbols": 38,
+      "normal_nonST_dates": 242
+    },
+    "2019-01-02_2023": {
+      "valid_traded_rows": 9676,
+      "normal_nonST_rows": 4493,
+      "normal_nonST_symbols": 39,
+      "normal_nonST_dates": 242
+    },
+    "2019-01-02_2024": {
+      "valid_traded_rows": 9669,
+      "normal_nonST_rows": 3407,
+      "normal_nonST_symbols": 37,
+      "normal_nonST_dates": 242
+    },
+    "2019-01-02_2025": {
+      "valid_traded_rows": 9707,
+      "normal_nonST_rows": 5537,
+      "normal_nonST_symbols": 39,
+      "normal_nonST_dates": 243
+    },
+    "2019-01-02_2026": {
+      "valid_traded_rows": 7187,
+      "normal_nonST_rows": 3633,
+      "normal_nonST_symbols": 39,
+      "normal_nonST_dates": 180
+    },
+    "2023-01-03_2023": {
+      "valid_traded_rows": 9680,
+      "normal_nonST_rows": 0,
+      "normal_nonST_symbols": 0,
+      "normal_nonST_dates": 0
+    },
+    "2023-01-03_2024": {
+      "valid_traded_rows": 9679,
+      "normal_nonST_rows": 3322,
+      "normal_nonST_symbols": 35,
+      "normal_nonST_dates": 233
+    },
+    "2023-01-03_2025": {
+      "valid_traded_rows": 9708,
+      "normal_nonST_rows": 5073,
+      "normal_nonST_symbols": 35,
+      "normal_nonST_dates": 243
+    },
+    "2023-01-03_2026": {
+      "valid_traded_rows": 7190,
+      "normal_nonST_rows": 3517,
+      "normal_nonST_symbols": 34,
+      "normal_nonST_dates": 180
+    }
+  },
+  "sealed_validation_access": "none",
+  "qualification": "historical snapshot membership plus source T-day tradestatus=1/isST=0 and pre-existing mainboard_liquid_stable_v1 eligibility, no forward bars",
+  "caveats": [
+    "This is an 80-symbol reproducible sample, not all historically listed mainboard stocks; known future-delisted stocks were excluded before sampling.",
+    "BaoStock's historical membership and daily isST have not been independently exchange verified.",
+    "Unadjusted price jumps from corporate actions can distort rolling factors and future return labels."
+  ]
+}

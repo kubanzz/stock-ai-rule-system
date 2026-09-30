@@ -1,0 +1,137 @@
+{
+  "selected": {
+    "model": "logistic_l2_1_history",
+    "quantile": 0.95,
+    "probability_cutoff": 0.4686503601539214,
+    "calibration_eligible": true
+  },
+  "diagnostics": {
+    "old166_2024": {
+      "signals": 428,
+      "executable_trades": 428,
+      "net_wins": 188,
+      "net_win_rate": 0.439252,
+      "wilson95_lower": 0.392981,
+      "date_cluster_bootstrap95_lower": 0.358266,
+      "mean_net_return": -0.006926,
+      "symbols": 61,
+      "entry_dates": 146,
+      "top_date_share": 0.028037,
+      "unexecutable_signals": 0,
+      "blocked_exits": 0
+    },
+    "first250_2024": {
+      "signals": 1157,
+      "executable_trades": 1157,
+      "net_wins": 571,
+      "net_win_rate": 0.493518,
+      "wilson95_lower": 0.464779,
+      "date_cluster_bootstrap95_lower": 0.416658,
+      "mean_net_return": -0.001892,
+      "symbols": 198,
+      "entry_dates": 177,
+      "top_date_share": 0.032844,
+      "unexecutable_signals": 0,
+      "blocked_exits": 0
+    },
+    "phase2dev200_2024": {
+      "signals": 737,
+      "executable_trades": 736,
+      "net_wins": 338,
+      "net_win_rate": 0.459239,
+      "wilson95_lower": 0.423541,
+      "date_cluster_bootstrap95_lower": 0.372587,
+      "mean_net_return": -0.003387,
+      "symbols": 140,
+      "entry_dates": 165,
+      "top_date_share": 0.040706,
+      "unexecutable_signals": 1,
+      "blocked_exits": 1
+    },
+    "old166_2025": {
+      "signals": 263,
+      "executable_trades": 262,
+      "net_wins": 128,
+      "net_win_rate": 0.48855,
+      "wilson95_lower": 0.428626,
+      "date_cluster_bootstrap95_lower": 0.402848,
+      "mean_net_return": -0.000234,
+      "symbols": 59,
+      "entry_dates": 129,
+      "top_date_share": 0.041825,
+      "unexecutable_signals": 1,
+      "blocked_exits": 1
+    },
+    "first250_2025": {
+      "signals": 732,
+      "executable_trades": 731,
+      "net_wins": 354,
+      "net_win_rate": 0.484268,
+      "wilson95_lower": 0.448217,
+      "date_cluster_bootstrap95_lower": 0.406555,
+      "mean_net_return": -0.00022,
+      "symbols": 180,
+      "entry_dates": 173,
+      "top_date_share": 0.045082,
+      "unexecutable_signals": 1,
+      "blocked_exits": 2
+    },
+    "phase2dev200_2025": {
+      "signals": 453,
+      "executable_trades": 453,
+      "net_wins": 220,
+      "net_win_rate": 0.485651,
+      "wilson95_lower": 0.439941,
+      "date_cluster_bootstrap95_lower": 0.411354,
+      "mean_net_return": -0.000688,
+      "symbols": 126,
+      "entry_dates": 146,
+      "top_date_share": 0.059603,
+      "unexecutable_signals": 0,
+      "blocked_exits": 0
+    },
+    "old166_2026": {
+      "signals": 427,
+      "executable_trades": 427,
+      "net_wins": 169,
+      "net_win_rate": 0.395785,
+      "wilson95_lower": 0.350529,
+      "date_cluster_bootstrap95_lower": 0.325337,
+      "mean_net_return": -0.004911,
+      "symbols": 70,
+      "entry_dates": 129,
+      "top_date_share": 0.035129,
+      "unexecutable_signals": 0,
+      "blocked_exits": 0
+    },
+    "first250_2026": {
+      "signals": 1168,
+      "executable_trades": 1166,
+      "net_wins": 558,
+      "net_win_rate": 0.478559,
+      "wilson95_lower": 0.450004,
+      "date_cluster_bootstrap95_lower": 0.401396,
+      "mean_net_return": 0.001291,
+      "symbols": 197,
+      "entry_dates": 153,
+      "top_date_share": 0.037671,
+      "unexecutable_signals": 2,
+      "blocked_exits": 0
+    },
+    "phase2dev200_2026": {
+      "signals": 863,
+      "executable_trades": 862,
+      "net_wins": 431,
+      "net_win_rate": 0.5,
+      "wilson95_lower": 0.466696,
+      "date_cluster_bootstrap95_lower": 0.429082,
+      "mean_net_return": 2.1e-05,
+      "symbols": 148,
+      "entry_dates": 142,
+      "top_date_share": 0.035921,
+      "unexecutable_signals": 1,
+      "blocked_exits": 0
+    }
+  }
+}
+wrote /Users/zengbojia/githome/stock-ai-rule-system/research/normal_stock_65/phase4/probabilistic_search_results.json

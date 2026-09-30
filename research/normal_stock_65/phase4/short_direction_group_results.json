@@ -1,0 +1,4080 @@
+{
+  "scope": "development diagnostics only; sealed100 never read",
+  "signal": "T close to T+1 open to T+2 open; strict downside direction",
+  "down_signal_semantics": "avoid long exposure, not short profit",
+  "source_sha256": {
+    "old166": "fed79b170894f7e19d23e74b661978908f78b60a7edeb70fd762bdb1dc9691b2",
+    "first250": "97d8336bd7a338ee11afc7f0446744cff8fb3e3f9ca68e146ebdbc31eaedb1c4",
+    "phase2dev200": "9a3c55e012363b9b8695b3bd5952125b867989b7144203cbbf32d672b7727fdb"
+  },
+  "index_sha256": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24",
+  "baseline": {
+    "old166_2024": {
+      "raw_signals": 6979,
+      "predictions": 3612,
+      "correct": 1818,
+      "accuracy": 0.50332,
+      "wilson95_lower": 0.48702,
+      "coverage": 1.0,
+      "symbols": 75,
+      "entry_dates": 230,
+      "top_date_share": 0.0108,
+      "top_symbol_share": 0.03128,
+      "unobservable_counted_wrong": 0
+    },
+    "old166_2025": {
+      "raw_signals": 11330,
+      "predictions": 5842,
+      "correct": 2852,
+      "accuracy": 0.48819,
+      "wilson95_lower": 0.47538,
+      "coverage": 1.0,
+      "symbols": 85,
+      "entry_dates": 241,
+      "top_date_share": 0.00719,
+      "top_symbol_share": 0.02037,
+      "unobservable_counted_wrong": 1
+    },
+    "old166_2026": {
+      "raw_signals": 7867,
+      "predictions": 4067,
+      "correct": 2072,
+      "accuracy": 0.50947,
+      "wilson95_lower": 0.4941,
+      "coverage": 1.0,
+      "symbols": 83,
+      "entry_dates": 178,
+      "top_date_share": 0.01205,
+      "top_symbol_share": 0.02188,
+      "unobservable_counted_wrong": 4
+    },
+    "first250_2024": {
+      "raw_signals": 20647,
+      "predictions": 10679,
+      "correct": 5215,
+      "accuracy": 0.48834,
+      "wilson95_lower": 0.47887,
+      "coverage": 1.0,
+      "symbols": 230,
+      "entry_dates": 231,
+      "top_date_share": 0.00955,
+      "top_symbol_share": 0.01077,
+      "unobservable_counted_wrong": 1
+    },
+    "first250_2025": {
+      "raw_signals": 30570,
+      "predictions": 15839,
+      "correct": 7685,
+      "accuracy": 0.48519,
+      "wilson95_lower": 0.47742,
+      "coverage": 1.0,
+      "symbols": 245,
+      "entry_dates": 241,
+      "top_date_share": 0.00852,
+      "top_symbol_share": 0.00758,
+      "unobservable_counted_wrong": 6
+    },
+    "first250_2026": {
+      "raw_signals": 23091,
+      "predictions": 11890,
+      "correct": 5968,
+      "accuracy": 0.50193,
+      "wilson95_lower": 0.49295,
+      "coverage": 1.0,
+      "symbols": 247,
+      "entry_dates": 178,
+      "top_date_share": 0.01245,
+      "top_symbol_share": 0.00749,
+      "unobservable_counted_wrong": 5
+    },
+    "phase2dev200_2024": {
+      "raw_signals": 18921,
+      "predictions": 9778,
+      "correct": 4941,
+      "accuracy": 0.50532,
+      "wilson95_lower": 0.49541,
+      "coverage": 1.0,
+      "symbols": 186,
+      "entry_dates": 239,
+      "top_date_share": 0.00992,
+      "top_symbol_share": 0.01207,
+      "unobservable_counted_wrong": 2
+    },
+    "phase2dev200_2025": {
+      "raw_signals": 26940,
+      "predictions": 13879,
+      "correct": 6635,
+      "accuracy": 0.47806,
+      "wilson95_lower": 0.46976,
+      "coverage": 1.0,
+      "symbols": 190,
+      "entry_dates": 241,
+      "top_date_share": 0.00843,
+      "top_symbol_share": 0.00865,
+      "unobservable_counted_wrong": 2
+    },
+    "phase2dev200_2026": {
+      "raw_signals": 18536,
+      "predictions": 9570,
+      "correct": 4832,
+      "accuracy": 0.50491,
+      "wilson95_lower": 0.49489,
+      "coverage": 1.0,
+      "symbols": 192,
+      "entry_dates": 178,
+      "top_date_share": 0.0116,
+      "top_symbol_share": 0.0093,
+      "unobservable_counted_wrong": 1
+    }
+  },
+  "fit_rows": 67884,
+  "fit_symbols": 185,
+  "tested_and_pairs": 1360,
+  "tested_vote_supported": 683,
+  "and_top12": [
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "amount_ratio20",
+          "op": ">=",
+          "value": 1.3,
+          "family": "volume"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 142,
+      "fit_2020_23_wilson95_lower": 0.62458,
+      "diagnostic_2024_26": {
+        "raw_signals": 409,
+        "predictions": 366,
+        "correct": 221,
+        "accuracy": 0.60383,
+        "wilson95_lower": 0.55289,
+        "coverage": 0.002481,
+        "symbols": 174,
+        "entry_dates": 221,
+        "top_date_share": 0.03005,
+        "top_symbol_share": 0.04645,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 3,
+          "predictions": 3,
+          "correct": 1,
+          "accuracy": 0.33333,
+          "wilson95_lower": 0.06149,
+          "coverage": 0.00043,
+          "symbols": 3,
+          "entry_dates": 3,
+          "top_date_share": 0.33333,
+          "top_symbol_share": 0.33333,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 18,
+          "predictions": 17,
+          "correct": 11,
+          "accuracy": 0.64706,
+          "wilson95_lower": 0.413,
+          "coverage": 0.001589,
+          "symbols": 14,
+          "entry_dates": 16,
+          "top_date_share": 0.11765,
+          "top_symbol_share": 0.11765,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 14,
+          "predictions": 13,
+          "correct": 7,
+          "accuracy": 0.53846,
+          "wilson95_lower": 0.29144,
+          "coverage": 0.00178,
+          "symbols": 12,
+          "entry_dates": 11,
+          "top_date_share": 0.15385,
+          "top_symbol_share": 0.15385,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 57,
+          "predictions": 51,
+          "correct": 27,
+          "accuracy": 0.52941,
+          "wilson95_lower": 0.39523,
+          "coverage": 0.002761,
+          "symbols": 38,
+          "entry_dates": 33,
+          "top_date_share": 0.17647,
+          "top_symbol_share": 0.11765,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 71,
+          "predictions": 66,
+          "correct": 46,
+          "accuracy": 0.69697,
+          "wilson95_lower": 0.57781,
+          "coverage": 0.002323,
+          "symbols": 45,
+          "entry_dates": 53,
+          "top_date_share": 0.04545,
+          "top_symbol_share": 0.06061,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 73,
+          "predictions": 66,
+          "correct": 44,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.54656,
+          "coverage": 0.003161,
+          "symbols": 46,
+          "entry_dates": 47,
+          "top_date_share": 0.06061,
+          "top_symbol_share": 0.04545,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 40,
+          "predictions": 37,
+          "correct": 25,
+          "accuracy": 0.67568,
+          "wilson95_lower": 0.51464,
+          "coverage": 0.002114,
+          "symbols": 24,
+          "entry_dates": 25,
+          "top_date_share": 0.13514,
+          "top_symbol_share": 0.10811,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 86,
+          "predictions": 75,
+          "correct": 40,
+          "accuracy": 0.53333,
+          "wilson95_lower": 0.42158,
+          "coverage": 0.003192,
+          "symbols": 39,
+          "entry_dates": 55,
+          "top_date_share": 0.05333,
+          "top_symbol_share": 0.2,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 47,
+          "predictions": 38,
+          "correct": 20,
+          "accuracy": 0.52632,
+          "wilson95_lower": 0.37259,
+          "coverage": 0.002536,
+          "symbols": 28,
+          "entry_dates": 33,
+          "top_date_share": 0.13158,
+          "top_symbol_share": 0.07895,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 162,
+      "fit_2020_23_wilson95_lower": 0.6229,
+      "diagnostic_2024_26": {
+        "raw_signals": 480,
+        "predictions": 426,
+        "correct": 252,
+        "accuracy": 0.59155,
+        "wilson95_lower": 0.54426,
+        "coverage": 0.002911,
+        "symbols": 179,
+        "entry_dates": 236,
+        "top_date_share": 0.02582,
+        "top_symbol_share": 0.05399,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 5,
+          "predictions": 5,
+          "correct": 3,
+          "accuracy": 0.6,
+          "wilson95_lower": 0.23072,
+          "coverage": 0.000716,
+          "symbols": 5,
+          "entry_dates": 5,
+          "top_date_share": 0.2,
+          "top_symbol_share": 0.2,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 21,
+          "predictions": 20,
+          "correct": 13,
+          "accuracy": 0.65,
+          "wilson95_lower": 0.43285,
+          "coverage": 0.001853,
+          "symbols": 14,
+          "entry_dates": 18,
+          "top_date_share": 0.1,
+          "top_symbol_share": 0.1,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 18,
+          "predictions": 17,
+          "correct": 8,
+          "accuracy": 0.47059,
+          "wilson95_lower": 0.26165,
+          "coverage": 0.002288,
+          "symbols": 13,
+          "entry_dates": 15,
+          "top_date_share": 0.11765,
+          "top_symbol_share": 0.17647,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 62,
+          "predictions": 55,
+          "correct": 30,
+          "accuracy": 0.54545,
+          "wilson95_lower": 0.41523,
+          "coverage": 0.003003,
+          "symbols": 40,
+          "entry_dates": 35,
+          "top_date_share": 0.16364,
+          "top_symbol_share": 0.10909,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 88,
+          "predictions": 81,
+          "correct": 54,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.55853,
+          "coverage": 0.002879,
+          "symbols": 47,
+          "entry_dates": 64,
+          "top_date_share": 0.03704,
+          "top_symbol_share": 0.04938,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 87,
+          "predictions": 79,
+          "correct": 50,
+          "accuracy": 0.63291,
+          "wilson95_lower": 0.52277,
+          "coverage": 0.003768,
+          "symbols": 50,
+          "entry_dates": 53,
+          "top_date_share": 0.05063,
+          "top_symbol_share": 0.03797,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 42,
+          "predictions": 39,
+          "correct": 25,
+          "accuracy": 0.64103,
+          "wilson95_lower": 0.48418,
+          "coverage": 0.00222,
+          "symbols": 26,
+          "entry_dates": 26,
+          "top_date_share": 0.12821,
+          "top_symbol_share": 0.10256,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 103,
+          "predictions": 86,
+          "correct": 46,
+          "accuracy": 0.53488,
+          "wilson95_lower": 0.43024,
+          "coverage": 0.003823,
+          "symbols": 39,
+          "entry_dates": 61,
+          "top_date_share": 0.05814,
+          "top_symbol_share": 0.24419,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 54,
+          "predictions": 44,
+          "correct": 23,
+          "accuracy": 0.52273,
+          "wilson95_lower": 0.37935,
+          "coverage": 0.002913,
+          "symbols": 29,
+          "entry_dates": 35,
+          "top_date_share": 0.11364,
+          "top_symbol_share": 0.09091,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        },
+        {
+          "field": "exchange",
+          "op": "=",
+          "value": "SZ",
+          "family": "exchange"
+        }
+      ],
+      "fit_2020_23_raw": 110,
+      "fit_2020_23_wilson95_lower": 0.61831,
+      "diagnostic_2024_26": {
+        "raw_signals": 253,
+        "predictions": 246,
+        "correct": 152,
+        "accuracy": 0.61789,
+        "wilson95_lower": 0.5558,
+        "coverage": 0.001534,
+        "symbols": 119,
+        "entry_dates": 93,
+        "top_date_share": 0.06098,
+        "top_symbol_share": 0.03252,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 12,
+          "predictions": 12,
+          "correct": 7,
+          "accuracy": 0.58333,
+          "wilson95_lower": 0.31951,
+          "coverage": 0.001719,
+          "symbols": 7,
+          "entry_dates": 6,
+          "top_date_share": 0.41667,
+          "top_symbol_share": 0.25,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 18,
+          "predictions": 16,
+          "correct": 10,
+          "accuracy": 0.625,
+          "wilson95_lower": 0.38641,
+          "coverage": 0.001589,
+          "symbols": 10,
+          "entry_dates": 14,
+          "top_date_share": 0.125,
+          "top_symbol_share": 0.1875,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 2,
+          "predictions": 2,
+          "correct": 2,
+          "accuracy": 1.0,
+          "wilson95_lower": 0.34238,
+          "coverage": 0.000254,
+          "symbols": 1,
+          "entry_dates": 2,
+          "top_date_share": 0.5,
+          "top_symbol_share": 1.0,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 24,
+          "predictions": 23,
+          "correct": 16,
+          "accuracy": 0.69565,
+          "wilson95_lower": 0.49134,
+          "coverage": 0.001162,
+          "symbols": 19,
+          "entry_dates": 13,
+          "top_date_share": 0.26087,
+          "top_symbol_share": 0.13043,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 45,
+          "predictions": 45,
+          "correct": 24,
+          "accuracy": 0.53333,
+          "wilson95_lower": 0.39077,
+          "coverage": 0.001472,
+          "symbols": 27,
+          "entry_dates": 28,
+          "top_date_share": 0.11111,
+          "top_symbol_share": 0.06667,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 21,
+          "predictions": 20,
+          "correct": 11,
+          "accuracy": 0.55,
+          "wilson95_lower": 0.34209,
+          "coverage": 0.000909,
+          "symbols": 16,
+          "entry_dates": 11,
+          "top_date_share": 0.3,
+          "top_symbol_share": 0.15,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 38,
+          "predictions": 36,
+          "correct": 22,
+          "accuracy": 0.61111,
+          "wilson95_lower": 0.44864,
+          "coverage": 0.002008,
+          "symbols": 21,
+          "entry_dates": 23,
+          "top_date_share": 0.13889,
+          "top_symbol_share": 0.19444,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 72,
+          "predictions": 71,
+          "correct": 42,
+          "accuracy": 0.59155,
+          "wilson95_lower": 0.47539,
+          "coverage": 0.002673,
+          "symbols": 37,
+          "entry_dates": 37,
+          "top_date_share": 0.08451,
+          "top_symbol_share": 0.11268,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 21,
+          "predictions": 21,
+          "correct": 18,
+          "accuracy": 0.85714,
+          "wilson95_lower": 0.65364,
+          "coverage": 0.001133,
+          "symbols": 17,
+          "entry_dates": 9,
+          "top_date_share": 0.42857,
+          "top_symbol_share": 0.09524,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "return_1d",
+          "op": ">=",
+          "value": 0.03,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "candle"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        },
+        {
+          "field": "exchange",
+          "op": "=",
+          "value": "SZ",
+          "family": "exchange"
+        }
+      ],
+      "fit_2020_23_raw": 112,
+      "fit_2020_23_wilson95_lower": 0.61525,
+      "diagnostic_2024_26": {
+        "raw_signals": 390,
+        "predictions": 375,
+        "correct": 200,
+        "accuracy": 0.53333,
+        "wilson95_lower": 0.48276,
+        "coverage": 0.002365,
+        "symbols": 86,
+        "entry_dates": 196,
+        "top_date_share": 0.024,
+        "top_symbol_share": 0.096,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 15,
+          "predictions": 14,
+          "correct": 5,
+          "accuracy": 0.35714,
+          "wilson95_lower": 0.16345,
+          "coverage": 0.002149,
+          "symbols": 7,
+          "entry_dates": 13,
+          "top_date_share": 0.14286,
+          "top_symbol_share": 0.28571,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 16,
+          "predictions": 16,
+          "correct": 12,
+          "accuracy": 0.75,
+          "wilson95_lower": 0.50502,
+          "coverage": 0.001412,
+          "symbols": 8,
+          "entry_dates": 15,
+          "top_date_share": 0.125,
+          "top_symbol_share": 0.25,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 13,
+          "predictions": 13,
+          "correct": 9,
+          "accuracy": 0.69231,
+          "wilson95_lower": 0.42369,
+          "coverage": 0.001652,
+          "symbols": 9,
+          "entry_dates": 13,
+          "top_date_share": 0.07692,
+          "top_symbol_share": 0.23077,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 44,
+          "predictions": 44,
+          "correct": 26,
+          "accuracy": 0.59091,
+          "wilson95_lower": 0.4441,
+          "coverage": 0.002131,
+          "symbols": 15,
+          "entry_dates": 30,
+          "top_date_share": 0.06818,
+          "top_symbol_share": 0.15909,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 83,
+          "predictions": 83,
+          "correct": 50,
+          "accuracy": 0.60241,
+          "wilson95_lower": 0.49485,
+          "coverage": 0.002715,
+          "symbols": 30,
+          "entry_dates": 53,
+          "top_date_share": 0.06024,
+          "top_symbol_share": 0.10843,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 67,
+          "predictions": 65,
+          "correct": 34,
+          "accuracy": 0.52308,
+          "wilson95_lower": 0.4038,
+          "coverage": 0.002902,
+          "symbols": 27,
+          "entry_dates": 43,
+          "top_date_share": 0.07692,
+          "top_symbol_share": 0.10769,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 27,
+          "predictions": 26,
+          "correct": 16,
+          "accuracy": 0.61538,
+          "wilson95_lower": 0.42535,
+          "coverage": 0.001427,
+          "symbols": 11,
+          "entry_dates": 18,
+          "top_date_share": 0.15385,
+          "top_symbol_share": 0.15385,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 94,
+          "predictions": 84,
+          "correct": 32,
+          "accuracy": 0.38095,
+          "wilson95_lower": 0.28447,
+          "coverage": 0.003489,
+          "symbols": 22,
+          "entry_dates": 63,
+          "top_date_share": 0.04762,
+          "top_symbol_share": 0.36905,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 31,
+          "predictions": 30,
+          "correct": 16,
+          "accuracy": 0.53333,
+          "wilson95_lower": 0.36142,
+          "coverage": 0.001672,
+          "symbols": 18,
+          "entry_dates": 23,
+          "top_date_share": 0.1,
+          "top_symbol_share": 0.13333,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.01,
+          "family": "candle"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        },
+        {
+          "field": "exchange",
+          "op": "=",
+          "value": "SH",
+          "family": "exchange"
+        }
+      ],
+      "fit_2020_23_raw": 123,
+      "fit_2020_23_wilson95_lower": 0.61312,
+      "diagnostic_2024_26": {
+        "raw_signals": 338,
+        "predictions": 280,
+        "correct": 155,
+        "accuracy": 0.55357,
+        "wilson95_lower": 0.49501,
+        "coverage": 0.00205,
+        "symbols": 99,
+        "entry_dates": 194,
+        "top_date_share": 0.03571,
+        "top_symbol_share": 0.04643,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 2,
+          "predictions": 1,
+          "correct": 0,
+          "accuracy": 0.0,
+          "wilson95_lower": 0.0,
+          "coverage": 0.000287,
+          "symbols": 1,
+          "entry_dates": 1,
+          "top_date_share": 1.0,
+          "top_symbol_share": 1.0,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 12,
+          "predictions": 10,
+          "correct": 5,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.23659,
+          "coverage": 0.001059,
+          "symbols": 7,
+          "entry_dates": 9,
+          "top_date_share": 0.2,
+          "top_symbol_share": 0.2,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 20,
+          "predictions": 17,
+          "correct": 10,
+          "accuracy": 0.58824,
+          "wilson95_lower": 0.36005,
+          "coverage": 0.002542,
+          "symbols": 9,
+          "entry_dates": 15,
+          "top_date_share": 0.11765,
+          "top_symbol_share": 0.23529,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 53,
+          "predictions": 46,
+          "correct": 23,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.36119,
+          "coverage": 0.002567,
+          "symbols": 28,
+          "entry_dates": 32,
+          "top_date_share": 0.19565,
+          "top_symbol_share": 0.13043,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 59,
+          "predictions": 47,
+          "correct": 26,
+          "accuracy": 0.55319,
+          "wilson95_lower": 0.41245,
+          "coverage": 0.00193,
+          "symbols": 25,
+          "entry_dates": 41,
+          "top_date_share": 0.06383,
+          "top_symbol_share": 0.10638,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 65,
+          "predictions": 52,
+          "correct": 34,
+          "accuracy": 0.65385,
+          "wilson95_lower": 0.51804,
+          "coverage": 0.002815,
+          "symbols": 26,
+          "entry_dates": 43,
+          "top_date_share": 0.05769,
+          "top_symbol_share": 0.07692,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 35,
+          "predictions": 29,
+          "correct": 17,
+          "accuracy": 0.58621,
+          "wilson95_lower": 0.40738,
+          "coverage": 0.00185,
+          "symbols": 15,
+          "entry_dates": 24,
+          "top_date_share": 0.13793,
+          "top_symbol_share": 0.17241,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 54,
+          "predictions": 44,
+          "correct": 19,
+          "accuracy": 0.43182,
+          "wilson95_lower": 0.29683,
+          "coverage": 0.002004,
+          "symbols": 23,
+          "entry_dates": 35,
+          "top_date_share": 0.04545,
+          "top_symbol_share": 0.13636,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 38,
+          "predictions": 34,
+          "correct": 21,
+          "accuracy": 0.61765,
+          "wilson95_lower": 0.45041,
+          "coverage": 0.00205,
+          "symbols": 17,
+          "entry_dates": 30,
+          "top_date_share": 0.05882,
+          "top_symbol_share": 0.11765,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "amount_ratio20",
+          "op": ">=",
+          "value": 1.5,
+          "family": "volume"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 128,
+      "fit_2020_23_wilson95_lower": 0.61085,
+      "diagnostic_2024_26": {
+        "raw_signals": 354,
+        "predictions": 324,
+        "correct": 197,
+        "accuracy": 0.60802,
+        "wilson95_lower": 0.5539,
+        "coverage": 0.002147,
+        "symbols": 169,
+        "entry_dates": 203,
+        "top_date_share": 0.03395,
+        "top_symbol_share": 0.03395,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 3,
+          "predictions": 3,
+          "correct": 1,
+          "accuracy": 0.33333,
+          "wilson95_lower": 0.06149,
+          "coverage": 0.00043,
+          "symbols": 3,
+          "entry_dates": 3,
+          "top_date_share": 0.33333,
+          "top_symbol_share": 0.33333,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 16,
+          "predictions": 15,
+          "correct": 9,
+          "accuracy": 0.6,
+          "wilson95_lower": 0.35747,
+          "coverage": 0.001412,
+          "symbols": 13,
+          "entry_dates": 15,
+          "top_date_share": 0.06667,
+          "top_symbol_share": 0.13333,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 10,
+          "predictions": 10,
+          "correct": 6,
+          "accuracy": 0.6,
+          "wilson95_lower": 0.31267,
+          "coverage": 0.001271,
+          "symbols": 9,
+          "entry_dates": 9,
+          "top_date_share": 0.2,
+          "top_symbol_share": 0.2,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 54,
+          "predictions": 51,
+          "correct": 27,
+          "accuracy": 0.52941,
+          "wilson95_lower": 0.39523,
+          "coverage": 0.002615,
+          "symbols": 38,
+          "entry_dates": 33,
+          "top_date_share": 0.17647,
+          "top_symbol_share": 0.11765,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 62,
+          "predictions": 59,
+          "correct": 40,
+          "accuracy": 0.67797,
+          "wilson95_lower": 0.55105,
+          "coverage": 0.002028,
+          "symbols": 42,
+          "entry_dates": 48,
+          "top_date_share": 0.05085,
+          "top_symbol_share": 0.0678,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 58,
+          "predictions": 54,
+          "correct": 38,
+          "accuracy": 0.7037,
+          "wilson95_lower": 0.57172,
+          "coverage": 0.002512,
+          "symbols": 42,
+          "entry_dates": 39,
+          "top_date_share": 0.07407,
+          "top_symbol_share": 0.05556,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 39,
+          "predictions": 36,
+          "correct": 25,
+          "accuracy": 0.69444,
+          "wilson95_lower": 0.53144,
+          "coverage": 0.002061,
+          "symbols": 23,
+          "entry_dates": 24,
+          "top_date_share": 0.13889,
+          "top_symbol_share": 0.11111,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 73,
+          "predictions": 64,
+          "correct": 34,
+          "accuracy": 0.53125,
+          "wilson95_lower": 0.41072,
+          "coverage": 0.00271,
+          "symbols": 37,
+          "entry_dates": 49,
+          "top_date_share": 0.0625,
+          "top_symbol_share": 0.14062,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 39,
+          "predictions": 32,
+          "correct": 17,
+          "accuracy": 0.53125,
+          "wilson95_lower": 0.3645,
+          "coverage": 0.002104,
+          "symbols": 26,
+          "entry_dates": 27,
+          "top_date_share": 0.15625,
+          "top_symbol_share": 0.0625,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "normal_volatility_20d",
+          "op": "<=",
+          "value": 0.02,
+          "family": "volatility"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        }
+      ],
+      "fit_2020_23_raw": 142,
+      "fit_2020_23_wilson95_lower": 0.60991,
+      "diagnostic_2024_26": {
+        "raw_signals": 351,
+        "predictions": 330,
+        "correct": 198,
+        "accuracy": 0.6,
+        "wilson95_lower": 0.54629,
+        "coverage": 0.002129,
+        "symbols": 172,
+        "entry_dates": 106,
+        "top_date_share": 0.04545,
+        "top_symbol_share": 0.02424,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 11,
+          "predictions": 11,
+          "correct": 7,
+          "accuracy": 0.63636,
+          "wilson95_lower": 0.3538,
+          "coverage": 0.001576,
+          "symbols": 8,
+          "entry_dates": 9,
+          "top_date_share": 0.27273,
+          "top_symbol_share": 0.18182,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 28,
+          "predictions": 25,
+          "correct": 15,
+          "accuracy": 0.6,
+          "wilson95_lower": 0.40739,
+          "coverage": 0.002471,
+          "symbols": 18,
+          "entry_dates": 20,
+          "top_date_share": 0.12,
+          "top_symbol_share": 0.08,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 2,
+          "predictions": 2,
+          "correct": 2,
+          "accuracy": 1.0,
+          "wilson95_lower": 0.34238,
+          "coverage": 0.000254,
+          "symbols": 2,
+          "entry_dates": 2,
+          "top_date_share": 0.5,
+          "top_symbol_share": 0.5,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 59,
+          "predictions": 54,
+          "correct": 29,
+          "accuracy": 0.53704,
+          "wilson95_lower": 0.40605,
+          "coverage": 0.002858,
+          "symbols": 29,
+          "entry_dates": 28,
+          "top_date_share": 0.09259,
+          "top_symbol_share": 0.09259,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 69,
+          "predictions": 65,
+          "correct": 36,
+          "accuracy": 0.55385,
+          "wilson95_lower": 0.43338,
+          "coverage": 0.002257,
+          "symbols": 43,
+          "entry_dates": 30,
+          "top_date_share": 0.09231,
+          "top_symbol_share": 0.06154,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 21,
+          "predictions": 19,
+          "correct": 13,
+          "accuracy": 0.68421,
+          "wilson95_lower": 0.4601,
+          "coverage": 0.000909,
+          "symbols": 16,
+          "entry_dates": 9,
+          "top_date_share": 0.36842,
+          "top_symbol_share": 0.10526,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 49,
+          "predictions": 46,
+          "correct": 29,
+          "accuracy": 0.63043,
+          "wilson95_lower": 0.486,
+          "coverage": 0.00259,
+          "symbols": 26,
+          "entry_dates": 25,
+          "top_date_share": 0.08696,
+          "top_symbol_share": 0.15217,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 89,
+          "predictions": 85,
+          "correct": 53,
+          "accuracy": 0.62353,
+          "wilson95_lower": 0.5173,
+          "coverage": 0.003304,
+          "symbols": 52,
+          "entry_dates": 38,
+          "top_date_share": 0.09412,
+          "top_symbol_share": 0.04706,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 23,
+          "predictions": 23,
+          "correct": 14,
+          "accuracy": 0.6087,
+          "wilson95_lower": 0.40786,
+          "coverage": 0.001241,
+          "symbols": 20,
+          "entry_dates": 13,
+          "top_date_share": 0.21739,
+          "top_symbol_share": 0.08696,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "normal_volatility_20d",
+          "op": "<=",
+          "value": 0.025,
+          "family": "volatility"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        }
+      ],
+      "fit_2020_23_raw": 201,
+      "fit_2020_23_wilson95_lower": 0.60916,
+      "diagnostic_2024_26": {
+        "raw_signals": 492,
+        "predictions": 465,
+        "correct": 271,
+        "accuracy": 0.5828,
+        "wilson95_lower": 0.53748,
+        "coverage": 0.002984,
+        "symbols": 227,
+        "entry_dates": 126,
+        "top_date_share": 0.04086,
+        "top_symbol_share": 0.0172,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 21,
+          "predictions": 21,
+          "correct": 14,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.45373,
+          "coverage": 0.003009,
+          "symbols": 15,
+          "entry_dates": 13,
+          "top_date_share": 0.28571,
+          "top_symbol_share": 0.14286,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 35,
+          "predictions": 32,
+          "correct": 20,
+          "accuracy": 0.625,
+          "wilson95_lower": 0.45254,
+          "coverage": 0.003089,
+          "symbols": 21,
+          "entry_dates": 24,
+          "top_date_share": 0.09375,
+          "top_symbol_share": 0.09375,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 5,
+          "predictions": 5,
+          "correct": 5,
+          "accuracy": 1.0,
+          "wilson95_lower": 0.56552,
+          "coverage": 0.000636,
+          "symbols": 4,
+          "entry_dates": 5,
+          "top_date_share": 0.2,
+          "top_symbol_share": 0.4,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 82,
+          "predictions": 73,
+          "correct": 35,
+          "accuracy": 0.47945,
+          "wilson95_lower": 0.36877,
+          "coverage": 0.003972,
+          "symbols": 42,
+          "entry_dates": 33,
+          "top_date_share": 0.09589,
+          "top_symbol_share": 0.06849,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 94,
+          "predictions": 89,
+          "correct": 47,
+          "accuracy": 0.52809,
+          "wilson95_lower": 0.42538,
+          "coverage": 0.003075,
+          "symbols": 54,
+          "entry_dates": 39,
+          "top_date_share": 0.06742,
+          "top_symbol_share": 0.04494,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 38,
+          "predictions": 36,
+          "correct": 22,
+          "accuracy": 0.61111,
+          "wilson95_lower": 0.44864,
+          "coverage": 0.001646,
+          "symbols": 29,
+          "entry_dates": 16,
+          "top_date_share": 0.25,
+          "top_symbol_share": 0.08333,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 69,
+          "predictions": 66,
+          "correct": 42,
+          "accuracy": 0.63636,
+          "wilson95_lower": 0.5158,
+          "coverage": 0.003647,
+          "symbols": 39,
+          "entry_dates": 31,
+          "top_date_share": 0.09091,
+          "top_symbol_share": 0.10606,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 114,
+          "predictions": 109,
+          "correct": 65,
+          "accuracy": 0.59633,
+          "wilson95_lower": 0.50247,
+          "coverage": 0.004232,
+          "symbols": 63,
+          "entry_dates": 43,
+          "top_date_share": 0.07339,
+          "top_symbol_share": 0.04587,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 34,
+          "predictions": 34,
+          "correct": 21,
+          "accuracy": 0.61765,
+          "wilson95_lower": 0.45041,
+          "coverage": 0.001834,
+          "symbols": 27,
+          "entry_dates": 17,
+          "top_date_share": 0.23529,
+          "top_symbol_share": 0.05882,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "amount_ratio20",
+          "op": ">=",
+          "value": 1.5,
+          "family": "volume"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        }
+      ],
+      "fit_2020_23_raw": 133,
+      "fit_2020_23_wilson95_lower": 0.60879,
+      "diagnostic_2024_26": {
+        "raw_signals": 335,
+        "predictions": 319,
+        "correct": 194,
+        "accuracy": 0.60815,
+        "wilson95_lower": 0.5536,
+        "coverage": 0.002032,
+        "symbols": 211,
+        "entry_dates": 101,
+        "top_date_share": 0.0721,
+        "top_symbol_share": 0.01567,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 14,
+          "predictions": 14,
+          "correct": 8,
+          "accuracy": 0.57143,
+          "wilson95_lower": 0.32591,
+          "coverage": 0.002006,
+          "symbols": 12,
+          "entry_dates": 8,
+          "top_date_share": 0.21429,
+          "top_symbol_share": 0.14286,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 31,
+          "predictions": 27,
+          "correct": 18,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.47825,
+          "coverage": 0.002736,
+          "symbols": 22,
+          "entry_dates": 21,
+          "top_date_share": 0.11111,
+          "top_symbol_share": 0.11111,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 3,
+          "predictions": 3,
+          "correct": 3,
+          "accuracy": 1.0,
+          "wilson95_lower": 0.4385,
+          "coverage": 0.000381,
+          "symbols": 3,
+          "entry_dates": 3,
+          "top_date_share": 0.33333,
+          "top_symbol_share": 0.33333,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 46,
+          "predictions": 43,
+          "correct": 18,
+          "accuracy": 0.4186,
+          "wilson95_lower": 0.28385,
+          "coverage": 0.002228,
+          "symbols": 39,
+          "entry_dates": 20,
+          "top_date_share": 0.13953,
+          "top_symbol_share": 0.04651,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 63,
+          "predictions": 60,
+          "correct": 34,
+          "accuracy": 0.56667,
+          "wilson95_lower": 0.44103,
+          "coverage": 0.002061,
+          "symbols": 44,
+          "entry_dates": 34,
+          "top_date_share": 0.1,
+          "top_symbol_share": 0.05,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 32,
+          "predictions": 30,
+          "correct": 21,
+          "accuracy": 0.7,
+          "wilson95_lower": 0.52124,
+          "coverage": 0.001386,
+          "symbols": 26,
+          "entry_dates": 14,
+          "top_date_share": 0.3,
+          "top_symbol_share": 0.1,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 39,
+          "predictions": 37,
+          "correct": 23,
+          "accuracy": 0.62162,
+          "wilson95_lower": 0.461,
+          "coverage": 0.002061,
+          "symbols": 33,
+          "entry_dates": 20,
+          "top_date_share": 0.13514,
+          "top_symbol_share": 0.05405,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 69,
+          "predictions": 67,
+          "correct": 41,
+          "accuracy": 0.61194,
+          "wilson95_lower": 0.49223,
+          "coverage": 0.002561,
+          "symbols": 42,
+          "entry_dates": 34,
+          "top_date_share": 0.07463,
+          "top_symbol_share": 0.07463,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 38,
+          "predictions": 38,
+          "correct": 28,
+          "accuracy": 0.73684,
+          "wilson95_lower": 0.57991,
+          "coverage": 0.00205,
+          "symbols": 32,
+          "entry_dates": 15,
+          "top_date_share": 0.34211,
+          "top_symbol_share": 0.05263,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 75,
+          "family": "momentum"
+        },
+        {
+          "field": "amount_ratio20",
+          "op": ">=",
+          "value": 1.3,
+          "family": "volume"
+        },
+        {
+          "field": "normal_volatility_20d",
+          "op": "<=",
+          "value": 0.025,
+          "family": "volatility"
+        },
+        {
+          "field": "index_volatility_20d",
+          "op": ">=",
+          "value": 0.015,
+          "family": "market"
+        }
+      ],
+      "fit_2020_23_raw": 132,
+      "fit_2020_23_wilson95_lower": 0.60604,
+      "diagnostic_2024_26": {
+        "raw_signals": 235,
+        "predictions": 181,
+        "correct": 76,
+        "accuracy": 0.41989,
+        "wilson95_lower": 0.35039,
+        "coverage": 0.001425,
+        "symbols": 110,
+        "entry_dates": 39,
+        "top_date_share": 0.1768,
+        "top_symbol_share": 0.03315,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 33,
+          "predictions": 24,
+          "correct": 9,
+          "accuracy": 0.375,
+          "wilson95_lower": 0.21159,
+          "coverage": 0.004728,
+          "symbols": 15,
+          "entry_dates": 14,
+          "top_date_share": 0.20833,
+          "top_symbol_share": 0.25,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 1,
+          "predictions": 1,
+          "correct": 0,
+          "accuracy": 0.0,
+          "wilson95_lower": 0.0,
+          "coverage": 8.8e-05,
+          "symbols": 1,
+          "entry_dates": 1,
+          "top_date_share": 1.0,
+          "top_symbol_share": 1.0,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 20,
+          "predictions": 14,
+          "correct": 7,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.26799,
+          "coverage": 0.002542,
+          "symbols": 9,
+          "entry_dates": 7,
+          "top_date_share": 0.21429,
+          "top_symbol_share": 0.21429,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 51,
+          "predictions": 42,
+          "correct": 7,
+          "accuracy": 0.16667,
+          "wilson95_lower": 0.08316,
+          "coverage": 0.00247,
+          "symbols": 30,
+          "entry_dates": 14,
+          "top_date_share": 0.42857,
+          "top_symbol_share": 0.07143,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 11,
+          "predictions": 8,
+          "correct": 4,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.21522,
+          "coverage": 0.00036,
+          "symbols": 6,
+          "entry_dates": 5,
+          "top_date_share": 0.25,
+          "top_symbol_share": 0.25,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 44,
+          "predictions": 33,
+          "correct": 20,
+          "accuracy": 0.60606,
+          "wilson95_lower": 0.43683,
+          "coverage": 0.001906,
+          "symbols": 21,
+          "entry_dates": 15,
+          "top_date_share": 0.18182,
+          "top_symbol_share": 0.12121,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 32,
+          "predictions": 25,
+          "correct": 7,
+          "accuracy": 0.28,
+          "wilson95_lower": 0.14284,
+          "coverage": 0.001691,
+          "symbols": 20,
+          "entry_dates": 8,
+          "top_date_share": 0.36,
+          "top_symbol_share": 0.12,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 2,
+          "predictions": 2,
+          "correct": 1,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.09453,
+          "coverage": 7.4e-05,
+          "symbols": 2,
+          "entry_dates": 2,
+          "top_date_share": 0.5,
+          "top_symbol_share": 0.5,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 41,
+          "predictions": 32,
+          "correct": 21,
+          "accuracy": 0.65625,
+          "wilson95_lower": 0.48311,
+          "coverage": 0.002212,
+          "symbols": 20,
+          "entry_dates": 14,
+          "top_date_share": 0.25,
+          "top_symbol_share": 0.125,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 4,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "normal_volatility_20d",
+          "op": "<=",
+          "value": 0.025,
+          "family": "volatility"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        }
+      ],
+      "fit_2020_23_raw": 142,
+      "fit_2020_23_wilson95_lower": 0.60261,
+      "diagnostic_2024_26": {
+        "raw_signals": 367,
+        "predictions": 348,
+        "correct": 199,
+        "accuracy": 0.57184,
+        "wilson95_lower": 0.51935,
+        "coverage": 0.002226,
+        "symbols": 194,
+        "entry_dates": 87,
+        "top_date_share": 0.0546,
+        "top_symbol_share": 0.01724,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 17,
+          "predictions": 17,
+          "correct": 12,
+          "accuracy": 0.70588,
+          "wilson95_lower": 0.46867,
+          "coverage": 0.002436,
+          "symbols": 14,
+          "entry_dates": 9,
+          "top_date_share": 0.35294,
+          "top_symbol_share": 0.17647,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 31,
+          "predictions": 28,
+          "correct": 17,
+          "accuracy": 0.60714,
+          "wilson95_lower": 0.42409,
+          "coverage": 0.002736,
+          "symbols": 18,
+          "entry_dates": 20,
+          "top_date_share": 0.10714,
+          "top_symbol_share": 0.10714,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 3,
+          "predictions": 3,
+          "correct": 3,
+          "accuracy": 1.0,
+          "wilson95_lower": 0.4385,
+          "coverage": 0.000381,
+          "symbols": 2,
+          "entry_dates": 3,
+          "top_date_share": 0.33333,
+          "top_symbol_share": 0.66667,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 70,
+          "predictions": 63,
+          "correct": 28,
+          "accuracy": 0.44444,
+          "wilson95_lower": 0.32847,
+          "coverage": 0.00339,
+          "symbols": 39,
+          "entry_dates": 24,
+          "top_date_share": 0.11111,
+          "top_symbol_share": 0.07937,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 64,
+          "predictions": 60,
+          "correct": 33,
+          "accuracy": 0.55,
+          "wilson95_lower": 0.42492,
+          "coverage": 0.002094,
+          "symbols": 41,
+          "entry_dates": 27,
+          "top_date_share": 0.1,
+          "top_symbol_share": 0.05,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 23,
+          "predictions": 23,
+          "correct": 12,
+          "accuracy": 0.52174,
+          "wilson95_lower": 0.32963,
+          "coverage": 0.000996,
+          "symbols": 19,
+          "entry_dates": 12,
+          "top_date_share": 0.21739,
+          "top_symbol_share": 0.08696,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 52,
+          "predictions": 51,
+          "correct": 34,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.52968,
+          "coverage": 0.002748,
+          "symbols": 33,
+          "entry_dates": 23,
+          "top_date_share": 0.11765,
+          "top_symbol_share": 0.11765,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 87,
+          "predictions": 83,
+          "correct": 50,
+          "accuracy": 0.60241,
+          "wilson95_lower": 0.49485,
+          "coverage": 0.003229,
+          "symbols": 53,
+          "entry_dates": 28,
+          "top_date_share": 0.09639,
+          "top_symbol_share": 0.03614,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 20,
+          "predictions": 20,
+          "correct": 10,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.2993,
+          "coverage": 0.001079,
+          "symbols": 17,
+          "entry_dates": 13,
+          "top_date_share": 0.15,
+          "top_symbol_share": 0.1,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "AND",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.7,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        }
+      ],
+      "fit_2020_23_raw": 247,
+      "fit_2020_23_wilson95_lower": 0.59879,
+      "diagnostic_2024_26": {
+        "raw_signals": 582,
+        "predictions": 550,
+        "correct": 327,
+        "accuracy": 0.59455,
+        "wilson95_lower": 0.55299,
+        "coverage": 0.00353,
+        "symbols": 261,
+        "entry_dates": 133,
+        "top_date_share": 0.04182,
+        "top_symbol_share": 0.01455,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 28,
+          "predictions": 27,
+          "correct": 16,
+          "accuracy": 0.59259,
+          "wilson95_lower": 0.40727,
+          "coverage": 0.004012,
+          "symbols": 16,
+          "entry_dates": 15,
+          "top_date_share": 0.22222,
+          "top_symbol_share": 0.14815,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 43,
+          "predictions": 39,
+          "correct": 27,
+          "accuracy": 0.69231,
+          "wilson95_lower": 0.53579,
+          "coverage": 0.003795,
+          "symbols": 25,
+          "entry_dates": 28,
+          "top_date_share": 0.07692,
+          "top_symbol_share": 0.07692,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 6,
+          "predictions": 6,
+          "correct": 6,
+          "accuracy": 1.0,
+          "wilson95_lower": 0.60967,
+          "coverage": 0.000763,
+          "symbols": 5,
+          "entry_dates": 6,
+          "top_date_share": 0.16667,
+          "top_symbol_share": 0.33333,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 96,
+          "predictions": 86,
+          "correct": 44,
+          "accuracy": 0.51163,
+          "wilson95_lower": 0.40777,
+          "coverage": 0.00465,
+          "symbols": 52,
+          "entry_dates": 35,
+          "top_date_share": 0.10465,
+          "top_symbol_share": 0.05814,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 107,
+          "predictions": 102,
+          "correct": 53,
+          "accuracy": 0.51961,
+          "wilson95_lower": 0.42371,
+          "coverage": 0.0035,
+          "symbols": 62,
+          "entry_dates": 42,
+          "top_date_share": 0.07843,
+          "top_symbol_share": 0.03922,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 48,
+          "predictions": 45,
+          "correct": 26,
+          "accuracy": 0.57778,
+          "wilson95_lower": 0.43301,
+          "coverage": 0.002079,
+          "symbols": 35,
+          "entry_dates": 20,
+          "top_date_share": 0.2,
+          "top_symbol_share": 0.06667,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 84,
+          "predictions": 80,
+          "correct": 50,
+          "accuracy": 0.625,
+          "wilson95_lower": 0.51549,
+          "coverage": 0.00444,
+          "symbols": 48,
+          "entry_dates": 35,
+          "top_date_share": 0.1,
+          "top_symbol_share": 0.0875,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 122,
+          "predictions": 117,
+          "correct": 71,
+          "accuracy": 0.60684,
+          "wilson95_lower": 0.51629,
+          "coverage": 0.004529,
+          "symbols": 65,
+          "entry_dates": 46,
+          "top_date_share": 0.06838,
+          "top_symbol_share": 0.06838,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 48,
+          "predictions": 48,
+          "correct": 34,
+          "accuracy": 0.70833,
+          "wilson95_lower": 0.56821,
+          "coverage": 0.00259,
+          "symbols": 37,
+          "entry_dates": 20,
+          "top_date_share": 0.27083,
+          "top_symbol_share": 0.0625,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    }
+  ],
+  "weighted_top12": [
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "candle"
+        },
+        {
+          "field": "index_return_5d",
+          "op": ">=",
+          "value": 0.03,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 254,
+      "fit_2020_23_wilson95_lower": 0.57303,
+      "diagnostic_2024_26": {
+        "raw_signals": 755,
+        "predictions": 675,
+        "correct": 365,
+        "accuracy": 0.54074,
+        "wilson95_lower": 0.50302,
+        "coverage": 0.004579,
+        "symbols": 211,
+        "entry_dates": 136,
+        "top_date_share": 0.08444,
+        "top_symbol_share": 0.03704,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 40,
+          "predictions": 37,
+          "correct": 13,
+          "accuracy": 0.35135,
+          "wilson95_lower": 0.21826,
+          "coverage": 0.005731,
+          "symbols": 23,
+          "entry_dates": 15,
+          "top_date_share": 0.16216,
+          "top_symbol_share": 0.16216,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 31,
+          "predictions": 30,
+          "correct": 17,
+          "accuracy": 0.56667,
+          "wilson95_lower": 0.39197,
+          "coverage": 0.002736,
+          "symbols": 18,
+          "entry_dates": 14,
+          "top_date_share": 0.16667,
+          "top_symbol_share": 0.13333,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 15,
+          "predictions": 14,
+          "correct": 8,
+          "accuracy": 0.57143,
+          "wilson95_lower": 0.32591,
+          "coverage": 0.001907,
+          "symbols": 11,
+          "entry_dates": 8,
+          "top_date_share": 0.21429,
+          "top_symbol_share": 0.21429,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 168,
+          "predictions": 137,
+          "correct": 62,
+          "accuracy": 0.45255,
+          "wilson95_lower": 0.37164,
+          "coverage": 0.008137,
+          "symbols": 70,
+          "entry_dates": 29,
+          "top_date_share": 0.23358,
+          "top_symbol_share": 0.05109,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 128,
+          "predictions": 125,
+          "correct": 81,
+          "accuracy": 0.648,
+          "wilson95_lower": 0.561,
+          "coverage": 0.004187,
+          "symbols": 54,
+          "entry_dates": 36,
+          "top_date_share": 0.136,
+          "top_symbol_share": 0.064,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 86,
+          "predictions": 80,
+          "correct": 48,
+          "accuracy": 0.6,
+          "wilson95_lower": 0.49045,
+          "coverage": 0.003724,
+          "symbols": 50,
+          "entry_dates": 29,
+          "top_date_share": 0.1625,
+          "top_symbol_share": 0.0625,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 121,
+          "predictions": 100,
+          "correct": 50,
+          "accuracy": 0.5,
+          "wilson95_lower": 0.40383,
+          "coverage": 0.006395,
+          "symbols": 54,
+          "entry_dates": 23,
+          "top_date_share": 0.19,
+          "top_symbol_share": 0.08,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 121,
+          "predictions": 108,
+          "correct": 60,
+          "accuracy": 0.55556,
+          "wilson95_lower": 0.46154,
+          "coverage": 0.004491,
+          "symbols": 44,
+          "entry_dates": 43,
+          "top_date_share": 0.12963,
+          "top_symbol_share": 0.18519,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 45,
+          "predictions": 44,
+          "correct": 26,
+          "accuracy": 0.59091,
+          "wilson95_lower": 0.4441,
+          "coverage": 0.002428,
+          "symbols": 31,
+          "entry_dates": 18,
+          "top_date_share": 0.25,
+          "top_symbol_share": 0.06818,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.03,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 595,
+      "fit_2020_23_wilson95_lower": 0.56521,
+      "diagnostic_2024_26": {
+        "raw_signals": 1745,
+        "predictions": 1649,
+        "correct": 910,
+        "accuracy": 0.55185,
+        "wilson95_lower": 0.52775,
+        "coverage": 0.010583,
+        "symbols": 333,
+        "entry_dates": 242,
+        "top_date_share": 0.03335,
+        "top_symbol_share": 0.01577,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 61,
+          "predictions": 59,
+          "correct": 29,
+          "accuracy": 0.49153,
+          "wilson95_lower": 0.36844,
+          "coverage": 0.008741,
+          "symbols": 30,
+          "entry_dates": 26,
+          "top_date_share": 0.22034,
+          "top_symbol_share": 0.08475,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 96,
+          "predictions": 91,
+          "correct": 52,
+          "accuracy": 0.57143,
+          "wilson95_lower": 0.4689,
+          "coverage": 0.008473,
+          "symbols": 38,
+          "entry_dates": 48,
+          "top_date_share": 0.08791,
+          "top_symbol_share": 0.08791,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 57,
+          "predictions": 57,
+          "correct": 37,
+          "accuracy": 0.64912,
+          "wilson95_lower": 0.51942,
+          "coverage": 0.007245,
+          "symbols": 29,
+          "entry_dates": 31,
+          "top_date_share": 0.10526,
+          "top_symbol_share": 0.08772,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 269,
+          "predictions": 247,
+          "correct": 131,
+          "accuracy": 0.53036,
+          "wilson95_lower": 0.46814,
+          "coverage": 0.013029,
+          "symbols": 78,
+          "entry_dates": 50,
+          "top_date_share": 0.09312,
+          "top_symbol_share": 0.04453,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 344,
+          "predictions": 329,
+          "correct": 190,
+          "accuracy": 0.57751,
+          "wilson95_lower": 0.52354,
+          "coverage": 0.011253,
+          "symbols": 119,
+          "entry_dates": 60,
+          "top_date_share": 0.07903,
+          "top_symbol_share": 0.03647,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 224,
+          "predictions": 213,
+          "correct": 113,
+          "accuracy": 0.53052,
+          "wilson95_lower": 0.46355,
+          "coverage": 0.009701,
+          "symbols": 92,
+          "entry_dates": 57,
+          "top_date_share": 0.06103,
+          "top_symbol_share": 0.03756,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 194,
+          "predictions": 183,
+          "correct": 98,
+          "accuracy": 0.53552,
+          "wilson95_lower": 0.46327,
+          "coverage": 0.010253,
+          "symbols": 71,
+          "entry_dates": 45,
+          "top_date_share": 0.12568,
+          "top_symbol_share": 0.05464,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 313,
+          "predictions": 294,
+          "correct": 176,
+          "accuracy": 0.59864,
+          "wilson95_lower": 0.54168,
+          "coverage": 0.011618,
+          "symbols": 95,
+          "entry_dates": 76,
+          "top_date_share": 0.06463,
+          "top_symbol_share": 0.06803,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 187,
+          "predictions": 176,
+          "correct": 84,
+          "accuracy": 0.47727,
+          "wilson95_lower": 0.40476,
+          "coverage": 0.010088,
+          "symbols": 77,
+          "entry_dates": 63,
+          "top_date_share": 0.0625,
+          "top_symbol_share": 0.04545,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.03,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 355,
+      "fit_2020_23_wilson95_lower": 0.56248,
+      "diagnostic_2024_26": {
+        "raw_signals": 1196,
+        "predictions": 1125,
+        "correct": 625,
+        "accuracy": 0.55556,
+        "wilson95_lower": 0.52638,
+        "coverage": 0.007254,
+        "symbols": 267,
+        "entry_dates": 208,
+        "top_date_share": 0.02756,
+        "top_symbol_share": 0.01956,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 35,
+          "predictions": 34,
+          "correct": 15,
+          "accuracy": 0.44118,
+          "wilson95_lower": 0.28883,
+          "coverage": 0.005015,
+          "symbols": 17,
+          "entry_dates": 18,
+          "top_date_share": 0.20588,
+          "top_symbol_share": 0.14706,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 64,
+          "predictions": 59,
+          "correct": 32,
+          "accuracy": 0.54237,
+          "wilson95_lower": 0.41658,
+          "coverage": 0.005649,
+          "symbols": 27,
+          "entry_dates": 38,
+          "top_date_share": 0.0678,
+          "top_symbol_share": 0.10169,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 32,
+          "predictions": 32,
+          "correct": 23,
+          "accuracy": 0.71875,
+          "wilson95_lower": 0.54625,
+          "coverage": 0.004068,
+          "symbols": 16,
+          "entry_dates": 25,
+          "top_date_share": 0.125,
+          "top_symbol_share": 0.15625,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 185,
+          "predictions": 170,
+          "correct": 91,
+          "accuracy": 0.53529,
+          "wilson95_lower": 0.46037,
+          "coverage": 0.00896,
+          "symbols": 64,
+          "entry_dates": 45,
+          "top_date_share": 0.09412,
+          "top_symbol_share": 0.06471,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 248,
+          "predictions": 236,
+          "correct": 140,
+          "accuracy": 0.59322,
+          "wilson95_lower": 0.52954,
+          "coverage": 0.008113,
+          "symbols": 87,
+          "entry_dates": 55,
+          "top_date_share": 0.0678,
+          "top_symbol_share": 0.05085,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 177,
+          "predictions": 167,
+          "correct": 92,
+          "accuracy": 0.5509,
+          "wilson95_lower": 0.47516,
+          "coverage": 0.007665,
+          "symbols": 73,
+          "entry_dates": 53,
+          "top_date_share": 0.07784,
+          "top_symbol_share": 0.04192,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 111,
+          "predictions": 108,
+          "correct": 60,
+          "accuracy": 0.55556,
+          "wilson95_lower": 0.46154,
+          "coverage": 0.005866,
+          "symbols": 53,
+          "entry_dates": 38,
+          "top_date_share": 0.13889,
+          "top_symbol_share": 0.08333,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 215,
+          "predictions": 200,
+          "correct": 112,
+          "accuracy": 0.56,
+          "wilson95_lower": 0.49072,
+          "coverage": 0.007981,
+          "symbols": 70,
+          "entry_dates": 64,
+          "top_date_share": 0.06,
+          "top_symbol_share": 0.09,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 129,
+          "predictions": 119,
+          "correct": 60,
+          "accuracy": 0.5042,
+          "wilson95_lower": 0.41565,
+          "coverage": 0.006959,
+          "symbols": 54,
+          "entry_dates": 55,
+          "top_date_share": 0.06723,
+          "top_symbol_share": 0.05882,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.02,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 1016,
+      "fit_2020_23_wilson95_lower": 0.56003,
+      "diagnostic_2024_26": {
+        "raw_signals": 2871,
+        "predictions": 2692,
+        "correct": 1498,
+        "accuracy": 0.55646,
+        "wilson95_lower": 0.53763,
+        "coverage": 0.017413,
+        "symbols": 369,
+        "entry_dates": 288,
+        "top_date_share": 0.02786,
+        "top_symbol_share": 0.01449,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 100,
+          "predictions": 96,
+          "correct": 49,
+          "accuracy": 0.51042,
+          "wilson95_lower": 0.41196,
+          "coverage": 0.014329,
+          "symbols": 33,
+          "entry_dates": 35,
+          "top_date_share": 0.14583,
+          "top_symbol_share": 0.10417,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 156,
+          "predictions": 149,
+          "correct": 92,
+          "accuracy": 0.61745,
+          "wilson95_lower": 0.53739,
+          "coverage": 0.013769,
+          "symbols": 47,
+          "entry_dates": 56,
+          "top_date_share": 0.08054,
+          "top_symbol_share": 0.0604,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 106,
+          "predictions": 103,
+          "correct": 62,
+          "accuracy": 0.60194,
+          "wilson95_lower": 0.50539,
+          "coverage": 0.013474,
+          "symbols": 36,
+          "entry_dates": 38,
+          "top_date_share": 0.09709,
+          "top_symbol_share": 0.06796,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 412,
+          "predictions": 376,
+          "correct": 195,
+          "accuracy": 0.51862,
+          "wilson95_lower": 0.46818,
+          "coverage": 0.019954,
+          "symbols": 87,
+          "entry_dates": 61,
+          "top_date_share": 0.08511,
+          "top_symbol_share": 0.04787,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 580,
+          "predictions": 551,
+          "correct": 322,
+          "accuracy": 0.58439,
+          "wilson95_lower": 0.5428,
+          "coverage": 0.018973,
+          "symbols": 134,
+          "entry_dates": 71,
+          "top_date_share": 0.05626,
+          "top_symbol_share": 0.02904,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 386,
+          "predictions": 365,
+          "correct": 191,
+          "accuracy": 0.52329,
+          "wilson95_lower": 0.47207,
+          "coverage": 0.016716,
+          "symbols": 110,
+          "entry_dates": 69,
+          "top_date_share": 0.06027,
+          "top_symbol_share": 0.03288,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 298,
+          "predictions": 276,
+          "correct": 159,
+          "accuracy": 0.57609,
+          "wilson95_lower": 0.51713,
+          "coverage": 0.01575,
+          "symbols": 81,
+          "entry_dates": 55,
+          "top_date_share": 0.10507,
+          "top_symbol_share": 0.05072,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 511,
+          "predictions": 475,
+          "correct": 277,
+          "accuracy": 0.58316,
+          "wilson95_lower": 0.53833,
+          "coverage": 0.018968,
+          "symbols": 112,
+          "entry_dates": 91,
+          "top_date_share": 0.06737,
+          "top_symbol_share": 0.06105,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 322,
+          "predictions": 301,
+          "correct": 151,
+          "accuracy": 0.50166,
+          "wilson95_lower": 0.44551,
+          "coverage": 0.017372,
+          "symbols": 89,
+          "entry_dates": 69,
+          "top_date_share": 0.04651,
+          "top_symbol_share": 0.04319,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "candle"
+        },
+        {
+          "field": "index_return_5d",
+          "op": ">=",
+          "value": 0.03,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 408,
+      "fit_2020_23_wilson95_lower": 0.55967,
+      "diagnostic_2024_26": {
+        "raw_signals": 1093,
+        "predictions": 980,
+        "correct": 546,
+        "accuracy": 0.55714,
+        "wilson95_lower": 0.52588,
+        "coverage": 0.006629,
+        "symbols": 264,
+        "entry_dates": 165,
+        "top_date_share": 0.06939,
+        "top_symbol_share": 0.02653,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 52,
+          "predictions": 46,
+          "correct": 19,
+          "accuracy": 0.41304,
+          "wilson95_lower": 0.28289,
+          "coverage": 0.007451,
+          "symbols": 27,
+          "entry_dates": 17,
+          "top_date_share": 0.19565,
+          "top_symbol_share": 0.13043,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 47,
+          "predictions": 45,
+          "correct": 29,
+          "accuracy": 0.64444,
+          "wilson95_lower": 0.49836,
+          "coverage": 0.004148,
+          "symbols": 23,
+          "entry_dates": 15,
+          "top_date_share": 0.15556,
+          "top_symbol_share": 0.11111,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 24,
+          "predictions": 23,
+          "correct": 16,
+          "accuracy": 0.69565,
+          "wilson95_lower": 0.49134,
+          "coverage": 0.003051,
+          "symbols": 17,
+          "entry_dates": 10,
+          "top_date_share": 0.26087,
+          "top_symbol_share": 0.13043,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 240,
+          "predictions": 200,
+          "correct": 94,
+          "accuracy": 0.47,
+          "wilson95_lower": 0.40205,
+          "coverage": 0.011624,
+          "symbols": 87,
+          "entry_dates": 38,
+          "top_date_share": 0.195,
+          "top_symbol_share": 0.04,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 188,
+          "predictions": 184,
+          "correct": 115,
+          "accuracy": 0.625,
+          "wilson95_lower": 0.55316,
+          "coverage": 0.00615,
+          "symbols": 82,
+          "entry_dates": 44,
+          "top_date_share": 0.125,
+          "top_symbol_share": 0.04348,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 124,
+          "predictions": 116,
+          "correct": 68,
+          "accuracy": 0.58621,
+          "wilson95_lower": 0.49522,
+          "coverage": 0.00537,
+          "symbols": 70,
+          "entry_dates": 31,
+          "top_date_share": 0.19828,
+          "top_symbol_share": 0.0431,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 181,
+          "predictions": 144,
+          "correct": 75,
+          "accuracy": 0.52083,
+          "wilson95_lower": 0.43976,
+          "coverage": 0.009566,
+          "symbols": 69,
+          "entry_dates": 30,
+          "top_date_share": 0.15972,
+          "top_symbol_share": 0.05556,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 169,
+          "predictions": 155,
+          "correct": 87,
+          "accuracy": 0.56129,
+          "wilson95_lower": 0.48262,
+          "coverage": 0.006273,
+          "symbols": 66,
+          "entry_dates": 51,
+          "top_date_share": 0.12903,
+          "top_symbol_share": 0.12903,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 68,
+          "predictions": 67,
+          "correct": 43,
+          "accuracy": 0.64179,
+          "wilson95_lower": 0.52219,
+          "coverage": 0.003669,
+          "symbols": 42,
+          "entry_dates": 24,
+          "top_date_share": 0.19403,
+          "top_symbol_share": 0.07463,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.02,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 1134,
+      "fit_2020_23_wilson95_lower": 0.55662,
+      "diagnostic_2024_26": {
+        "raw_signals": 3132,
+        "predictions": 2894,
+        "correct": 1583,
+        "accuracy": 0.54699,
+        "wilson95_lower": 0.52881,
+        "coverage": 0.018996,
+        "symbols": 398,
+        "entry_dates": 339,
+        "top_date_share": 0.02661,
+        "top_symbol_share": 0.0152,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 108,
+          "predictions": 104,
+          "correct": 48,
+          "accuracy": 0.46154,
+          "wilson95_lower": 0.36881,
+          "coverage": 0.015475,
+          "symbols": 43,
+          "entry_dates": 41,
+          "top_date_share": 0.125,
+          "top_symbol_share": 0.08654,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 150,
+          "predictions": 144,
+          "correct": 89,
+          "accuracy": 0.61806,
+          "wilson95_lower": 0.53661,
+          "coverage": 0.013239,
+          "symbols": 48,
+          "entry_dates": 57,
+          "top_date_share": 0.08333,
+          "top_symbol_share": 0.06944,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 144,
+          "predictions": 132,
+          "correct": 73,
+          "accuracy": 0.55303,
+          "wilson95_lower": 0.46791,
+          "coverage": 0.018304,
+          "symbols": 41,
+          "entry_dates": 56,
+          "top_date_share": 0.07576,
+          "top_symbol_share": 0.07576,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 465,
+          "predictions": 419,
+          "correct": 203,
+          "accuracy": 0.48449,
+          "wilson95_lower": 0.43699,
+          "coverage": 0.022521,
+          "symbols": 108,
+          "entry_dates": 69,
+          "top_date_share": 0.08831,
+          "top_symbol_share": 0.04535,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 610,
+          "predictions": 575,
+          "correct": 338,
+          "accuracy": 0.58783,
+          "wilson95_lower": 0.54714,
+          "coverage": 0.019954,
+          "symbols": 139,
+          "entry_dates": 101,
+          "top_date_share": 0.05913,
+          "top_symbol_share": 0.02783,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 432,
+          "predictions": 402,
+          "correct": 216,
+          "accuracy": 0.53731,
+          "wilson95_lower": 0.48845,
+          "coverage": 0.018709,
+          "symbols": 113,
+          "entry_dates": 87,
+          "top_date_share": 0.05224,
+          "top_symbol_share": 0.02985,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 354,
+          "predictions": 321,
+          "correct": 174,
+          "accuracy": 0.54206,
+          "wilson95_lower": 0.48738,
+          "coverage": 0.018709,
+          "symbols": 96,
+          "entry_dates": 69,
+          "top_date_share": 0.09346,
+          "top_symbol_share": 0.0405,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 516,
+          "predictions": 471,
+          "correct": 272,
+          "accuracy": 0.57749,
+          "wilson95_lower": 0.53243,
+          "coverage": 0.019154,
+          "symbols": 111,
+          "entry_dates": 99,
+          "top_date_share": 0.06582,
+          "top_symbol_share": 0.06582,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 353,
+          "predictions": 326,
+          "correct": 170,
+          "accuracy": 0.52147,
+          "wilson95_lower": 0.46731,
+          "coverage": 0.019044,
+          "symbols": 101,
+          "entry_dates": 76,
+          "top_date_share": 0.04908,
+          "top_symbol_share": 0.03988,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.01,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 1531,
+      "fit_2020_23_wilson95_lower": 0.55643,
+      "diagnostic_2024_26": {
+        "raw_signals": 4659,
+        "predictions": 4324,
+        "correct": 2403,
+        "accuracy": 0.55574,
+        "wilson95_lower": 0.54088,
+        "coverage": 0.028257,
+        "symbols": 395,
+        "entry_dates": 327,
+        "top_date_share": 0.02128,
+        "top_symbol_share": 0.01249,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 166,
+          "predictions": 151,
+          "correct": 83,
+          "accuracy": 0.54967,
+          "wilson95_lower": 0.47006,
+          "coverage": 0.023786,
+          "symbols": 39,
+          "entry_dates": 40,
+          "top_date_share": 0.10596,
+          "top_symbol_share": 0.12583,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 270,
+          "predictions": 254,
+          "correct": 151,
+          "accuracy": 0.59449,
+          "wilson95_lower": 0.53313,
+          "coverage": 0.023831,
+          "symbols": 49,
+          "entry_dates": 63,
+          "top_date_share": 0.05512,
+          "top_symbol_share": 0.06299,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 165,
+          "predictions": 157,
+          "correct": 95,
+          "accuracy": 0.6051,
+          "wilson95_lower": 0.527,
+          "coverage": 0.020974,
+          "symbols": 39,
+          "entry_dates": 46,
+          "top_date_share": 0.06369,
+          "top_symbol_share": 0.07006,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 629,
+          "predictions": 570,
+          "correct": 309,
+          "accuracy": 0.54211,
+          "wilson95_lower": 0.50106,
+          "coverage": 0.030464,
+          "symbols": 99,
+          "entry_dates": 73,
+          "top_date_share": 0.05789,
+          "top_symbol_share": 0.04035,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 1010,
+          "predictions": 953,
+          "correct": 559,
+          "accuracy": 0.58657,
+          "wilson95_lower": 0.55502,
+          "coverage": 0.033039,
+          "symbols": 150,
+          "entry_dates": 89,
+          "top_date_share": 0.04092,
+          "top_symbol_share": 0.02623,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 662,
+          "predictions": 617,
+          "correct": 314,
+          "accuracy": 0.50891,
+          "wilson95_lower": 0.46953,
+          "coverage": 0.028669,
+          "symbols": 121,
+          "entry_dates": 75,
+          "top_date_share": 0.04376,
+          "top_symbol_share": 0.02593,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 441,
+          "predictions": 402,
+          "correct": 225,
+          "accuracy": 0.5597,
+          "wilson95_lower": 0.51084,
+          "coverage": 0.023307,
+          "symbols": 89,
+          "entry_dates": 63,
+          "top_date_share": 0.08955,
+          "top_symbol_share": 0.05721,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 791,
+          "predictions": 735,
+          "correct": 420,
+          "accuracy": 0.57143,
+          "wilson95_lower": 0.53537,
+          "coverage": 0.029362,
+          "symbols": 124,
+          "entry_dates": 102,
+          "top_date_share": 0.05306,
+          "top_symbol_share": 0.0449,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 525,
+          "predictions": 485,
+          "correct": 247,
+          "accuracy": 0.50928,
+          "wilson95_lower": 0.46489,
+          "coverage": 0.028323,
+          "symbols": 99,
+          "entry_dates": 78,
+          "top_date_share": 0.04536,
+          "top_symbol_share": 0.03093,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.01,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 1644,
+      "fit_2020_23_wilson95_lower": 0.55505,
+      "diagnostic_2024_26": {
+        "raw_signals": 4902,
+        "predictions": 4506,
+        "correct": 2481,
+        "accuracy": 0.5506,
+        "wilson95_lower": 0.53604,
+        "coverage": 0.029731,
+        "symbols": 415,
+        "entry_dates": 374,
+        "top_date_share": 0.02086,
+        "top_symbol_share": 0.01221,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 175,
+          "predictions": 157,
+          "correct": 82,
+          "accuracy": 0.52229,
+          "wilson95_lower": 0.44456,
+          "coverage": 0.025075,
+          "symbols": 45,
+          "entry_dates": 48,
+          "top_date_share": 0.08917,
+          "top_symbol_share": 0.12102,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 250,
+          "predictions": 240,
+          "correct": 141,
+          "accuracy": 0.5875,
+          "wilson95_lower": 0.52432,
+          "coverage": 0.022065,
+          "symbols": 50,
+          "entry_dates": 61,
+          "top_date_share": 0.05833,
+          "top_symbol_share": 0.07083,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 211,
+          "predictions": 189,
+          "correct": 106,
+          "accuracy": 0.56085,
+          "wilson95_lower": 0.48958,
+          "coverage": 0.026821,
+          "symbols": 49,
+          "entry_dates": 63,
+          "top_date_share": 0.05291,
+          "top_symbol_share": 0.06349,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 687,
+          "predictions": 620,
+          "correct": 324,
+          "accuracy": 0.52258,
+          "wilson95_lower": 0.48325,
+          "coverage": 0.033274,
+          "symbols": 117,
+          "entry_dates": 79,
+          "top_date_share": 0.06613,
+          "top_symbol_share": 0.0371,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 1039,
+          "predictions": 971,
+          "correct": 569,
+          "accuracy": 0.58599,
+          "wilson95_lower": 0.55473,
+          "coverage": 0.033988,
+          "symbols": 150,
+          "entry_dates": 113,
+          "top_date_share": 0.04325,
+          "top_symbol_share": 0.02575,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 716,
+          "predictions": 666,
+          "correct": 351,
+          "accuracy": 0.52703,
+          "wilson95_lower": 0.48906,
+          "coverage": 0.031008,
+          "symbols": 133,
+          "entry_dates": 99,
+          "top_date_share": 0.03904,
+          "top_symbol_share": 0.02553,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 493,
+          "predictions": 441,
+          "correct": 238,
+          "accuracy": 0.53968,
+          "wilson95_lower": 0.49302,
+          "coverage": 0.026056,
+          "symbols": 101,
+          "entry_dates": 74,
+          "top_date_share": 0.07937,
+          "top_symbol_share": 0.04308,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 794,
+          "predictions": 728,
+          "correct": 413,
+          "accuracy": 0.56731,
+          "wilson95_lower": 0.53106,
+          "coverage": 0.029473,
+          "symbols": 117,
+          "entry_dates": 112,
+          "top_date_share": 0.0522,
+          "top_symbol_share": 0.05082,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 537,
+          "predictions": 494,
+          "correct": 257,
+          "accuracy": 0.52024,
+          "wilson95_lower": 0.4762,
+          "coverage": 0.028971,
+          "symbols": 112,
+          "entry_dates": 89,
+          "top_date_share": 0.04656,
+          "top_symbol_share": 0.03036,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.02,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 1407,
+      "fit_2020_23_wilson95_lower": 0.5547,
+      "diagnostic_2024_26": {
+        "raw_signals": 3871,
+        "predictions": 3600,
+        "correct": 2012,
+        "accuracy": 0.55889,
+        "wilson95_lower": 0.54262,
+        "coverage": 0.023478,
+        "symbols": 398,
+        "entry_dates": 320,
+        "top_date_share": 0.02083,
+        "top_symbol_share": 0.01472,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 132,
+          "predictions": 126,
+          "correct": 67,
+          "accuracy": 0.53175,
+          "wilson95_lower": 0.44497,
+          "coverage": 0.018914,
+          "symbols": 35,
+          "entry_dates": 51,
+          "top_date_share": 0.11111,
+          "top_symbol_share": 0.11905,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 206,
+          "predictions": 193,
+          "correct": 120,
+          "accuracy": 0.62176,
+          "wilson95_lower": 0.5516,
+          "coverage": 0.018182,
+          "symbols": 49,
+          "entry_dates": 70,
+          "top_date_share": 0.06218,
+          "top_symbol_share": 0.06736,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 147,
+          "predictions": 140,
+          "correct": 83,
+          "accuracy": 0.59286,
+          "wilson95_lower": 0.51005,
+          "coverage": 0.018686,
+          "symbols": 40,
+          "entry_dates": 49,
+          "top_date_share": 0.07143,
+          "top_symbol_share": 0.06429,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 561,
+          "predictions": 516,
+          "correct": 277,
+          "accuracy": 0.53682,
+          "wilson95_lower": 0.49368,
+          "coverage": 0.027171,
+          "symbols": 97,
+          "entry_dates": 76,
+          "top_date_share": 0.06202,
+          "top_symbol_share": 0.04651,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 776,
+          "predictions": 729,
+          "correct": 414,
+          "accuracy": 0.5679,
+          "wilson95_lower": 0.53168,
+          "coverage": 0.025384,
+          "symbols": 148,
+          "entry_dates": 90,
+          "top_date_share": 0.04252,
+          "top_symbol_share": 0.02469,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 552,
+          "predictions": 515,
+          "correct": 285,
+          "accuracy": 0.5534,
+          "wilson95_lower": 0.51022,
+          "coverage": 0.023905,
+          "symbols": 122,
+          "entry_dates": 82,
+          "top_date_share": 0.04272,
+          "top_symbol_share": 0.02913,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 381,
+          "predictions": 353,
+          "correct": 209,
+          "accuracy": 0.59207,
+          "wilson95_lower": 0.54008,
+          "coverage": 0.020136,
+          "symbols": 87,
+          "entry_dates": 71,
+          "top_date_share": 0.08215,
+          "top_symbol_share": 0.04533,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 684,
+          "predictions": 634,
+          "correct": 355,
+          "accuracy": 0.55994,
+          "wilson95_lower": 0.52105,
+          "coverage": 0.02539,
+          "symbols": 124,
+          "entry_dates": 106,
+          "top_date_share": 0.05047,
+          "top_symbol_share": 0.05678,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 432,
+          "predictions": 394,
+          "correct": 202,
+          "accuracy": 0.51269,
+          "wilson95_lower": 0.46345,
+          "coverage": 0.023306,
+          "symbols": 95,
+          "entry_dates": 83,
+          "top_date_share": 0.05076,
+          "top_symbol_share": 0.04315,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.01,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 959,
+      "fit_2020_23_wilson95_lower": 0.55457,
+      "diagnostic_2024_26": {
+        "raw_signals": 3237,
+        "predictions": 2962,
+        "correct": 1635,
+        "accuracy": 0.55199,
+        "wilson95_lower": 0.53403,
+        "coverage": 0.019632,
+        "symbols": 366,
+        "entry_dates": 333,
+        "top_date_share": 0.02026,
+        "top_symbol_share": 0.01857,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 118,
+          "predictions": 107,
+          "correct": 53,
+          "accuracy": 0.49533,
+          "wilson95_lower": 0.40241,
+          "coverage": 0.016908,
+          "symbols": 32,
+          "entry_dates": 37,
+          "top_date_share": 0.08411,
+          "top_symbol_share": 0.17757,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 164,
+          "predictions": 156,
+          "correct": 90,
+          "accuracy": 0.57692,
+          "wilson95_lower": 0.49846,
+          "coverage": 0.014475,
+          "symbols": 39,
+          "entry_dates": 55,
+          "top_date_share": 0.04487,
+          "top_symbol_share": 0.08333,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 127,
+          "predictions": 111,
+          "correct": 60,
+          "accuracy": 0.54054,
+          "wilson95_lower": 0.44803,
+          "coverage": 0.016143,
+          "symbols": 33,
+          "entry_dates": 55,
+          "top_date_share": 0.05405,
+          "top_symbol_share": 0.10811,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 448,
+          "predictions": 404,
+          "correct": 196,
+          "accuracy": 0.48515,
+          "wilson95_lower": 0.43678,
+          "coverage": 0.021698,
+          "symbols": 106,
+          "entry_dates": 70,
+          "top_date_share": 0.08416,
+          "top_symbol_share": 0.04703,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 712,
+          "predictions": 662,
+          "correct": 403,
+          "accuracy": 0.60876,
+          "wilson95_lower": 0.57106,
+          "coverage": 0.023291,
+          "symbols": 114,
+          "entry_dates": 96,
+          "top_date_share": 0.04381,
+          "top_symbol_share": 0.03776,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 518,
+          "predictions": 479,
+          "correct": 263,
+          "accuracy": 0.54906,
+          "wilson95_lower": 0.50429,
+          "coverage": 0.022433,
+          "symbols": 108,
+          "entry_dates": 89,
+          "top_date_share": 0.04593,
+          "top_symbol_share": 0.03549,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 313,
+          "predictions": 286,
+          "correct": 157,
+          "accuracy": 0.54895,
+          "wilson95_lower": 0.49101,
+          "coverage": 0.016542,
+          "symbols": 90,
+          "entry_dates": 60,
+          "top_date_share": 0.08042,
+          "top_symbol_share": 0.06294,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 511,
+          "predictions": 460,
+          "correct": 254,
+          "accuracy": 0.55217,
+          "wilson95_lower": 0.50649,
+          "coverage": 0.018968,
+          "symbols": 89,
+          "entry_dates": 103,
+          "top_date_share": 0.05435,
+          "top_symbol_share": 0.07609,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 326,
+          "predictions": 297,
+          "correct": 159,
+          "accuracy": 0.53535,
+          "wilson95_lower": 0.47854,
+          "coverage": 0.017587,
+          "symbols": 86,
+          "entry_dates": 79,
+          "top_date_share": 0.05051,
+          "top_symbol_share": 0.0404,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 2,
+      "members": [
+        {
+          "field": "change_pct_5d",
+          "op": ">=",
+          "value": 0.1,
+          "family": "momentum"
+        },
+        {
+          "field": "close_position",
+          "op": ">=",
+          "value": 0.9,
+          "family": "candle"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 500000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 1023,
+      "fit_2020_23_wilson95_lower": 0.5541,
+      "diagnostic_2024_26": {
+        "raw_signals": 3596,
+        "predictions": 3110,
+        "correct": 1697,
+        "accuracy": 0.54566,
+        "wilson95_lower": 0.52811,
+        "coverage": 0.02181,
+        "symbols": 339,
+        "entry_dates": 555,
+        "top_date_share": 0.01833,
+        "top_symbol_share": 0.02765,
+        "unobservable_counted_wrong": 0
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 132,
+          "predictions": 116,
+          "correct": 55,
+          "accuracy": 0.47414,
+          "wilson95_lower": 0.38556,
+          "coverage": 0.018914,
+          "symbols": 28,
+          "entry_dates": 68,
+          "top_date_share": 0.05172,
+          "top_symbol_share": 0.16379,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 196,
+          "predictions": 182,
+          "correct": 105,
+          "accuracy": 0.57692,
+          "wilson95_lower": 0.50428,
+          "coverage": 0.017299,
+          "symbols": 34,
+          "entry_dates": 113,
+          "top_date_share": 0.03846,
+          "top_symbol_share": 0.13736,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 150,
+          "predictions": 125,
+          "correct": 76,
+          "accuracy": 0.608,
+          "wilson95_lower": 0.52042,
+          "coverage": 0.019067,
+          "symbols": 32,
+          "entry_dates": 87,
+          "top_date_share": 0.032,
+          "top_symbol_share": 0.184,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 492,
+          "predictions": 422,
+          "correct": 215,
+          "accuracy": 0.50948,
+          "wilson95_lower": 0.46191,
+          "coverage": 0.023829,
+          "symbols": 95,
+          "entry_dates": 142,
+          "top_date_share": 0.07583,
+          "top_symbol_share": 0.06161,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 768,
+          "predictions": 678,
+          "correct": 400,
+          "accuracy": 0.58997,
+          "wilson95_lower": 0.55254,
+          "coverage": 0.025123,
+          "symbols": 116,
+          "entry_dates": 183,
+          "top_date_share": 0.02507,
+          "top_symbol_share": 0.05162,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 629,
+          "predictions": 546,
+          "correct": 307,
+          "accuracy": 0.56227,
+          "wilson95_lower": 0.52037,
+          "coverage": 0.02724,
+          "symbols": 105,
+          "entry_dates": 151,
+          "top_date_share": 0.02564,
+          "top_symbol_share": 0.04579,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 310,
+          "predictions": 269,
+          "correct": 143,
+          "accuracy": 0.5316,
+          "wilson95_lower": 0.47194,
+          "coverage": 0.016384,
+          "symbols": 71,
+          "entry_dates": 114,
+          "top_date_share": 0.07063,
+          "top_symbol_share": 0.09294,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 564,
+          "predictions": 473,
+          "correct": 249,
+          "accuracy": 0.52643,
+          "wilson95_lower": 0.4814,
+          "coverage": 0.020935,
+          "symbols": 91,
+          "entry_dates": 173,
+          "top_date_share": 0.0296,
+          "top_symbol_share": 0.10571,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 355,
+          "predictions": 299,
+          "correct": 147,
+          "accuracy": 0.49164,
+          "wilson95_lower": 0.43544,
+          "coverage": 0.019152,
+          "symbols": 77,
+          "entry_dates": 120,
+          "top_date_share": 0.04013,
+          "top_symbol_share": 0.05686,
+          "unobservable_counted_wrong": 0
+        }
+      },
+      "all_nine_at_least_65": false
+    },
+    {
+      "kind": "WEIGHTED",
+      "min_matched_rules": 3,
+      "members": [
+        {
+          "field": "rsi14",
+          "op": ">=",
+          "value": 80,
+          "family": "momentum"
+        },
+        {
+          "field": "intraday_return",
+          "op": ">=",
+          "value": 0.03,
+          "family": "candle"
+        },
+        {
+          "field": "index_close_position",
+          "op": ">=",
+          "value": 0.8,
+          "family": "market"
+        },
+        {
+          "field": "amount",
+          "op": ">=",
+          "value": 300000000,
+          "family": "liquidity"
+        }
+      ],
+      "fit_2020_23_raw": 839,
+      "fit_2020_23_wilson95_lower": 0.55397,
+      "diagnostic_2024_26": {
+        "raw_signals": 2319,
+        "predictions": 2180,
+        "correct": 1227,
+        "accuracy": 0.56284,
+        "wilson95_lower": 0.54193,
+        "coverage": 0.014065,
+        "symbols": 362,
+        "entry_dates": 276,
+        "top_date_share": 0.02523,
+        "top_symbol_share": 0.01743,
+        "unobservable_counted_wrong": 1
+      },
+      "segments": {
+        "old166_2024": {
+          "raw_signals": 83,
+          "predictions": 80,
+          "correct": 42,
+          "accuracy": 0.525,
+          "wilson95_lower": 0.41696,
+          "coverage": 0.011893,
+          "symbols": 30,
+          "entry_dates": 39,
+          "top_date_share": 0.1625,
+          "top_symbol_share": 0.1125,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2025": {
+          "raw_signals": 119,
+          "predictions": 111,
+          "correct": 63,
+          "accuracy": 0.56757,
+          "wilson95_lower": 0.47467,
+          "coverage": 0.010503,
+          "symbols": 39,
+          "entry_dates": 58,
+          "top_date_share": 0.07207,
+          "top_symbol_share": 0.08108,
+          "unobservable_counted_wrong": 0
+        },
+        "old166_2026": {
+          "raw_signals": 79,
+          "predictions": 78,
+          "correct": 51,
+          "accuracy": 0.65385,
+          "wilson95_lower": 0.5433,
+          "coverage": 0.010042,
+          "symbols": 32,
+          "entry_dates": 39,
+          "top_date_share": 0.07692,
+          "top_symbol_share": 0.07692,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2024": {
+          "raw_signals": 349,
+          "predictions": 322,
+          "correct": 173,
+          "accuracy": 0.53727,
+          "wilson95_lower": 0.48269,
+          "coverage": 0.016903,
+          "symbols": 84,
+          "entry_dates": 67,
+          "top_date_share": 0.07143,
+          "top_symbol_share": 0.04658,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2025": {
+          "raw_signals": 453,
+          "predictions": 431,
+          "correct": 242,
+          "accuracy": 0.56148,
+          "wilson95_lower": 0.5143,
+          "coverage": 0.014818,
+          "symbols": 133,
+          "entry_dates": 78,
+          "top_date_share": 0.06032,
+          "top_symbol_share": 0.03248,
+          "unobservable_counted_wrong": 0
+        },
+        "first250_2026": {
+          "raw_signals": 329,
+          "predictions": 309,
+          "correct": 184,
+          "accuracy": 0.59547,
+          "wilson95_lower": 0.5399,
+          "coverage": 0.014248,
+          "symbols": 109,
+          "entry_dates": 72,
+          "top_date_share": 0.05178,
+          "top_symbol_share": 0.0356,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2024": {
+          "raw_signals": 246,
+          "predictions": 227,
+          "correct": 125,
+          "accuracy": 0.55066,
+          "wilson95_lower": 0.48564,
+          "coverage": 0.013001,
+          "symbols": 77,
+          "entry_dates": 59,
+          "top_date_share": 0.10132,
+          "top_symbol_share": 0.04405,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2025": {
+          "raw_signals": 412,
+          "predictions": 387,
+          "correct": 220,
+          "accuracy": 0.56848,
+          "wilson95_lower": 0.5187,
+          "coverage": 0.015293,
+          "symbols": 109,
+          "entry_dates": 92,
+          "top_date_share": 0.0491,
+          "top_symbol_share": 0.06718,
+          "unobservable_counted_wrong": 0
+        },
+        "phase2dev200_2026": {
+          "raw_signals": 249,
+          "predictions": 235,
+          "correct": 127,
+          "accuracy": 0.54043,
+          "wilson95_lower": 0.47657,
+          "coverage": 0.013433,
+          "symbols": 82,
+          "entry_dates": 76,
+          "top_date_share": 0.07234,
+          "top_symbol_share": 0.0383,
+          "unobservable_counted_wrong": 1
+        }
+      },
+      "all_nine_at_least_65": false
+    }
+  ]
+}

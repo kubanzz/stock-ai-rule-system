@@ -1,0 +1,29 @@
+{
+  "created_utc": "2026-09-30T11:04:52.863380+00:00",
+  "purpose": "historical membership assignment disjoint from prior and sealed stock cohorts; known future-delisted cohort excluded",
+  "source": "BaoStock 0.9.4 query_all_stock(day)",
+  "snapshot_dates": [
+    "2019-01-02",
+    "2023-01-03"
+  ],
+  "per_snapshot_exchange_cell": 20,
+  "seed": "historical-mainboard-normal-v1-20260930",
+  "selection": "SHA256(seed|snapshot_date|symbol) ascending; mainboard code regex; exclude prior exposed, sealed, and known future-delisted symbols; no name or price filter",
+  "assigned_symbols": 80,
+  "snapshot_mainboard_members": {
+    "2019-01-02": 2829,
+    "2023-01-03": 3172
+  },
+  "excluded_files_sha256": {
+    "research/one_day_20260930/universe.csv": "20d7990a2166a764da848eb7f4686bfd727bf0403a53c53b85397d897f87dd5e",
+    "research/normal_stock_65/universe.csv": "da769d98cecd278132aa7199646aa6dba1534b1a24f13ed9d4efeb77485597ee",
+    "research/normal_stock_65/phase2/cohort_assignment.csv": "edc2a6f8338f8de15e592f33f783b42d7f56c06ff3337ec51759b2325c33a1f1",
+    "research/normal_stock_65/phase3/data_quality/delisted_assignment.csv": "1012e8d80cc4d12072fb1d6b0a2aa3cf9f78e0a61eb6bebb3defd33a464aac74"
+  },
+  "sha256": {
+    "historical_snapshot_membership.csv": "dcb2dcf5c96a2a5a2789f738b334434b14701d6b2c181a6f0ea389a83bcc848b",
+    "historical_assignment.csv": "1f0e70e2c0c226da9b171721f772e0bbf41a65af7bd4688065b9c40c2d300b5b"
+  },
+  "sealed_validation_access": "assignment symbols only; no sealed quote, factor, return or label read",
+  "caveat": "Excluding known future-delisted symbols introduces survival selection bias. BaoStock historical code_name appears backfilled from present and is not used or stored. Historical membership is source reported, not independently exchange-verified."
+}

@@ -1,0 +1,23 @@
+{
+  "created_utc": "2026-09-30T10:59:26.558664+00:00",
+  "purpose": "historical market-regime feature availability only; no stock labels or rule outcomes",
+  "source": "BaoStock 0.9.4 query_history_k_data_plus",
+  "query": {
+    "code": "sh.000300",
+    "fields": "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus",
+    "start_date": "2019-01-01",
+    "end_date": "2026-09-29",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "rows": 1879,
+  "first_date": "2019-01-02",
+  "last_date": "2026-09-29",
+  "trade_status_counts": {
+    "1": 1879
+  },
+  "sha256": {
+    "hs300_unadjusted_baostock.csv": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24"
+  },
+  "sealed_validation_access": "none"
+}

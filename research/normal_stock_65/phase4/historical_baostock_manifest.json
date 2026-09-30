@@ -1,0 +1,33 @@
+{
+  "created_utc": "2026-09-30T11:09:25.473959+00:00",
+  "purpose": "outcome-free historical point-in-time development stock quotes",
+  "source": "BaoStock 0.9.4 query_history_k_data_plus",
+  "query": {
+    "fields": "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus,isST",
+    "start_date": "each assigned snapshot date",
+    "end_date": "2026-09-29",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "assignment_sha256": "1f0e70e2c0c226da9b171721f772e0bbf41a65af7bd4688065b9c40c2d300b5b",
+  "assigned_symbols": 80,
+  "symbols_with_rows": 80,
+  "rows": 111440,
+  "status_counts": {
+    "tradestatus=1,isST=0": 107246,
+    "tradestatus=0,isST=0": 108,
+    "tradestatus=1,isST=1": 4065,
+    "tradestatus=0,isST=1": 21
+  },
+  "fetch_errors": {},
+  "sha256": {
+    "historical_unadjusted_baostock.csv": "8f93664ac0051ba8a862b52f5c54c5f9c6a4897c0d15055851c8122c3ed659e9",
+    "historical_baostock_coverage.csv": "cb5d19419eb5d95f0c4238c319f3cc4b52b4217bb613287a883662b6a70735d8"
+  },
+  "sealed_validation_access": "none",
+  "caveats": [
+    "Unadjusted prices need corporate-action handling for returns and rolling factors.",
+    "tradestatus=0 marks non-executable bars.",
+    "Daily isST is source reported and has not been independently exchange verified."
+  ]
+}

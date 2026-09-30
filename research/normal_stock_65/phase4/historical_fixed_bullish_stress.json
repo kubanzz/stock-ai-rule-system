@@ -1,0 +1,243 @@
+{
+  "purpose": "single previously reported bullish condition, tested once on disjoint historical sample; no parameter selection",
+  "condition": "open_gap >= 0.01 AND index_close_position <= 0.2 AND exchange = SZ",
+  "source_sha256": "8f93664ac0051ba8a862b52f5c54c5f9c6a4897c0d15055851c8122c3ed659e9",
+  "index_sha256": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24",
+  "rule_source_sha256": "58f9c7de4cad687b24d3814b41707bee0d9694c6090fa344307fa5d6393f8401",
+  "eligibility": "mainboard_liquid_stable_v1, source T-day isST=0/tradestatus=1, exact project risk_status=normal",
+  "prediction": "T close signal, T+1 open to T+2 open strict positive sign; missing/suspended open counts incorrect",
+  "all": {
+    "predictions": 219,
+    "correct": 135,
+    "accuracy": 0.61644,
+    "wilson95_lower": 0.55056,
+    "symbols": 32,
+    "signal_dates": 123,
+    "unobservable": 0,
+    "top_symbol_share": 0.08676,
+    "top_date_share": 0.07306
+  },
+  "all_nonoverlap": {
+    "predictions": 215,
+    "correct": 131,
+    "accuracy": 0.6093,
+    "wilson95_lower": 0.54271,
+    "symbols": 32,
+    "signal_dates": 123,
+    "unobservable": 0,
+    "top_symbol_share": 0.08837,
+    "top_date_share": 0.07442
+  },
+  "by_year": {
+    "2020": {
+      "predictions": 31,
+      "correct": 20,
+      "accuracy": 0.64516,
+      "wilson95_lower": 0.46948,
+      "symbols": 13,
+      "signal_dates": 21,
+      "unobservable": 0,
+      "top_symbol_share": 0.22581,
+      "top_date_share": 0.12903
+    },
+    "2021": {
+      "predictions": 19,
+      "correct": 13,
+      "accuracy": 0.68421,
+      "wilson95_lower": 0.4601,
+      "symbols": 11,
+      "signal_dates": 12,
+      "unobservable": 0,
+      "top_symbol_share": 0.21053,
+      "top_date_share": 0.31579
+    },
+    "2022": {
+      "predictions": 38,
+      "correct": 23,
+      "accuracy": 0.60526,
+      "wilson95_lower": 0.44718,
+      "symbols": 16,
+      "signal_dates": 22,
+      "unobservable": 0,
+      "top_symbol_share": 0.13158,
+      "top_date_share": 0.18421
+    },
+    "2023": {
+      "predictions": 27,
+      "correct": 12,
+      "accuracy": 0.44444,
+      "wilson95_lower": 0.27586,
+      "symbols": 16,
+      "signal_dates": 17,
+      "unobservable": 0,
+      "top_symbol_share": 0.11111,
+      "top_date_share": 0.25926
+    },
+    "2024": {
+      "predictions": 42,
+      "correct": 28,
+      "accuracy": 0.66667,
+      "wilson95_lower": 0.51553,
+      "symbols": 23,
+      "signal_dates": 15,
+      "unobservable": 0,
+      "top_symbol_share": 0.09524,
+      "top_date_share": 0.38095
+    },
+    "2025": {
+      "predictions": 42,
+      "correct": 32,
+      "accuracy": 0.7619,
+      "wilson95_lower": 0.61472,
+      "symbols": 19,
+      "signal_dates": 22,
+      "unobservable": 0,
+      "top_symbol_share": 0.11905,
+      "top_date_share": 0.21429
+    },
+    "2026": {
+      "predictions": 20,
+      "correct": 7,
+      "accuracy": 0.35,
+      "wilson95_lower": 0.18119,
+      "symbols": 15,
+      "signal_dates": 14,
+      "unobservable": 0,
+      "top_symbol_share": 0.1,
+      "top_date_share": 0.15
+    }
+  },
+  "by_year_nonoverlap": {
+    "2020": {
+      "predictions": 30,
+      "correct": 19,
+      "accuracy": 0.63333,
+      "wilson95_lower": 0.45514,
+      "symbols": 13,
+      "signal_dates": 21,
+      "unobservable": 0,
+      "top_symbol_share": 0.23333,
+      "top_date_share": 0.13333
+    },
+    "2021": {
+      "predictions": 19,
+      "correct": 13,
+      "accuracy": 0.68421,
+      "wilson95_lower": 0.4601,
+      "symbols": 11,
+      "signal_dates": 12,
+      "unobservable": 0,
+      "top_symbol_share": 0.21053,
+      "top_date_share": 0.31579
+    },
+    "2022": {
+      "predictions": 37,
+      "correct": 22,
+      "accuracy": 0.59459,
+      "wilson95_lower": 0.43486,
+      "symbols": 16,
+      "signal_dates": 22,
+      "unobservable": 0,
+      "top_symbol_share": 0.13514,
+      "top_date_share": 0.18919
+    },
+    "2023": {
+      "predictions": 27,
+      "correct": 12,
+      "accuracy": 0.44444,
+      "wilson95_lower": 0.27586,
+      "symbols": 16,
+      "signal_dates": 17,
+      "unobservable": 0,
+      "top_symbol_share": 0.11111,
+      "top_date_share": 0.25926
+    },
+    "2024": {
+      "predictions": 42,
+      "correct": 28,
+      "accuracy": 0.66667,
+      "wilson95_lower": 0.51553,
+      "symbols": 23,
+      "signal_dates": 15,
+      "unobservable": 0,
+      "top_symbol_share": 0.09524,
+      "top_date_share": 0.38095
+    },
+    "2025": {
+      "predictions": 40,
+      "correct": 30,
+      "accuracy": 0.75,
+      "wilson95_lower": 0.59806,
+      "symbols": 19,
+      "signal_dates": 22,
+      "unobservable": 0,
+      "top_symbol_share": 0.1,
+      "top_date_share": 0.225
+    },
+    "2026": {
+      "predictions": 20,
+      "correct": 7,
+      "accuracy": 0.35,
+      "wilson95_lower": 0.18119,
+      "symbols": 15,
+      "signal_dates": 14,
+      "unobservable": 0,
+      "top_symbol_share": 0.1,
+      "top_date_share": 0.15
+    }
+  },
+  "by_snapshot": {
+    "2019-01-02": {
+      "predictions": 179,
+      "correct": 107,
+      "accuracy": 0.59777,
+      "wilson95_lower": 0.52461,
+      "symbols": 20,
+      "signal_dates": 111,
+      "unobservable": 0,
+      "top_symbol_share": 0.10615,
+      "top_date_share": 0.05028
+    },
+    "2023-01-03": {
+      "predictions": 40,
+      "correct": 28,
+      "accuracy": 0.7,
+      "wilson95_lower": 0.5457,
+      "symbols": 12,
+      "signal_dates": 23,
+      "unobservable": 0,
+      "top_symbol_share": 0.15,
+      "top_date_share": 0.175
+    }
+  },
+  "by_snapshot_nonoverlap": {
+    "2019-01-02": {
+      "predictions": 177,
+      "correct": 105,
+      "accuracy": 0.59322,
+      "wilson95_lower": 0.51962,
+      "symbols": 20,
+      "signal_dates": 111,
+      "unobservable": 0,
+      "top_symbol_share": 0.10734,
+      "top_date_share": 0.05085
+    },
+    "2023-01-03": {
+      "predictions": 38,
+      "correct": 26,
+      "accuracy": 0.68421,
+      "wilson95_lower": 0.52544,
+      "symbols": 12,
+      "signal_dates": 23,
+      "unobservable": 0,
+      "top_symbol_share": 0.15789,
+      "top_date_share": 0.18421
+    }
+  },
+  "limitations": [
+    "Shares market dates with prior exposed rule development and therefore is not a new regime validation.",
+    "Historical sample excludes the known future-delisted 192-stock cohort before assignment; all 80 selected stocks remain active as of 2026.",
+    "Unadjusted prices around corporate actions and opening prices do not prove executable profit."
+  ],
+  "sealed_validation_access": "none"
+}
