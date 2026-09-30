@@ -702,6 +702,9 @@ export interface CandidateRuleStatusUpdate {
 export interface CandidateRulePublishRequest {
   operator?: string;
   reason: string;
+  ruleName?: string;
+  description?: string;
+  ruleType?: string;
 }
 
 export interface BacktestRequest {

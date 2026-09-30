@@ -74,7 +74,7 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult first = flyway.migrate();
             MigrateResult repeated = flyway.migrate();
 
-            assertThat(first.migrationsExecuted).isEqualTo(12);
+            assertThat(first.migrationsExecuted).isEqualTo(13);
             assertThat(repeated.migrationsExecuted).isZero();
             assertMigratedCandidateDefinitionsAreDrools(schema);
             assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
@@ -123,8 +123,8 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult upgraded = flyway.migrate();
             LocalDateTime migrationFinishedAt = databaseNow(schema);
 
-            assertThat(upgraded.migrationsExecuted).isEqualTo(11);
-            assertThat(currentVersion(schema)).isEqualTo("12");
+            assertThat(upgraded.migrationsExecuted).isEqualTo(12);
+            assertThat(currentVersion(schema)).isEqualTo("13");
             assertMigratedCandidateDefinitionsAreDrools(schema);
             assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
             assertJsonCheckpointRoundTrip(schema);
@@ -225,7 +225,7 @@ class RiskMySqlMigrationIntegrationTest {
                     WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
                       AND status = 'published'
                     """, Integer.class)).isEqualTo(1);
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(2);
             assertThat(database.queryForObject("""
                     SELECT COUNT(*) FROM rule_definition
                     WHERE rule_code = 'R_DROOLS_BEARISH_GUARD_001'
@@ -243,11 +243,86 @@ class RiskMySqlMigrationIntegrationTest {
     }
 
     @Test
+    void publishedCandidateMetadataBackfillPreservesHumanEditsAndExecutionFields() throws Exception {
+        String schema = schemaName();
+        createSchema(schema);
+        try {
+            assertThat(flywayTo(schema, "12").migrate().migrationsExecuted).isEqualTo(12);
+            JdbcTemplate database = jdbc(schema);
+            List<String> codes = List.of(
+                    "CR_TREND_BEAR_GUARD_001",
+                    "CR_OVERSOLD_RISK_GUARD_001",
+                    "CR_SIDEWAYS_MACD_RECOVERY_001",
+                    "CR_VOLUME_MACD_DIVERGENCE_001",
+                    "CR_WEAK_VOLUME_CONTINUATION_001");
+            List<String> names = List.of(
+                    codes.get(0), "  ", "人工审核名称", "放量与 MACD 背离风险规则", codes.get(4));
+            List<String> descriptions = List.of("", "  ", "人工审核描述", "", "");
+            List<String> types = List.of(
+                    "ai_candidate", "ai_candidate", "custom", "ai_candidate", "ai_candidate");
+            for (int index = 0; index < codes.size(); index++) {
+                String code = codes.get(index);
+                database.update("""
+                        INSERT INTO rule_definition (
+                            rule_code, rule_name, description, rule_type, rule_content,
+                            rule_format, version, status, enabled, priority, created_by, updated_by
+                        ) VALUES (?, ?, ?, ?, ?, 'drools', 'v2', 'active', 1, 60,
+                                  'human-reviewer', 'human-reviewer')
+                        """, code, names.get(index), descriptions.get(index), types.get(index),
+                        "rule \"" + code + "\" when then end");
+                database.update("""
+                        UPDATE candidate_rule
+                        SET status = 'published', backtest_status = 'success', approval_status = 'approved'
+                        WHERE candidate_code = ?
+                        """, code);
+            }
+
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT rule_name FROM rule_definition WHERE rule_code = ?
+                    """, String.class, codes.get(0))).isEqualTo("趋势与技术同步偏弱防守");
+            assertThat(database.queryForObject("""
+                    SELECT rule_name FROM rule_definition WHERE rule_code = ?
+                    """, String.class, codes.get(1))).isEqualTo("超卖区风险提示");
+            assertThat(database.queryForObject("""
+                    SELECT rule_name FROM rule_definition WHERE rule_code = ?
+                    """, String.class, codes.get(3))).isEqualTo("放量与 MACD 背离风险规则");
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code IN (?, ?, ?, ?)
+                      AND description LIKE '%仅供研究和辅助决策，不构成投资建议。'
+                    """, Integer.class, codes.get(0), codes.get(1), codes.get(3), codes.get(4)))
+                    .isEqualTo(4);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE (rule_code IN (?, ?) AND rule_type = 'risk_guard')
+                       OR (rule_code = ? AND rule_type = 'technical')
+                       OR (rule_code = ? AND rule_type = 'trend')
+                    """, Integer.class, codes.get(0), codes.get(1), codes.get(3), codes.get(4)))
+                    .isEqualTo(4);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code = ? AND rule_name = '人工审核名称'
+                      AND description = '人工审核描述' AND rule_type = 'custom'
+                    """, Integer.class, codes.get(2))).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM rule_definition
+                    WHERE rule_code IN (?, ?, ?, ?, ?)
+                      AND rule_content = CONCAT('rule "', rule_code, '" when then end')
+                      AND rule_format = 'drools' AND version = 'v2'
+                      AND status = 'active' AND enabled = 1 AND priority = 60
+                    """, Integer.class, codes.toArray())).isEqualTo(5);
+        } finally {
+            dropSchema(schema);
+        }
+    }
+
+    @Test
     void publishingAfterV11RetiresMatchingSeedAndAuditsOnce() throws Exception {
         String schema = schemaName();
         createSchema(schema);
         try {
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(12);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(13);
             JdbcTemplate database = jdbc(schema);
             String candidateCode = "CR_TREND_BEAR_GUARD_001";
             String seedCode = "R_DROOLS_BEARISH_GUARD_001";
@@ -360,7 +435,7 @@ class RiskMySqlMigrationIntegrationTest {
                           '895fd65abd4d759a5de4232033d283d0b6a45ce8ccb1f7bb9e807f7cd4f68b5e'
                     """, Integer.class)).isEqualTo(1);
 
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(2);
             assertThat(database.queryForObject("""
                     SELECT COUNT(*) FROM rule_definition
                     WHERE rule_code = 'R_DROOLS_OVERSOLD_NOTICE_001'

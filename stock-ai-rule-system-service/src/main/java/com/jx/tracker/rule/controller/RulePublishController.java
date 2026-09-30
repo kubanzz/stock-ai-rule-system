@@ -27,11 +27,7 @@ public class RulePublishController {
     @Operation(summary = "人工发布候选规则")
     public AjaxResult publishCandidateRule(@PathVariable("candidateCode") String candidateCode,
                                            @RequestBody RulePublishRequestDto request) {
-        return AjaxResult.success(rulePublishService.publishCandidateRule(
-                candidateCode,
-                request.getOperator(),
-                request.getReason()
-        ));
+        return AjaxResult.success(rulePublishService.publishCandidateRule(candidateCode, request));
     }
 
     @GetMapping("/{ruleCode}/versions")

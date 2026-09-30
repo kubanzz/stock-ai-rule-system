@@ -15,6 +15,7 @@ import {
   Input,
   message,
   Modal,
+  Select,
   Space,
   Table,
   Tag,
@@ -28,6 +29,7 @@ import {
 } from '#/api/stock';
 
 import RiskAlert from '../components/risk-alert.vue';
+import { ruleTypeOptions } from '../rule-type';
 
 const router = useRouter();
 const loading = ref(false);
@@ -39,7 +41,13 @@ const rows = ref<CandidateRule[]>([]);
 const reviewForm = ref({
   operator: 'operator',
   reason: '',
+  ruleName: '',
+  description: '',
+  ruleType: undefined as string | undefined,
 });
+const productionRuleTypeOptions = ruleTypeOptions.filter(
+  (option) => option.value !== 'ai_candidate',
+);
 
 const columns: TableColumnsType<CandidateRule> = [
   {
@@ -137,6 +145,9 @@ function openReview(
       action === 'published'
         ? `发布候选规则 ${candidate.candidateCode}`
         : `${action === 'approved' ? '审核通过' : '拒绝'}：${candidate.reason}`,
+    ruleName: '',
+    description: '',
+    ruleType: undefined,
   };
   reviewOpen.value = true;
 }
@@ -157,9 +168,20 @@ async function submitReview() {
   reviewSaving.value = true;
   try {
     if (reviewAction.value === 'published') {
+      if (
+        !reviewForm.value.ruleName.trim() ||
+        !reviewForm.value.description.trim() ||
+        !reviewForm.value.ruleType
+      ) {
+        message.error('发布前请填写规则名称、规则详情和类型');
+        return;
+      }
       await publishCandidateRule(selectedCandidate.value.candidateCode, {
         operator: reviewForm.value.operator,
         reason: reviewForm.value.reason,
+        ruleName: reviewForm.value.ruleName.trim(),
+        description: reviewForm.value.description.trim(),
+        ruleType: reviewForm.value.ruleType,
       });
       replaceCandidate({
         ...selectedCandidate.value,
@@ -302,6 +324,25 @@ onMounted(loadCandidates);
         <Form.Item label="审核/发布原因">
           <Input.TextArea v-model:value="reviewForm.reason" :rows="4" />
         </Form.Item>
+        <template v-if="reviewAction === 'published'">
+          <Form.Item label="规则名称" required>
+            <Input v-model:value="reviewForm.ruleName" :maxlength="128" />
+          </Form.Item>
+          <Form.Item label="规则详情" required>
+            <Input.TextArea
+              v-model:value="reviewForm.description"
+              :maxlength="512"
+              :rows="3"
+            />
+          </Form.Item>
+          <Form.Item label="规则类型" required>
+            <Select
+              v-model:value="reviewForm.ruleType"
+              :options="productionRuleTypeOptions"
+              placeholder="选择业务类型"
+            />
+          </Form.Item>
+        </template>
       </Form>
     </Modal>
   </Page>

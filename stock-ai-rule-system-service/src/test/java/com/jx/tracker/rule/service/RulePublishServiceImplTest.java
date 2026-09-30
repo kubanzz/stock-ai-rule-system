@@ -1,6 +1,7 @@
 package com.jx.tracker.rule.service;
 
 import com.jx.tracker.domain.dto.RulePublishResultDto;
+import com.jx.tracker.domain.dto.RulePublishRequestDto;
 import com.jx.tracker.domain.entity.CandidateRule;
 import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.RuleOperationLog;
@@ -77,7 +78,13 @@ class RulePublishServiceImplTest {
             return 1;
         });
 
-        RulePublishResultDto result = service.publishCandidateRule("CR_20260706_0001", "reviewer", "人工审核通过");
+        RulePublishRequestDto request = new RulePublishRequestDto();
+        request.setOperator("reviewer");
+        request.setReason("人工审核通过");
+        request.setRuleName("趋势突破观察规则");
+        request.setDescription("趋势走强时提供辅助观察信号；仅供研究和辅助决策，不构成投资建议。");
+        request.setRuleType("trend");
+        RulePublishResultDto result = service.publishCandidateRule("CR_20260706_0001", request);
 
         assertThat(result.getRuleCode()).isEqualTo("R_TREND_BREAKOUT_001");
         assertThat(result.getCandidateCode()).isEqualTo("CR_20260706_0001");
@@ -109,6 +116,9 @@ class RulePublishServiceImplTest {
         assertThat(ruleCaptor.getValue().getStatus()).isEqualTo(RuleLifecycleStatus.ACTIVE.getCode());
         assertThat(ruleCaptor.getValue().getEnabled()).isTrue();
         assertThat(ruleCaptor.getValue().getUpdatedBy()).isEqualTo("reviewer");
+        assertThat(ruleCaptor.getValue().getRuleName()).isEqualTo("趋势突破观察规则");
+        assertThat(ruleCaptor.getValue().getDescription()).contains("辅助决策");
+        assertThat(ruleCaptor.getValue().getRuleType()).isEqualTo("trend");
 
         ArgumentCaptor<CandidateRule> candidateCaptor = ArgumentCaptor.forClass(CandidateRule.class);
         verify(candidateRuleMapper).updateById(candidateCaptor.capture());
@@ -140,17 +150,39 @@ class RulePublishServiceImplTest {
             return 1;
         });
 
-        RulePublishResultDto result = service.publishCandidateRule(
-                candidate.getCandidateCode(), "reviewer", "创建并上线新规则");
+        RulePublishRequestDto request = new RulePublishRequestDto();
+        request.setOperator("reviewer");
+        request.setReason("创建并上线新规则");
+        request.setRuleName("趋势突破辅助规则");
+        request.setDescription("短期趋势向上时提供偏看涨辅助证据；仅供研究和辅助决策，不构成投资建议。");
+        request.setRuleType("trend");
+        RulePublishResultDto result = service.publishCandidateRule(candidate.getCandidateCode(), request);
 
         assertThat(result.getRuleCode()).isEqualTo("R_NEW_AI_RULE_001");
         assertThat(result.getVersion().getRuleId()).isEqualTo(101L);
-        verify(ruleDefinitionMapper).insert(any(RuleDefinition.class));
+        ArgumentCaptor<RuleDefinition> insertedCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
+        verify(ruleDefinitionMapper).insert(insertedCaptor.capture());
+        assertThat(insertedCaptor.getValue().getRuleName()).isEqualTo("趋势突破辅助规则");
+        assertThat(insertedCaptor.getValue().getDescription()).contains("辅助决策");
+        assertThat(insertedCaptor.getValue().getRuleType()).isEqualTo("trend");
         ArgumentCaptor<RuleDefinition> definitionCaptor = ArgumentCaptor.forClass(RuleDefinition.class);
         verify(ruleDefinitionMapper).updateById(definitionCaptor.capture());
         assertThat(definitionCaptor.getValue().getRuleFormat()).isEqualTo("drools");
         assertThat(definitionCaptor.getValue().getStatus()).isEqualTo(RuleLifecycleStatus.ACTIVE.getCode());
         assertThat(definitionCaptor.getValue().getEnabled()).isTrue();
+    }
+
+    @Test
+    void rejectsFirstPublishWithoutBusinessMetadata() {
+        CandidateRule candidate = approvedCandidate();
+        candidate.setTargetRuleCode("R_NEW_AI_RULE_001");
+        when(candidateRuleMapper.selectOne(any())).thenReturn(candidate);
+        when(ruleDefinitionMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> service.publishCandidateRule(candidate.getCandidateCode(), "reviewer", "上线"))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("规则名称、规则详情和业务类型");
+        verify(ruleDefinitionMapper, never()).insert(any(RuleDefinition.class));
     }
 
     @Test

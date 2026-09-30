@@ -58,10 +58,10 @@ const filters = reactive({
 });
 
 const columns = [
-  { title: '规则编号', dataIndex: 'ruleCode', width: 180 },
-  { title: '规则名称', dataIndex: 'ruleName' },
-  { title: '规则描述', dataIndex: 'description' },
-  { title: '类型', dataIndex: 'ruleType', width: 96 },
+  { title: '规则编号', dataIndex: 'ruleCode', width: 260 },
+  { title: '规则名称', dataIndex: 'ruleName', width: 280 },
+  { title: '规则详情', dataIndex: 'description', width: 440 },
+  { title: '类型', dataIndex: 'ruleType', width: 110 },
   { title: '格式', dataIndex: 'ruleFormat', width: 86 },
   { title: '版本', dataIndex: 'version', width: 90 },
   { title: '状态', dataIndex: 'status', width: 96 },
@@ -154,16 +154,6 @@ const visibleRules = computed(() => {
 
 function getStatusLabel(status: string): string {
   return statusLabels[status] ?? status;
-}
-
-function getGovernanceRuleTypeLabel(rule: {
-  ruleType?: string;
-  status?: string;
-}): string {
-  if (rule.ruleType === 'ai_candidate' && rule.status === 'active') {
-    return 'AI 已发布';
-  }
-  return getRuleTypeLabel(rule.ruleType ?? '');
 }
 
 async function loadRules() {
@@ -345,6 +335,7 @@ onMounted(loadRules);
           :data-source="visibleRules"
           :loading="loading"
           :pagination="{ pageSize: 10 }"
+          :scroll="{ x: 2100 }"
           row-key="ruleCode"
           size="small"
         >
@@ -355,7 +346,7 @@ onMounted(loadRules);
               </Typography.Link>
             </template>
             <template v-else-if="column.dataIndex === 'ruleType'">
-              {{ getGovernanceRuleTypeLabel(record) }}
+              {{ getRuleTypeLabel(record.ruleType) }}
             </template>
             <template v-else-if="column.dataIndex === 'ruleFormat'">
               <Tag :color="record.ruleFormat === 'drools' ? 'blue' : 'default'">
@@ -411,7 +402,7 @@ onMounted(loadRules);
             </Typography.Title>
             <Space wrap>
               <Tag color="blue">{{ selectedRule.ruleCode }}</Tag>
-              <Tag>{{ getGovernanceRuleTypeLabel(selectedRule) }}</Tag>
+              <Tag>{{ getRuleTypeLabel(selectedRule.ruleType) }}</Tag>
               <Tag :color="statusColor(selectedRule.status)">
                 {{ getStatusLabel(selectedRule.status) }}
               </Tag>

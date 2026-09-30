@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.domain.dto.RuleOperationLogDto;
+import com.jx.tracker.domain.dto.RulePublishRequestDto;
 import com.jx.tracker.domain.dto.RulePublishResultDto;
 import com.jx.tracker.domain.dto.RuleVersionDto;
 import com.jx.tracker.domain.entity.CandidateRule;
@@ -57,6 +58,8 @@ public class RulePublishServiceImpl implements RulePublishService {
             "scheduler",
             "task"
     );
+    private static final Set<String> PRODUCTION_RULE_TYPES = Set.of(
+            "technical", "trend", "risk", "risk_guard", "sentiment");
 
     private final CandidateRuleMapper candidateRuleMapper;
     private final RuleDefinitionMapper ruleDefinitionMapper;
@@ -122,14 +125,26 @@ public class RulePublishServiceImpl implements RulePublishService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public RulePublishResultDto publishCandidateRule(String candidateRuleId, String operator, String reason) {
-        String actualOperator = validateHumanOperator(operator);
+        RulePublishRequestDto request = new RulePublishRequestDto();
+        request.setOperator(operator);
+        request.setReason(reason);
+        return publishCandidateRule(candidateRuleId, request);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public RulePublishResultDto publishCandidateRule(String candidateRuleId, RulePublishRequestDto request) {
+        if (request == null) {
+            throw new ServiceException("发布信息不能为空");
+        }
+        String actualOperator = validateHumanOperator(request.getOperator());
         if (!StringUtils.hasText(candidateRuleId)) {
             throw new ServiceException("候选规则编码不能为空");
         }
         CandidateRule candidateRule = findCandidateRule(candidateRuleId);
         validateCandidateReadyToPublish(candidateRule);
 
-        RuleDefinition ruleDefinition = findOrCreateRuleDefinition(candidateRule, actualOperator);
+        RuleDefinition ruleDefinition = findOrCreateRuleDefinition(candidateRule, actualOperator, request);
         String versionNo = nextVersionNo(ruleDefinition);
         String productionContent = jsonRuleToDroolsCompiler.compile(
                 ruleDefinition.getRuleCode(), candidateRule.getProposedContent());
@@ -137,7 +152,7 @@ public class RulePublishServiceImpl implements RulePublishService {
                 .ruleId(ruleDefinition.getId())
                 .versionNo(versionNo)
                 .ruleContent(productionContent)
-                .changeReason(resolveText(reason, candidateRule.getReason()))
+                .changeReason(resolveText(request.getReason(), candidateRule.getReason()))
                 .source(MANUAL_PUBLISH_SOURCE)
                 .approvalStatus(RuleVersionApprovalStatus.PUBLISHED.getCode())
                 .publishedTime(LocalDateTime.now())
@@ -154,7 +169,7 @@ public class RulePublishServiceImpl implements RulePublishService {
                 version.getId(),
                 version.getVersionNo(),
                 candidateRule.getCandidateCode(),
-                resolveText(reason, candidateRule.getReason())
+                resolveText(request.getReason(), candidateRule.getReason())
         );
 
         RuleOperationLog operationLog = insertOperationLog(
@@ -259,7 +274,8 @@ public class RulePublishServiceImpl implements RulePublishService {
      * Create the production definition only as part of the human publish
      * transaction when the candidate has passed all gates.
      */
-    private RuleDefinition findOrCreateRuleDefinition(CandidateRule candidateRule, String operator) {
+    private RuleDefinition findOrCreateRuleDefinition(CandidateRule candidateRule, String operator,
+                                                      RulePublishRequestDto request) {
         String ruleCode = candidateRule.getTargetRuleCode();
         if (!StringUtils.hasText(ruleCode)) {
             throw new ServiceException("候选规则缺少目标规则编码");
@@ -270,14 +286,24 @@ public class RulePublishServiceImpl implements RulePublishService {
             if (existing.getId() == null) {
                 throw new ServiceException("规则主键不能为空：" + ruleCode);
             }
+            if ("ai_candidate".equalsIgnoreCase(existing.getRuleType())
+                    && (!StringUtils.hasText(request.getRuleName())
+                    || !StringUtils.hasText(request.getDescription())
+                    || !StringUtils.hasText(request.getRuleType()))) {
+                throw new ServiceException("首次发布正式规则必须填写规则名称、规则详情和业务类型");
+            }
+            applyRequestedMetadata(existing, request);
             return existing;
+        }
+
+        if (!StringUtils.hasText(request.getRuleName())
+                || !StringUtils.hasText(request.getDescription())
+                || !StringUtils.hasText(request.getRuleType())) {
+            throw new ServiceException("首次发布正式规则必须填写规则名称、规则详情和业务类型");
         }
 
         RuleDefinition created = RuleDefinition.builder()
                 .ruleCode(ruleCode)
-                .ruleName(ruleCode)
-                .description(truncate(candidateRule.getReason(), 512))
-                .ruleType("ai_candidate")
                 .ruleContent(null)
                 .ruleFormat(RuleFormat.DROOLS.getCode())
                 .version("v0")
@@ -287,6 +313,7 @@ public class RulePublishServiceImpl implements RulePublishService {
                 .createdBy(operator)
                 .updatedBy(operator)
                 .build();
+        applyRequestedMetadata(created, request);
         try {
             ensureAffected(ruleDefinitionMapper.insert(created), "保存规则定义失败");
             if (created.getId() == null) {
@@ -306,12 +333,28 @@ public class RulePublishServiceImpl implements RulePublishService {
         }
     }
 
-    private String truncate(String value, int maxLength) {
-        if (!StringUtils.hasText(value)) {
-            return null;
+    private void applyRequestedMetadata(RuleDefinition rule, RulePublishRequestDto request) {
+        if (StringUtils.hasText(request.getRuleName())) {
+            String name = request.getRuleName().trim();
+            if (name.length() > 128 || name.equalsIgnoreCase(rule.getRuleCode())) {
+                throw new ServiceException("规则名称不能等于规则编码，且不能超过 128 字符");
+            }
+            rule.setRuleName(name);
         }
-        String normalized = value.trim();
-        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength);
+        if (StringUtils.hasText(request.getDescription())) {
+            String description = request.getDescription().trim();
+            if (description.length() > 512) {
+                throw new ServiceException("规则详情不能超过 512 字符");
+            }
+            rule.setDescription(description);
+        }
+        if (StringUtils.hasText(request.getRuleType())) {
+            String ruleType = request.getRuleType().trim().toLowerCase(Locale.ROOT);
+            if (!PRODUCTION_RULE_TYPES.contains(ruleType)) {
+                throw new ServiceException("规则类型必须是技术、趋势、风险、风险防守或情绪");
+            }
+            rule.setRuleType(ruleType);
+        }
     }
 
     private RuleVersion findRuleVersion(Long ruleId, String versionId) {

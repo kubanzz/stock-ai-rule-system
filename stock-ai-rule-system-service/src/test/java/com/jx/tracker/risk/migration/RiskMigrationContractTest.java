@@ -235,6 +235,28 @@ class RiskMigrationContractTest {
                 "'disabled', 'active'");
     }
 
+    @Test
+    void publishedCandidateMetadataMigrationBackfillsOnlyMissingDefaults() throws IOException {
+        String migration = resource("/db/migration/V13__backfill_published_candidate_rule_metadata.sql");
+
+        assertThat(migration).contains(
+                "candidate.status = 'published'",
+                "candidate.target_rule_code = rule.rule_code",
+                "CR_TREND_BEAR_GUARD_001",
+                "CR_OVERSOLD_RISK_GUARD_001",
+                "CR_SIDEWAYS_MACD_RECOVERY_001",
+                "CR_VOLUME_MACD_DIVERGENCE_001",
+                "CR_WEAK_VOLUME_CONTINUATION_001",
+                "rule.rule_name IS NULL OR TRIM(rule.rule_name) = '' OR rule.rule_name = rule.rule_code",
+                "rule.description IS NULL OR TRIM(rule.description) = ''",
+                "rule.rule_type = 'ai_candidate'",
+                "仅供研究和辅助决策，不构成投资建议。"
+        );
+        assertThat(migration).doesNotContain(
+                "SET rule.rule_content", "rule.version =", "rule.status =", "rule.enabled =",
+                "DELETE FROM rule_definition", "DELETE FROM candidate_rule");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(path)) {
             assertThat(input).as(path).isNotNull();
