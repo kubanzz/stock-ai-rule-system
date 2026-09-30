@@ -1,0 +1,42 @@
+{
+  "created_utc": "2026-09-30T12:39:34.971074+00:00",
+  "purpose": "older point-in-time mainboard development sample allowing future delistings",
+  "membership_source": "BaoStock 0.9.4 query_all_stock(day), frozen before quote fetching",
+  "snapshot_dates": [
+    "2010-01-04",
+    "2014-01-02"
+  ],
+  "per_snapshot_exchange_cell": 25,
+  "seed": "older-pit-mainboard-v1-20260930",
+  "selection": "SHA256(seed|snapshot_date|symbol) ascending; mainboard code regex; exclude old166, first250, phase2 dev200 and sealed100, phase4 historical80 and phase5 PIT100 by symbol; no future-status, name, price, or quote filter",
+  "members_by_snapshot": {
+    "2010-01-04": 1663,
+    "2014-01-02": 2115
+  },
+  "cell_available_count": {
+    "2010-01-04_SH": 680,
+    "2010-01-04_SZ": 613,
+    "2014-01-02_SH": 717,
+    "2014-01-02_SZ": 850
+  },
+  "assigned_symbols": 100,
+  "selected_snapshot_status_counts": {
+    "1": 97,
+    "0": 3
+  },
+  "input_sha256": {
+    "research/normal_stock_65/phase6/older_snapshot_membership.csv": "5fd8d3ad87bf4a36652761f790138a2bb2b621e6ecca9c2a1a357c624b0057d7",
+    "research/one_day_20260930/universe.csv": "20d7990a2166a764da848eb7f4686bfd727bf0403a53c53b85397d897f87dd5e",
+    "research/normal_stock_65/universe.csv": "da769d98cecd278132aa7199646aa6dba1534b1a24f13ed9d4efeb77485597ee",
+    "research/normal_stock_65/phase2/cohort_assignment.csv": "edc2a6f8338f8de15e592f33f783b42d7f56c06ff3337ec51759b2325c33a1f1",
+    "research/normal_stock_65/phase4/historical_assignment.csv": "1f0e70e2c0c226da9b171721f772e0bbf41a65af7bd4688065b9c40c2d300b5b",
+    "research/normal_stock_65/phase5/pit_assignment.csv": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950"
+  },
+  "assignment_sha256": "7e15889699f89f8bcfef71d8994c0c3ca45e9b9beae4aee137524bbce6bef021",
+  "sealed_validation_access": "phase2 assignment symbol identities only; no sealed quotes or outcomes",
+  "caveats": [
+    "BaoStock historical membership has not been independently exchange verified.",
+    "The prior and sealed cohort symbol exclusions are by design; this is not an all-market random sample.",
+    "The 2010/2014 snapshot dates and seed were fixed before fetching these stock histories."
+  ]
+}

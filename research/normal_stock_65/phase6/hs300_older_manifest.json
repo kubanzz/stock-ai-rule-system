@@ -1,0 +1,20 @@
+{
+  "created_utc": "2026-09-30T12:33:23.952836+00:00",
+  "purpose": "pre-2019 trading calendar and fixed T-close market feature; no stock outcomes",
+  "source": "BaoStock 0.9.4 query_history_k_data_plus",
+  "query": {
+    "code": "sh.000300",
+    "fields": "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus",
+    "start_date": "2010-01-01",
+    "end_date": "2019-01-07",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "rows": 2191,
+  "first_date": "2010-01-04",
+  "last_date": "2019-01-07",
+  "sha256": {
+    "hs300_older_unadjusted_baostock.csv": "88286672b859b9801db25ae9b1f9893f6a5b6b2de83105e807214e7112efe65d"
+  },
+  "sealed_validation_access": "none"
+}

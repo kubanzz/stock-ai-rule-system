@@ -1,0 +1,140 @@
+{
+  "purpose": "point-in-time cohort and raw data integrity only; no labels, forward returns or rule fitting",
+  "assignment_sha256": "7e15889699f89f8bcfef71d8994c0c3ca45e9b9beae4aee137524bbce6bef021",
+  "data_sha256": "e51492e0d7db91a2cc3dedb10a43f912f0529fd3eb18b74eb03a3c5f7b7ca65f",
+  "assigned_symbols": 100,
+  "quote_symbols": 100,
+  "raw_rows": 170750,
+  "traded_rows": 156892,
+  "valid_traded_rows": 156892,
+  "ohlc_bad_rows": 0,
+  "amount_div_volume_outside_ohlc_rows": 0,
+  "status_counts": {
+    "tradestatus=0,isST=0": 11776,
+    "tradestatus=0,isST=1": 2082,
+    "tradestatus=1,isST=0": 150038,
+    "tradestatus=1,isST=1": 6854
+  },
+  "selected_known_future_delisted_count": 10,
+  "selected_known_future_delisted_symbols": [
+    "000038.SZ",
+    "002143.SZ",
+    "002411.SZ",
+    "600200.SH",
+    "600242.SH",
+    "600275.SH",
+    "600614.SH",
+    "600870.SH",
+    "600978.SH",
+    "601028.SH"
+  ],
+  "selected_overlap_prior_cohorts_count": 0,
+  "normal_nonST_rows": 45433,
+  "normal_nonST_symbols": 100,
+  "normal_nonST_dates": 1922,
+  "by_snapshot_year": {
+    "2010-01-04_2010": {
+      "valid_traded_rows": 11484,
+      "normal_nonST_rows": 0,
+      "normal_nonST_symbols": 0,
+      "normal_nonST_dates": 0
+    },
+    "2010-01-04_2011": {
+      "valid_traded_rows": 11602,
+      "normal_nonST_rows": 3016,
+      "normal_nonST_symbols": 37,
+      "normal_nonST_dates": 234
+    },
+    "2010-01-04_2012": {
+      "valid_traded_rows": 11589,
+      "normal_nonST_rows": 1865,
+      "normal_nonST_symbols": 31,
+      "normal_nonST_dates": 243
+    },
+    "2010-01-04_2013": {
+      "valid_traded_rows": 11351,
+      "normal_nonST_rows": 2818,
+      "normal_nonST_symbols": 37,
+      "normal_nonST_dates": 238
+    },
+    "2010-01-04_2014": {
+      "valid_traded_rows": 11342,
+      "normal_nonST_rows": 4326,
+      "normal_nonST_symbols": 47,
+      "normal_nonST_dates": 245
+    },
+    "2010-01-04_2015": {
+      "valid_traded_rows": 10314,
+      "normal_nonST_rows": 2862,
+      "normal_nonST_symbols": 47,
+      "normal_nonST_dates": 227
+    },
+    "2010-01-04_2016": {
+      "valid_traded_rows": 11026,
+      "normal_nonST_rows": 5901,
+      "normal_nonST_symbols": 50,
+      "normal_nonST_dates": 241
+    },
+    "2010-01-04_2017": {
+      "valid_traded_rows": 11074,
+      "normal_nonST_rows": 5500,
+      "normal_nonST_symbols": 46,
+      "normal_nonST_dates": 244
+    },
+    "2010-01-04_2018": {
+      "valid_traded_rows": 11605,
+      "normal_nonST_rows": 2756,
+      "normal_nonST_symbols": 39,
+      "normal_nonST_dates": 243
+    },
+    "2010-01-04_2019": {
+      "valid_traded_rows": 200,
+      "normal_nonST_rows": 48,
+      "normal_nonST_symbols": 14,
+      "normal_nonST_dates": 4
+    },
+    "2014-01-02_2014": {
+      "valid_traded_rows": 11305,
+      "normal_nonST_rows": 0,
+      "normal_nonST_symbols": 0,
+      "normal_nonST_dates": 0
+    },
+    "2014-01-02_2015": {
+      "valid_traded_rows": 10045,
+      "normal_nonST_rows": 2105,
+      "normal_nonST_symbols": 47,
+      "normal_nonST_dates": 178
+    },
+    "2014-01-02_2016": {
+      "valid_traded_rows": 11003,
+      "normal_nonST_rows": 5333,
+      "normal_nonST_symbols": 48,
+      "normal_nonST_dates": 244
+    },
+    "2014-01-02_2017": {
+      "valid_traded_rows": 11292,
+      "normal_nonST_rows": 5756,
+      "normal_nonST_symbols": 49,
+      "normal_nonST_dates": 244
+    },
+    "2014-01-02_2018": {
+      "valid_traded_rows": 11460,
+      "normal_nonST_rows": 3097,
+      "normal_nonST_symbols": 39,
+      "normal_nonST_dates": 243
+    },
+    "2014-01-02_2019": {
+      "valid_traded_rows": 200,
+      "normal_nonST_rows": 50,
+      "normal_nonST_symbols": 13,
+      "normal_nonST_dates": 4
+    }
+  },
+  "sealed_validation_access": "phase2 assignment symbol identities only; no sealed quotes or outcomes",
+  "caveats": [
+    "This is a 100-symbol sample rather than the full point-in-time universe.",
+    "Membership and daily ST flags are BaoStock reported, not exchange independently verified.",
+    "Market dates can overlap earlier backtests despite disjoint stock identities.",
+    "Unadjusted corporate-action price jumps need separate treatment before return labels."
+  ]
+}

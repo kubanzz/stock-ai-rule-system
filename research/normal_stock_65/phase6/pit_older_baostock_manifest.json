@@ -1,0 +1,33 @@
+{
+  "created_utc": "2026-09-30T12:47:30.978863+00:00",
+  "purpose": "point-in-time mainboard cohort raw quote collection; no labels or rule tuning",
+  "source": "BaoStock 0.9.4 query_history_k_data_plus",
+  "query": {
+    "fields": "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus,isST",
+    "start_date": "each assigned snapshot date",
+    "end_date": "2019-01-07",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "assignment_sha256": "7e15889699f89f8bcfef71d8994c0c3ca45e9b9beae4aee137524bbce6bef021",
+  "assigned_symbols": 100,
+  "symbols_with_rows": 100,
+  "rows": 170750,
+  "status_counts": {
+    "tradestatus=0,isST=0": 11776,
+    "tradestatus=0,isST=1": 2082,
+    "tradestatus=1,isST=0": 150038,
+    "tradestatus=1,isST=1": 6854
+  },
+  "fetch_errors": {},
+  "sha256": {
+    "pit_older_unadjusted_baostock.csv": "e51492e0d7db91a2cc3dedb10a43f912f0529fd3eb18b74eb03a3c5f7b7ca65f",
+    "pit_older_baostock_coverage.csv": "55f2e531b6571f5c60323619b31b37a77edd17a65cf9ec09b9939e0312df2bfe"
+  },
+  "sealed_validation_access": "none",
+  "caveats": [
+    "Unadjusted prices need corporate-action handling for returns and rolling factors.",
+    "tradestatus=0 marks non-executable bars.",
+    "Daily isST is source reported, not independently exchange verified."
+  ]
+}
