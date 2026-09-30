@@ -30,6 +30,11 @@ public class StockSignalDaily {
 
     private LocalDate signalDate;
 
+    /** regular = 当期生成；backfill = 使用现行规则对历史交易日补算。 */
+    private String generationType;
+
+    private LocalDateTime generatedAt;
+
     @TableField("`signal`")
     private String signal;
 

@@ -578,6 +578,7 @@ public class SingleRuleBacktestService implements BacktestService {
                 .like(StockSignalDaily::getTriggeredRules, triggeredRuleCode)
                 .orderByAsc(StockSignalDaily::getSignalDate))
                 .stream()
+                .filter(signal -> !"backfill".equalsIgnoreCase(signal.getGenerationType()))
                 .filter(signal -> isInStockPool(stockPool, signal.getSymbol()))
                 .filter(signal -> containsRuleCode(signal.getTriggeredRules(), triggeredRuleCode))
                 .toList();

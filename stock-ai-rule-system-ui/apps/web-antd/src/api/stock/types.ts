@@ -112,13 +112,18 @@ export interface SignalDashboardRow {
   bullishScore: null | number;
   changePct?: number;
   confidence: null | number;
+  generationType?: 'backfill' | 'regular' | null;
   name?: string;
   price?: number;
+  quoteDate?: null | string;
   quoteStatus: 'pending' | 'ready';
   riskGateDecision?: RiskGateDecision;
   riskSnapshot: null | RiskSnapshot;
   riskScore: null | number;
   signal: null | SignalType;
+  signalDate?: null | string;
+  signalFreshness?: 'current' | 'historical' | 'missing';
+  signalGeneratedAt?: null | string;
   signalStatus: 'pending' | 'ready';
   suggestedPeriod?: string;
   symbol: string;
@@ -161,6 +166,7 @@ export interface MarketContext {
 export interface SignalDashboardOverview {
   availableIndustries: string[];
   dataUpdatedAt?: null | string;
+  latestSignalDate?: null | string;
   marketContext: MarketContext;
   metrics: DashboardMetricCard[];
   pageNum: number;
@@ -168,6 +174,8 @@ export interface SignalDashboardOverview {
   riskDisclaimer: string;
   riskHorizon: RiskHorizon;
   signals: SignalDashboardRow[];
+  signalUpdatedAt?: null | string;
+  quoteUpdatedAt?: null | string;
   total: number;
   tradeDate?: string;
 }

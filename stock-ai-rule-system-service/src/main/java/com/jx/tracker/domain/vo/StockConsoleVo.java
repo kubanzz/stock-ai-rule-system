@@ -42,6 +42,11 @@ public final class StockConsoleVo {
             LocalDateTime updatedAt,
             String signalStatus,
             String quoteStatus,
+            LocalDate signalDate,
+            LocalDate quoteDate,
+            LocalDateTime signalGeneratedAt,
+            String signalFreshness,
+            String generationType,
             RiskSnapshot riskSnapshot,
             @JsonInclude(JsonInclude.Include.NON_NULL)
             GateDecision riskGateDecision
@@ -54,7 +59,7 @@ public final class StockConsoleVo {
         ) {
             this(symbol, name, price, changePct, signal, bullishScore, bearishScore, riskScore,
                     confidence, triggeredRuleCount, suggestedPeriod, updatedAt, signalStatus, quoteStatus,
-                    null, null);
+                    null, null, null, "missing", null, null, null);
         }
     }
 
@@ -152,8 +157,22 @@ public final class StockConsoleVo {
             int pageSize,
             List<String> availableIndustries,
             LocalDateTime dataUpdatedAt,
-            RiskHorizon riskHorizon
+            RiskHorizon riskHorizon,
+            LocalDate latestSignalDate,
+            LocalDateTime signalUpdatedAt,
+            LocalDateTime quoteUpdatedAt
     ) {
+        public SignalDashboardOverview(
+                LocalDate tradeDate, String riskDisclaimer, List<MetricCard> metrics,
+                List<SignalRow> signals, MarketContext marketContext, long total,
+                int pageNum, int pageSize, List<String> availableIndustries,
+                LocalDateTime dataUpdatedAt, RiskHorizon riskHorizon
+        ) {
+            this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total,
+                    pageNum, pageSize, availableIndustries, dataUpdatedAt, riskHorizon,
+                    null, null, null);
+        }
+
         public SignalDashboardOverview(
                 LocalDate tradeDate, String riskDisclaimer, List<MetricCard> metrics,
                 List<SignalRow> signals, MarketContext marketContext, long total,
@@ -161,7 +180,8 @@ public final class StockConsoleVo {
                 LocalDateTime dataUpdatedAt
         ) {
             this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total, pageNum, pageSize,
-                    availableIndustries, dataUpdatedAt, RiskHorizon.SHORT_TERM);
+                    availableIndustries, dataUpdatedAt, RiskHorizon.SHORT_TERM,
+                    null, null, null);
         }
 
         public SignalDashboardOverview(
@@ -173,7 +193,8 @@ public final class StockConsoleVo {
                 long total
         ) {
             this(tradeDate, riskDisclaimer, metrics, signals, marketContext, total,
-                    1, 20, List.of(), null, RiskHorizon.SHORT_TERM);
+                    1, 20, List.of(), null, RiskHorizon.SHORT_TERM,
+                    null, null, null);
         }
     }
 

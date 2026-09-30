@@ -74,7 +74,7 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult first = flyway.migrate();
             MigrateResult repeated = flyway.migrate();
 
-            assertThat(first.migrationsExecuted).isEqualTo(13);
+            assertThat(first.migrationsExecuted).isEqualTo(14);
             assertThat(repeated.migrationsExecuted).isZero();
             assertMigratedCandidateDefinitionsAreDrools(schema);
             assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
@@ -123,8 +123,8 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult upgraded = flyway.migrate();
             LocalDateTime migrationFinishedAt = databaseNow(schema);
 
-            assertThat(upgraded.migrationsExecuted).isEqualTo(12);
-            assertThat(currentVersion(schema)).isEqualTo("13");
+            assertThat(upgraded.migrationsExecuted).isEqualTo(13);
+            assertThat(currentVersion(schema)).isEqualTo("14");
             assertMigratedCandidateDefinitionsAreDrools(schema);
             assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
             assertJsonCheckpointRoundTrip(schema);
@@ -225,7 +225,7 @@ class RiskMySqlMigrationIntegrationTest {
                     WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
                       AND status = 'published'
                     """, Integer.class)).isEqualTo(1);
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(2);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(3);
             assertThat(database.queryForObject("""
                     SELECT COUNT(*) FROM rule_definition
                     WHERE rule_code = 'R_DROOLS_BEARISH_GUARD_001'
@@ -277,7 +277,7 @@ class RiskMySqlMigrationIntegrationTest {
                         """, code);
             }
 
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(2);
             assertThat(database.queryForObject("""
                     SELECT rule_name FROM rule_definition WHERE rule_code = ?
                     """, String.class, codes.get(0))).isEqualTo("趋势与技术同步偏弱防守");
@@ -322,7 +322,7 @@ class RiskMySqlMigrationIntegrationTest {
         String schema = schemaName();
         createSchema(schema);
         try {
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(13);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(14);
             JdbcTemplate database = jdbc(schema);
             String candidateCode = "CR_TREND_BEAR_GUARD_001";
             String seedCode = "R_DROOLS_BEARISH_GUARD_001";
@@ -435,7 +435,7 @@ class RiskMySqlMigrationIntegrationTest {
                           '895fd65abd4d759a5de4232033d283d0b6a45ce8ccb1f7bb9e807f7cd4f68b5e'
                     """, Integer.class)).isEqualTo(1);
 
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(2);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(3);
             assertThat(database.queryForObject("""
                     SELECT COUNT(*) FROM rule_definition
                     WHERE rule_code = 'R_DROOLS_OVERSOLD_NOTICE_001'

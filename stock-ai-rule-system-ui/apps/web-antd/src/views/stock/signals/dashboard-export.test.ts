@@ -51,4 +51,24 @@ describe('signal dashboard CSV export', () => {
     expect(csv).toContain('"贵州,""茅台""\n样例"');
     expect(csv).toContain('"ak,""tools"" | aktools');
   });
+
+  it('exports separate quote and signal dates with historical backfill provenance', () => {
+    const row: SignalDashboardRow = {
+      ...requireReadyRow(),
+      generationType: 'backfill',
+      quoteDate: '2026-09-29',
+      signalDate: '2026-09-28',
+      signalFreshness: 'historical',
+      signalGeneratedAt: '2026-09-30T15:00:00',
+    };
+
+    const csv = buildSignalDashboardCsv([row], '1-5d', '2026-09-29');
+
+    expect(csv).toContain('"行情交易日"');
+    expect(csv).toContain('"信号交易日","信号时效","信号生成方式"');
+    expect(csv).toContain('"2026-09-29"');
+    expect(csv).toContain(
+      '"2026-09-28","历史信号","历史补算","2026-09-30T15:00:00"',
+    );
+  });
 });

@@ -1,11 +1,13 @@
 package com.jx.tracker.service.impl;
 
 import com.jx.tracker.domain.vo.StockConsoleVo;
+import com.jx.tracker.mapper.SignalBackfillRunMapper;
 import com.jx.tracker.service.StockDashboardQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -28,6 +30,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 @ActiveProfiles("test")
 class StockDashboardQueryPersistenceTest {
+
+    @MockBean
+    private SignalBackfillRunMapper signalBackfillRunMapper;
 
     private static final LocalDate DATE = LocalDate.of(2026, 7, 10);
 
@@ -81,6 +86,8 @@ class StockDashboardQueryPersistenceTest {
                     explanation VARCHAR(512),
                     risk_disclaimer VARCHAR(512),
                     trace_json VARCHAR(8192),
+                    generation_type VARCHAR(16),
+                    generated_at DATETIME,
                     created_at DATETIME
                 )
                 """);
@@ -265,6 +272,12 @@ class StockDashboardQueryPersistenceTest {
                 ('000007.SZ', '2026-07-10', 70.00, -2.00, '2026-07-10 15:10:00'),
                 ('000008.SZ', '2026-07-10', 80.00, -3.00, '2026-07-10 15:10:00'),
                 ('000009.SZ', '2026-07-10', 90.00, -4.00, '2026-07-10 15:10:00')
+                """);
+        jdbcTemplate.update("""
+                UPDATE stock_daily_quote
+                SET open_price = close_price, high_price = close_price,
+                    low_price = close_price, volume = 100, data_source = 'test'
+                WHERE trade_date = '2026-07-10' AND symbol LIKE '%.SZ'
                 """);
         for (int index = 0; index < 21; index++) {
             LocalDate tradeDate = DATE.minusDays(20L - index);

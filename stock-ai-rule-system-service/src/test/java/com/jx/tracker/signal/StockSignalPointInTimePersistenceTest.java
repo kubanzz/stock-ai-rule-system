@@ -43,7 +43,9 @@ class StockSignalPointInTimePersistenceTest {
         jdbc.execute("""
                 CREATE TABLE stock_signal_daily (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    symbol VARCHAR(32), signal_date DATE, `signal` VARCHAR(32),
+                    symbol VARCHAR(32), signal_date DATE,
+                    generation_type VARCHAR(16), generated_at TIMESTAMP,
+                    `signal` VARCHAR(32),
                     signal_direction VARCHAR(16), signal_level VARCHAR(32),
                     bullish_score DECIMAL(10, 4), bearish_score DECIMAL(10, 4),
                     risk_score DECIMAL(10, 4), confidence DECIMAL(10, 4),

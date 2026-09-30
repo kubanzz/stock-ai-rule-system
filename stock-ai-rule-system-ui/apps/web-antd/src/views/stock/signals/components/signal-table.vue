@@ -31,6 +31,7 @@ import {
   RISK_SNAPSHOT_STATE_LABELS,
   RISK_STAGE_LABELS,
 } from '../risk-dashboard-state';
+import { isHistoricalSignal } from '../dashboard-display';
 import SignalRiskDetail from './signal-risk-detail.vue';
 
 const props = defineProps<{
@@ -38,6 +39,7 @@ const props = defineProps<{
   loading?: boolean;
   query: DashboardQueryState;
   rows: SignalDashboardRow[];
+  tradeDate?: string;
   total: number;
 }>();
 
@@ -62,8 +64,13 @@ const columns: TableColumnsType<SignalDashboardRow> = [
     title: '股票',
     width: 142,
   },
-  { dataIndex: 'price', key: 'price', title: '价格 / 涨跌', width: 116 },
-  { dataIndex: 'signal', key: 'signal', title: '系统信号', width: 96 },
+  { dataIndex: 'price', key: 'price', title: '价格 / 行情日', width: 138 },
+  {
+    dataIndex: 'signal',
+    key: 'signal',
+    title: '系统信号 / 信号日',
+    width: 162,
+  },
   {
     dataIndex: 'bullishScore',
     key: 'bullishScore',
@@ -101,7 +108,12 @@ const columns: TableColumnsType<SignalDashboardRow> = [
     title: '建议周期',
     width: 96,
   },
-  { dataIndex: 'updatedAt', key: 'updatedAt', title: '更新时间', width: 148 },
+  {
+    dataIndex: 'signalGeneratedAt',
+    key: 'signalGeneratedAt',
+    title: '信号生成时间',
+    width: 166,
+  },
   { fixed: 'right', key: 'actions', title: '操作', width: 70 },
 ];
 
@@ -281,6 +293,9 @@ function openRecord(record: Record<string, unknown>) {
         </template>
         <template v-else-if="column.key === 'price'">
           <div>{{ record.price ?? '--' }}</div>
+          <small class="date-note"
+            >行情日：{{ record.quoteDate ?? '暂无' }}</small
+          >
           <small v-if="record.quoteStatus === 'pending'" class="muted">
             行情待同步
           </small>
@@ -292,9 +307,27 @@ function openRecord(record: Record<string, unknown>) {
           </small>
         </template>
         <template v-else-if="column.key === 'signal'">
-          <Tag :color="getSignalMeta(record).color">
-            {{ getSignalMeta(record).label }}
-          </Tag>
+          <div class="signal-cell">
+            <div>
+              <Tag :color="getSignalMeta(record).color">
+                {{ getSignalMeta(record).label }}
+              </Tag>
+              <Tag
+                v-if="
+                  isHistoricalSignal(record as SignalDashboardRow, tradeDate)
+                "
+                color="orange"
+              >
+                历史信号
+              </Tag>
+              <Tag v-if="record.generationType === 'backfill'" color="blue">
+                补算
+              </Tag>
+            </div>
+            <small class="date-note"
+              >信号日：{{ record.signalDate ?? '暂无' }}</small
+            >
+          </div>
         </template>
         <template v-else-if="column.key === 'confidence'">
           <span v-if="record.confidence === null">--</span>
@@ -351,6 +384,9 @@ function openRecord(record: Record<string, unknown>) {
             </small>
           </div>
           <span v-else class="muted">暂无建议</span>
+        </template>
+        <template v-else-if="column.key === 'signalGeneratedAt'">
+          {{ record.signalGeneratedAt ?? '--' }}
         </template>
         <template v-else-if="column.key === 'actions'">
           <Button type="link" @click="openRecord(record)">详情</Button>
@@ -431,7 +467,8 @@ function openRecord(record: Record<string, unknown>) {
 }
 
 .risk-summary-cell,
-.gate-summary-cell {
+.gate-summary-cell,
+.signal-cell {
   display: grid;
   gap: 3px;
 }
@@ -444,6 +481,7 @@ function openRecord(record: Record<string, unknown>) {
 
 .risk-summary-cell small,
 .gate-summary-cell small,
+.date-note,
 .muted {
   font-size: 11px;
   color: hsl(var(--muted-foreground));

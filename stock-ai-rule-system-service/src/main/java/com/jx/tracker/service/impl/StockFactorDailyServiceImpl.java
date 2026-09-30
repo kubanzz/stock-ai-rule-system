@@ -76,6 +76,39 @@ public class StockFactorDailyServiceImpl implements IStockFactorDailyService {
                 .build();
     }
 
+    /** Historical catch-up excludes simulated rows from the full 80-bar factor input. */
+    @Override
+    public StockFactorDailyVo calculateAndSaveFromRealQuotes(TechnicalFactorCalculateRequestDto request) {
+        validateRequest(request);
+        List<StockDailyQuote> quotes = quoteMapper.selectList(Wrappers.<StockDailyQuote>lambdaQuery()
+                .eq(StockDailyQuote::getSymbol, request.getSymbol())
+                .le(StockDailyQuote::getTradeDate, request.getTradeDate())
+                .isNotNull(StockDailyQuote::getDataSource)
+                .ne(StockDailyQuote::getDataSource, "mock")
+                .orderByDesc(StockDailyQuote::getTradeDate)
+                .last("LIMIT " + LOOKBACK_LIMIT));
+        // This method is only called once the backfill service has validated the
+        // last 26 dates and all required target fields.
+        TechnicalFactorResult result = calculator.calculate(request.getSymbol(), request.getTradeDate(), quotes);
+        String factorJson = toJson(result);
+        StockFactorDaily existing = factorMapper.selectOne(Wrappers.<StockFactorDaily>lambdaQuery()
+                .eq(StockFactorDaily::getSymbol, request.getSymbol())
+                .eq(StockFactorDaily::getTradeDate, request.getTradeDate()));
+        StockFactorDaily entity = StockFactorDaily.builder()
+                .id(existing == null ? null : existing.getId())
+                .symbol(result.symbol())
+                .tradeDate(result.tradeDate())
+                .factorJson(factorJson)
+                .build();
+        if (existing == null) {
+            factorMapper.insert(entity);
+        } else {
+            factorMapper.updateById(entity);
+        }
+        return StockFactorDailyVo.builder().symbol(result.symbol())
+                .tradeDate(result.tradeDate()).factors(result.factors()).build();
+    }
+
     @Override
     public List<StockFactorDailyVo> calculateAndSaveBatch(List<String> symbols, LocalDate tradeDate) {
         if (tradeDate == null) {

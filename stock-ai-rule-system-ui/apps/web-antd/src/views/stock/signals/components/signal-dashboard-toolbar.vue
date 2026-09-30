@@ -12,12 +12,14 @@ import { Button, DatePicker, Select, Tooltip } from 'ant-design-vue';
 import { RISK_HORIZON_OPTIONS } from '../risk-dashboard-state';
 
 const props = defineProps<{
+  backfillRunning?: boolean;
   loading?: boolean;
   query: DashboardQueryState;
   watchlists: WatchlistPool[];
 }>();
 
 const emit = defineEmits<{
+  backfill: [];
   export: [];
   filters: [patch: Partial<DashboardQueryState>];
   manage: [];
@@ -101,6 +103,21 @@ function updateRiskHorizon(value: unknown) {
     </div>
 
     <div class="toolbar-actions">
+      <Tooltip
+        :title="
+          query.market === 'A股'
+            ? '补齐我的关注 A 股缺失的交易日行情，并重算因子和辅助决策信号'
+            : '目前仅支持我的关注中的 A 股'
+        "
+      >
+        <Button
+          :disabled="query.market !== 'A股' || loading"
+          :loading="backfillRunning"
+          @click="emit('backfill')"
+        >
+          同步并重算
+        </Button>
+      </Tooltip>
       <Button @click="emit('manage')">
         <Settings class="button-icon" />管理股票池
       </Button>

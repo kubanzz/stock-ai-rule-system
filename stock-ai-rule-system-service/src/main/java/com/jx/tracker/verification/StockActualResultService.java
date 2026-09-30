@@ -43,6 +43,12 @@ public class StockActualResultService {
 
         List<StockActualResult> results = new ArrayList<>();
         for (StockSignalDaily signal : signals) {
+            // A backfilled signal was computed after its signal date and was not
+            // available to a decision maker on that date. Do not count it as an
+            // observed historical prediction.
+            if ("backfill".equalsIgnoreCase(signal.getGenerationType())) {
+                continue;
+            }
             StockActualResult result = buildActualResult(signal);
             actualResultMapper.upsertActualResult(result);
             results.add(result);

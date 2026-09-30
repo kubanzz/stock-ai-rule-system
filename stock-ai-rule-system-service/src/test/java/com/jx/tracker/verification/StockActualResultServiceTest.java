@@ -66,6 +66,23 @@ class StockActualResultServiceTest {
         assertThat(actualResultMapper.inserted).containsExactly(result);
     }
 
+    @Test
+    void excludesBackfilledSignalsFromHistoricalPredictionVerification() {
+        StockSignalDaily backfilled = StockSignalDaily.builder()
+                .symbol("AAPL")
+                .signalDate(LocalDate.of(2026, 1, 2))
+                .signal(SignalType.BULLISH.getCode())
+                .generationType("backfill")
+                .build();
+        signalMapper.selectResponses.add(List.of(backfilled));
+
+        List<StockActualResult> results = service.verifySignals(
+                LocalDate.of(2026, 1, 2), LocalDate.of(2026, 1, 2));
+
+        assertThat(results).isEmpty();
+        assertThat(actualResultMapper.inserted).isEmpty();
+    }
+
     private StockDailyQuote quote(String symbol, LocalDate tradeDate, String closePrice) {
         return StockDailyQuote.builder()
                 .symbol(symbol)

@@ -71,12 +71,14 @@ public class StockSignalService {
 
     @Transactional
     public StockSignalDaily generateDailySignal(String symbol, LocalDate signalDate, Map<String, Object> factors) {
-        return generateDailySignal(symbol, signalDate, factors, activeStrategy());
+        return generateDailySignal(symbol, signalDate, factors, activeStrategy(), "regular", false);
     }
 
     private StockSignalDaily generateDailySignal(String symbol, LocalDate signalDate,
                                                  Map<String, Object> factors,
-                                                 RuleStrategyDetailDto strategy) {
+                                                 RuleStrategyDetailDto strategy,
+                                                 String generationType,
+                                                 boolean onlyIfMissing) {
         List<RuleDefinition> activeRules = ruleDefinitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>()
                 .eq(RuleDefinition::getStatus, RuleLifecycleStatus.ACTIVE.getCode())
                 .eq(RuleDefinition::getRuleFormat, RuleFormat.DROOLS.getCode())
@@ -120,6 +122,8 @@ public class StockSignalService {
         StockSignalDaily signal = StockSignalDaily.builder()
                 .symbol(symbol)
                 .signalDate(signalDate)
+                .generationType(generationType)
+                .generatedAt(LocalDateTime.now())
                 .signal(signalScore.signal())
                 .signalDirection(signalScore.signalDirection())
                 .signalLevel(signalScore.signalLevel())
@@ -135,7 +139,12 @@ public class StockSignalService {
                 .traceJson(toJson(trace))
                 .build();
 
-        stockSignalDailyMapper.upsertSignal(signal);
+        int inserted = onlyIfMissing
+                ? stockSignalDailyMapper.insertSignalIfAbsent(signal)
+                : stockSignalDailyMapper.upsertSignal(signal);
+        if (onlyIfMissing && inserted == 0) {
+            return null;
+        }
         StockSignalDaily persisted = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                 .eq(StockSignalDaily::getSymbol, symbol)
                 .eq(StockSignalDaily::getSignalDate, signalDate));
@@ -175,8 +184,27 @@ public class StockSignalService {
         return stockFactorDailyMapper.selectList(wrapper)
                 .stream()
                 .map(factor -> generateDailySignal(factor.getSymbol(), factor.getTradeDate(),
-                        readFactors(factor.getFactorJson()), strategy))
+                        readFactors(factor.getFactorJson()), strategy, "regular", false))
                 .toList();
+    }
+
+    /** Backfills only a missing signal; a previously published historical signal is never rewritten. */
+    @Transactional
+    public StockSignalDaily backfillMissingSignalFromFactors(String symbol, LocalDate signalDate,
+                                                             String generationType) {
+        StockSignalDaily existing = getSignal(symbol, signalDate);
+        if (existing != null) {
+            return null;
+        }
+        StockFactorDaily factor = stockFactorDailyMapper.selectOne(new LambdaQueryWrapper<StockFactorDaily>()
+                .eq(StockFactorDaily::getSymbol, symbol)
+                .eq(StockFactorDaily::getTradeDate, signalDate)
+                .last("LIMIT 1"));
+        if (factor == null) {
+            throw new IllegalStateException("缺少因子，无法补算信号：" + symbol + " " + signalDate);
+        }
+        return generateDailySignal(symbol, signalDate, readFactors(factor.getFactorJson()),
+                activeStrategy(), generationType, true);
     }
 
     private RuleStrategyDetailDto activeStrategy() {

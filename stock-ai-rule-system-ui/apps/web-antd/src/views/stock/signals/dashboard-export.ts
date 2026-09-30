@@ -3,14 +3,21 @@ import type { RiskHorizon } from '#/api/stock/risk/types';
 
 import { RISK_DECISION_SUPPORT_NOTICE } from '#/api/stock/risk/types';
 
+import { isHistoricalSignal } from './dashboard-display';
+
 type CsvCell = null | number | string | undefined;
 
 const CSV_HEADERS = [
   '股票代码',
   '名称',
   '价格',
+  '行情交易日',
   '涨跌幅',
   '系统信号',
+  '信号交易日',
+  '信号时效',
+  '信号生成方式',
+  '信号生成时间',
   '看涨分',
   '看跌分',
   '原始信号置信度',
@@ -46,8 +53,12 @@ const CSV_HEADERS = [
 export function buildSignalDashboardCsv(
   rows: SignalDashboardRow[],
   riskHorizon: RiskHorizon,
+  tradeDate?: string,
 ) {
-  return [CSV_HEADERS, ...rows.map((row) => dashboardRow(row, riskHorizon))]
+  return [
+    CSV_HEADERS,
+    ...rows.map((row) => dashboardRow(row, riskHorizon, tradeDate)),
+  ]
     .map((line) => line.map((cell) => escapeCsvCell(cell)).join(','))
     .join('\n');
 }
@@ -55,6 +66,7 @@ export function buildSignalDashboardCsv(
 function dashboardRow(
   row: SignalDashboardRow,
   riskHorizon: RiskHorizon,
+  tradeDate?: string,
 ): CsvCell[] {
   const snapshot = row.riskSnapshot;
   const gate = row.riskGateDecision;
@@ -62,8 +74,13 @@ function dashboardRow(
     row.symbol,
     row.name,
     row.price,
+    row.quoteDate,
     row.changePct,
     row.signalStatus === 'pending' ? '待生成信号' : row.signal,
+    row.signalDate,
+    signalAgeText(row, tradeDate),
+    generationTypeText(row),
+    row.signalGeneratedAt,
     row.bullishScore,
     row.bearishScore,
     row.confidence,
@@ -95,6 +112,19 @@ function dashboardRow(
     row.updatedAt,
     RISK_DECISION_SUPPORT_NOTICE,
   ];
+}
+
+function signalAgeText(row: SignalDashboardRow, tradeDate?: string) {
+  if (row.signalStatus === 'pending') return '待生成';
+  if (isHistoricalSignal(row, tradeDate)) return '历史信号';
+  if (row.signalDate && tradeDate) return '当期信号';
+  return '日期未知';
+}
+
+function generationTypeText(row: SignalDashboardRow) {
+  if (row.generationType === 'backfill') return '历史补算';
+  if (row.generationType === 'regular') return '正常生成';
+  return '未知';
 }
 
 function joinEvidence(

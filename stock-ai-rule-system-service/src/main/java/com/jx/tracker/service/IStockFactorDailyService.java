@@ -10,5 +10,7 @@ public interface IStockFactorDailyService {
 
     StockFactorDailyVo calculateAndSave(TechnicalFactorCalculateRequestDto request);
 
+    StockFactorDailyVo calculateAndSaveFromRealQuotes(TechnicalFactorCalculateRequestDto request);
+
     List<StockFactorDailyVo> calculateAndSaveBatch(List<String> symbols, LocalDate tradeDate);
 }

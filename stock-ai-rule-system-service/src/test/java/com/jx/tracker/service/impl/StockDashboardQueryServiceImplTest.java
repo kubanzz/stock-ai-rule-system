@@ -138,7 +138,6 @@ class StockDashboardQueryServiceImplTest {
         when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000004.SZ", "丁", "A股", "医药")));
         when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(legacy));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
         when(stockDashboardRiskReader.findBySymbols(any(), any(), any(), any())).thenReturn(Map.of(
                 "000004.SZ", new StockDashboardRiskOverlay(snapshot, decision)));
 
@@ -165,7 +164,6 @@ class StockDashboardQueryServiceImplTest {
         when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000004.SZ", "丁", "A股", "医药")));
         when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(signal));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
 
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(DATE, null, 1, 20, "symbol", "asc"));
 
@@ -181,7 +179,6 @@ class StockDashboardQueryServiceImplTest {
         when(stockBaseMapper.selectList(any())).thenReturn(List.of(stock("000004.SZ", "丁", "A股", "医药")));
         when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(signal));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
 
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(DATE, null, 1, 20, "symbol", "asc"));
 
@@ -211,7 +208,6 @@ class StockDashboardQueryServiceImplTest {
                 signal("000001.SZ", DATE, "bullish", "0.60", 1, null)
         ));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
 
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
                 DATE, "A股", "focus", "sz000001", "bullish", "银行",
@@ -228,7 +224,7 @@ class StockDashboardQueryServiceImplTest {
         verify(stockWatchlistItemMapper).selectList(any());
         verify(stockSignalDailyMapper).selectList(any());
         verify(stockDailyQuoteMapper).selectList(any());
-        verify(stockActualResultMapper).selectList(any());
+        verify(stockActualResultMapper, never()).selectList(any());
     }
 
     @Test
@@ -250,7 +246,6 @@ class StockDashboardQueryServiceImplTest {
                 signal("600000.SH", DATE, "watch", "0.70", 1, null)
         ));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
 
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(null, "平安", 1, 20, "symbol", "asc"));
 
@@ -268,7 +263,6 @@ class StockDashboardQueryServiceImplTest {
                 signal("00700.HK", DATE, "bullish", "0.80", 1, null)
         ));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
 
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(new StockConsoleVo.SignalDashboardQuery(
                 DATE, "港股", "all", "00700", null, null, null, null,
@@ -295,7 +289,9 @@ class StockDashboardQueryServiceImplTest {
         ));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of(
                 quote("000001.SZ", "10.25", "1.50", LocalDateTime.of(2026, 7, 10, 15, 10)),
-                quote("000002.SZ", "20.50", "-2.00", LocalDateTime.of(2026, 7, 10, 15, 8))
+                quote("000002.SZ", "20.50", "-2.00", LocalDateTime.of(2026, 7, 10, 15, 8)),
+                quote("000003.SZ", "30.50", "0.20", LocalDateTime.of(2026, 7, 10, 15, 7)),
+                quote("000004.SZ", "40.50", "0.10", LocalDateTime.of(2026, 7, 10, 15, 6))
         ));
         when(stockActualResultMapper.selectList(any())).thenReturn(List.of(
                 actual("000001.SZ", true),
@@ -354,6 +350,121 @@ class StockDashboardQueryServiceImplTest {
     }
 
     @Test
+    void separatesCurrentAndHistoricalSignalsAndExposesEachDataDate() {
+        LocalDateTime backfilledAt = DATE.atTime(18, 30);
+        StockSignalDaily historical = signal(
+                "000001.SZ", DATE.minusDays(1), "bullish", "0.80", 1,
+                DATE.minusDays(1).atTime(17, 0));
+        historical.setGenerationType("backfill");
+        historical.setGeneratedAt(backfilledAt);
+        StockSignalDaily current = signal(
+                "000002.SZ", DATE, "bearish", "0.70", 1, DATE.atTime(18, 0));
+        current.setGenerationType("regular");
+        current.setGeneratedAt(DATE.atTime(18, 0));
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(
+                stock("000001.SZ", "甲", "A股", "银行"),
+                stock("000002.SZ", "乙", "A股", "科技"),
+                stock("000003.SZ", "丙", "A股", "消费")
+        ));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(historical, current));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of(
+                quote("000001.SZ", "10.25", "1.50", DATE.atTime(18, 40)),
+                StockDailyQuote.builder().symbol("000002.SZ")
+                        .tradeDate(DATE.minusDays(1)).closePrice(new BigDecimal("20"))
+                        .syncTime(DATE.minusDays(1).atTime(18, 20)).build()
+        ));
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(
+                query(DATE, null, 1, 20, "symbol", "asc"));
+        Map<String, StockConsoleVo.SignalRow> rows = result.signals().stream()
+                .collect(Collectors.toMap(StockConsoleVo.SignalRow::symbol, Function.identity()));
+        Map<String, StockConsoleVo.MetricCard> metrics = result.metrics().stream()
+                .collect(Collectors.toMap(StockConsoleVo.MetricCard::label, Function.identity()));
+
+        assertThat(rows.get("000001.SZ").signalDate()).isEqualTo(DATE.minusDays(1));
+        assertThat(rows.get("000001.SZ").quoteDate()).isEqualTo(DATE);
+        assertThat(rows.get("000001.SZ").signalFreshness()).isEqualTo("historical");
+        assertThat(rows.get("000001.SZ").signalStatus()).isEqualTo("ready");
+        assertThat(rows.get("000001.SZ").generationType()).isEqualTo("backfill");
+        assertThat(rows.get("000001.SZ").signalGeneratedAt()).isEqualTo(backfilledAt);
+        assertThat(rows.get("000002.SZ").signalDate()).isEqualTo(DATE);
+        assertThat(rows.get("000002.SZ").signalFreshness()).isEqualTo("historical");
+        assertThat(rows.get("000002.SZ").quoteDate()).isEqualTo(DATE.minusDays(1));
+        assertThat(rows.get("000003.SZ").signalFreshness()).isEqualTo("missing");
+        assertThat(rows.get("000003.SZ").signalDate()).isNull();
+        assertThat(rows.get("000003.SZ").signalStatus()).isEqualTo("pending");
+        assertThat(metrics.get("产生信号").value()).isEqualByComparingTo("0");
+        assertThat(metrics.get("看涨").value()).isEqualByComparingTo("0");
+        assertThat(metrics.get("看跌").value()).isEqualByComparingTo("0");
+        assertThat(metrics.get("历史信号").value()).isEqualByComparingTo("2");
+        assertThat(result.latestSignalDate()).isEqualTo(DATE);
+        assertThat(result.signalUpdatedAt()).isEqualTo(backfilledAt);
+        assertThat(result.quoteUpdatedAt()).isEqualTo(DATE.atTime(18, 40));
+    }
+
+    @Test
+    void excludesSameDateSignalWhenQuoteIsIncompleteOrMock() {
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(
+                stock("000001.SZ", "甲", "A股", "银行"),
+                stock("000002.SZ", "乙", "A股", "科技")
+        ));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(
+                signal("000001.SZ", DATE, "bullish", "0.80", 1, null),
+                signal("000002.SZ", DATE, "bearish", "0.80", 1, null)
+        ));
+        StockDailyQuote incomplete = quote("000001.SZ", "10.25", "1.50", DATE.atTime(18, 0));
+        incomplete.setVolume(null);
+        StockDailyQuote mock = quote("000002.SZ", "20.25", "-1.50", DATE.atTime(18, 0));
+        mock.setDataSource("mock");
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of(incomplete, mock));
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(
+                query(DATE, null, 1, 20, "symbol", "asc"));
+        assertThat(result.signals()).extracting(StockConsoleVo.SignalRow::signalFreshness)
+                .containsExactly("historical", "historical");
+        assertThat(result.metrics()).filteredOn(card -> "产生信号".equals(card.label()))
+                .singleElement().extracting(StockConsoleVo.MetricCard::value)
+                .isEqualTo(BigDecimal.ZERO);
+        assertThat(result.metrics()).filteredOn(card -> "历史信号".equals(card.label()))
+                .singleElement().extracting(StockConsoleVo.MetricCard::value)
+                .isEqualTo(new BigDecimal("2"));
+        verify(stockActualResultMapper, never()).selectList(any());
+    }
+
+    @Test
+    void keepsOldSignalVisibleButExcludesItFromCurrentMetricsAndHitRate() {
+        LocalDate signalDate = DATE.minusDays(1);
+        when(stockBaseMapper.selectList(any())).thenReturn(List.of(
+                stock("000001.SZ", "甲", "A股", "银行")));
+        when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(
+                signal("000001.SZ", signalDate, "bullish", "0.80", 1,
+                        signalDate.atTime(18, 0))));
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of(
+                quote("000001.SZ", "10.25", "1.50", DATE.atTime(18, 10))));
+
+        StockConsoleVo.SignalDashboardOverview result = service.dashboard(
+                query(DATE, null, 1, 20, "symbol", "asc"));
+        Map<String, StockConsoleVo.MetricCard> metrics = result.metrics().stream()
+                .collect(Collectors.toMap(StockConsoleVo.MetricCard::label, Function.identity()));
+
+        assertThat(result.signals()).singleElement().satisfies(row -> {
+            assertThat(row.signal()).isEqualTo("bullish");
+            assertThat(row.signalDate()).isEqualTo(signalDate);
+            assertThat(row.quoteDate()).isEqualTo(DATE);
+            assertThat(row.signalFreshness()).isEqualTo("historical");
+            assertThat(row.signalGeneratedAt()).isNull();
+        });
+        assertThat(metrics.get("产生信号").value()).isEqualByComparingTo("0");
+        assertThat(metrics.get("看涨").value()).isEqualByComparingTo("0");
+        assertThat(metrics.get("历史信号").value()).isEqualByComparingTo("1");
+        assertThat(metrics.get("命中率（5日）").value()).isNull();
+        assertThat(result.latestSignalDate()).isEqualTo(signalDate);
+        assertThat(result.signalUpdatedAt()).isNull();
+        assertThat(result.quoteUpdatedAt()).isEqualTo(DATE.atTime(18, 10));
+        verify(stockActualResultMapper, never()).selectList(any());
+    }
+
+    @Test
     void preservesNullScoresAndIncludesActualResultInDataUpdatedAt() {
         LocalDateTime actualCreatedTime = LocalDateTime.of(2026, 7, 10, 16, 0);
         when(stockBaseMapper.selectList(any())).thenReturn(List.of(
@@ -365,7 +476,8 @@ class StockDashboardQueryServiceImplTest {
                 .signal("watch")
                 .createdTime(LocalDateTime.of(2026, 7, 10, 15, 0))
                 .build()));
-        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of(
+                quote("000001.SZ", "10.25", "1.50", DATE.atTime(15, 0))));
         when(stockActualResultMapper.selectList(any())).thenReturn(List.of(StockActualResult.builder()
                 .symbol("000001.SZ")
                 .signalDate(DATE)
@@ -447,7 +559,6 @@ class StockDashboardQueryServiceImplTest {
                 signal("000001.SZ", DATE, "bullish", "0.80", 1, null)
         ));
         when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
-        when(stockActualResultMapper.selectList(any())).thenReturn(List.of());
 
         StockConsoleVo.SignalDashboardOverview result = service.dashboard(query(
                 DATE, null, Integer.MAX_VALUE, 100, "confidence", "desc"
@@ -463,7 +574,8 @@ class StockDashboardQueryServiceImplTest {
         when(stockSignalDailyMapper.selectList(any())).thenReturn(List.of(
                 signal("000001.SZ", DATE, "bullish", "0.80", 1, null)
         ));
-        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of());
+        when(stockDailyQuoteMapper.selectList(any())).thenReturn(List.of(
+                quote("000001.SZ", "10.25", "1.50", DATE.atTime(15, 0))));
         when(stockActualResultMapper.selectList(any())).thenReturn(List.of(
                 StockActualResult.builder().symbol("000001.SZ").signalDate(DATE).hit5d(null).build()
         ));
@@ -552,10 +664,16 @@ class StockDashboardQueryServiceImplTest {
     }
 
     private StockDailyQuote quote(String symbol, String price, String changePct, LocalDateTime syncTime) {
+        BigDecimal close = new BigDecimal(price);
         return StockDailyQuote.builder()
                 .symbol(symbol)
                 .tradeDate(DATE)
-                .closePrice(new BigDecimal(price))
+                .openPrice(close)
+                .highPrice(close)
+                .lowPrice(close)
+                .closePrice(close)
+                .volume(BigDecimal.ONE)
+                .dataSource("test")
                 .changePct(new BigDecimal(changePct))
                 .syncTime(syncTime)
                 .build();

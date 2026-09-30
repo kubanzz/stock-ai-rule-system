@@ -90,8 +90,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             candidates = restrictToPool(candidates, query);
         }
         if (candidates.isEmpty()) {
-            return overview(query, query.date(), List.of(), metrics(0, List.of(), List.of()),
-                    0, availableIndustries, null,
+            return overview(query, query.date(), List.of(), metrics(0, List.of(), List.of(), List.of()),
+                    0, availableIndustries, null, null, null, null,
                     stockMarketContextService.marketContext(query, query.date(), candidates));
         }
 
@@ -141,11 +141,19 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                         StockDashboardQueryServiceImpl::newerQuote,
                         LinkedHashMap::new
                 ));
-        List<StockSignalDaily> readySignals = signalsBySymbol.values().stream()
+        List<StockSignalDaily> availableSignals = signalsBySymbol.values().stream()
                 .filter(this::isReadySignal)
+                .toList();
+        List<StockSignalDaily> readySignals = availableSignals.stream()
                 .filter(signal -> matchesSignalAndConfidence(signal, query))
                 .toList();
-        List<String> signalSymbols = readySignals.stream()
+        List<StockSignalDaily> currentSignals = readySignals.stream()
+                .filter(signal -> isCurrentSignal(signal, quotesBySymbol, tradeDate))
+                .toList();
+        List<StockSignalDaily> historicalSignals = readySignals.stream()
+                .filter(signal -> !isCurrentSignal(signal, quotesBySymbol, tradeDate))
+                .toList();
+        List<String> signalSymbols = currentSignals.stream()
                 .map(StockSignalDaily::getSymbol)
                 .map(SymbolNormalizer::normalize)
                 .distinct()
@@ -154,10 +162,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         List<StockActualResult> actualResults = tradeDate == null || signalSymbols.isEmpty()
                 ? List.of()
                 : stockActualResultMapper.selectList(new LambdaQueryWrapper<StockActualResult>()
-                .le(StockActualResult::getSignalDate, tradeDate)
+                .eq(StockActualResult::getSignalDate, tradeDate)
                 .in(StockActualResult::getSymbol, signalSymbols));
         List<StockActualResult> filteredActualResults = actualResults.stream()
-                .filter(result -> result.getSignalDate() != null && !result.getSignalDate().isAfter(tradeDate))
+                .filter(result -> tradeDate.equals(result.getSignalDate()))
                 .filter(result -> signalSymbolSet.contains(SymbolNormalizer.normalize(result.getSymbol())))
                 .toList();
 
@@ -165,7 +173,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .map(stock -> {
                     String symbol = SymbolNormalizer.normalize(stock.getSymbol());
                     StockSignalDaily signal = signalsBySymbol.get(symbol);
-                    return toRow(signal, stock, quotesBySymbol.get(symbol));
+                    return toRow(signal, stock, quotesBySymbol.get(symbol), tradeDate);
                 })
                 .filter(row -> matchesRow(row, query))
                 .sorted(rowComparator(query.sortField(), query.sortOrder()))
@@ -174,13 +182,27 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         int fromIndex = (int) Math.min(requestedOffset, rows.size());
         int toIndex = Math.min(fromIndex + query.pageSize(), rows.size());
         LocalDateTime dataUpdatedAt = latestUpdate(readySignals, quotesBySymbol.values(), filteredActualResults);
+        LocalDate latestSignalDate = availableSignals.stream()
+                .map(StockSignalDaily::getSignalDate)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
+        LocalDateTime signalUpdatedAt = availableSignals.stream()
+                .map(this::signalGeneratedAt)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
+        LocalDateTime quoteUpdatedAt = quotesBySymbol.values().stream()
+                .map(StockDailyQuote::getSyncTime)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElse(null);
 
         List<StockConsoleVo.SignalRow> pageRows = rows.subList(fromIndex, toIndex);
         List<StockConsoleVo.SignalRow> riskRows = attachRisk(
-                pageRows, signalsBySymbol, tradeDate, query.riskHorizon());
+                pageRows, tradeDate, query.riskHorizon());
         return overview(query, tradeDate, riskRows,
-                metrics(candidates.size(), readySignals, filteredActualResults), rows.size(),
-                availableIndustries, dataUpdatedAt,
+                metrics(candidates.size(), currentSignals, historicalSignals, filteredActualResults), rows.size(),
+                availableIndustries, dataUpdatedAt, latestSignalDate, signalUpdatedAt, quoteUpdatedAt,
                 stockMarketContextService.marketContext(query, tradeDate, candidates));
     }
 
@@ -245,6 +267,9 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             long total,
             List<String> availableIndustries,
             LocalDateTime dataUpdatedAt,
+            LocalDate latestSignalDate,
+            LocalDateTime signalUpdatedAt,
+            LocalDateTime quoteUpdatedAt,
             StockConsoleVo.MarketContext marketContext
     ) {
         return new StockConsoleVo.SignalDashboardOverview(
@@ -258,12 +283,18 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 query.pageSize(),
                 availableIndustries,
                 dataUpdatedAt,
-                query.riskHorizon()
+                query.riskHorizon(),
+                latestSignalDate,
+                signalUpdatedAt,
+                quoteUpdatedAt
         );
     }
 
-    private StockConsoleVo.SignalRow toRow(StockSignalDaily signal, StockBase stock, StockDailyQuote quote) {
+    private StockConsoleVo.SignalRow toRow(
+            StockSignalDaily signal, StockBase stock, StockDailyQuote quote, LocalDate tradeDate) {
         boolean ready = isReadySignal(signal);
+        String freshness = !ready ? "missing"
+                : isCurrentSignal(signal, quote, tradeDate) ? "current" : "historical";
         return new StockConsoleVo.SignalRow(
                 SymbolNormalizer.normalize(stock.getSymbol()),
                 stock.getName(),
@@ -276,15 +307,21 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 ready ? signal.getConfidence() : null,
                 ready ? triggeredRuleCount(signal.getTriggeredRules()) : 0,
                 ready ? "3-5日" : null,
-                max(ready ? signal.getCreatedTime() : null, quote == null ? null : quote.getSyncTime()),
+                max(ready ? signalRecordUpdatedAt(signal) : null, quote == null ? null : quote.getSyncTime()),
                 ready ? "ready" : PENDING_SIGNAL,
-                quote == null ? PENDING_SIGNAL : "ready"
+                quote == null ? PENDING_SIGNAL : "ready",
+                ready ? signal.getSignalDate() : null,
+                quote == null ? null : quote.getTradeDate(),
+                ready ? signalGeneratedAt(signal) : null,
+                freshness,
+                ready ? signal.getGenerationType() : null,
+                null,
+                null
         );
     }
 
     private List<StockConsoleVo.SignalRow> attachRisk(
             List<StockConsoleVo.SignalRow> rows,
-            Map<String, StockSignalDaily> signalsBySymbol,
             LocalDate tradeDate,
             RiskHorizon horizon
     ) {
@@ -295,20 +332,19 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         Map<String, StockDashboardRiskOverlay> overlays = stockDashboardRiskReader.findBySymbols(
                 tradeDate, horizon, symbols, LocalDateTime.now());
         Map<String, StockDashboardRiskOverlay> safeOverlays = overlays == null ? Map.of() : overlays;
-        return rows.stream().map(row -> withRisk(
-                row, signalsBySymbol.get(row.symbol()), safeOverlays.get(row.symbol()))).toList();
+        return rows.stream().map(row -> withRisk(row, safeOverlays.get(row.symbol()))).toList();
     }
 
     private StockConsoleVo.SignalRow withRisk(
             StockConsoleVo.SignalRow row,
-            StockSignalDaily persistedSignal,
             StockDashboardRiskOverlay overlay
     ) {
         return new StockConsoleVo.SignalRow(
-                row.symbol(), row.name(), row.price(), row.changePct(), displaySignal(persistedSignal),
+                row.symbol(), row.name(), row.price(), row.changePct(), row.signal(),
                 row.bullishScore(), row.bearishScore(), row.riskScore(), row.confidence(),
                 row.triggeredRuleCount(), row.suggestedPeriod(), row.updatedAt(),
-                row.signalStatus(), row.quoteStatus(),
+                row.signalStatus(), row.quoteStatus(), row.signalDate(), row.quoteDate(),
+                row.signalGeneratedAt(), row.signalFreshness(), row.generationType(),
                 overlay == null ? null : overlay.snapshot(),
                 overlay == null ? null : overlay.gateDecision());
     }
@@ -373,15 +409,45 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 && SUPPORTED_SIGNALS.contains(signal.getSignal());
     }
 
+    private boolean isCurrentSignal(
+            StockSignalDaily signal,
+            Map<String, StockDailyQuote> quotesBySymbol,
+            LocalDate tradeDate
+    ) {
+        return isCurrentSignal(signal,
+                quotesBySymbol.get(SymbolNormalizer.normalize(signal.getSymbol())), tradeDate);
+    }
+
+    private boolean isCurrentSignal(
+            StockSignalDaily signal,
+            StockDailyQuote quote,
+            LocalDate tradeDate
+    ) {
+        return signal != null && tradeDate != null
+                && tradeDate.equals(signal.getSignalDate())
+                && completeRealQuote(quote)
+                && tradeDate.equals(quote.getTradeDate());
+    }
+
+    private boolean completeRealQuote(StockDailyQuote quote) {
+        return quote != null && quote.getClosePrice() != null
+                && quote.getOpenPrice() != null && quote.getHighPrice() != null
+                && quote.getLowPrice() != null && quote.getVolume() != null
+                && quote.getVolume().compareTo(BigDecimal.ZERO) > 0
+                && StringUtils.hasText(quote.getDataSource())
+                && !"mock".equalsIgnoreCase(quote.getDataSource());
+    }
+
     private List<StockConsoleVo.MetricCard> metrics(
             int candidateCount,
-            List<StockSignalDaily> signals,
+            List<StockSignalDaily> currentSignals,
+            List<StockSignalDaily> historicalSignals,
             List<StockActualResult> actualResults
     ) {
-        long bullish = countSignal(signals, SignalType.BULLISH.getCode());
-        long bearish = countSignal(signals, SignalType.BEARISH.getCode());
-        long watch = countSignal(signals, SignalType.WATCH.getCode());
-        long highRisk = countSignal(signals, SignalType.HIGH_RISK.getCode());
+        long bullish = countSignal(currentSignals, SignalType.BULLISH.getCode());
+        long bearish = countSignal(currentSignals, SignalType.BEARISH.getCode());
+        long watch = countSignal(currentSignals, SignalType.WATCH.getCode());
+        long highRisk = countSignal(currentSignals, SignalType.HIGH_RISK.getCode());
         List<Boolean> hit5dSamples = actualResults.stream()
                 .map(StockActualResult::getHit5d)
                 .filter(Objects::nonNull)
@@ -393,7 +459,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .divide(BigDecimal.valueOf(hit5dSamples.size()), 2, RoundingMode.HALF_UP);
         return List.of(
                 metric("关注股票", candidateCount, "只", "blue"),
-                metric("产生信号", signals.size(), "条", "cyan"),
+                metric("产生信号", currentSignals.size(), "条", "cyan"),
+                metric("历史信号", historicalSignals.size(), "条", "orange"),
                 metric("看涨", bullish, "条", "green"),
                 metric("看跌", bearish, "条", "red"),
                 metric("观望", watch, "条", "gold"),
@@ -442,10 +509,18 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             List<StockActualResult> actualResults
     ) {
         List<LocalDateTime> updates = new ArrayList<>();
-        signals.stream().map(StockSignalDaily::getCreatedTime).filter(Objects::nonNull).forEach(updates::add);
+        signals.stream().map(this::signalRecordUpdatedAt).filter(Objects::nonNull).forEach(updates::add);
         quotes.stream().map(StockDailyQuote::getSyncTime).filter(Objects::nonNull).forEach(updates::add);
         actualResults.stream().map(StockActualResult::getCreatedTime).filter(Objects::nonNull).forEach(updates::add);
         return updates.stream().max(Comparator.naturalOrder()).orElse(null);
+    }
+
+    private LocalDateTime signalGeneratedAt(StockSignalDaily signal) {
+        return signal.getGeneratedAt();
+    }
+
+    private LocalDateTime signalRecordUpdatedAt(StockSignalDaily signal) {
+        return signal.getGeneratedAt() != null ? signal.getGeneratedAt() : signal.getCreatedTime();
     }
 
     private static StockDailyQuote newerQuote(StockDailyQuote first, StockDailyQuote second) {

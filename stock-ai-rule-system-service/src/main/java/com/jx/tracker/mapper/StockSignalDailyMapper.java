@@ -13,17 +13,20 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
 
     @Insert("""
             INSERT INTO stock_signal_daily (
-                symbol, signal_date, `signal`, signal_direction, signal_level,
+                symbol, signal_date, generation_type, generated_at, `signal`, signal_direction, signal_level,
                 bullish_score, bearish_score, risk_score, confidence, triggered_rules,
                 explanation, risk_disclaimer, trace_json
             ) VALUES (
                 #{signalRecord.symbol}, #{signalRecord.signalDate},
+                #{signalRecord.generationType}, #{signalRecord.generatedAt},
                 #{signalRecord.signal}, #{signalRecord.signalDirection}, #{signalRecord.signalLevel},
                 #{signalRecord.bullishScore}, #{signalRecord.bearishScore}, #{signalRecord.riskScore},
                 #{signalRecord.confidence}, #{signalRecord.triggeredRules}, #{signalRecord.explanation},
                 #{signalRecord.riskDisclaimer}, #{signalRecord.traceJson}
             ) ON DUPLICATE KEY UPDATE
                 `signal` = VALUES(`signal`),
+                generation_type = VALUES(generation_type),
+                generated_at = VALUES(generated_at),
                 signal_direction = VALUES(signal_direction),
                 signal_level = VALUES(signal_level),
                 bullish_score = VALUES(bullish_score),
@@ -36,6 +39,22 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
                 trace_json = VALUES(trace_json)
             """)
     int upsertSignal(@Param("signalRecord") StockSignalDaily signal);
+
+    @Insert("""
+            INSERT IGNORE INTO stock_signal_daily (
+                symbol, signal_date, generation_type, generated_at, `signal`, signal_direction, signal_level,
+                bullish_score, bearish_score, risk_score, confidence, triggered_rules,
+                explanation, risk_disclaimer, trace_json
+            ) VALUES (
+                #{signalRecord.symbol}, #{signalRecord.signalDate},
+                #{signalRecord.generationType}, #{signalRecord.generatedAt},
+                #{signalRecord.signal}, #{signalRecord.signalDirection}, #{signalRecord.signalLevel},
+                #{signalRecord.bullishScore}, #{signalRecord.bearishScore}, #{signalRecord.riskScore},
+                #{signalRecord.confidence}, #{signalRecord.triggeredRules},
+                #{signalRecord.explanation}, #{signalRecord.riskDisclaimer}, #{signalRecord.traceJson}
+            )
+            """)
+    int insertSignalIfAbsent(@Param("signalRecord") StockSignalDaily signal);
 
     @Insert("""
             INSERT INTO stock_signal_daily_history (
