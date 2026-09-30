@@ -1,0 +1,38 @@
+{
+  "created_utc": "2026-09-30T10:08:49.672968+00:00",
+  "purpose": "development data integrity and survivorship-bias audit; no outcome analysis",
+  "library": "baostock==0.9.4",
+  "library_url": "https://pypi.org/project/baostock/0.9.4/",
+  "query": {
+    "function": "query_history_k_data_plus",
+    "fields": "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus,isST",
+    "start_date": "2019-01-01",
+    "end_date": "2026-09-29",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "assignment_sha256": "1012e8d80cc4d12072fb1d6b0a2aa3cf9f78e0a61eb6bebb3defd33a464aac74",
+  "assigned_symbols": 192,
+  "symbols_with_rows": 192,
+  "rows": 206555,
+  "first_date": "2019-01-02",
+  "last_date": "2026-07-16",
+  "status_counts": {
+    "tradestatus=1,isST=0": 128096,
+    "tradestatus=0,isST=0": 1827,
+    "tradestatus=1,isST=1": 67155,
+    "tradestatus=0,isST=1": 9477
+  },
+  "fetch_errors": {},
+  "sha256": {
+    "delisted_unadjusted_baostock.csv": "38236e47c7925fd121cf920ec2dcdab5d1e78c8cf17ee05c210921d66e2b784c",
+    "delisted_baostock_coverage.csv": "9dc8953f392862ea9c0d5f8a1a6e74ea00a953e3e60c28bcd682cbdab6fd2dfe"
+  },
+  "field_caveats": [
+    "adjustflag=3 yields unadjusted historical prices; corporate actions need separate treatment for event-day returns.",
+    "tradestatus=0 rows are retained; they must not be modeled as executable trades.",
+    "isST is source-reported per-day status, not independently verified against exchange records.",
+    "Source list contains only 2019-2026 terminal dates; it does not constitute a full historical point-in-time A-share universe."
+  ],
+  "sealed_validation_access": "none"
+}

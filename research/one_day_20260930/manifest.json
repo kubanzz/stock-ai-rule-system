@@ -1,0 +1,43 @@
+{
+  "generated_utc": "2026-09-30T06:52:31.285492+00:00",
+  "source": "http://127.0.0.1:8090/api/public/stock_zh_a_daily",
+  "adjust": "qfq",
+  "request_period": [
+    "20230101",
+    "20260929"
+  ],
+  "universe_source": "http://127.0.0.1:8090/api/public/stock_info_a_code_name",
+  "universe_method": "Current non-ST/non-delisting A-share snapshot; stratified by five listing boards; Python random.Random seed 20260930; seven locally-covered stocks forcibly included.",
+  "universe_seed": 20260930,
+  "stratum_targets": {
+    "SZ-main": 40,
+    "SH-main": 40,
+    "ChiNext": 30,
+    "STAR": 30,
+    "BJ": 20
+  },
+  "requested_symbols": 166,
+  "successful_symbols": 166,
+  "failed_symbols": {},
+  "rows": 142765,
+  "first_date": "2023-01-03",
+  "last_date": "2026-09-29",
+  "min_bars_per_symbol": 127,
+  "median_bars_per_symbol": 907,
+  "symbols_with_at_least_750_bars": 151,
+  "unique_dates": 907,
+  "duplicate_symbol_dates": 0,
+  "skipped_anomalous_rows": {
+    "688693.SH": [
+      "2026-03-16: nonpositive OHLCV, likely suspension if volume=amount=0"
+    ]
+  },
+  "data_sha256": "fed79b170894f7e19d23e74b661978908f78b60a7edeb70fd762bdb1dc9691b2",
+  "biases": [
+    "2026-09-30 current listed and current non-ST names only; delisted and current ST stocks excluded, so survivorship and status-selection bias remain.",
+    "The list is not a historical constituent snapshot. The same fixed sample is used for all dates; validate results on a true point-in-time universe before production activation.",
+    "QFQ prices can be retrospectively revised after corporate actions. Whole-history adjustment used here is research-only; production feature generation needs as-of-date adjustment snapshots.",
+    "Untradeable next opens from suspensions/limit-up must be excluded in execution analysis, not treated as filled orders.",
+    "Rows with zero volume/amount are skipped and reported; a gap in one stock's dates can indicate suspension. Execution analysis must use the market calendar to avoid treating the next listed bar as the next trading day."
+  ]
+}

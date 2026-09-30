@@ -1,0 +1,78 @@
+{
+  "purpose": "coverage only; no outcomes or forward quote labels",
+  "source_sha256": "38236e47c7925fd121cf920ec2dcdab5d1e78c8cf17ee05c210921d66e2b784c",
+  "assignment_sha256": "1012e8d80cc4d12072fb1d6b0a2aa3cf9f78e0a61eb6bebb3defd33a464aac74",
+  "raw_rows": 206555,
+  "traded_valid_rows": 195251,
+  "normal_filter_eligible_rows_before_isST": 38050,
+  "normal_filter_eligible_ST_rows_excluded": 7023,
+  "normal_and_nonST_rows": 31027,
+  "normal_and_nonST_symbols": 130,
+  "normal_and_nonST_dates": 1415,
+  "by_year": {
+    "2019": {
+      "trading_rows": 43755,
+      "normal_filter_eligible_rows_before_isST": 0,
+      "normal_and_nonST_rows": 0,
+      "normal_and_nonST_symbols": 0,
+      "normal_and_nonST_dates": 0
+    },
+    "2020": {
+      "trading_rows": 40178,
+      "normal_filter_eligible_rows_before_isST": 9015,
+      "normal_and_nonST_rows": 8299,
+      "normal_and_nonST_symbols": 115,
+      "normal_and_nonST_dates": 236
+    },
+    "2021": {
+      "trading_rows": 37432,
+      "normal_filter_eligible_rows_before_isST": 7940,
+      "normal_and_nonST_rows": 6199,
+      "normal_and_nonST_symbols": 81,
+      "normal_and_nonST_dates": 243
+    },
+    "2022": {
+      "trading_rows": 31112,
+      "normal_filter_eligible_rows_before_isST": 9134,
+      "normal_and_nonST_rows": 7356,
+      "normal_and_nonST_symbols": 86,
+      "normal_and_nonST_dates": 242
+    },
+    "2023": {
+      "trading_rows": 23133,
+      "normal_filter_eligible_rows_before_isST": 8043,
+      "normal_and_nonST_rows": 6575,
+      "normal_and_nonST_symbols": 73,
+      "normal_and_nonST_dates": 242
+    },
+    "2024": {
+      "trading_rows": 13168,
+      "normal_filter_eligible_rows_before_isST": 2527,
+      "normal_and_nonST_rows": 2033,
+      "normal_and_nonST_symbols": 44,
+      "normal_and_nonST_dates": 231
+    },
+    "2025": {
+      "trading_rows": 5418,
+      "normal_filter_eligible_rows_before_isST": 1377,
+      "normal_and_nonST_rows": 562,
+      "normal_and_nonST_symbols": 15,
+      "normal_and_nonST_dates": 218
+    },
+    "2026": {
+      "trading_rows": 1055,
+      "normal_filter_eligible_rows_before_isST": 14,
+      "normal_and_nonST_rows": 3,
+      "normal_and_nonST_symbols": 1,
+      "normal_and_nonST_dates": 3
+    }
+  },
+  "qualification": "The filter only uses T-or-earlier traded bars, source reported T-day isST, and fixed delisting metadata. Suspended bars do not count as traded history. This is coverage, not a prediction result.",
+  "limitations": [
+    "The 192-symbol list covers records with terminal dates 2019-2026, not all historically traded A shares.",
+    "BaoStock isST/tradestatus are source-reported and have not been independently checked against exchange records.",
+    "Unadjusted prices across corporate action dates can distort rolling close return/volatility qualification; adjustment-event detection is needed before performance evaluation.",
+    "Observed-history bar count is not calendar listing age; a full point-in-time universe still requires active and delisted names."
+  ],
+  "sealed_validation_access": "none"
+}

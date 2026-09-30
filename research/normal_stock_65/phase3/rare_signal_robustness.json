@@ -1,0 +1,121 @@
+{
+  "development_only": true,
+  "sealed_validation_read": false,
+  "conditions": [
+    "normal_universe_eligible",
+    "risk_status = normal",
+    "exchange = SZ",
+    "open_gap >= 0.01",
+    "index_close_position <= 0.2"
+  ],
+  "fit_years_observed": [
+    2023
+  ],
+  "fit_correct": 107,
+  "fit_predictions": 147,
+  "exposed_diagnostic_years": [
+    2024,
+    2025,
+    2026
+  ],
+  "top_dates": [
+    {
+      "entry_date": "2024-12-11",
+      "correct": 106,
+      "predictions": 119
+    },
+    {
+      "entry_date": "2025-01-24",
+      "correct": 53,
+      "predictions": 55
+    },
+    {
+      "entry_date": "2024-11-11",
+      "correct": 33,
+      "predictions": 41
+    },
+    {
+      "entry_date": "2025-10-15",
+      "correct": 20,
+      "predictions": 26
+    },
+    {
+      "entry_date": "2024-09-26",
+      "correct": 24,
+      "predictions": 24
+    },
+    {
+      "entry_date": "2025-02-06",
+      "correct": 22,
+      "predictions": 22
+    },
+    {
+      "entry_date": "2024-11-19",
+      "correct": 11,
+      "predictions": 17
+    },
+    {
+      "entry_date": "2026-08-03",
+      "correct": 15,
+      "predictions": 16
+    },
+    {
+      "entry_date": "2026-05-22",
+      "correct": 14,
+      "predictions": 16
+    },
+    {
+      "entry_date": "2025-02-05",
+      "correct": 7,
+      "predictions": 16
+    }
+  ],
+  "remove_n_busiest_dates": {
+    "0": {
+      "correct": 548,
+      "predictions": 840,
+      "accuracy": 0.65238
+    },
+    "1": {
+      "correct": 442,
+      "predictions": 721,
+      "accuracy": 0.61304
+    },
+    "2": {
+      "correct": 389,
+      "predictions": 666,
+      "accuracy": 0.58408
+    },
+    "3": {
+      "correct": 356,
+      "predictions": 625,
+      "accuracy": 0.5696
+    },
+    "5": {
+      "correct": 312,
+      "predictions": 575,
+      "accuracy": 0.54261
+    },
+    "10": {
+      "correct": 243,
+      "predictions": 488,
+      "accuracy": 0.49795
+    }
+  },
+  "date_cluster_bootstrap": {
+    "resamples": 10000,
+    "seed": 20260930,
+    "percentile_95": [
+      0.53968,
+      0.64811,
+      0.73441
+    ],
+    "fraction_at_least_65_percent": 0.4861
+  },
+  "source_sha256": {
+    "old166": "fed79b170894f7e19d23e74b661978908f78b60a7edeb70fd762bdb1dc9691b2",
+    "external250": "97d8336bd7a338ee11afc7f0446744cff8fb3e3f9ca68e146ebdbc31eaedb1c4",
+    "development200": "9a3c55e012363b9b8695b3bd5952125b867989b7144203cbbf32d672b7727fdb"
+  },
+  "hs300_sha256": "45152bfcca5f76305994ce98e789f5ecf9afa9049e084fb97a75be687365ab1c"
+}

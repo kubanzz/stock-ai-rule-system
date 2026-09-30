@@ -1,0 +1,14 @@
+up shortlist 1
+change_pct_5d <= -0.07 AND range_pct >= 0.04 | train_2024:0.590/271 validate_2025:0.586/152 develop_2026:0.473/332
+down shortlist 64
+rsi14 >= 75 AND return_1d >= 0.01 | train_2024:0.577/137 validate_2025:0.620/208 develop_2026:0.681/116
+rsi14 >= 75 AND intraday_return >= 0.01 | train_2024:0.554/139 validate_2025:0.620/208 develop_2026:0.672/116
+rsi14 >= 70 AND return_1d >= 0.01 | train_2024:0.559/236 validate_2025:0.588/352 develop_2026:0.597/233
+close_position >= 0.3 AND range_pct >= 0.06 | train_2024:0.556/196 validate_2025:0.597/226 develop_2026:0.559/261
+rsi14 >= 70 AND return_20d >= 0.15 | train_2024:0.569/160 validate_2025:0.611/226 develop_2026:0.585/106
+open_gap >= 0.01 AND distance_ma5 >= 0.01 | train_2024:0.559/161 validate_2025:0.591/159 develop_2026:0.553/188
+return_20d >= 0.15 AND open_gap >= 0 | train_2024:0.580/174 validate_2025:0.581/186 develop_2026:0.573/103
+return_20d >= 0.15 AND exchange = SZ | train_2024:0.619/105 validate_2025:0.588/194 develop_2026:0.570/100
+return_20d >= 0.15 AND close_position >= 0.2 | train_2024:0.571/245 validate_2025:0.582/297 develop_2026:0.542/177
+return_1d >= 0 AND return_20d >= 0.15 | train_2024:0.557/176 validate_2025:0.624/226 develop_2026:0.550/131
+wrote research/normal_stock_65/search_results.json

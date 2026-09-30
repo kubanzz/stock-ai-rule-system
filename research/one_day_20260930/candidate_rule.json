@@ -1,0 +1,23 @@
+{
+  "conditions": [
+    {
+      "field": "volume_ratio_5d",
+      "operator": "lte",
+      "value": 1.0
+    },
+    {
+      "field": "change_pct_5d",
+      "operator": "lte",
+      "value": -0.1
+    },
+    {
+      "field": "risk_status",
+      "operator": "eq",
+      "value": "normal"
+    }
+  ],
+  "actions": {
+    "bullish_score": 100,
+    "explanation": "研究候选：T日5日跌幅至少10%、5日量比不高于1且风险状态正常；2026冻结测试净胜率44.08%（372/844），Wilson95下界40.76%，净均收益-0.562%，另有1次疑似无法卖出；生产闸门失败。仅供辅助决策研究，不保证收益。"
+  }
+}

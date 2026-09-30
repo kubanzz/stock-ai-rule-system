@@ -1,0 +1,149 @@
+{
+  "purpose": "fixed-rule stress test only; no rule selection or threshold change",
+  "source_sha256": "38236e47c7925fd121cf920ec2dcdab5d1e78c8cf17ee05c210921d66e2b784c",
+  "index_sha256": "45152bfcca5f76305994ce98e789f5ecf9afa9049e084fb97a75be687365ab1c",
+  "frozen_rule_source_sha256": "58f9c7de4cad687b24d3814b41707bee0d9694c6090fa344307fa5d6393f8401",
+  "calendar": "union of HS300 dates and BaoStock dates with >=10 trading delisted constituents; date-only gate",
+  "eligibility": "mainboard_liquid_stable_v1, source isST=0 and tradestatus=1 at T, exact project risk_status=normal",
+  "prediction": "T close -> T+1 open to T+2 open strict sign; missing or suspended entry/exit counts incorrect",
+  "rules": {
+    "up": {
+      "condition": "open_gap >= 0.01 AND index_close_position <= 0.2 AND exchange = SZ",
+      "all": {
+        "predictions": 39,
+        "correct": 28,
+        "accuracy": 0.71795,
+        "wilson95_lower": 0.56225,
+        "symbols": 21,
+        "signal_dates": 26,
+        "unobservable": 0,
+        "top_symbol_share": 0.12821,
+        "top_date_share": 0.23077,
+        "market_phase_2024_26": 10
+      },
+      "by_year": {
+        "2023": {
+          "predictions": 29,
+          "correct": 22,
+          "accuracy": 0.75862,
+          "wilson95_lower": 0.57892,
+          "symbols": 19,
+          "signal_dates": 17,
+          "unobservable": 0,
+          "top_symbol_share": 0.13793,
+          "top_date_share": 0.31034,
+          "market_phase_2024_26": 0
+        },
+        "2024": {
+          "predictions": 7,
+          "correct": 4,
+          "accuracy": 0.57143,
+          "wilson95_lower": 0.25046,
+          "symbols": 6,
+          "signal_dates": 6,
+          "unobservable": 0,
+          "top_symbol_share": 0.28571,
+          "top_date_share": 0.28571,
+          "market_phase_2024_26": 7
+        },
+        "2025": {
+          "predictions": 3,
+          "correct": 2,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.20766,
+          "symbols": 1,
+          "signal_dates": 3,
+          "unobservable": 0,
+          "top_symbol_share": 1.0,
+          "top_date_share": 0.33333,
+          "market_phase_2024_26": 3
+        }
+      }
+    },
+    "down": {
+      "condition": "change_pct_5d >= 0.12 AND weekday = 0",
+      "all": {
+        "predictions": 40,
+        "correct": 31,
+        "accuracy": 0.775,
+        "wilson95_lower": 0.62497,
+        "symbols": 36,
+        "signal_dates": 24,
+        "unobservable": 0,
+        "top_symbol_share": 0.05,
+        "top_date_share": 0.175,
+        "market_phase_2024_26": 1
+      },
+      "by_year": {
+        "2020": {
+          "predictions": 20,
+          "correct": 16,
+          "accuracy": 0.8,
+          "wilson95_lower": 0.58398,
+          "symbols": 20,
+          "signal_dates": 11,
+          "unobservable": 0,
+          "top_symbol_share": 0.05,
+          "top_date_share": 0.2,
+          "market_phase_2024_26": 0
+        },
+        "2021": {
+          "predictions": 11,
+          "correct": 10,
+          "accuracy": 0.90909,
+          "wilson95_lower": 0.62264,
+          "symbols": 10,
+          "signal_dates": 5,
+          "unobservable": 0,
+          "top_symbol_share": 0.18182,
+          "top_date_share": 0.63636,
+          "market_phase_2024_26": 0
+        },
+        "2022": {
+          "predictions": 3,
+          "correct": 2,
+          "accuracy": 0.66667,
+          "wilson95_lower": 0.20766,
+          "symbols": 3,
+          "signal_dates": 3,
+          "unobservable": 0,
+          "top_symbol_share": 0.33333,
+          "top_date_share": 0.33333,
+          "market_phase_2024_26": 0
+        },
+        "2023": {
+          "predictions": 5,
+          "correct": 3,
+          "accuracy": 0.6,
+          "wilson95_lower": 0.23072,
+          "symbols": 5,
+          "signal_dates": 4,
+          "unobservable": 0,
+          "top_symbol_share": 0.2,
+          "top_date_share": 0.4,
+          "market_phase_2024_26": 0
+        },
+        "2024": {
+          "predictions": 1,
+          "correct": 0,
+          "accuracy": 0.0,
+          "wilson95_lower": 0.0,
+          "symbols": 1,
+          "signal_dates": 1,
+          "unobservable": 0,
+          "top_symbol_share": 1.0,
+          "top_date_share": 1.0,
+          "market_phase_2024_26": 1
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Delisted stocks share market dates with the rule's prior development cohorts and are not a new market-regime validation.",
+    "The terminal-date cohort is not a full point-in-time historical A-share market universe.",
+    "Raw unadjusted price ratios cross ex-right/dividend dates; they are a sensitivity check, not exact economic P/L.",
+    "Entry/exit opening prices do not prove actual fillability; limit queue and consecutive blocked exits remain unmodeled.",
+    "The HS300 index file starts 2023, so 2020-22 calendar uses an explicit >=10 stock-date proxy; later years use union with index dates."
+  ],
+  "sealed_validation_access": "none"
+}

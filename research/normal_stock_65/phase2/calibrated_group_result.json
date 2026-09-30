@@ -1,0 +1,498 @@
+{
+  "development_only": true,
+  "source_csv": "/Users/zengbojia/githome/stock-ai-rule-system/research/normal_stock_65/phase2/development_qfq.csv",
+  "source_sha256": "9a3c55e012363b9b8695b3bd5952125b867989b7144203cbbf32d672b7727fdb",
+  "normal_universe": "mainboard_liquid_stable_v1",
+  "calibration": [
+    "2020-01-01",
+    "2023-12-31"
+  ],
+  "evaluation_years": [
+    2024,
+    2025,
+    2026
+  ],
+  "selection": {
+    "min_calibration_signals_per_stock": 12,
+    "group_size_target": 40,
+    "beta_prior_strength": 30,
+    "ranking": "(stock correct + 30 * pooled rule accuracy) / (stock signals + 30), descending; ties by count then symbol"
+  },
+  "rule_results": [
+    {
+      "rule": {
+        "name": "bearish_overbought",
+        "direction": "down",
+        "terms": [
+          [
+            "rsi14",
+            ">=",
+            70
+          ],
+          [
+            "return_1d",
+            ">=",
+            0.01
+          ]
+        ]
+      },
+      "selected_symbols": [
+        "002119.SZ",
+        "002428.SZ",
+        "002266.SZ",
+        "002438.SZ",
+        "600583.SH",
+        "600176.SH",
+        "000988.SZ",
+        "603816.SH",
+        "601319.SH",
+        "002100.SZ",
+        "600985.SH",
+        "002324.SZ",
+        "000636.SZ",
+        "600872.SH",
+        "601908.SH",
+        "000917.SZ",
+        "002448.SZ",
+        "603129.SH",
+        "002470.SZ",
+        "002446.SZ",
+        "600018.SH",
+        "603214.SH",
+        "000050.SZ",
+        "000738.SZ",
+        "000768.SZ",
+        "002046.SZ",
+        "002747.SZ",
+        "601992.SH",
+        "600498.SH",
+        "603236.SH",
+        "603358.SH",
+        "603565.SH",
+        "000651.SZ",
+        "002602.SZ",
+        "000902.SZ",
+        "002328.SZ",
+        "600779.SH",
+        "600612.SH",
+        "002478.SZ",
+        "000877.SZ"
+      ],
+      "calibration_stats": {
+        "calibration_signals": 1856,
+        "pooled_direction_accuracy": 0.54688,
+        "calibration_symbols_with_min_signals": 70,
+        "selected_stock_count": 40,
+        "min_selected_posterior_mean": 0.53196
+      },
+      "calibration_group": {
+        "predictions": 707,
+        "correct": 437,
+        "direction_accuracy": 0.6181,
+        "wilson95_lower": 0.58174,
+        "symbols": 40,
+        "entry_dates": 408,
+        "top_symbol_share": 0.05233,
+        "top_date_share": 0.01697,
+        "mean_daily_accuracy": 0.60947,
+        "unobservable_direction_counted_wrong": 1
+      },
+      "evaluation": {
+        "2024": {
+          "predictions": 146,
+          "correct": 76,
+          "direction_accuracy": 0.52055,
+          "wilson95_lower": 0.44003,
+          "symbols": 36,
+          "entry_dates": 86,
+          "top_symbol_share": 0.10274,
+          "top_date_share": 0.05479,
+          "mean_daily_accuracy": 0.51588,
+          "unobservable_direction_counted_wrong": 0
+        },
+        "2025": {
+          "predictions": 265,
+          "correct": 132,
+          "direction_accuracy": 0.49811,
+          "wilson95_lower": 0.43837,
+          "symbols": 39,
+          "entry_dates": 133,
+          "top_symbol_share": 0.10943,
+          "top_date_share": 0.03019,
+          "mean_daily_accuracy": 0.45994,
+          "unobservable_direction_counted_wrong": 0
+        },
+        "2026": {
+          "predictions": 147,
+          "correct": 79,
+          "direction_accuracy": 0.53741,
+          "wilson95_lower": 0.45689,
+          "symbols": 37,
+          "entry_dates": 71,
+          "top_symbol_share": 0.08163,
+          "top_date_share": 0.04082,
+          "mean_daily_accuracy": 0.54155,
+          "unobservable_direction_counted_wrong": 0
+        }
+      },
+      "passes_65_all_years": false
+    },
+    {
+      "rule": {
+        "name": "bearish_peak_close",
+        "direction": "down",
+        "terms": [
+          [
+            "rsi14",
+            ">=",
+            75
+          ],
+          [
+            "intraday_return",
+            ">=",
+            0.01
+          ]
+        ]
+      },
+      "selected_symbols": [
+        "600028.SH",
+        "600583.SH",
+        "603358.SH",
+        "600971.SH",
+        "601888.SH",
+        "002438.SZ",
+        "002328.SZ",
+        "002446.SZ",
+        "600141.SH",
+        "000902.SZ",
+        "600498.SH",
+        "601319.SH",
+        "002470.SZ",
+        "600329.SH",
+        "002602.SZ",
+        "000567.SZ",
+        "000988.SZ",
+        "600339.SH",
+        "002434.SZ",
+        "600004.SH",
+        "603369.SH",
+        "603267.SH",
+        "002675.SZ",
+        "600779.SH",
+        "600273.SH",
+        "000789.SZ"
+      ],
+      "calibration_stats": {
+        "calibration_signals": 1076,
+        "pooled_direction_accuracy": 0.55483,
+        "calibration_symbols_with_min_signals": 26,
+        "selected_stock_count": 26,
+        "min_selected_posterior_mean": 0.49155
+      },
+      "calibration_group": {
+        "predictions": 423,
+        "correct": 224,
+        "direction_accuracy": 0.52955,
+        "wilson95_lower": 0.48193,
+        "symbols": 26,
+        "entry_dates": 281,
+        "top_symbol_share": 0.06147,
+        "top_date_share": 0.02128,
+        "mean_daily_accuracy": 0.51531,
+        "unobservable_direction_counted_wrong": 1
+      },
+      "evaluation": {
+        "2024": {
+          "predictions": 64,
+          "correct": 41,
+          "direction_accuracy": 0.64062,
+          "wilson95_lower": 0.51821,
+          "symbols": 21,
+          "entry_dates": 46,
+          "top_symbol_share": 0.125,
+          "top_date_share": 0.0625,
+          "mean_daily_accuracy": 0.62319,
+          "unobservable_direction_counted_wrong": 0
+        },
+        "2025": {
+          "predictions": 128,
+          "correct": 54,
+          "direction_accuracy": 0.42188,
+          "wilson95_lower": 0.33982,
+          "symbols": 24,
+          "entry_dates": 90,
+          "top_symbol_share": 0.17969,
+          "top_date_share": 0.03906,
+          "mean_daily_accuracy": 0.39963,
+          "unobservable_direction_counted_wrong": 0
+        },
+        "2026": {
+          "predictions": 40,
+          "correct": 19,
+          "direction_accuracy": 0.475,
+          "wilson95_lower": 0.32935,
+          "symbols": 14,
+          "entry_dates": 30,
+          "top_symbol_share": 0.175,
+          "top_date_share": 0.075,
+          "mean_daily_accuracy": 0.50556,
+          "unobservable_direction_counted_wrong": 0
+        }
+      },
+      "passes_65_all_years": false
+    },
+    {
+      "rule": {
+        "name": "bullish_deep_pullback",
+        "direction": "up",
+        "terms": [
+          [
+            "return_1d",
+            "<=",
+            -0.04
+          ],
+          [
+            "change_pct_5d",
+            "<=",
+            -0.05
+          ]
+        ]
+      },
+      "selected_symbols": [
+        "600779.SH",
+        "601888.SH",
+        "002243.SZ",
+        "002297.SZ",
+        "002602.SZ",
+        "603938.SH",
+        "603236.SH",
+        "002470.SZ",
+        "600141.SH",
+        "002747.SZ",
+        "000962.SZ",
+        "002328.SZ",
+        "002984.SZ",
+        "002428.SZ",
+        "603068.SH",
+        "605111.SH",
+        "002531.SZ"
+      ],
+      "calibration_stats": {
+        "calibration_signals": 1054,
+        "pooled_direction_accuracy": 0.50285,
+        "calibration_symbols_with_min_signals": 17,
+        "selected_stock_count": 17,
+        "min_selected_posterior_mean": 0.4306
+      },
+      "calibration_group": {
+        "predictions": 228,
+        "correct": 98,
+        "direction_accuracy": 0.42982,
+        "wilson95_lower": 0.36725,
+        "symbols": 17,
+        "entry_dates": 137,
+        "top_symbol_share": 0.07895,
+        "top_date_share": 0.03509,
+        "mean_daily_accuracy": 0.441,
+        "unobservable_direction_counted_wrong": 0,
+        "executable_long_positions": 228,
+        "net_long_wins": 87,
+        "net_long_win_rate": 0.38158,
+        "mean_long_net_return": -0.008784,
+        "blocked_long_exits": 1
+      },
+      "evaluation": {
+        "2024": {
+          "predictions": 33,
+          "correct": 17,
+          "direction_accuracy": 0.51515,
+          "wilson95_lower": 0.35218,
+          "symbols": 14,
+          "entry_dates": 21,
+          "top_symbol_share": 0.18182,
+          "top_date_share": 0.15152,
+          "mean_daily_accuracy": 0.47857,
+          "unobservable_direction_counted_wrong": 0,
+          "executable_long_positions": 33,
+          "net_long_wins": 17,
+          "net_long_win_rate": 0.51515,
+          "mean_long_net_return": -0.002966,
+          "blocked_long_exits": 0
+        },
+        "2025": {
+          "predictions": 30,
+          "correct": 14,
+          "direction_accuracy": 0.46667,
+          "wilson95_lower": 0.30232,
+          "symbols": 12,
+          "entry_dates": 19,
+          "top_symbol_share": 0.23333,
+          "top_date_share": 0.2,
+          "mean_daily_accuracy": 0.48246,
+          "unobservable_direction_counted_wrong": 0,
+          "executable_long_positions": 30,
+          "net_long_wins": 13,
+          "net_long_win_rate": 0.43333,
+          "mean_long_net_return": -0.004196,
+          "blocked_long_exits": 0
+        },
+        "2026": {
+          "predictions": 39,
+          "correct": 18,
+          "direction_accuracy": 0.46154,
+          "wilson95_lower": 0.31567,
+          "symbols": 14,
+          "entry_dates": 21,
+          "top_symbol_share": 0.15385,
+          "top_date_share": 0.10256,
+          "mean_daily_accuracy": 0.40873,
+          "unobservable_direction_counted_wrong": 0,
+          "executable_long_positions": 38,
+          "net_long_wins": 16,
+          "net_long_win_rate": 0.42105,
+          "mean_long_net_return": -0.004611,
+          "blocked_long_exits": 0
+        }
+      },
+      "passes_65_all_years": false
+    },
+    {
+      "rule": {
+        "name": "bullish_oversold",
+        "direction": "up",
+        "terms": [
+          [
+            "rsi14",
+            "<=",
+            30
+          ],
+          [
+            "change_pct_5d",
+            "<=",
+            -0.05
+          ]
+        ]
+      },
+      "selected_symbols": [
+        "600995.SH",
+        "002782.SZ",
+        "000915.SZ",
+        "000738.SZ",
+        "000877.SZ",
+        "002695.SZ",
+        "002669.SZ",
+        "002119.SZ",
+        "600612.SH",
+        "002532.SZ",
+        "000050.SZ",
+        "603267.SH",
+        "000422.SZ",
+        "600273.SH",
+        "002046.SZ",
+        "000789.SZ",
+        "603816.SH",
+        "002100.SZ",
+        "600779.SH",
+        "601908.SH",
+        "000712.SZ",
+        "002651.SZ",
+        "000839.SZ",
+        "002405.SZ",
+        "000636.SZ",
+        "002413.SZ",
+        "600176.SH",
+        "000589.SZ",
+        "002165.SZ",
+        "002613.SZ",
+        "002664.SZ",
+        "002675.SZ",
+        "600933.SH",
+        "002803.SZ",
+        "002470.SZ",
+        "600498.SH",
+        "603068.SH",
+        "002131.SZ",
+        "000505.SZ",
+        "000546.SZ"
+      ],
+      "calibration_stats": {
+        "calibration_signals": 2338,
+        "pooled_direction_accuracy": 0.4923,
+        "calibration_symbols_with_min_signals": 89,
+        "selected_stock_count": 40,
+        "min_selected_posterior_mean": 0.49519
+      },
+      "calibration_group": {
+        "predictions": 868,
+        "correct": 511,
+        "direction_accuracy": 0.58871,
+        "wilson95_lower": 0.55565,
+        "symbols": 40,
+        "entry_dates": 390,
+        "top_symbol_share": 0.04954,
+        "top_date_share": 0.01382,
+        "mean_daily_accuracy": 0.54652,
+        "unobservable_direction_counted_wrong": 0,
+        "executable_long_positions": 868,
+        "net_long_wins": 463,
+        "net_long_win_rate": 0.53341,
+        "mean_long_net_return": 0.000543,
+        "blocked_long_exits": 2
+      },
+      "evaluation": {
+        "2024": {
+          "predictions": 251,
+          "correct": 115,
+          "direction_accuracy": 0.45817,
+          "wilson95_lower": 0.39762,
+          "symbols": 37,
+          "entry_dates": 88,
+          "top_symbol_share": 0.07968,
+          "top_date_share": 0.07171,
+          "mean_daily_accuracy": 0.44482,
+          "unobservable_direction_counted_wrong": 0,
+          "executable_long_positions": 251,
+          "net_long_wins": 105,
+          "net_long_win_rate": 0.41833,
+          "mean_long_net_return": -0.006181,
+          "blocked_long_exits": 0
+        },
+        "2025": {
+          "predictions": 86,
+          "correct": 43,
+          "direction_accuracy": 0.5,
+          "wilson95_lower": 0.39661,
+          "symbols": 32,
+          "entry_dates": 44,
+          "top_symbol_share": 0.06977,
+          "top_date_share": 0.0814,
+          "mean_daily_accuracy": 0.54637,
+          "unobservable_direction_counted_wrong": 0,
+          "executable_long_positions": 86,
+          "net_long_wins": 39,
+          "net_long_win_rate": 0.45349,
+          "mean_long_net_return": -0.007124,
+          "blocked_long_exits": 1
+        },
+        "2026": {
+          "predictions": 166,
+          "correct": 85,
+          "direction_accuracy": 0.51205,
+          "wilson95_lower": 0.4366,
+          "symbols": 35,
+          "entry_dates": 71,
+          "top_symbol_share": 0.07229,
+          "top_date_share": 0.06024,
+          "mean_daily_accuracy": 0.50188,
+          "unobservable_direction_counted_wrong": 0,
+          "executable_long_positions": 166,
+          "net_long_wins": 72,
+          "net_long_win_rate": 0.43373,
+          "mean_long_net_return": -0.002542,
+          "blocked_long_exits": 0
+        }
+      },
+      "passes_65_all_years": false
+    }
+  ]
+}

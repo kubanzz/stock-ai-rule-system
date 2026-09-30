@@ -1,0 +1,59 @@
+{
+  "generated_utc": "2026-09-30T09:02:23.172762+00:00",
+  "source": "http://127.0.0.1:8090/api/public/stock_zh_a_daily",
+  "adjust": "qfq",
+  "request_period": [
+    "20190102",
+    "20260929"
+  ],
+  "universe_source": "http://127.0.0.1:8090/api/public/stock_info_a_code_name",
+  "universe_method": "Current listed non-ST SH/SZ mainboard; exclude previous 166+250 symbols; independent Python random.Random seed 20261002; 100 development and 50 sealed per exchange assigned before quote fetch.",
+  "seed": 20261002,
+  "prior_universe_sha256": {
+    "research/one_day_20260930/universe.csv": "20d7990a2166a764da848eb7f4686bfd727bf0403a53c53b85397d897f87dd5e",
+    "research/normal_stock_65/universe.csv": "da769d98cecd278132aa7199646aa6dba1534b1a24f13ed9d4efeb77485597ee"
+  },
+  "cohort_assignment_sha256": "edc2a6f8338f8de15e592f33f783b42d7f56c06ff3337ec51759b2325c33a1f1",
+  "universe_sha256": "228676e0d3a45ea612da4ae5005cd589f15dfe1144bbdbd5a5cf819cf95d3823",
+  "requested_symbols": 300,
+  "successful_symbols": 300,
+  "failed_symbols": {},
+  "skipped_anomalous_rows": {
+    "000504.SZ": [
+      "2020-06-11: nonpositive OHLCV, possible suspension"
+    ]
+  },
+  "cohorts": {
+    "development": {
+      "csv": "development_qfq.csv",
+      "sha256": "9a3c55e012363b9b8695b3bd5952125b867989b7144203cbbf32d672b7727fdb",
+      "assigned_symbols": 200,
+      "successful_symbols": 200,
+      "rows": 343526,
+      "first_date": "2019-01-02",
+      "last_date": "2026-09-29",
+      "unique_market_dates": 1879,
+      "min_bars_per_symbol": 20,
+      "median_bars_per_symbol": 1879
+    },
+    "validation_sealed": {
+      "csv": "validation_sealed_qfq.csv",
+      "sha256": "2d15e1d31ee7ef8da77440e6658a3e4518f30b963faa294f0f5507acb6563e7d",
+      "assigned_symbols": 100,
+      "successful_symbols": 100,
+      "rows": 176457,
+      "first_date": "2019-01-02",
+      "last_date": "2026-09-29",
+      "unique_market_dates": 1879,
+      "min_bars_per_symbol": 96,
+      "median_bars_per_symbol": 1879
+    }
+  },
+  "biases": [
+    "Current listed/current non-ST only: survivorship and historical ST-status selection bias remain.",
+    "QFQ prices can be retrospectively revised; this is not an as-of-date adjustment snapshot.",
+    "Zero volume or invalid OHLCV rows are skipped and listed; missing market dates may indicate suspension.",
+    "The two cohorts share historical market dates despite disjoint stocks, so they do not independently validate market regimes."
+  ],
+  "outcome_analysis": "none: no factors, labels, returns, accuracy or trading results computed"
+}

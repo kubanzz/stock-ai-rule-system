@@ -1,0 +1,9 @@
+{
+  "source": "http://127.0.0.1:8090/api/public/stock_zh_index_daily",
+  "symbol": "sh000300",
+  "rows": 907,
+  "first_date": "2023-01-03",
+  "last_date": "2026-09-29",
+  "sha256": "45152bfcca5f76305994ce98e789f5ecf9afa9049e084fb97a75be687365ab1c",
+  "purpose": "Fixed public market-regime reference; fetched before any phase2 search; same file must be used for blind stock validation."
+}

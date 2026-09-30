@@ -1,0 +1,21 @@
+rsi14 >= 75 AND return_1d >= 0.01 AND return_2d <= 0.05 | train_2024: 0.659/91 validate_2025: 0.637/168 develop_2026: 0.678/90
+rsi14 >= 75 AND return_1d >= 0.01 AND change_pct_5d <= 0.1 | train_2024: 0.648/105 validate_2025: 0.615/179 develop_2026: 0.677/96
+rsi14 >= 75 AND return_1d >= 0.01 AND range_pct <= 0.05 | train_2024: 0.670/100 validate_2025: 0.614/158 develop_2026: 0.656/90
+rsi14 >= 75 AND return_1d >= 0.01 AND intraday_return <= 0.03 | train_2024: 0.660/97 validate_2025: 0.603/156 develop_2026: 0.667/90
+rsi14 >= 70 AND return_1d >= 0.01 AND range_pct <= 0.05 | train_2024: 0.595/185 validate_2025: 0.592/262 develop_2026: 0.600/180
+rsi14 >= 70 AND return_1d >= 0.01 AND intraday_return <= 0.03 | train_2024: 0.599/172 validate_2025: 0.581/265 develop_2026: 0.610/172
+rsi14 >= 70 AND return_1d >= 0.01 AND change_pct_5d <= 0.1 | train_2024: 0.594/192 validate_2025: 0.575/306 develop_2026: 0.602/201
+rsi14 >= 75 AND return_1d >= 0.01 AND distance_ma5 <= 0.03 | train_2024: 0.643/70 validate_2025: 0.607/122 develop_2026: 0.650/60
+rsi14 >= 75 AND return_1d >= 0.01 AND range_pct <= 0.04 | train_2024: 0.699/83 validate_2025: 0.607/117 develop_2026: 0.636/66
+rsi14 >= 75 AND return_1d >= 0.01 AND range_pct >= 0.02 | train_2024: 0.602/128 validate_2025: 0.623/191 develop_2026: 0.676/111
+rsi14 >= 70 AND return_1d >= 0.01 AND exchange = SZ | train_2024: 0.674/92 validate_2025: 0.590/178 develop_2026: 0.607/112
+rsi14 >= 70 AND return_1d >= 0.01 AND amount_ratio20 >= 1.5 | train_2024: 0.605/114 validate_2025: 0.620/229 develop_2026: 0.628/121
+rsi14 >= 70 AND return_1d >= 0.01 AND return_2d <= 0.05 | train_2024: 0.583/175 validate_2025: 0.602/289 develop_2026: 0.595/195
+rsi14 >= 70 AND return_1d >= 0.01 AND range_pct >= 0.02 | train_2024: 0.574/223 validate_2025: 0.586/324 develop_2026: 0.601/218
+rsi14 >= 70 AND return_1d >= 0.01 AND amount_ratio20 >= 1.3 | train_2024: 0.589/146 validate_2025: 0.598/276 develop_2026: 0.597/154
+rsi14 >= 70 AND return_1d >= 0.01 AND change_pct_5d >= 0.03 | train_2024: 0.585/159 validate_2025: 0.624/258 develop_2026: 0.626/171
+rsi14 >= 70 AND return_1d >= 0.01 AND return_2d >= 0 | train_2024: 0.571/224 validate_2025: 0.580/326 develop_2026: 0.593/216
+rsi14 >= 70 AND return_1d >= 0.01 AND amount_ratio20 >= 1.0 | train_2024: 0.584/190 validate_2025: 0.578/325 develop_2026: 0.575/200
+rsi14 >= 70 AND return_1d >= 0.01 AND return_2d <= 0.03 | train_2024: 0.607/112 validate_2025: 0.581/198 develop_2026: 0.594/123
+rsi14 >= 70 AND return_1d >= 0.01 AND range_pct <= 0.04 | train_2024: 0.605/147 validate_2025: 0.573/192 develop_2026: 0.600/140
+searched 571 survivors 254 wrote research/normal_stock_65/search_refine_results.json

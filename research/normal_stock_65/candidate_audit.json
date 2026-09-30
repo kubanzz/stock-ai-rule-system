@@ -1,0 +1,49 @@
+{
+  "candidate": "bearish: T RSI14 >= 75 AND T close return >= 1%",
+  "normal_universe": "mainboard_liquid_stable_v1",
+  "reason_for_independent_denominator": "Avoid-long bearish prediction does not require an executable future long entry.",
+  "periods": {
+    "2024_development": {
+      "unique_T_predictions": 119,
+      "missing_entry_bar": 0,
+      "missing_exit_bar": 0,
+      "evaluable": 119,
+      "down_count": 71,
+      "down_accuracy": 0.59664,
+      "wilson95_lower": 0.50681,
+      "symbols": 46,
+      "entry_dates": 63,
+      "top_symbol_share": 0.09244,
+      "excluded_by_future_entry_limit_filter": 0,
+      "excluded_by_future_entry_limit_down_count": 0
+    },
+    "2025_validation": {
+      "unique_T_predictions": 174,
+      "missing_entry_bar": 0,
+      "missing_exit_bar": 0,
+      "evaluable": 174,
+      "down_count": 110,
+      "down_accuracy": 0.63218,
+      "wilson95_lower": 0.5584,
+      "symbols": 59,
+      "entry_dates": 104,
+      "top_symbol_share": 0.05172,
+      "excluded_by_future_entry_limit_filter": 0,
+      "excluded_by_future_entry_limit_down_count": 0
+    },
+    "2026_already_inspected": {
+      "unique_T_predictions": 99,
+      "missing_entry_bar": 0,
+      "missing_exit_bar": 0,
+      "evaluable": 99,
+      "down_count": 69,
+      "down_accuracy": 0.69697,
+      "wilson95_lower": 0.60049,
+      "symbols": 50,
+      "entry_dates": 54,
+      "top_symbol_share": 0.05051,
+      "excluded_by_future_entry_limit_filter": 1,
+      "excluded_by_future_entry_limit_down_count": 1
+    }
+  }
+}

@@ -11,3 +11,7 @@
 
 # 后端运行日志
 /stock-ai-rule-system-service/logs/
+
+# Python 研究脚本缓存
+__pycache__/
+*.pyc

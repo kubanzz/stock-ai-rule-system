@@ -1,0 +1,107 @@
+{
+  "candidate_id": "NORMAL_MAINBOARD_BEARISH_RSI75_DAYUP_TWO_DAY_CAP_V1",
+  "direction": "down",
+  "conditions": [
+    {
+      "field": "rsi14",
+      "op": ">=",
+      "value": 75
+    },
+    {
+      "field": "return_1d",
+      "op": ">=",
+      "value": 0.01
+    },
+    {
+      "field": "return_2d",
+      "op": "<=",
+      "value": 0.05
+    }
+  ],
+  "selection_method": "Search 24727 one/two-atom rules on original 166-symbol development sample; build three fixed bearish roots; add one atom (571 raw combinations). Keep >=70 predictions, >=20 symbols, >=30 signal entry dates in each of 2024, 2025, 2026; rank 254 survivors by maximum of minimum yearly Wilson 95% lower bound, then minimum yearly observed accuracy, then minimum yearly event count. Choose rank 1. This was fixed before reading any disjoint external-symbol outcomes.",
+  "development_split": {
+    "train_2024": "2024-01-01..2024-12-31 after 252-bar warmup",
+    "validation_2025": "2025-01-01..2025-12-31",
+    "development_2026": "2026-01-01..2026-09-29; previously inspected, not untouched holdout"
+  },
+  "development_counts": {
+    "train_2024": {
+      "events": 91,
+      "correct": 60,
+      "gross_direction_accuracy": 0.65934,
+      "wilson95_lower": 0.55729,
+      "symbols": 37,
+      "entry_dates": 54,
+      "blocked_exits": 0,
+      "unobservable_direction": 0,
+      "long_executable_entry_events": 91,
+      "long_executable_net_win_rate": 0.30769,
+      "long_executable_mean_net_return": -0.010597,
+      "mean_daily_accuracy": 0.62235,
+      "top_symbol_share": 0.0989,
+      "mean_long_net_return": -0.010597,
+      "long_net_win_rate": 0.30769,
+      "long_net_loss_rate": 0.69231
+    },
+    "validate_2025": {
+      "events": 168,
+      "correct": 107,
+      "gross_direction_accuracy": 0.6369,
+      "wilson95_lower": 0.56188,
+      "symbols": 54,
+      "entry_dates": 99,
+      "blocked_exits": 0,
+      "unobservable_direction": 0,
+      "long_executable_entry_events": 168,
+      "long_executable_net_win_rate": 0.27976,
+      "long_executable_mean_net_return": -0.008807,
+      "mean_daily_accuracy": 0.60168,
+      "top_symbol_share": 0.05952,
+      "mean_long_net_return": -0.008807,
+      "long_net_win_rate": 0.27976,
+      "long_net_loss_rate": 0.72024
+    },
+    "develop_2026": {
+      "events": 90,
+      "correct": 61,
+      "gross_direction_accuracy": 0.67778,
+      "wilson95_lower": 0.57567,
+      "symbols": 46,
+      "entry_dates": 48,
+      "blocked_exits": 0,
+      "unobservable_direction": 0,
+      "long_executable_entry_events": 90,
+      "long_executable_net_win_rate": 0.28889,
+      "long_executable_mean_net_return": -0.007771,
+      "mean_daily_accuracy": 0.70937,
+      "top_symbol_share": 0.05556,
+      "mean_long_net_return": -0.007771,
+      "long_net_win_rate": 0.28889,
+      "long_net_loss_rate": 0.71111
+    }
+  },
+  "development_search_counts": {
+    "atomic_conditions": 229,
+    "one_or_two_condition_rules": 24727,
+    "three_condition_raw_combinations": 571,
+    "three_condition_survivors": 254
+  },
+  "prediction_definition": "T-close signal on point-in-time normal mainboard stock-day; forecast sign of T+2 open / T+1 open -1. Missing either open counts as wrong. Same-symbol adjacent daily forecasts counted separately. Down is avoidance signal; no short sale or short return.",
+  "universe_id": "mainboard_liquid_stable_v1",
+  "limitations": [
+    "Source symbol list is current 2026-09-30 non-ST snapshot; survivorship and historical ST-status bias remain.",
+    "QFQ prices may be retrospectively adjusted; a production replay needs as-of adjustment and per-day listing/ST status.",
+    "2026 development outcome was previously observed and was used in minimax selection.",
+    "Multiple-comparison selection can overfit. External disjoint symbols must be evaluated once without retuning.",
+    "Gross directional accuracy is not a tradable long win rate; bearish signal has no modeled short profit.",
+    "Limit-up/down and suspension outcomes are separate execution diagnostics; a missing price is counted as directional failure."
+  ],
+  "pre_freeze_sha256": {
+    "research/one_day_20260930/ashare_daily_qfq.csv": "fed79b170894f7e19d23e74b661978908f78b60a7edeb70fd762bdb1dc9691b2",
+    "research/normal_stock_65/search_directional_rules.py": "7f34ebf52047bc9544d1ca52a718f835433186fa2bdefc3eb8a5c7745f30af93",
+    "research/normal_stock_65/search_refine.py": "338768f04ab386c3b069ab0821a12cea4ae0869f25ad43740fde010bc1e03955",
+    "research/normal_stock_65/normal_universe.py": "f7b1d9910a0c71deabc4d9516c309d71b2fa24b6e7eb051adf96897e96ddcc30",
+    "research/normal_stock_65/search_results.json": "63223084fda5df1cea6618920e59491770f035b3247540a35b8591a5bc9efac5",
+    "research/normal_stock_65/search_refine_results.json": "f981d558872b3198fc82c9fb7d44ca3a3e770137a3313cb0f026e6b499888d34"
+  }
+}

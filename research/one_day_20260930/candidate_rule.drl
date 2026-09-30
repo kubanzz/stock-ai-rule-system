@@ -1,0 +1,15 @@
+package com.jx.tracker.rule.generated;
+import java.math.BigDecimal;
+import com.jx.tracker.rule.engine.StockFactorFact;
+
+rule "R_RESEARCH_1D_DROP_LOWVOL_20260930"
+when
+    $f : StockFactorFact()
+    eval($f.matches("volume_ratio_5d","lte","1.0"))
+    eval($f.matches("change_pct_5d","lte","-0.1"))
+    eval($f.matches("risk_status","eq","normal"))
+then
+    $f.addBullishScore(new BigDecimal("100"));
+    $f.addTriggeredRule("R_RESEARCH_1D_DROP_LOWVOL_20260930");
+    $f.addExplanation("研究候选：T日5日跌幅至少10%、5日量比不高于1且风险状态正常；2026冻结测试净胜率44.08%（372/844），Wilson95下界40.76%，净均收益-0.562%，另有1次疑似无法卖出；生产闸门失败。仅供辅助决策研究，不保证收益。");
+end

@@ -1,0 +1,32 @@
+{
+  "generated_utc": "2026-09-30T08:20:53.458027+00:00",
+  "source": "http://127.0.0.1:8090/api/public/stock_zh_a_daily",
+  "adjust": "qfq",
+  "request_period": [
+    "20230103",
+    "20260929"
+  ],
+  "universe_source": "http://127.0.0.1:8090/api/public/stock_info_a_code_name",
+  "universe_method": "Current non-ST/non-delisting SH/SZ mainboard snapshot; exclude every symbol in previous universe.csv; 125 each exchange via Python random.Random seed 20261001.",
+  "universe_seed": 20261001,
+  "old_universe_sha256": "20d7990a2166a764da848eb7f4686bfd727bf0403a53c53b85397d897f87dd5e",
+  "requested_symbols": 250,
+  "successful_symbols": 250,
+  "failed_symbols": {},
+  "rows": 223792,
+  "first_date": "2023-01-03",
+  "last_date": "2026-09-29",
+  "min_bars_per_symbol": 91,
+  "median_bars_per_symbol": 907,
+  "symbols_with_at_least_750_bars": 244,
+  "unique_dates": 907,
+  "duplicate_symbol_dates": 0,
+  "skipped_anomalous_rows": {},
+  "data_sha256": "97d8336bd7a338ee11afc7f0446744cff8fb3e3f9ca68e146ebdbc31eaedb1c4",
+  "biases": [
+    "Current listed/current non-ST stocks only: survivorship and status-selection bias; this is not a historical point-in-time universe.",
+    "QFQ prices can be retrospectively revised after corporate actions; not as-of-date adjustment snapshots.",
+    "Zero-volume and invalid OHLCV rows are skipped and reported; missing per-stock market dates may indicate suspension."
+  ],
+  "outcome_analysis": "none; collector computes no factors, trades, returns, win rates or model selection metrics"
+}

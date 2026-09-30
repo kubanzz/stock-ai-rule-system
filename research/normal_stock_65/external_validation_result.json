@@ -1,0 +1,211 @@
+{
+  "candidate_id": "NORMAL_MAINBOARD_BEARISH_RSI75_DAYUP_TWO_DAY_CAP_V1",
+  "frozen_rule_sha256": "88a4f8244b312ed613d711c7398cb40aa1cbb3a3886a3d932e1beecc7ebc0dd9",
+  "external_csv_sha256": "97d8336bd7a338ee11afc7f0446744cff8fb3e3f9ca68e146ebdbc31eaedb1c4",
+  "external_symbols": 250,
+  "development_overlap_symbols": 0,
+  "signal_period": "2026-01-01 through 2026-09-29",
+  "direction": "down",
+  "conditions": [
+    {
+      "field": "rsi14",
+      "op": ">=",
+      "value": 75
+    },
+    {
+      "field": "return_1d",
+      "op": ">=",
+      "value": 0.01
+    },
+    {
+      "field": "return_2d",
+      "op": "<=",
+      "value": 0.05
+    }
+  ],
+  "periods": {
+    "2024_auxiliary": {
+      "signal_time_selected": {
+        "events": 270,
+        "correct": 139,
+        "gross_direction_accuracy": 0.51481,
+        "wilson95_lower": 0.45541,
+        "symbols": 96,
+        "entry_dates": 124,
+        "blocked_exits": 1,
+        "unobservable_direction": 1,
+        "long_executable_entry_events": 270,
+        "long_executable_net_win_rate": 0.38889,
+        "long_executable_mean_net_return": -0.002076,
+        "mean_daily_accuracy": 0.52991,
+        "top_symbol_share": 0.07778,
+        "mean_long_net_return": -0.002076,
+        "long_net_win_rate": 0.38889,
+        "long_net_loss_rate": 0.61111
+      },
+      "signal_time_baseline": {
+        "events": 20647,
+        "correct": 10422,
+        "gross_direction_accuracy": 0.50477,
+        "wilson95_lower": 0.49795,
+        "symbols": 230,
+        "entry_dates": 231,
+        "blocked_exits": 9,
+        "unobservable_direction": 3,
+        "long_executable_entry_events": 20637,
+        "long_executable_net_win_rate": 0.41556,
+        "long_executable_mean_net_return": -0.002859,
+        "mean_daily_accuracy": 0.49743,
+        "top_symbol_share": 0.01104,
+        "mean_long_net_return": -0.002859,
+        "long_net_win_rate": 0.41556,
+        "long_net_loss_rate": 0.58444
+      },
+      "executable_positions_selected": {
+        "positions": 237,
+        "correct": 120,
+        "gross_direction_accuracy": 0.50633,
+        "wilson95_lower": 0.44309,
+        "net_long_win_rate": 0.39241,
+        "mean_net_long_return": -0.002882,
+        "blocked_exits": 1,
+        "entry_dates": 113,
+        "symbols": 96
+      },
+      "executable_positions_baseline": {
+        "positions": 10674,
+        "correct": 5215,
+        "gross_direction_accuracy": 0.48857,
+        "wilson95_lower": 0.47909,
+        "net_long_win_rate": 0.43114,
+        "mean_net_long_return": -0.00217,
+        "blocked_exits": 3,
+        "entry_dates": 231,
+        "symbols": 230
+      }
+    },
+    "2025_auxiliary": {
+      "signal_time_selected": {
+        "events": 422,
+        "correct": 250,
+        "gross_direction_accuracy": 0.59242,
+        "wilson95_lower": 0.54491,
+        "symbols": 141,
+        "entry_dates": 159,
+        "blocked_exits": 2,
+        "unobservable_direction": 2,
+        "long_executable_entry_events": 420,
+        "long_executable_net_win_rate": 0.33095,
+        "long_executable_mean_net_return": -0.003761,
+        "mean_daily_accuracy": 0.55072,
+        "top_symbol_share": 0.04739,
+        "mean_long_net_return": -0.003775,
+        "long_net_win_rate": 0.33175,
+        "long_net_loss_rate": 0.66825
+      },
+      "signal_time_baseline": {
+        "events": 30570,
+        "correct": 14902,
+        "gross_direction_accuracy": 0.48747,
+        "wilson95_lower": 0.48187,
+        "symbols": 245,
+        "entry_dates": 241,
+        "blocked_exits": 31,
+        "unobservable_direction": 13,
+        "long_executable_entry_events": 30548,
+        "long_executable_net_win_rate": 0.41315,
+        "long_executable_mean_net_return": -0.00199,
+        "mean_daily_accuracy": 0.48413,
+        "top_symbol_share": 0.00779,
+        "mean_long_net_return": -0.001995,
+        "long_net_win_rate": 0.41315,
+        "long_net_loss_rate": 0.58682
+      },
+      "executable_positions_selected": {
+        "positions": 375,
+        "correct": 221,
+        "gross_direction_accuracy": 0.58933,
+        "wilson95_lower": 0.53888,
+        "net_long_win_rate": 0.336,
+        "mean_net_long_return": -0.003688,
+        "blocked_exits": 1,
+        "entry_dates": 146,
+        "symbols": 141
+      },
+      "executable_positions_baseline": {
+        "positions": 15830,
+        "correct": 7682,
+        "gross_direction_accuracy": 0.48528,
+        "wilson95_lower": 0.4775,
+        "net_long_win_rate": 0.4139,
+        "mean_net_long_return": -0.001913,
+        "blocked_exits": 13,
+        "entry_dates": 241,
+        "symbols": 245
+      }
+    },
+    "2026_primary": {
+      "signal_time_selected": {
+        "events": 316,
+        "correct": 163,
+        "gross_direction_accuracy": 0.51582,
+        "wilson95_lower": 0.46086,
+        "symbols": 128,
+        "entry_dates": 111,
+        "blocked_exits": 0,
+        "unobservable_direction": 0,
+        "long_executable_entry_events": 316,
+        "long_executable_net_win_rate": 0.43671,
+        "long_executable_mean_net_return": -0.001473,
+        "mean_daily_accuracy": 0.5327,
+        "top_symbol_share": 0.03165,
+        "mean_long_net_return": -0.001473,
+        "long_net_win_rate": 0.43671,
+        "long_net_loss_rate": 0.56329
+      },
+      "signal_time_baseline": {
+        "events": 23091,
+        "correct": 11755,
+        "gross_direction_accuracy": 0.50907,
+        "wilson95_lower": 0.50262,
+        "symbols": 247,
+        "entry_dates": 178,
+        "blocked_exits": 13,
+        "unobservable_direction": 11,
+        "long_executable_entry_events": 23074,
+        "long_executable_net_win_rate": 0.41445,
+        "long_executable_mean_net_return": -0.002959,
+        "mean_daily_accuracy": 0.50655,
+        "top_symbol_share": 0.00767,
+        "mean_long_net_return": -0.00297,
+        "long_net_win_rate": 0.41445,
+        "long_net_loss_rate": 0.58551
+      },
+      "executable_positions_selected": {
+        "positions": 277,
+        "correct": 142,
+        "gross_direction_accuracy": 0.51264,
+        "wilson95_lower": 0.454,
+        "net_long_win_rate": 0.43682,
+        "mean_net_long_return": -0.001204,
+        "blocked_exits": 0,
+        "entry_dates": 105,
+        "symbols": 128
+      },
+      "executable_positions_baseline": {
+        "positions": 11881,
+        "correct": 5966,
+        "gross_direction_accuracy": 0.50215,
+        "wilson95_lower": 0.49316,
+        "net_long_win_rate": 0.42109,
+        "mean_net_long_return": -0.00265,
+        "blocked_exits": 5,
+        "entry_dates": 178,
+        "symbols": 247
+      }
+    }
+  },
+  "gross_direction_65_observed": false,
+  "gross_direction_65_wilson": false,
+  "interpretation": "Signal-time gross direction accuracy includes missing next-session price as failure, counts adjacent same-symbol forecasts, and excludes cost. Executable long positions remove overlapping same-symbol entries and include 30bp round-trip cost. Down means avoid a long, not short-trade profit."
+}

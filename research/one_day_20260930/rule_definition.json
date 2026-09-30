@@ -1,0 +1,11 @@
+{
+  "ruleCode": "R_RESEARCH_1D_DROP_LOWVOL_20260930",
+  "ruleName": "研究草稿：超跌缩量一日持有信号",
+  "description": "2026冻结测试净胜率44.08%（372/844），Wilson95下界40.76%，净均收益-0.562%，另有1次疑似无法卖出；生产闸门失败。离线研究要求信号日 T 成交额≥2000万元；生产 factor_json 暂无 amount 字段，当前规则/方案无法强制该条件，必须补齐并重测。",
+  "ruleType": "technical",
+  "ruleContent": "package com.jx.tracker.rule.generated;\nimport java.math.BigDecimal;\nimport com.jx.tracker.rule.engine.StockFactorFact;\n\nrule \"R_RESEARCH_1D_DROP_LOWVOL_20260930\"\nwhen\n    $f : StockFactorFact()\n    eval($f.matches(\"volume_ratio_5d\",\"lte\",\"1.0\"))\n    eval($f.matches(\"change_pct_5d\",\"lte\",\"-0.1\"))\n    eval($f.matches(\"risk_status\",\"eq\",\"normal\"))\nthen\n    $f.addBullishScore(new BigDecimal(\"100\"));\n    $f.addTriggeredRule(\"R_RESEARCH_1D_DROP_LOWVOL_20260930\");\n    $f.addExplanation(\"研究候选：T日5日跌幅至少10%、5日量比不高于1且风险状态正常；2026冻结测试净胜率44.08%（372/844），Wilson95下界40.76%，净均收益-0.562%，另有1次疑似无法卖出；生产闸门失败。仅供辅助决策研究，不保证收益。\");\nend\n",
+  "ruleFormat": "drools",
+  "version": "v1",
+  "status": "draft",
+  "priority": 0
+}

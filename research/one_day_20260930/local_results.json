@@ -1,0 +1,109 @@
+{
+  "source": "local_db_7_stocks_exploratory",
+  "quotes": 2142,
+  "quote_symbols": 7,
+  "quote_start": "2025-07-01",
+  "quote_end": "2026-09-29",
+  "cost_round_trip": 0.003,
+  "execution": "T close signal -> T+1 open buy -> T+2 open sell",
+  "split": {
+    "train_end": "2026-03-31",
+    "validation_end": "2026-06-30"
+  },
+  "baseline": {
+    "train": {
+      "trades": 532,
+      "wins": 191,
+      "win_rate": 0.359,
+      "wilson95_lower": 0.3194,
+      "mean_net_return": -0.00385,
+      "median_net_return": -0.00381,
+      "entry_dates": 153,
+      "symbols": 7,
+      "blocked_exits": 0,
+      "mean_daily_win_rate": 0.3649,
+      "top_symbol_share": 0.1447
+    },
+    "validation": {
+      "trades": 202,
+      "wins": 67,
+      "win_rate": 0.3317,
+      "wilson95_lower": 0.2704,
+      "mean_net_return": -0.00585,
+      "median_net_return": -0.00643,
+      "entry_dates": 56,
+      "symbols": 7,
+      "blocked_exits": 0,
+      "mean_daily_win_rate": 0.3518,
+      "top_symbol_share": 0.1436
+    },
+    "test": {
+      "trades": 213,
+      "wins": 96,
+      "win_rate": 0.4507,
+      "wilson95_lower": 0.3853,
+      "mean_net_return": -0.001,
+      "median_net_return": -0.00138,
+      "entry_dates": 48,
+      "symbols": 7,
+      "blocked_exits": 0,
+      "mean_daily_win_rate": 0.4385,
+      "top_symbol_share": 0.1455
+    }
+  },
+  "candidate_count": 788,
+  "train_top30_validated": 27,
+  "selected_conditions": [
+    {
+      "field": "change_pct_5d",
+      "operator": "lte",
+      "value": -0.07
+    },
+    {
+      "field": "technical_status",
+      "operator": "eq",
+      "value": "bearish"
+    }
+  ],
+  "selected": {
+    "train": {
+      "trades": 21,
+      "wins": 12,
+      "win_rate": 0.5714,
+      "wilson95_lower": 0.3655,
+      "mean_net_return": 0.00298,
+      "median_net_return": 0.0019,
+      "entry_dates": 16,
+      "symbols": 4,
+      "blocked_exits": 0,
+      "mean_daily_win_rate": 0.4792,
+      "top_symbol_share": 0.6667
+    },
+    "validation": {
+      "trades": 17,
+      "wins": 9,
+      "win_rate": 0.5294,
+      "wilson95_lower": 0.3096,
+      "mean_net_return": 0.00343,
+      "median_net_return": 0.00246,
+      "entry_dates": 13,
+      "symbols": 4,
+      "blocked_exits": 0,
+      "mean_daily_win_rate": 0.5,
+      "top_symbol_share": 0.4706
+    },
+    "test": {
+      "trades": 4,
+      "wins": 3,
+      "win_rate": 0.75,
+      "wilson95_lower": 0.3006,
+      "mean_net_return": 0.04649,
+      "median_net_return": 0.01331,
+      "entry_dates": 4,
+      "symbols": 2,
+      "blocked_exits": 0,
+      "mean_daily_win_rate": 0.75,
+      "top_symbol_share": 0.5
+    }
+  }
+}
