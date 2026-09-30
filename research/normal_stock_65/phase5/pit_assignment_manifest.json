@@ -1,0 +1,36 @@
+{
+  "created_utc": "2026-09-30T11:57:34.710993+00:00",
+  "purpose": "point-in-time mainboard development sample allowing future delistings",
+  "membership_source": "BaoStock 0.9.4 query_all_stock(day), frozen in phase4 before this assignment",
+  "snapshot_dates": [
+    "2019-01-02",
+    "2023-01-03"
+  ],
+  "per_snapshot_exchange_cell": 25,
+  "seed": "pit-mainboard-v1-20260930",
+  "selection": "SHA256(seed|snapshot_date|symbol) ascending; mainboard code regex; only exclude old166, first250, phase2 dev200 and sealed100 by symbol; no future-status, name, price, or quote filter",
+  "cell_available_count": {
+    "2019-01-02_SH": 1203,
+    "2019-01-02_SZ": 1111,
+    "2023-01-03_SH": 1342,
+    "2023-01-03_SZ": 1176
+  },
+  "assigned_symbols": 100,
+  "selected_snapshot_status_counts": {
+    "1": 100
+  },
+  "overlap_prior_phase4_80": 4,
+  "input_sha256": {
+    "research/normal_stock_65/phase4/historical_snapshot_membership.csv": "dcb2dcf5c96a2a5a2789f738b334434b14701d6b2c181a6f0ea389a83bcc848b",
+    "research/one_day_20260930/universe.csv": "20d7990a2166a764da848eb7f4686bfd727bf0403a53c53b85397d897f87dd5e",
+    "research/normal_stock_65/universe.csv": "da769d98cecd278132aa7199646aa6dba1534b1a24f13ed9d4efeb77485597ee",
+    "research/normal_stock_65/phase2/cohort_assignment.csv": "edc2a6f8338f8de15e592f33f783b42d7f56c06ff3337ec51759b2325c33a1f1"
+  },
+  "assignment_sha256": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950",
+  "sealed_validation_access": "phase2 assignment symbol identities only; no sealed quotes or outcomes",
+  "caveats": [
+    "BaoStock historical membership has not been independently exchange verified.",
+    "The prior and sealed cohort symbol exclusions are by design; this is not an all-market random sample.",
+    "The 2019/2023 snapshot dates and seed were fixed before fetching these stock histories."
+  ]
+}

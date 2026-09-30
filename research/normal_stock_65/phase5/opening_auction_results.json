@@ -1,0 +1,3453 @@
+{
+  "purpose": "development-only T+1 final-opening-price conditional upper bound for bullish gross direction",
+  "causal_warning": "The final T+1 stock/HS300 open is observable after auction clearing. Conditioning on it then claiming a fill at that same opening price is not causally executable. All such accuracy numbers are theoretical diagnostics; 30bps cost and limit proxy do not repair timing.",
+  "label": "strict T+2 stock open > T+1 stock open; missing exit counted wrong",
+  "watchlist_timing": "T close",
+  "opening_filter_timing": "T+1 final opening prints",
+  "normal_filter": "mainboard_liquid_stable_v1 plus T risk_status=normal",
+  "source_sha256": {
+    "old166": "fed79b170894f7e19d23e74b661978908f78b60a7edeb70fd762bdb1dc9691b2",
+    "external250": "97d8336bd7a338ee11afc7f0446744cff8fb3e3f9ca68e146ebdbc31eaedb1c4",
+    "development200": "9a3c55e012363b9b8695b3bd5952125b867989b7144203cbbf32d672b7727fdb"
+  },
+  "hs300_sha256": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24",
+  "sealed_validation_access": "none",
+  "candidate_count": 224,
+  "fit": "phase2 development200, 2020-23",
+  "calibration": "phase2 development200, 2024",
+  "diagnostic": "three previously exposed cohorts, 2025-26",
+  "opening_price_proxy_at_fit": 67829,
+  "fit_ranked_top15": [
+    {
+      "candidate": {
+        "watchlist": "t_down_3pct_weak_close",
+        "opening_filter": "stock_gap_le_-0.01"
+      },
+      "fit_score": 0.525314,
+      "fit": {
+        "predictions": 386,
+        "correct": 222,
+        "gross_direction_accuracy": 0.57513,
+        "wilson95_lower": 0.525314,
+        "symbols": 137,
+        "entry_dates": 209,
+        "top_date_share": 0.049223,
+        "top_symbol_share": 0.044041,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 211,
+        "net_long_win_rate_30bps_proxy": 0.546632,
+        "mean_net_return_30bps_proxy": 0.000567,
+        "year_counts": {
+          "2020": 113,
+          "2021": 110,
+          "2022": 125,
+          "2023": 38
+        },
+        "year_accuracy": {
+          "2020": 0.575221,
+          "2021": 0.581818,
+          "2022": 0.56,
+          "2023": 0.605263
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_3pct_weak_close",
+        "opening_filter": "relative_gap_le_-0.01"
+      },
+      "fit_score": 0.520601,
+      "fit": {
+        "predictions": 267,
+        "correct": 155,
+        "gross_direction_accuracy": 0.580524,
+        "wilson95_lower": 0.520601,
+        "symbols": 118,
+        "entry_dates": 188,
+        "top_date_share": 0.037453,
+        "top_symbol_share": 0.067416,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 149,
+        "net_long_win_rate_30bps_proxy": 0.558052,
+        "mean_net_return_30bps_proxy": 0.002959,
+        "year_counts": {
+          "2020": 70,
+          "2021": 90,
+          "2022": 80,
+          "2023": 27
+        },
+        "year_accuracy": {
+          "2020": 0.585714,
+          "2021": 0.577778,
+          "2022": 0.5875,
+          "2023": 0.555556
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_market_down_1pct",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.51381,
+      "fit": {
+        "predictions": 4220,
+        "correct": 2284,
+        "gross_direction_accuracy": 0.541232,
+        "wilson95_lower": 0.526167,
+        "symbols": 181,
+        "entry_dates": 150,
+        "top_date_share": 0.022986,
+        "top_symbol_share": 0.013033,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 2068,
+        "net_long_win_rate_30bps_proxy": 0.490047,
+        "mean_net_return_30bps_proxy": -0.000799,
+        "year_counts": {
+          "2020": 688,
+          "2021": 1033,
+          "2022": 1354,
+          "2023": 1145
+        },
+        "year_accuracy": {
+          "2020": 0.501453,
+          "2021": 0.519845,
+          "2022": 0.513294,
+          "2023": 0.617467
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_gap_up_market_weak_sz",
+        "opening_filter": "market_gap_negative"
+      },
+      "fit_score": 0.507998,
+      "fit": {
+        "predictions": 373,
+        "correct": 226,
+        "gross_direction_accuracy": 0.605898,
+        "wilson95_lower": 0.55547,
+        "symbols": 87,
+        "entry_dates": 90,
+        "top_date_share": 0.136729,
+        "top_symbol_share": 0.029491,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 214,
+        "net_long_win_rate_30bps_proxy": 0.573727,
+        "mean_net_return_30bps_proxy": 0.00491,
+        "year_counts": {
+          "2020": 76,
+          "2021": 72,
+          "2022": 105,
+          "2023": 120
+        },
+        "year_accuracy": {
+          "2020": 0.460526,
+          "2021": 0.472222,
+          "2022": 0.6,
+          "2023": 0.783333
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_market_weak_close",
+        "opening_filter": "market_gap_positive"
+      },
+      "fit_score": 0.503548,
+      "fit": {
+        "predictions": 6051,
+        "correct": 3275,
+        "gross_direction_accuracy": 0.541233,
+        "wilson95_lower": 0.528655,
+        "symbols": 183,
+        "entry_dates": 89,
+        "top_date_share": 0.017848,
+        "top_symbol_share": 0.013221,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 2951,
+        "net_long_win_rate_30bps_proxy": 0.487688,
+        "mean_net_return_30bps_proxy": 0.000438,
+        "year_counts": {
+          "2020": 1256,
+          "2021": 719,
+          "2022": 2208,
+          "2023": 1868
+        },
+        "year_accuracy": {
+          "2020": 0.497611,
+          "2021": 0.478442,
+          "2022": 0.567029,
+          "2023": 0.56424
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_market_weak_close",
+        "opening_filter": "relative_gap_le_-0.01"
+      },
+      "fit_score": 0.502629,
+      "fit": {
+        "predictions": 735,
+        "correct": 413,
+        "gross_direction_accuracy": 0.561905,
+        "wilson95_lower": 0.525806,
+        "symbols": 161,
+        "entry_dates": 198,
+        "top_date_share": 0.020408,
+        "top_symbol_share": 0.02585,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 381,
+        "net_long_win_rate_30bps_proxy": 0.518367,
+        "mean_net_return_30bps_proxy": -0.00017,
+        "year_counts": {
+          "2020": 191,
+          "2021": 146,
+          "2022": 251,
+          "2023": 147
+        },
+        "year_accuracy": {
+          "2020": 0.591623,
+          "2021": 0.479452,
+          "2022": 0.589641,
+          "2023": 0.557823
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_2pct",
+        "opening_filter": "stock_gap_le_-0.01"
+      },
+      "fit_score": 0.501237,
+      "fit": {
+        "predictions": 947,
+        "correct": 506,
+        "gross_direction_accuracy": 0.534319,
+        "wilson95_lower": 0.502474,
+        "symbols": 168,
+        "entry_dates": 370,
+        "top_date_share": 0.051742,
+        "top_symbol_share": 0.026399,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 476,
+        "net_long_win_rate_30bps_proxy": 0.50264,
+        "mean_net_return_30bps_proxy": -0.002039,
+        "year_counts": {
+          "2020": 282,
+          "2021": 232,
+          "2022": 312,
+          "2023": 121
+        },
+        "year_accuracy": {
+          "2020": 0.546099,
+          "2021": 0.543103,
+          "2022": 0.5,
+          "2023": 0.578512
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_3pct_weak_close",
+        "opening_filter": "market_gap_positive"
+      },
+      "fit_score": 0.498886,
+      "fit": {
+        "predictions": 1675,
+        "correct": 894,
+        "gross_direction_accuracy": 0.533731,
+        "wilson95_lower": 0.509791,
+        "symbols": 176,
+        "entry_dates": 287,
+        "top_date_share": 0.034627,
+        "top_symbol_share": 0.016716,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 813,
+        "net_long_win_rate_30bps_proxy": 0.485373,
+        "mean_net_return_30bps_proxy": -0.000574,
+        "year_counts": {
+          "2020": 416,
+          "2021": 298,
+          "2022": 671,
+          "2023": 290
+        },
+        "year_accuracy": {
+          "2020": 0.487981,
+          "2021": 0.563758,
+          "2022": 0.552906,
+          "2023": 0.524138
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_gap_up_market_weak_sz",
+        "opening_filter": "open_any"
+      },
+      "fit_score": 0.495762,
+      "fit": {
+        "predictions": 541,
+        "correct": 314,
+        "gross_direction_accuracy": 0.580407,
+        "wilson95_lower": 0.538398,
+        "symbols": 90,
+        "entry_dates": 155,
+        "top_date_share": 0.09427,
+        "top_symbol_share": 0.027726,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 291,
+        "net_long_win_rate_30bps_proxy": 0.537893,
+        "mean_net_return_30bps_proxy": 0.003549,
+        "year_counts": {
+          "2020": 128,
+          "2021": 89,
+          "2022": 177,
+          "2023": 147
+        },
+        "year_accuracy": {
+          "2020": 0.453125,
+          "2021": 0.494382,
+          "2022": 0.59322,
+          "2023": 0.727891
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_gap_up_market_weak_sz",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.495405,
+      "fit": {
+        "predictions": 299,
+        "correct": 181,
+        "gross_direction_accuracy": 0.605351,
+        "wilson95_lower": 0.54895,
+        "symbols": 82,
+        "entry_dates": 117,
+        "top_date_share": 0.130435,
+        "top_symbol_share": 0.0301,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 167,
+        "net_long_win_rate_30bps_proxy": 0.558528,
+        "mean_net_return_30bps_proxy": 0.00395,
+        "year_counts": {
+          "2020": 65,
+          "2021": 43,
+          "2022": 108,
+          "2023": 83
+        },
+        "year_accuracy": {
+          "2020": 0.446154,
+          "2021": 0.44186,
+          "2022": 0.62037,
+          "2023": 0.795181
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "all_normal",
+        "opening_filter": "stock_gap_le_-0.01"
+      },
+      "fit_score": 0.494546,
+      "fit": {
+        "predictions": 4153,
+        "correct": 2117,
+        "gross_direction_accuracy": 0.509752,
+        "wilson95_lower": 0.494546,
+        "symbols": 176,
+        "entry_dates": 787,
+        "top_date_share": 0.015892,
+        "top_symbol_share": 0.02143,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 1949,
+        "net_long_win_rate_30bps_proxy": 0.469299,
+        "mean_net_return_30bps_proxy": -0.003041,
+        "year_counts": {
+          "2020": 1099,
+          "2021": 972,
+          "2022": 1444,
+          "2023": 638
+        },
+        "year_accuracy": {
+          "2020": 0.501365,
+          "2021": 0.526749,
+          "2022": 0.504848,
+          "2023": 0.509404
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_gap_up_market_weak_sz",
+        "opening_filter": "stock_gap_0_to_2pct"
+      },
+      "fit_score": 0.490652,
+      "fit": {
+        "predictions": 221,
+        "correct": 123,
+        "gross_direction_accuracy": 0.556561,
+        "wilson95_lower": 0.490652,
+        "symbols": 79,
+        "entry_dates": 96,
+        "top_date_share": 0.099548,
+        "top_symbol_share": 0.045249,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 115,
+        "net_long_win_rate_30bps_proxy": 0.520362,
+        "mean_net_return_30bps_proxy": 0.003941,
+        "year_counts": {
+          "2020": 59,
+          "2021": 43,
+          "2022": 58,
+          "2023": 61
+        },
+        "year_accuracy": {
+          "2020": 0.491525,
+          "2021": 0.534884,
+          "2022": 0.517241,
+          "2023": 0.672131
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_3pct_weak_close",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.49064,
+      "fit": {
+        "predictions": 1407,
+        "correct": 761,
+        "gross_direction_accuracy": 0.540867,
+        "wilson95_lower": 0.514753,
+        "symbols": 174,
+        "entry_dates": 447,
+        "top_date_share": 0.017768,
+        "top_symbol_share": 0.01919,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 701,
+        "net_long_win_rate_30bps_proxy": 0.498223,
+        "mean_net_return_30bps_proxy": -0.000614,
+        "year_counts": {
+          "2020": 274,
+          "2021": 361,
+          "2022": 478,
+          "2023": 294
+        },
+        "year_accuracy": {
+          "2020": 0.587591,
+          "2021": 0.554017,
+          "2022": 0.466527,
+          "2023": 0.602041
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_market_weak_close",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.489295,
+      "fit": {
+        "predictions": 6979,
+        "correct": 3583,
+        "gross_direction_accuracy": 0.513397,
+        "wilson95_lower": 0.501667,
+        "symbols": 185,
+        "entry_dates": 217,
+        "top_date_share": 0.013899,
+        "top_symbol_share": 0.012466,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 3241,
+        "net_long_win_rate_30bps_proxy": 0.464393,
+        "mean_net_return_30bps_proxy": -0.001471,
+        "year_counts": {
+          "2020": 1172,
+          "2021": 1235,
+          "2022": 1957,
+          "2023": 2615
+        },
+        "year_accuracy": {
+          "2020": 0.506826,
+          "2021": 0.476923,
+          "2022": 0.509964,
+          "2023": 0.536138
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_2pct",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.486141,
+      "fit": {
+        "predictions": 4049,
+        "correct": 2096,
+        "gross_direction_accuracy": 0.517659,
+        "wilson95_lower": 0.502258,
+        "symbols": 181,
+        "entry_dates": 764,
+        "top_date_share": 0.010867,
+        "top_symbol_share": 0.014571,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 1913,
+        "net_long_win_rate_30bps_proxy": 0.472462,
+        "mean_net_return_30bps_proxy": -0.001477,
+        "year_counts": {
+          "2020": 763,
+          "2021": 992,
+          "2022": 1251,
+          "2023": 1043
+        },
+        "year_accuracy": {
+          "2020": 0.534731,
+          "2021": 0.528226,
+          "2022": 0.470024,
+          "2023": 0.552253
+        }
+      }
+    }
+  ],
+  "calibration_finalists": [
+    {
+      "candidate": {
+        "watchlist": "t_market_weak_close",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.489295,
+      "fit": {
+        "predictions": 6979,
+        "correct": 3583,
+        "gross_direction_accuracy": 0.513397,
+        "wilson95_lower": 0.501667,
+        "symbols": 185,
+        "entry_dates": 217,
+        "top_date_share": 0.013899,
+        "top_symbol_share": 0.012466,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 3241,
+        "net_long_win_rate_30bps_proxy": 0.464393,
+        "mean_net_return_30bps_proxy": -0.001471,
+        "year_counts": {
+          "2020": 1172,
+          "2021": 1235,
+          "2022": 1957,
+          "2023": 2615
+        },
+        "year_accuracy": {
+          "2020": 0.506826,
+          "2021": 0.476923,
+          "2022": 0.509964,
+          "2023": 0.536138
+        }
+      },
+      "calibration": {
+        "predictions": 2254,
+        "correct": 1249,
+        "gross_direction_accuracy": 0.554126,
+        "wilson95_lower": 0.533531,
+        "symbols": 177,
+        "entry_dates": 61,
+        "top_date_share": 0.035492,
+        "top_symbol_share": 0.015084,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 1128,
+        "net_long_win_rate_30bps_proxy": 0.500444,
+        "mean_net_return_30bps_proxy": 0.000628,
+        "year_counts": {
+          "2024": 2254
+        },
+        "year_accuracy": {
+          "2024": 0.554126
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_market_weak_close",
+        "opening_filter": "relative_gap_le_-0.01"
+      },
+      "fit_score": 0.502629,
+      "fit": {
+        "predictions": 735,
+        "correct": 413,
+        "gross_direction_accuracy": 0.561905,
+        "wilson95_lower": 0.525806,
+        "symbols": 161,
+        "entry_dates": 198,
+        "top_date_share": 0.020408,
+        "top_symbol_share": 0.02585,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 381,
+        "net_long_win_rate_30bps_proxy": 0.518367,
+        "mean_net_return_30bps_proxy": -0.00017,
+        "year_counts": {
+          "2020": 191,
+          "2021": 146,
+          "2022": 251,
+          "2023": 147
+        },
+        "year_accuracy": {
+          "2020": 0.591623,
+          "2021": 0.479452,
+          "2022": 0.589641,
+          "2023": 0.557823
+        }
+      },
+      "calibration": {
+        "predictions": 191,
+        "correct": 99,
+        "gross_direction_accuracy": 0.518325,
+        "wilson95_lower": 0.447803,
+        "symbols": 104,
+        "entry_dates": 52,
+        "top_date_share": 0.089005,
+        "top_symbol_share": 0.026178,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 94,
+        "net_long_win_rate_30bps_proxy": 0.492147,
+        "mean_net_return_30bps_proxy": -0.003163,
+        "year_counts": {
+          "2024": 191
+        },
+        "year_accuracy": {
+          "2024": 0.518325
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "all_normal",
+        "opening_filter": "stock_gap_le_-0.01"
+      },
+      "fit_score": 0.494546,
+      "fit": {
+        "predictions": 4153,
+        "correct": 2117,
+        "gross_direction_accuracy": 0.509752,
+        "wilson95_lower": 0.494546,
+        "symbols": 176,
+        "entry_dates": 787,
+        "top_date_share": 0.015892,
+        "top_symbol_share": 0.02143,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 1949,
+        "net_long_win_rate_30bps_proxy": 0.469299,
+        "mean_net_return_30bps_proxy": -0.003041,
+        "year_counts": {
+          "2020": 1099,
+          "2021": 972,
+          "2022": 1444,
+          "2023": 638
+        },
+        "year_accuracy": {
+          "2020": 0.501365,
+          "2021": 0.526749,
+          "2022": 0.504848,
+          "2023": 0.509404
+        }
+      },
+      "calibration": {
+        "predictions": 982,
+        "correct": 469,
+        "gross_direction_accuracy": 0.477597,
+        "wilson95_lower": 0.446504,
+        "symbols": 163,
+        "entry_dates": 185,
+        "top_date_share": 0.040733,
+        "top_symbol_share": 0.019348,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 431,
+        "net_long_win_rate_30bps_proxy": 0.4389,
+        "mean_net_return_30bps_proxy": -0.004188,
+        "year_counts": {
+          "2024": 982
+        },
+        "year_accuracy": {
+          "2024": 0.477597
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_low_volatility",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.454156,
+      "fit": {
+        "predictions": 10277,
+        "correct": 4813,
+        "gross_direction_accuracy": 0.468327,
+        "wilson95_lower": 0.458694,
+        "symbols": 177,
+        "entry_dates": 883,
+        "top_date_share": 0.005936,
+        "top_symbol_share": 0.022867,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 4208,
+        "net_long_win_rate_30bps_proxy": 0.409458,
+        "mean_net_return_30bps_proxy": -0.003177,
+        "year_counts": {
+          "2020": 1439,
+          "2021": 1812,
+          "2022": 2405,
+          "2023": 4621
+        },
+        "year_accuracy": {
+          "2020": 0.449618,
+          "2021": 0.466336,
+          "2022": 0.464865,
+          "2023": 0.476737
+        }
+      },
+      "calibration": {
+        "predictions": 3084,
+        "correct": 1420,
+        "gross_direction_accuracy": 0.460441,
+        "wilson95_lower": 0.44291,
+        "symbols": 149,
+        "entry_dates": 212,
+        "top_date_share": 0.019455,
+        "top_symbol_share": 0.023995,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 1254,
+        "net_long_win_rate_30bps_proxy": 0.406615,
+        "mean_net_return_30bps_proxy": -0.003372,
+        "year_counts": {
+          "2024": 3084
+        },
+        "year_accuracy": {
+          "2024": 0.460441
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_up_2pct",
+        "opening_filter": "market_gap_negative"
+      },
+      "fit_score": 0.441829,
+      "fit": {
+        "predictions": 4230,
+        "correct": 1954,
+        "gross_direction_accuracy": 0.461939,
+        "wilson95_lower": 0.446956,
+        "symbols": 181,
+        "entry_dates": 480,
+        "top_date_share": 0.010165,
+        "top_symbol_share": 0.016076,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 1781,
+        "net_long_win_rate_30bps_proxy": 0.42104,
+        "mean_net_return_30bps_proxy": -0.002868,
+        "year_counts": {
+          "2020": 758,
+          "2021": 968,
+          "2022": 1485,
+          "2023": 1019
+        },
+        "year_accuracy": {
+          "2020": 0.507916,
+          "2021": 0.455579,
+          "2022": 0.459933,
+          "2023": 0.436703
+        }
+      },
+      "calibration": {
+        "predictions": 1500,
+        "correct": 691,
+        "gross_direction_accuracy": 0.460667,
+        "wilson95_lower": 0.435575,
+        "symbols": 173,
+        "entry_dates": 151,
+        "top_date_share": 0.033333,
+        "top_symbol_share": 0.015333,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 635,
+        "net_long_win_rate_30bps_proxy": 0.423333,
+        "mean_net_return_30bps_proxy": -0.001798,
+        "year_counts": {
+          "2024": 1500
+        },
+        "year_accuracy": {
+          "2024": 0.460667
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_up_2pct",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.459338,
+      "fit": {
+        "predictions": 3618,
+        "correct": 1748,
+        "gross_direction_accuracy": 0.48314,
+        "wilson95_lower": 0.466883,
+        "symbols": 180,
+        "entry_dates": 802,
+        "top_date_share": 0.009674,
+        "top_symbol_share": 0.0199,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 1605,
+        "net_long_win_rate_30bps_proxy": 0.443615,
+        "mean_net_return_30bps_proxy": -0.001733,
+        "year_counts": {
+          "2020": 723,
+          "2021": 829,
+          "2022": 1174,
+          "2023": 892
+        },
+        "year_accuracy": {
+          "2020": 0.517289,
+          "2021": 0.464415,
+          "2022": 0.499148,
+          "2023": 0.451794
+        }
+      },
+      "calibration": {
+        "predictions": 1050,
+        "correct": 483,
+        "gross_direction_accuracy": 0.46,
+        "wilson95_lower": 0.430054,
+        "symbols": 165,
+        "entry_dates": 193,
+        "top_date_share": 0.029524,
+        "top_symbol_share": 0.018095,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 439,
+        "net_long_win_rate_30bps_proxy": 0.418095,
+        "mean_net_return_30bps_proxy": -0.001844,
+        "year_counts": {
+          "2024": 1050
+        },
+        "year_accuracy": {
+          "2024": 0.46
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_up_2pct",
+        "opening_filter": "open_any"
+      },
+      "fit_score": 0.441064,
+      "fit": {
+        "predictions": 7103,
+        "correct": 3218,
+        "gross_direction_accuracy": 0.453048,
+        "wilson95_lower": 0.4415,
+        "symbols": 184,
+        "entry_dates": 885,
+        "top_date_share": 0.007602,
+        "top_symbol_share": 0.014923,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 2946,
+        "net_long_win_rate_30bps_proxy": 0.414754,
+        "mean_net_return_30bps_proxy": -0.003053,
+        "year_counts": {
+          "2020": 1563,
+          "2021": 1679,
+          "2022": 2143,
+          "2023": 1718
+        },
+        "year_accuracy": {
+          "2020": 0.460013,
+          "2021": 0.446694,
+          "2022": 0.462902,
+          "2023": 0.440629
+        }
+      },
+      "calibration": {
+        "predictions": 2080,
+        "correct": 933,
+        "gross_direction_accuracy": 0.448558,
+        "wilson95_lower": 0.427299,
+        "symbols": 179,
+        "entry_dates": 216,
+        "top_date_share": 0.026923,
+        "top_symbol_share": 0.014904,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 864,
+        "net_long_win_rate_30bps_proxy": 0.415385,
+        "mean_net_return_30bps_proxy": -0.000535,
+        "year_counts": {
+          "2024": 2080
+        },
+        "year_accuracy": {
+          "2024": 0.448558
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_low_volatility",
+        "opening_filter": "stock_gap_le_-0.01"
+      },
+      "fit_score": 0.462205,
+      "fit": {
+        "predictions": 1136,
+        "correct": 558,
+        "gross_direction_accuracy": 0.491197,
+        "wilson95_lower": 0.462205,
+        "symbols": 153,
+        "entry_dates": 427,
+        "top_date_share": 0.027289,
+        "top_symbol_share": 0.036972,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 497,
+        "net_long_win_rate_30bps_proxy": 0.4375,
+        "mean_net_return_30bps_proxy": -0.005373,
+        "year_counts": {
+          "2020": 273,
+          "2021": 212,
+          "2022": 352,
+          "2023": 299
+        },
+        "year_accuracy": {
+          "2020": 0.465201,
+          "2021": 0.485849,
+          "2022": 0.471591,
+          "2023": 0.541806
+        }
+      },
+      "calibration": {
+        "predictions": 230,
+        "correct": 112,
+        "gross_direction_accuracy": 0.486957,
+        "wilson95_lower": 0.423107,
+        "symbols": 96,
+        "entry_dates": 106,
+        "top_date_share": 0.043478,
+        "top_symbol_share": 0.03913,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 101,
+        "net_long_win_rate_30bps_proxy": 0.43913,
+        "mean_net_return_30bps_proxy": -0.001266,
+        "year_counts": {
+          "2024": 230
+        },
+        "year_accuracy": {
+          "2024": 0.486957
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_2pct",
+        "opening_filter": "stock_gap_-2_to_0pct"
+      },
+      "fit_score": 0.486141,
+      "fit": {
+        "predictions": 4049,
+        "correct": 2096,
+        "gross_direction_accuracy": 0.517659,
+        "wilson95_lower": 0.502258,
+        "symbols": 181,
+        "entry_dates": 764,
+        "top_date_share": 0.010867,
+        "top_symbol_share": 0.014571,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 1913,
+        "net_long_win_rate_30bps_proxy": 0.472462,
+        "mean_net_return_30bps_proxy": -0.001477,
+        "year_counts": {
+          "2020": 763,
+          "2021": 992,
+          "2022": 1251,
+          "2023": 1043
+        },
+        "year_accuracy": {
+          "2020": 0.534731,
+          "2021": 0.528226,
+          "2022": 0.470024,
+          "2023": 0.552253
+        }
+      },
+      "calibration": {
+        "predictions": 1485,
+        "correct": 664,
+        "gross_direction_accuracy": 0.447138,
+        "wilson95_lower": 0.422019,
+        "symbols": 175,
+        "entry_dates": 191,
+        "top_date_share": 0.038384,
+        "top_symbol_share": 0.016835,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 591,
+        "net_long_win_rate_30bps_proxy": 0.39798,
+        "mean_net_return_30bps_proxy": -0.006182,
+        "year_counts": {
+          "2024": 1485
+        },
+        "year_accuracy": {
+          "2024": 0.447138
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_low_volatility",
+        "opening_filter": "market_gap_positive"
+      },
+      "fit_score": 0.446862,
+      "fit": {
+        "predictions": 10900,
+        "correct": 5031,
+        "gross_direction_accuracy": 0.46156,
+        "wilson95_lower": 0.452216,
+        "symbols": 178,
+        "entry_dates": 416,
+        "top_date_share": 0.007798,
+        "top_symbol_share": 0.024587,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 4434,
+        "net_long_win_rate_30bps_proxy": 0.406789,
+        "mean_net_return_30bps_proxy": -0.002777,
+        "year_counts": {
+          "2020": 1855,
+          "2021": 1860,
+          "2022": 2415,
+          "2023": 4770
+        },
+        "year_accuracy": {
+          "2020": 0.441509,
+          "2021": 0.478495,
+          "2022": 0.463354,
+          "2023": 0.461845
+        }
+      },
+      "calibration": {
+        "predictions": 2112,
+        "correct": 932,
+        "gross_direction_accuracy": 0.441288,
+        "wilson95_lower": 0.420237,
+        "symbols": 143,
+        "entry_dates": 62,
+        "top_date_share": 0.036458,
+        "top_symbol_share": 0.024148,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 821,
+        "net_long_win_rate_30bps_proxy": 0.388731,
+        "mean_net_return_30bps_proxy": -0.002811,
+        "year_counts": {
+          "2024": 2112
+        },
+        "year_accuracy": {
+          "2024": 0.441288
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "all_normal",
+        "opening_filter": "relative_gap_le_-0.01"
+      },
+      "fit_score": 0.481888,
+      "fit": {
+        "predictions": 3146,
+        "correct": 1575,
+        "gross_direction_accuracy": 0.500636,
+        "wilson95_lower": 0.483174,
+        "symbols": 177,
+        "entry_dates": 822,
+        "top_date_share": 0.016211,
+        "top_symbol_share": 0.022568,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 1449,
+        "net_long_win_rate_30bps_proxy": 0.460585,
+        "mean_net_return_30bps_proxy": -0.002296,
+        "year_counts": {
+          "2020": 763,
+          "2021": 816,
+          "2022": 928,
+          "2023": 639
+        },
+        "year_accuracy": {
+          "2020": 0.53211,
+          "2021": 0.498775,
+          "2022": 0.480603,
+          "2023": 0.494523
+        }
+      },
+      "calibration": {
+        "predictions": 682,
+        "correct": 306,
+        "gross_direction_accuracy": 0.44868,
+        "wilson95_lower": 0.411744,
+        "symbols": 156,
+        "entry_dates": 187,
+        "top_date_share": 0.07478,
+        "top_symbol_share": 0.02346,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 285,
+        "net_long_win_rate_30bps_proxy": 0.417889,
+        "mean_net_return_30bps_proxy": -0.003484,
+        "year_counts": {
+          "2024": 682
+        },
+        "year_accuracy": {
+          "2024": 0.44868
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_2pct",
+        "opening_filter": "stock_gap_le_-0.01"
+      },
+      "fit_score": 0.501237,
+      "fit": {
+        "predictions": 947,
+        "correct": 506,
+        "gross_direction_accuracy": 0.534319,
+        "wilson95_lower": 0.502474,
+        "symbols": 168,
+        "entry_dates": 370,
+        "top_date_share": 0.051742,
+        "top_symbol_share": 0.026399,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 476,
+        "net_long_win_rate_30bps_proxy": 0.50264,
+        "mean_net_return_30bps_proxy": -0.002039,
+        "year_counts": {
+          "2020": 282,
+          "2021": 232,
+          "2022": 312,
+          "2023": 121
+        },
+        "year_accuracy": {
+          "2020": 0.546099,
+          "2021": 0.543103,
+          "2022": 0.5,
+          "2023": 0.578512
+        }
+      },
+      "calibration": {
+        "predictions": 261,
+        "correct": 119,
+        "gross_direction_accuracy": 0.455939,
+        "wilson95_lower": 0.396591,
+        "symbols": 117,
+        "entry_dates": 88,
+        "top_date_share": 0.103448,
+        "top_symbol_share": 0.030651,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 107,
+        "net_long_win_rate_30bps_proxy": 0.409962,
+        "mean_net_return_30bps_proxy": -0.009635,
+        "year_counts": {
+          "2024": 261
+        },
+        "year_accuracy": {
+          "2024": 0.455939
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "t_down_2pct",
+        "opening_filter": "relative_gap_le_-0.01"
+      },
+      "fit_score": 0.479152,
+      "fit": {
+        "predictions": 638,
+        "correct": 331,
+        "gross_direction_accuracy": 0.518809,
+        "wilson95_lower": 0.480042,
+        "symbols": 161,
+        "entry_dates": 345,
+        "top_date_share": 0.025078,
+        "top_symbol_share": 0.040752,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 315,
+        "net_long_win_rate_30bps_proxy": 0.49373,
+        "mean_net_return_30bps_proxy": 0.000153,
+        "year_counts": {
+          "2020": 158,
+          "2021": 199,
+          "2022": 189,
+          "2023": 92
+        },
+        "year_accuracy": {
+          "2020": 0.563291,
+          "2021": 0.492462,
+          "2022": 0.529101,
+          "2023": 0.478261
+        }
+      },
+      "calibration": {
+        "predictions": 160,
+        "correct": 71,
+        "gross_direction_accuracy": 0.44375,
+        "wilson95_lower": 0.368983,
+        "symbols": 93,
+        "entry_dates": 76,
+        "top_date_share": 0.0875,
+        "top_symbol_share": 0.0375,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 66,
+        "net_long_win_rate_30bps_proxy": 0.4125,
+        "mean_net_return_30bps_proxy": -0.009466,
+        "year_counts": {
+          "2024": 160
+        },
+        "year_accuracy": {
+          "2024": 0.44375
+        }
+      }
+    },
+    {
+      "candidate": {
+        "watchlist": "all_normal",
+        "opening_filter": "stock_gap_-4_to_-2pct"
+      },
+      "fit_score": 0.483867,
+      "fit": {
+        "predictions": 672,
+        "correct": 356,
+        "gross_direction_accuracy": 0.529762,
+        "wilson95_lower": 0.491963,
+        "symbols": 149,
+        "entry_dates": 284,
+        "top_date_share": 0.046131,
+        "top_symbol_share": 0.029762,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 332,
+        "net_long_win_rate_30bps_proxy": 0.494048,
+        "mean_net_return_30bps_proxy": -0.003696,
+        "year_counts": {
+          "2020": 220,
+          "2021": 158,
+          "2022": 227,
+          "2023": 67
+        },
+        "year_accuracy": {
+          "2020": 0.586364,
+          "2021": 0.537975,
+          "2022": 0.475771,
+          "2023": 0.507463
+        }
+      },
+      "calibration": {
+        "predictions": 125,
+        "correct": 56,
+        "gross_direction_accuracy": 0.448,
+        "wilson95_lower": 0.363669,
+        "symbols": 79,
+        "entry_dates": 80,
+        "top_date_share": 0.048,
+        "top_symbol_share": 0.04,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 52,
+        "net_long_win_rate_30bps_proxy": 0.416,
+        "mean_net_return_30bps_proxy": -0.006709,
+        "year_counts": {
+          "2024": 125
+        },
+        "year_accuracy": {
+          "2024": 0.448
+        }
+      }
+    }
+  ],
+  "selected": {
+    "candidate": {
+      "watchlist": "t_market_weak_close",
+      "opening_filter": "stock_gap_-2_to_0pct"
+    },
+    "fit_score": 0.489295,
+    "fit": {
+      "predictions": 6979,
+      "correct": 3583,
+      "gross_direction_accuracy": 0.513397,
+      "wilson95_lower": 0.501667,
+      "symbols": 185,
+      "entry_dates": 217,
+      "top_date_share": 0.013899,
+      "top_symbol_share": 0.012466,
+      "unobservable_exit": 1,
+      "net_long_wins_30bps_proxy": 3241,
+      "net_long_win_rate_30bps_proxy": 0.464393,
+      "mean_net_return_30bps_proxy": -0.001471,
+      "year_counts": {
+        "2020": 1172,
+        "2021": 1235,
+        "2022": 1957,
+        "2023": 2615
+      },
+      "year_accuracy": {
+        "2020": 0.506826,
+        "2021": 0.476923,
+        "2022": 0.509964,
+        "2023": 0.536138
+      }
+    },
+    "calibration": {
+      "predictions": 2254,
+      "correct": 1249,
+      "gross_direction_accuracy": 0.554126,
+      "wilson95_lower": 0.533531,
+      "symbols": 177,
+      "entry_dates": 61,
+      "top_date_share": 0.035492,
+      "top_symbol_share": 0.015084,
+      "unobservable_exit": 1,
+      "net_long_wins_30bps_proxy": 1128,
+      "net_long_win_rate_30bps_proxy": 0.500444,
+      "mean_net_return_30bps_proxy": 0.000628,
+      "year_counts": {
+        "2024": 2254
+      },
+      "year_accuracy": {
+        "2024": 0.554126
+      }
+    }
+  },
+  "diagnostics": {
+    "old166_2024": {
+      "predictions": 802,
+      "correct": 423,
+      "gross_direction_accuracy": 0.527431,
+      "wilson95_lower": 0.492831,
+      "symbols": 72,
+      "entry_dates": 57,
+      "top_date_share": 0.037406,
+      "top_symbol_share": 0.038653,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 381,
+      "net_long_win_rate_30bps_proxy": 0.475062,
+      "mean_net_return_30bps_proxy": 0.00028,
+      "year_counts": {
+        "2024": 802
+      },
+      "year_accuracy": {
+        "2024": 0.527431
+      },
+      "date_cluster_bootstrap95": [
+        0.442823,
+        0.605094
+      ],
+      "remove_busiest_date": {
+        "predictions": 772,
+        "gross_direction_accuracy": 0.536269
+      }
+    },
+    "old166_2025": {
+      "predictions": 878,
+      "correct": 484,
+      "gross_direction_accuracy": 0.551253,
+      "wilson95_lower": 0.518202,
+      "symbols": 84,
+      "entry_dates": 44,
+      "top_date_share": 0.058087,
+      "top_symbol_share": 0.023918,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 424,
+      "net_long_win_rate_30bps_proxy": 0.482916,
+      "mean_net_return_30bps_proxy": -0.000665,
+      "year_counts": {
+        "2025": 878
+      },
+      "year_accuracy": {
+        "2025": 0.551253
+      },
+      "date_cluster_bootstrap95": [
+        0.459582,
+        0.640681
+      ],
+      "remove_busiest_date": {
+        "predictions": 827,
+        "gross_direction_accuracy": 0.577993
+      }
+    },
+    "old166_2026": {
+      "predictions": 558,
+      "correct": 276,
+      "gross_direction_accuracy": 0.494624,
+      "wilson95_lower": 0.453319,
+      "symbols": 77,
+      "entry_dates": 31,
+      "top_date_share": 0.078853,
+      "top_symbol_share": 0.032258,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 250,
+      "net_long_win_rate_30bps_proxy": 0.448029,
+      "mean_net_return_30bps_proxy": -0.002231,
+      "year_counts": {
+        "2026": 558
+      },
+      "year_accuracy": {
+        "2026": 0.494624
+      },
+      "date_cluster_bootstrap95": [
+        0.374769,
+        0.611475
+      ],
+      "remove_busiest_date": {
+        "predictions": 514,
+        "gross_direction_accuracy": 0.474708
+      }
+    },
+    "external250_2024": {
+      "predictions": 2319,
+      "correct": 1289,
+      "gross_direction_accuracy": 0.555843,
+      "wilson95_lower": 0.535544,
+      "symbols": 216,
+      "entry_dates": 58,
+      "top_date_share": 0.036654,
+      "top_symbol_share": 0.01423,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 1178,
+      "net_long_win_rate_30bps_proxy": 0.507978,
+      "mean_net_return_30bps_proxy": 0.000265,
+      "year_counts": {
+        "2024": 2319
+      },
+      "year_accuracy": {
+        "2024": 0.555843
+      },
+      "date_cluster_bootstrap95": [
+        0.477077,
+        0.632324
+      ],
+      "remove_busiest_date": {
+        "predictions": 2234,
+        "gross_direction_accuracy": 0.564011
+      }
+    },
+    "external250_2025": {
+      "predictions": 2460,
+      "correct": 1393,
+      "gross_direction_accuracy": 0.56626,
+      "wilson95_lower": 0.546588,
+      "symbols": 240,
+      "entry_dates": 45,
+      "top_date_share": 0.053659,
+      "top_symbol_share": 0.010569,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 1255,
+      "net_long_win_rate_30bps_proxy": 0.510163,
+      "mean_net_return_30bps_proxy": 0.001582,
+      "year_counts": {
+        "2025": 2460
+      },
+      "year_accuracy": {
+        "2025": 0.56626
+      },
+      "date_cluster_bootstrap95": [
+        0.479173,
+        0.648121
+      ],
+      "remove_busiest_date": {
+        "predictions": 2328,
+        "gross_direction_accuracy": 0.590206
+      }
+    },
+    "external250_2026": {
+      "predictions": 1646,
+      "correct": 786,
+      "gross_direction_accuracy": 0.477521,
+      "wilson95_lower": 0.453471,
+      "symbols": 233,
+      "entry_dates": 33,
+      "top_date_share": 0.082017,
+      "top_symbol_share": 0.012151,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 717,
+      "net_long_win_rate_30bps_proxy": 0.435601,
+      "mean_net_return_30bps_proxy": -0.001372,
+      "year_counts": {
+        "2026": 1646
+      },
+      "year_accuracy": {
+        "2026": 0.477521
+      },
+      "date_cluster_bootstrap95": [
+        0.378313,
+        0.577471
+      ],
+      "remove_busiest_date": {
+        "predictions": 1511,
+        "gross_direction_accuracy": 0.453342
+      }
+    },
+    "development200_2024": {
+      "predictions": 2254,
+      "correct": 1249,
+      "gross_direction_accuracy": 0.554126,
+      "wilson95_lower": 0.533531,
+      "symbols": 177,
+      "entry_dates": 61,
+      "top_date_share": 0.035492,
+      "top_symbol_share": 0.015084,
+      "unobservable_exit": 1,
+      "net_long_wins_30bps_proxy": 1128,
+      "net_long_win_rate_30bps_proxy": 0.500444,
+      "mean_net_return_30bps_proxy": 0.000628,
+      "year_counts": {
+        "2024": 2254
+      },
+      "year_accuracy": {
+        "2024": 0.554126
+      },
+      "date_cluster_bootstrap95": [
+        0.476916,
+        0.632518
+      ],
+      "remove_busiest_date": {
+        "predictions": 2174,
+        "gross_direction_accuracy": 0.559798
+      }
+    },
+    "development200_2025": {
+      "predictions": 2139,
+      "correct": 1190,
+      "gross_direction_accuracy": 0.556335,
+      "wilson95_lower": 0.535198,
+      "symbols": 189,
+      "entry_dates": 45,
+      "top_date_share": 0.053763,
+      "top_symbol_share": 0.011688,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 1044,
+      "net_long_win_rate_30bps_proxy": 0.488079,
+      "mean_net_return_30bps_proxy": 0.000422,
+      "year_counts": {
+        "2025": 2139
+      },
+      "year_accuracy": {
+        "2025": 0.556335
+      },
+      "date_cluster_bootstrap95": [
+        0.464082,
+        0.641806
+      ],
+      "remove_busiest_date": {
+        "predictions": 2024,
+        "gross_direction_accuracy": 0.583004
+      }
+    },
+    "development200_2026": {
+      "predictions": 1376,
+      "correct": 667,
+      "gross_direction_accuracy": 0.484738,
+      "wilson95_lower": 0.458411,
+      "symbols": 179,
+      "entry_dates": 33,
+      "top_date_share": 0.078488,
+      "top_symbol_share": 0.015262,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 596,
+      "net_long_win_rate_30bps_proxy": 0.43314,
+      "mean_net_return_30bps_proxy": -0.002091,
+      "year_counts": {
+        "2026": 1376
+      },
+      "year_accuracy": {
+        "2026": 0.484738
+      },
+      "date_cluster_bootstrap95": [
+        0.385913,
+        0.586628
+      ],
+      "remove_busiest_date": {
+        "predictions": 1268,
+        "gross_direction_accuracy": 0.468454
+      }
+    },
+    "pooled_2025": {
+      "predictions": 5477,
+      "correct": 3067,
+      "gross_direction_accuracy": 0.559978,
+      "wilson95_lower": 0.546794,
+      "symbols": 513,
+      "entry_dates": 45,
+      "top_date_share": 0.054409,
+      "top_symbol_share": 0.004747,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 2723,
+      "net_long_win_rate_30bps_proxy": 0.49717,
+      "mean_net_return_30bps_proxy": 0.000769,
+      "year_counts": {
+        "2025": 5477
+      },
+      "year_accuracy": {
+        "2025": 0.559978
+      },
+      "date_cluster_bootstrap95": [
+        0.472072,
+        0.640723
+      ],
+      "remove_busiest_date": {
+        "predictions": 5179,
+        "gross_direction_accuracy": 0.585441
+      }
+    },
+    "pooled_2026": {
+      "predictions": 3580,
+      "correct": 1729,
+      "gross_direction_accuracy": 0.482961,
+      "wilson95_lower": 0.466619,
+      "symbols": 489,
+      "entry_dates": 33,
+      "top_date_share": 0.079888,
+      "top_symbol_share": 0.005866,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 1563,
+      "net_long_win_rate_30bps_proxy": 0.436592,
+      "mean_net_return_30bps_proxy": -0.001782,
+      "year_counts": {
+        "2026": 3580
+      },
+      "year_accuracy": {
+        "2026": 0.482961
+      },
+      "date_cluster_bootstrap95": [
+        0.382043,
+        0.583487
+      ],
+      "remove_busiest_date": {
+        "predictions": 3294,
+        "gross_direction_accuracy": 0.461445
+      }
+    },
+    "pooled_2025_26": {
+      "predictions": 9057,
+      "correct": 4796,
+      "gross_direction_accuracy": 0.529535,
+      "wilson95_lower": 0.519245,
+      "symbols": 525,
+      "entry_dates": 78,
+      "top_date_share": 0.032903,
+      "top_symbol_share": 0.004748,
+      "unobservable_exit": 0,
+      "net_long_wins_30bps_proxy": 4286,
+      "net_long_win_rate_30bps_proxy": 0.473225,
+      "mean_net_return_30bps_proxy": -0.00024,
+      "year_counts": {
+        "2025": 5477,
+        "2026": 3580
+      },
+      "year_accuracy": {
+        "2025": 0.559978,
+        "2026": 0.482961
+      },
+      "date_cluster_bootstrap95": [
+        0.460766,
+        0.596926
+      ],
+      "remove_busiest_date": {
+        "predictions": 8759,
+        "gross_direction_accuracy": 0.543555
+      }
+    }
+  },
+  "production_candidate": null,
+  "production_candidate_reason": "Same-open execution is not proven for a final-open-conditioned filter, regardless of gross directional accuracy.",
+  "precommitted_limit_search": {
+    "causal_order": "After T close, commit buy limit at T close times (1 + threshold) for every T-close-watchlist stock. Assume a buy fills at T+1 clearing open only if observed open <= limit and positive volume; actual auction priority/fill unverified.",
+    "fit_ranked_top15": [
+      {
+        "candidate": {
+          "watchlist": "t_down_3pct_weak_close",
+          "opening_filter": "limit_at_T_close_-1%"
+        },
+        "fit_score": 0.525314,
+        "fit": {
+          "predictions": 386,
+          "correct": 222,
+          "gross_direction_accuracy": 0.57513,
+          "wilson95_lower": 0.525314,
+          "symbols": 137,
+          "entry_dates": 209,
+          "top_date_share": 0.049223,
+          "top_symbol_share": 0.044041,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 211,
+          "net_long_win_rate_30bps_proxy": 0.546632,
+          "mean_net_return_30bps_proxy": 0.000567,
+          "year_counts": {
+            "2020": 113,
+            "2021": 110,
+            "2022": 125,
+            "2023": 38
+          },
+          "year_accuracy": {
+            "2020": 0.575221,
+            "2021": 0.581818,
+            "2022": 0.56,
+            "2023": 0.605263
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_gap_up_market_weak_sz",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.502051,
+        "fit": {
+          "predictions": 488,
+          "correct": 287,
+          "gross_direction_accuracy": 0.588115,
+          "wilson95_lower": 0.543925,
+          "symbols": 89,
+          "entry_dates": 152,
+          "top_date_share": 0.10041,
+          "top_symbol_share": 0.030738,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 265,
+          "net_long_win_rate_30bps_proxy": 0.543033,
+          "mean_net_return_30bps_proxy": 0.00349,
+          "year_counts": {
+            "2020": 113,
+            "2021": 80,
+            "2022": 155,
+            "2023": 140
+          },
+          "year_accuracy": {
+            "2020": 0.460177,
+            "2021": 0.4875,
+            "2022": 0.593548,
+            "2023": 0.742857
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_2pct",
+          "opening_filter": "limit_at_T_close_-1%"
+        },
+        "fit_score": 0.501237,
+        "fit": {
+          "predictions": 947,
+          "correct": 506,
+          "gross_direction_accuracy": 0.534319,
+          "wilson95_lower": 0.502474,
+          "symbols": 168,
+          "entry_dates": 370,
+          "top_date_share": 0.051742,
+          "top_symbol_share": 0.026399,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 476,
+          "net_long_win_rate_30bps_proxy": 0.50264,
+          "mean_net_return_30bps_proxy": -0.002039,
+          "year_counts": {
+            "2020": 282,
+            "2021": 232,
+            "2022": 312,
+            "2023": 121
+          },
+          "year_accuracy": {
+            "2020": 0.546099,
+            "2021": 0.543103,
+            "2022": 0.5,
+            "2023": 0.578512
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_gap_up_market_weak_sz",
+          "opening_filter": "limit_at_T_close_+2%"
+        },
+        "fit_score": 0.499086,
+        "fit": {
+          "predictions": 529,
+          "correct": 307,
+          "gross_direction_accuracy": 0.58034,
+          "wilson95_lower": 0.537855,
+          "symbols": 90,
+          "entry_dates": 154,
+          "top_date_share": 0.096408,
+          "top_symbol_share": 0.028355,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 284,
+          "net_long_win_rate_30bps_proxy": 0.536862,
+          "mean_net_return_30bps_proxy": 0.003483,
+          "year_counts": {
+            "2020": 126,
+            "2021": 87,
+            "2022": 170,
+            "2023": 146
+          },
+          "year_accuracy": {
+            "2020": 0.460317,
+            "2021": 0.494253,
+            "2022": 0.582353,
+            "2023": 0.732877
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "all_normal",
+          "opening_filter": "limit_at_T_close_-1%"
+        },
+        "fit_score": 0.494546,
+        "fit": {
+          "predictions": 4153,
+          "correct": 2117,
+          "gross_direction_accuracy": 0.509752,
+          "wilson95_lower": 0.494546,
+          "symbols": 176,
+          "entry_dates": 787,
+          "top_date_share": 0.015892,
+          "top_symbol_share": 0.02143,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 1949,
+          "net_long_win_rate_30bps_proxy": 0.469299,
+          "mean_net_return_30bps_proxy": -0.003041,
+          "year_counts": {
+            "2020": 1099,
+            "2021": 972,
+            "2022": 1444,
+            "2023": 638
+          },
+          "year_accuracy": {
+            "2020": 0.501365,
+            "2021": 0.526749,
+            "2022": 0.504848,
+            "2023": 0.509404
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_3pct_weak_close",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.488376,
+        "fit": {
+          "predictions": 1935,
+          "correct": 1026,
+          "gross_direction_accuracy": 0.530233,
+          "wilson95_lower": 0.507957,
+          "symbols": 178,
+          "entry_dates": 523,
+          "top_date_share": 0.017054,
+          "top_symbol_share": 0.020155,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 945,
+          "net_long_win_rate_30bps_proxy": 0.488372,
+          "mean_net_return_30bps_proxy": -0.001527,
+          "year_counts": {
+            "2020": 395,
+            "2021": 465,
+            "2022": 689,
+            "2023": 386
+          },
+          "year_accuracy": {
+            "2020": 0.564557,
+            "2021": 0.544086,
+            "2022": 0.468795,
+            "2023": 0.588083
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_gap_up_market_weak_sz",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.487015,
+        "fit": {
+          "predictions": 373,
+          "correct": 221,
+          "gross_direction_accuracy": 0.592493,
+          "wilson95_lower": 0.54193,
+          "symbols": 84,
+          "entry_dates": 132,
+          "top_date_share": 0.10992,
+          "top_symbol_share": 0.034853,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 204,
+          "net_long_win_rate_30bps_proxy": 0.546917,
+          "mean_net_return_30bps_proxy": 0.003317,
+          "year_counts": {
+            "2020": 81,
+            "2021": 59,
+            "2022": 129,
+            "2023": 104
+          },
+          "year_accuracy": {
+            "2020": 0.432099,
+            "2021": 0.474576,
+            "2022": 0.604651,
+            "2023": 0.769231
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_3pct_weak_close",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.483413,
+        "fit": {
+          "predictions": 3022,
+          "correct": 1546,
+          "gross_direction_accuracy": 0.511582,
+          "wilson95_lower": 0.493756,
+          "symbols": 180,
+          "entry_dates": 625,
+          "top_date_share": 0.015222,
+          "top_symbol_share": 0.013898,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 1406,
+          "net_long_win_rate_30bps_proxy": 0.465255,
+          "mean_net_return_30bps_proxy": -0.002005,
+          "year_counts": {
+            "2020": 614,
+            "2021": 681,
+            "2022": 1114,
+            "2023": 613
+          },
+          "year_accuracy": {
+            "2020": 0.521173,
+            "2021": 0.530103,
+            "2022": 0.47307,
+            "2023": 0.551387
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_market_down_1pct",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.48338,
+        "fit": {
+          "predictions": 5853,
+          "correct": 3089,
+          "gross_direction_accuracy": 0.527764,
+          "wilson95_lower": 0.51496,
+          "symbols": 183,
+          "entry_dates": 155,
+          "top_date_share": 0.017427,
+          "top_symbol_share": 0.014864,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 2802,
+          "net_long_win_rate_30bps_proxy": 0.478729,
+          "mean_net_return_30bps_proxy": -0.00173,
+          "year_counts": {
+            "2020": 1027,
+            "2021": 1432,
+            "2022": 1883,
+            "2023": 1511
+          },
+          "year_accuracy": {
+            "2020": 0.451801,
+            "2021": 0.509777,
+            "2022": 0.51726,
+            "2023": 0.60953
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_2pct",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.480609,
+        "fit": {
+          "predictions": 5512,
+          "correct": 2792,
+          "gross_direction_accuracy": 0.506531,
+          "wilson95_lower": 0.493333,
+          "symbols": 182,
+          "entry_dates": 823,
+          "top_date_share": 0.009253,
+          "top_symbol_share": 0.012881,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 2561,
+          "net_long_win_rate_30bps_proxy": 0.464623,
+          "mean_net_return_30bps_proxy": -0.002167,
+          "year_counts": {
+            "2020": 1096,
+            "2021": 1307,
+            "2022": 1697,
+            "2023": 1412
+          },
+          "year_accuracy": {
+            "2020": 0.511861,
+            "2021": 0.520275,
+            "2022": 0.467885,
+            "2023": 0.536119
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_3pct_weak_close",
+          "opening_filter": "limit_at_T_close_+2%"
+        },
+        "fit_score": 0.480389,
+        "fit": {
+          "predictions": 3303,
+          "correct": 1674,
+          "gross_direction_accuracy": 0.506812,
+          "wilson95_lower": 0.489764,
+          "symbols": 180,
+          "entry_dates": 637,
+          "top_date_share": 0.015138,
+          "top_symbol_share": 0.013018,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 1525,
+          "net_long_win_rate_30bps_proxy": 0.461701,
+          "mean_net_return_30bps_proxy": -0.001944,
+          "year_counts": {
+            "2020": 690,
+            "2021": 724,
+            "2022": 1242,
+            "2023": 647
+          },
+          "year_accuracy": {
+            "2020": 0.514493,
+            "2021": 0.526243,
+            "2022": 0.471014,
+            "2023": 0.545595
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_market_weak_close",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.477172,
+        "fit": {
+          "predictions": 9313,
+          "correct": 4661,
+          "gross_direction_accuracy": 0.500483,
+          "wilson95_lower": 0.49033,
+          "symbols": 185,
+          "entry_dates": 219,
+          "top_date_share": 0.010952,
+          "top_symbol_share": 0.0131,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 4220,
+          "net_long_win_rate_30bps_proxy": 0.45313,
+          "mean_net_return_30bps_proxy": -0.001958,
+          "year_counts": {
+            "2020": 1552,
+            "2021": 1709,
+            "2022": 2653,
+            "2023": 3399
+          },
+          "year_accuracy": {
+            "2020": 0.489046,
+            "2021": 0.464014,
+            "2022": 0.511119,
+            "2023": 0.51574
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_market_down_1pct",
+          "opening_filter": "limit_at_T_close_+2%"
+        },
+        "fit_score": 0.476501,
+        "fit": {
+          "predictions": 9086,
+          "correct": 4675,
+          "gross_direction_accuracy": 0.514528,
+          "wilson95_lower": 0.504247,
+          "symbols": 185,
+          "entry_dates": 155,
+          "top_date_share": 0.012217,
+          "top_symbol_share": 0.013537,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 4233,
+          "net_long_win_rate_30bps_proxy": 0.465882,
+          "mean_net_return_30bps_proxy": -0.001885,
+          "year_counts": {
+            "2020": 1727,
+            "2021": 2127,
+            "2022": 3046,
+            "2023": 2186
+          },
+          "year_accuracy": {
+            "2020": 0.448755,
+            "2021": 0.500235,
+            "2022": 0.511819,
+            "2023": 0.584172
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_2pct",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.475899,
+        "fit": {
+          "predictions": 8315,
+          "correct": 4093,
+          "gross_direction_accuracy": 0.492243,
+          "wilson95_lower": 0.481503,
+          "symbols": 184,
+          "entry_dates": 883,
+          "top_date_share": 0.007336,
+          "top_symbol_share": 0.012267,
+          "unobservable_exit": 4,
+          "net_long_wins_30bps_proxy": 3723,
+          "net_long_win_rate_30bps_proxy": 0.447745,
+          "mean_net_return_30bps_proxy": -0.002468,
+          "year_counts": {
+            "2020": 1685,
+            "2021": 1862,
+            "2022": 2609,
+            "2023": 2159
+          },
+          "year_accuracy": {
+            "2020": 0.480712,
+            "2021": 0.502148,
+            "2022": 0.470295,
+            "2023": 0.519222
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_market_down_1pct",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.474491,
+        "fit": {
+          "predictions": 8579,
+          "correct": 4445,
+          "gross_direction_accuracy": 0.518126,
+          "wilson95_lower": 0.507547,
+          "symbols": 185,
+          "entry_dates": 156,
+          "top_date_share": 0.012822,
+          "top_symbol_share": 0.013871,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 4028,
+          "net_long_win_rate_30bps_proxy": 0.469519,
+          "mean_net_return_30bps_proxy": -0.00188,
+          "year_counts": {
+            "2020": 1588,
+            "2021": 2026,
+            "2022": 2847,
+            "2023": 2118
+          },
+          "year_accuracy": {
+            "2020": 0.441436,
+            "2021": 0.500494,
+            "2022": 0.518089,
+            "2023": 0.59254
+          }
+        }
+      }
+    ],
+    "calibration_finalists": [
+      {
+        "candidate": {
+          "watchlist": "t_market_weak_close",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.477172,
+        "fit": {
+          "predictions": 9313,
+          "correct": 4661,
+          "gross_direction_accuracy": 0.500483,
+          "wilson95_lower": 0.49033,
+          "symbols": 185,
+          "entry_dates": 219,
+          "top_date_share": 0.010952,
+          "top_symbol_share": 0.0131,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 4220,
+          "net_long_win_rate_30bps_proxy": 0.45313,
+          "mean_net_return_30bps_proxy": -0.001958,
+          "year_counts": {
+            "2020": 1552,
+            "2021": 1709,
+            "2022": 2653,
+            "2023": 3399
+          },
+          "year_accuracy": {
+            "2020": 0.489046,
+            "2021": 0.464014,
+            "2022": 0.511119,
+            "2023": 0.51574
+          }
+        },
+        "calibration": {
+          "predictions": 3125,
+          "correct": 1706,
+          "gross_direction_accuracy": 0.54592,
+          "wilson95_lower": 0.528418,
+          "symbols": 182,
+          "entry_dates": 62,
+          "top_date_share": 0.02912,
+          "top_symbol_share": 0.01536,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 1543,
+          "net_long_win_rate_30bps_proxy": 0.49376,
+          "mean_net_return_30bps_proxy": 0.000208,
+          "year_counts": {
+            "2024": 3125
+          },
+          "year_accuracy": {
+            "2024": 0.54592
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_market_weak_close",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.471793,
+        "fit": {
+          "predictions": 12932,
+          "correct": 6349,
+          "gross_direction_accuracy": 0.490953,
+          "wilson95_lower": 0.48234,
+          "symbols": 185,
+          "entry_dates": 219,
+          "top_date_share": 0.008506,
+          "top_symbol_share": 0.013146,
+          "unobservable_exit": 3,
+          "net_long_wins_30bps_proxy": 5713,
+          "net_long_win_rate_30bps_proxy": 0.441772,
+          "mean_net_return_30bps_proxy": -0.002089,
+          "year_counts": {
+            "2020": 2235,
+            "2021": 2374,
+            "2022": 3782,
+            "2023": 4541
+          },
+          "year_accuracy": {
+            "2020": 0.484564,
+            "2021": 0.461247,
+            "2022": 0.507932,
+            "2023": 0.495486
+          }
+        },
+        "calibration": {
+          "predictions": 4235,
+          "correct": 2257,
+          "gross_direction_accuracy": 0.53294,
+          "wilson95_lower": 0.517891,
+          "symbols": 184,
+          "entry_dates": 62,
+          "top_date_share": 0.028571,
+          "top_symbol_share": 0.012515,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 2031,
+          "net_long_win_rate_30bps_proxy": 0.479575,
+          "mean_net_return_30bps_proxy": -7e-06,
+          "year_counts": {
+            "2024": 4235
+          },
+          "year_accuracy": {
+            "2024": 0.53294
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_market_weak_close",
+          "opening_filter": "limit_at_T_close_+2%"
+        },
+        "fit_score": 0.470109,
+        "fit": {
+          "predictions": 13472,
+          "correct": 6580,
+          "gross_direction_accuracy": 0.48842,
+          "wilson95_lower": 0.479984,
+          "symbols": 185,
+          "entry_dates": 219,
+          "top_date_share": 0.008239,
+          "top_symbol_share": 0.01299,
+          "unobservable_exit": 4,
+          "net_long_wins_30bps_proxy": 5924,
+          "net_long_win_rate_30bps_proxy": 0.439727,
+          "mean_net_return_30bps_proxy": -0.00211,
+          "year_counts": {
+            "2020": 2375,
+            "2021": 2477,
+            "2022": 3986,
+            "2023": 4634
+          },
+          "year_accuracy": {
+            "2020": 0.487579,
+            "2021": 0.460234,
+            "2022": 0.502509,
+            "2023": 0.4918
+          }
+        },
+        "calibration": {
+          "predictions": 4375,
+          "correct": 2318,
+          "gross_direction_accuracy": 0.529829,
+          "wilson95_lower": 0.515019,
+          "symbols": 184,
+          "entry_dates": 62,
+          "top_date_share": 0.0288,
+          "top_symbol_share": 0.012343,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 2087,
+          "net_long_win_rate_30bps_proxy": 0.477029,
+          "mean_net_return_30bps_proxy": 3.8e-05,
+          "year_counts": {
+            "2024": 4375
+          },
+          "year_accuracy": {
+            "2024": 0.529829
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_3pct_weak_close",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.483413,
+        "fit": {
+          "predictions": 3022,
+          "correct": 1546,
+          "gross_direction_accuracy": 0.511582,
+          "wilson95_lower": 0.493756,
+          "symbols": 180,
+          "entry_dates": 625,
+          "top_date_share": 0.015222,
+          "top_symbol_share": 0.013898,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 1406,
+          "net_long_win_rate_30bps_proxy": 0.465255,
+          "mean_net_return_30bps_proxy": -0.002005,
+          "year_counts": {
+            "2020": 614,
+            "2021": 681,
+            "2022": 1114,
+            "2023": 613
+          },
+          "year_accuracy": {
+            "2020": 0.521173,
+            "2021": 0.530103,
+            "2022": 0.47307,
+            "2023": 0.551387
+          }
+        },
+        "calibration": {
+          "predictions": 1055,
+          "correct": 511,
+          "gross_direction_accuracy": 0.48436,
+          "wilson95_lower": 0.454315,
+          "symbols": 174,
+          "entry_dates": 143,
+          "top_date_share": 0.054028,
+          "top_symbol_share": 0.021801,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 464,
+          "net_long_win_rate_30bps_proxy": 0.43981,
+          "mean_net_return_30bps_proxy": -0.001648,
+          "year_counts": {
+            "2024": 1055
+          },
+          "year_accuracy": {
+            "2024": 0.48436
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_low_volatility",
+          "opening_filter": "limit_at_T_close_+2%"
+        },
+        "fit_score": 0.433538,
+        "fit": {
+          "predictions": 17805,
+          "correct": 7914,
+          "gross_direction_accuracy": 0.444482,
+          "wilson95_lower": 0.437196,
+          "symbols": 181,
+          "entry_dates": 937,
+          "top_date_share": 0.003482,
+          "top_symbol_share": 0.023926,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 6946,
+          "net_long_win_rate_30bps_proxy": 0.390115,
+          "mean_net_return_30bps_proxy": -0.003366,
+          "year_counts": {
+            "2020": 2668,
+            "2021": 3166,
+            "2022": 4043,
+            "2023": 7928
+          },
+          "year_accuracy": {
+            "2020": 0.447901,
+            "2021": 0.454201,
+            "2022": 0.429879,
+            "2023": 0.446897
+          }
+        },
+        "calibration": {
+          "predictions": 4786,
+          "correct": 2222,
+          "gross_direction_accuracy": 0.464271,
+          "wilson95_lower": 0.450176,
+          "symbols": 153,
+          "entry_dates": 219,
+          "top_date_share": 0.013372,
+          "top_symbol_share": 0.022566,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 1970,
+          "net_long_win_rate_30bps_proxy": 0.411617,
+          "mean_net_return_30bps_proxy": -0.003086,
+          "year_counts": {
+            "2024": 4786
+          },
+          "year_accuracy": {
+            "2024": 0.464271
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "all_normal",
+          "opening_filter": "limit_at_T_close_-1%"
+        },
+        "fit_score": 0.494546,
+        "fit": {
+          "predictions": 4153,
+          "correct": 2117,
+          "gross_direction_accuracy": 0.509752,
+          "wilson95_lower": 0.494546,
+          "symbols": 176,
+          "entry_dates": 787,
+          "top_date_share": 0.015892,
+          "top_symbol_share": 0.02143,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 1949,
+          "net_long_win_rate_30bps_proxy": 0.469299,
+          "mean_net_return_30bps_proxy": -0.003041,
+          "year_counts": {
+            "2020": 1099,
+            "2021": 972,
+            "2022": 1444,
+            "2023": 638
+          },
+          "year_accuracy": {
+            "2020": 0.501365,
+            "2021": 0.526749,
+            "2022": 0.504848,
+            "2023": 0.509404
+          }
+        },
+        "calibration": {
+          "predictions": 982,
+          "correct": 469,
+          "gross_direction_accuracy": 0.477597,
+          "wilson95_lower": 0.446504,
+          "symbols": 163,
+          "entry_dates": 185,
+          "top_date_share": 0.040733,
+          "top_symbol_share": 0.019348,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 431,
+          "net_long_win_rate_30bps_proxy": 0.4389,
+          "mean_net_return_30bps_proxy": -0.004188,
+          "year_counts": {
+            "2024": 982
+          },
+          "year_accuracy": {
+            "2024": 0.477597
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_3pct_weak_close",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.488376,
+        "fit": {
+          "predictions": 1935,
+          "correct": 1026,
+          "gross_direction_accuracy": 0.530233,
+          "wilson95_lower": 0.507957,
+          "symbols": 178,
+          "entry_dates": 523,
+          "top_date_share": 0.017054,
+          "top_symbol_share": 0.020155,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 945,
+          "net_long_win_rate_30bps_proxy": 0.488372,
+          "mean_net_return_30bps_proxy": -0.001527,
+          "year_counts": {
+            "2020": 395,
+            "2021": 465,
+            "2022": 689,
+            "2023": 386
+          },
+          "year_accuracy": {
+            "2020": 0.564557,
+            "2021": 0.544086,
+            "2022": 0.468795,
+            "2023": 0.588083
+          }
+        },
+        "calibration": {
+          "predictions": 707,
+          "correct": 339,
+          "gross_direction_accuracy": 0.479491,
+          "wilson95_lower": 0.442876,
+          "symbols": 163,
+          "entry_dates": 130,
+          "top_date_share": 0.059406,
+          "top_symbol_share": 0.019802,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 306,
+          "net_long_win_rate_30bps_proxy": 0.432815,
+          "mean_net_return_30bps_proxy": -0.002424,
+          "year_counts": {
+            "2024": 707
+          },
+          "year_accuracy": {
+            "2024": 0.479491
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_low_volatility",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.448842,
+        "fit": {
+          "predictions": 13620,
+          "correct": 6227,
+          "gross_direction_accuracy": 0.457195,
+          "wilson95_lower": 0.448842,
+          "symbols": 180,
+          "entry_dates": 909,
+          "top_date_share": 0.004699,
+          "top_symbol_share": 0.024449,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 5439,
+          "net_long_win_rate_30bps_proxy": 0.399339,
+          "mean_net_return_30bps_proxy": -0.003253,
+          "year_counts": {
+            "2020": 1956,
+            "2021": 2432,
+            "2022": 3133,
+            "2023": 6099
+          },
+          "year_accuracy": {
+            "2020": 0.450409,
+            "2021": 0.463405,
+            "2022": 0.452282,
+            "2023": 0.45942
+          }
+        },
+        "calibration": {
+          "predictions": 3965,
+          "correct": 1797,
+          "gross_direction_accuracy": 0.453216,
+          "wilson95_lower": 0.437774,
+          "symbols": 150,
+          "entry_dates": 215,
+          "top_date_share": 0.015132,
+          "top_symbol_share": 0.024212,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 1582,
+          "net_long_win_rate_30bps_proxy": 0.398991,
+          "mean_net_return_30bps_proxy": -0.003679,
+          "year_counts": {
+            "2024": 3965
+          },
+          "year_accuracy": {
+            "2024": 0.453216
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_2pct",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.475899,
+        "fit": {
+          "predictions": 8315,
+          "correct": 4093,
+          "gross_direction_accuracy": 0.492243,
+          "wilson95_lower": 0.481503,
+          "symbols": 184,
+          "entry_dates": 883,
+          "top_date_share": 0.007336,
+          "top_symbol_share": 0.012267,
+          "unobservable_exit": 4,
+          "net_long_wins_30bps_proxy": 3723,
+          "net_long_win_rate_30bps_proxy": 0.447745,
+          "mean_net_return_30bps_proxy": -0.002468,
+          "year_counts": {
+            "2020": 1685,
+            "2021": 1862,
+            "2022": 2609,
+            "2023": 2159
+          },
+          "year_accuracy": {
+            "2020": 0.480712,
+            "2021": 0.502148,
+            "2022": 0.470295,
+            "2023": 0.519222
+          }
+        },
+        "calibration": {
+          "predictions": 2603,
+          "correct": 1189,
+          "gross_direction_accuracy": 0.456781,
+          "wilson95_lower": 0.437722,
+          "symbols": 181,
+          "entry_dates": 207,
+          "top_date_share": 0.026892,
+          "top_symbol_share": 0.013062,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 1064,
+          "net_long_win_rate_30bps_proxy": 0.408759,
+          "mean_net_return_30bps_proxy": -0.004636,
+          "year_counts": {
+            "2024": 2603
+          },
+          "year_accuracy": {
+            "2024": 0.456781
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_2pct",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.480609,
+        "fit": {
+          "predictions": 5512,
+          "correct": 2792,
+          "gross_direction_accuracy": 0.506531,
+          "wilson95_lower": 0.493333,
+          "symbols": 182,
+          "entry_dates": 823,
+          "top_date_share": 0.009253,
+          "top_symbol_share": 0.012881,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 2561,
+          "net_long_win_rate_30bps_proxy": 0.464623,
+          "mean_net_return_30bps_proxy": -0.002167,
+          "year_counts": {
+            "2020": 1096,
+            "2021": 1307,
+            "2022": 1697,
+            "2023": 1412
+          },
+          "year_accuracy": {
+            "2020": 0.511861,
+            "2021": 0.520275,
+            "2022": 0.467885,
+            "2023": 0.536119
+          }
+        },
+        "calibration": {
+          "predictions": 1929,
+          "correct": 886,
+          "gross_direction_accuracy": 0.459305,
+          "wilson95_lower": 0.43717,
+          "symbols": 180,
+          "entry_dates": 197,
+          "top_date_share": 0.033178,
+          "top_symbol_share": 0.013478,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 792,
+          "net_long_win_rate_30bps_proxy": 0.410575,
+          "mean_net_return_30bps_proxy": -0.005154,
+          "year_counts": {
+            "2024": 1929
+          },
+          "year_accuracy": {
+            "2024": 0.459305
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "all_normal",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.462001,
+        "fit": {
+          "predictions": 26520,
+          "correct": 12493,
+          "gross_direction_accuracy": 0.471078,
+          "wilson95_lower": 0.465075,
+          "symbols": 185,
+          "entry_dates": 949,
+          "top_date_share": 0.003205,
+          "top_symbol_share": 0.013801,
+          "unobservable_exit": 9,
+          "net_long_wins_30bps_proxy": 11132,
+          "net_long_win_rate_30bps_proxy": 0.419759,
+          "mean_net_return_30bps_proxy": -0.002781,
+          "year_counts": {
+            "2020": 4847,
+            "2021": 5714,
+            "2022": 7389,
+            "2023": 8570
+          },
+          "year_accuracy": {
+            "2020": 0.475139,
+            "2021": 0.487924,
+            "2022": 0.469482,
+            "2023": 0.458926
+          }
+        },
+        "calibration": {
+          "predictions": 7919,
+          "correct": 3545,
+          "gross_direction_accuracy": 0.447658,
+          "wilson95_lower": 0.436734,
+          "symbols": 185,
+          "entry_dates": 237,
+          "top_date_share": 0.013512,
+          "top_symbol_share": 0.013638,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 3178,
+          "net_long_win_rate_30bps_proxy": 0.401313,
+          "mean_net_return_30bps_proxy": -0.003802,
+          "year_counts": {
+            "2024": 7919
+          },
+          "year_accuracy": {
+            "2024": 0.447658
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_up_2pct",
+          "opening_filter": "limit_at_T_close_+0%"
+        },
+        "fit_score": 0.452937,
+        "fit": {
+          "predictions": 4665,
+          "correct": 2213,
+          "gross_direction_accuracy": 0.474384,
+          "wilson95_lower": 0.460081,
+          "symbols": 183,
+          "entry_dates": 842,
+          "top_date_share": 0.00836,
+          "top_symbol_share": 0.017149,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 2012,
+          "net_long_win_rate_30bps_proxy": 0.431297,
+          "mean_net_return_30bps_proxy": -0.002283,
+          "year_counts": {
+            "2020": 947,
+            "2021": 1079,
+            "2022": 1486,
+            "2023": 1153
+          },
+          "year_accuracy": {
+            "2020": 0.495248,
+            "2021": 0.468953,
+            "2022": 0.487214,
+            "2023": 0.445794
+          }
+        },
+        "calibration": {
+          "predictions": 1386,
+          "correct": 629,
+          "gross_direction_accuracy": 0.453824,
+          "wilson95_lower": 0.427777,
+          "symbols": 171,
+          "entry_dates": 201,
+          "top_date_share": 0.029582,
+          "top_symbol_share": 0.016595,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 575,
+          "net_long_win_rate_30bps_proxy": 0.414863,
+          "mean_net_return_30bps_proxy": -0.001999,
+          "year_counts": {
+            "2024": 1386
+          },
+          "year_accuracy": {
+            "2024": 0.453824
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_up_2pct",
+          "opening_filter": "limit_at_T_close_+2%"
+        },
+        "fit_score": 0.44326,
+        "fit": {
+          "predictions": 6919,
+          "correct": 3158,
+          "gross_direction_accuracy": 0.456424,
+          "wilson95_lower": 0.444715,
+          "symbols": 184,
+          "entry_dates": 885,
+          "top_date_share": 0.006793,
+          "top_symbol_share": 0.015176,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 2890,
+          "net_long_win_rate_30bps_proxy": 0.41769,
+          "mean_net_return_30bps_proxy": -0.002876,
+          "year_counts": {
+            "2020": 1513,
+            "2021": 1626,
+            "2022": 2096,
+            "2023": 1684
+          },
+          "year_accuracy": {
+            "2020": 0.466623,
+            "2021": 0.448954,
+            "2022": 0.466603,
+            "2023": 0.441805
+          }
+        },
+        "calibration": {
+          "predictions": 2017,
+          "correct": 901,
+          "gross_direction_accuracy": 0.446703,
+          "wilson95_lower": 0.425129,
+          "symbols": 179,
+          "entry_dates": 215,
+          "top_date_share": 0.024789,
+          "top_symbol_share": 0.014874,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 833,
+          "net_long_win_rate_30bps_proxy": 0.41299,
+          "mean_net_return_30bps_proxy": -0.001194,
+          "year_counts": {
+            "2024": 2017
+          },
+          "year_accuracy": {
+            "2024": 0.446703
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_low_volatility",
+          "opening_filter": "limit_at_T_close_-1%"
+        },
+        "fit_score": 0.462205,
+        "fit": {
+          "predictions": 1136,
+          "correct": 558,
+          "gross_direction_accuracy": 0.491197,
+          "wilson95_lower": 0.462205,
+          "symbols": 153,
+          "entry_dates": 427,
+          "top_date_share": 0.027289,
+          "top_symbol_share": 0.036972,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 497,
+          "net_long_win_rate_30bps_proxy": 0.4375,
+          "mean_net_return_30bps_proxy": -0.005373,
+          "year_counts": {
+            "2020": 273,
+            "2021": 212,
+            "2022": 352,
+            "2023": 299
+          },
+          "year_accuracy": {
+            "2020": 0.465201,
+            "2021": 0.485849,
+            "2022": 0.471591,
+            "2023": 0.541806
+          }
+        },
+        "calibration": {
+          "predictions": 230,
+          "correct": 112,
+          "gross_direction_accuracy": 0.486957,
+          "wilson95_lower": 0.423107,
+          "symbols": 96,
+          "entry_dates": 106,
+          "top_date_share": 0.043478,
+          "top_symbol_share": 0.03913,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 101,
+          "net_long_win_rate_30bps_proxy": 0.43913,
+          "mean_net_return_30bps_proxy": -0.001266,
+          "year_counts": {
+            "2024": 230
+          },
+          "year_accuracy": {
+            "2024": 0.486957
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_up_2pct",
+          "opening_filter": "limit_at_T_close_+1%"
+        },
+        "fit_score": 0.445484,
+        "fit": {
+          "predictions": 6535,
+          "correct": 3008,
+          "gross_direction_accuracy": 0.460291,
+          "wilson95_lower": 0.448233,
+          "symbols": 183,
+          "entry_dates": 878,
+          "top_date_share": 0.006274,
+          "top_symbol_share": 0.015608,
+          "unobservable_exit": 2,
+          "net_long_wins_30bps_proxy": 2749,
+          "net_long_win_rate_30bps_proxy": 0.420658,
+          "mean_net_return_30bps_proxy": -0.002673,
+          "year_counts": {
+            "2020": 1393,
+            "2021": 1532,
+            "2022": 1986,
+            "2023": 1624
+          },
+          "year_accuracy": {
+            "2020": 0.473798,
+            "2021": 0.449739,
+            "2022": 0.473313,
+            "2023": 0.442734
+          }
+        },
+        "calibration": {
+          "predictions": 1908,
+          "correct": 845,
+          "gross_direction_accuracy": 0.442872,
+          "wilson95_lower": 0.420721,
+          "symbols": 177,
+          "entry_dates": 215,
+          "top_date_share": 0.02673,
+          "top_symbol_share": 0.014675,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 777,
+          "net_long_win_rate_30bps_proxy": 0.407233,
+          "mean_net_return_30bps_proxy": -0.001995,
+          "year_counts": {
+            "2024": 1908
+          },
+          "year_accuracy": {
+            "2024": 0.442872
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "t_down_2pct",
+          "opening_filter": "limit_at_T_close_-1%"
+        },
+        "fit_score": 0.501237,
+        "fit": {
+          "predictions": 947,
+          "correct": 506,
+          "gross_direction_accuracy": 0.534319,
+          "wilson95_lower": 0.502474,
+          "symbols": 168,
+          "entry_dates": 370,
+          "top_date_share": 0.051742,
+          "top_symbol_share": 0.026399,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 476,
+          "net_long_win_rate_30bps_proxy": 0.50264,
+          "mean_net_return_30bps_proxy": -0.002039,
+          "year_counts": {
+            "2020": 282,
+            "2021": 232,
+            "2022": 312,
+            "2023": 121
+          },
+          "year_accuracy": {
+            "2020": 0.546099,
+            "2021": 0.543103,
+            "2022": 0.5,
+            "2023": 0.578512
+          }
+        },
+        "calibration": {
+          "predictions": 261,
+          "correct": 119,
+          "gross_direction_accuracy": 0.455939,
+          "wilson95_lower": 0.396591,
+          "symbols": 117,
+          "entry_dates": 88,
+          "top_date_share": 0.103448,
+          "top_symbol_share": 0.030651,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 107,
+          "net_long_win_rate_30bps_proxy": 0.409962,
+          "mean_net_return_30bps_proxy": -0.009635,
+          "year_counts": {
+            "2024": 261
+          },
+          "year_accuracy": {
+            "2024": 0.455939
+          }
+        }
+      },
+      {
+        "candidate": {
+          "watchlist": "all_normal",
+          "opening_filter": "limit_at_T_close_-2%"
+        },
+        "fit_score": 0.453533,
+        "fit": {
+          "predictions": 846,
+          "correct": 422,
+          "gross_direction_accuracy": 0.498818,
+          "wilson95_lower": 0.465207,
+          "symbols": 156,
+          "entry_dates": 312,
+          "top_date_share": 0.067376,
+          "top_symbol_share": 0.030733,
+          "unobservable_exit": 1,
+          "net_long_wins_30bps_proxy": 397,
+          "net_long_win_rate_30bps_proxy": 0.469267,
+          "mean_net_return_30bps_proxy": -0.007872,
+          "year_counts": {
+            "2020": 330,
+            "2021": 182,
+            "2022": 248,
+            "2023": 86
+          },
+          "year_accuracy": {
+            "2020": 0.530303,
+            "2021": 0.527473,
+            "2022": 0.455645,
+            "2023": 0.44186
+          }
+        },
+        "calibration": {
+          "predictions": 151,
+          "correct": 70,
+          "gross_direction_accuracy": 0.463576,
+          "wilson95_lower": 0.38593,
+          "symbols": 90,
+          "entry_dates": 87,
+          "top_date_share": 0.039735,
+          "top_symbol_share": 0.039735,
+          "unobservable_exit": 0,
+          "net_long_wins_30bps_proxy": 64,
+          "net_long_win_rate_30bps_proxy": 0.423841,
+          "mean_net_return_30bps_proxy": -0.007779,
+          "year_counts": {
+            "2024": 151
+          },
+          "year_accuracy": {
+            "2024": 0.463576
+          }
+        }
+      }
+    ],
+    "selected": {
+      "candidate": {
+        "watchlist": "t_market_weak_close",
+        "opening_filter": "limit_at_T_close_+0%"
+      },
+      "fit_score": 0.477172,
+      "fit": {
+        "predictions": 9313,
+        "correct": 4661,
+        "gross_direction_accuracy": 0.500483,
+        "wilson95_lower": 0.49033,
+        "symbols": 185,
+        "entry_dates": 219,
+        "top_date_share": 0.010952,
+        "top_symbol_share": 0.0131,
+        "unobservable_exit": 2,
+        "net_long_wins_30bps_proxy": 4220,
+        "net_long_win_rate_30bps_proxy": 0.45313,
+        "mean_net_return_30bps_proxy": -0.001958,
+        "year_counts": {
+          "2020": 1552,
+          "2021": 1709,
+          "2022": 2653,
+          "2023": 3399
+        },
+        "year_accuracy": {
+          "2020": 0.489046,
+          "2021": 0.464014,
+          "2022": 0.511119,
+          "2023": 0.51574
+        }
+      },
+      "calibration": {
+        "predictions": 3125,
+        "correct": 1706,
+        "gross_direction_accuracy": 0.54592,
+        "wilson95_lower": 0.528418,
+        "symbols": 182,
+        "entry_dates": 62,
+        "top_date_share": 0.02912,
+        "top_symbol_share": 0.01536,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 1543,
+        "net_long_win_rate_30bps_proxy": 0.49376,
+        "mean_net_return_30bps_proxy": 0.000208,
+        "year_counts": {
+          "2024": 3125
+        },
+        "year_accuracy": {
+          "2024": 0.54592
+        }
+      }
+    },
+    "diagnostics": {
+      "old166_2024": {
+        "predictions": 1112,
+        "correct": 583,
+        "gross_direction_accuracy": 0.524281,
+        "wilson95_lower": 0.494894,
+        "symbols": 73,
+        "entry_dates": 57,
+        "top_date_share": 0.034173,
+        "top_symbol_share": 0.032374,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 521,
+        "net_long_win_rate_30bps_proxy": 0.468525,
+        "mean_net_return_30bps_proxy": -0.000602,
+        "year_counts": {
+          "2024": 1112
+        },
+        "year_accuracy": {
+          "2024": 0.524281
+        },
+        "date_cluster_bootstrap95": [
+          0.443208,
+          0.602359
+        ],
+        "remove_busiest_date": {
+          "predictions": 1074,
+          "gross_direction_accuracy": 0.511173
+        }
+      },
+      "old166_2025": {
+        "predictions": 1277,
+        "correct": 719,
+        "gross_direction_accuracy": 0.563038,
+        "wilson95_lower": 0.535685,
+        "symbols": 84,
+        "entry_dates": 45,
+        "top_date_share": 0.045419,
+        "top_symbol_share": 0.023493,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 628,
+        "net_long_win_rate_30bps_proxy": 0.491778,
+        "mean_net_return_30bps_proxy": 0.000198,
+        "year_counts": {
+          "2025": 1277
+        },
+        "year_accuracy": {
+          "2025": 0.563038
+        },
+        "date_cluster_bootstrap95": [
+          0.473877,
+          0.648194
+        ],
+        "remove_busiest_date": {
+          "predictions": 1219,
+          "gross_direction_accuracy": 0.543888
+        }
+      },
+      "old166_2026": {
+        "predictions": 825,
+        "correct": 399,
+        "gross_direction_accuracy": 0.483636,
+        "wilson95_lower": 0.449691,
+        "symbols": 80,
+        "entry_dates": 32,
+        "top_date_share": 0.067879,
+        "top_symbol_share": 0.031515,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 359,
+        "net_long_win_rate_30bps_proxy": 0.435152,
+        "mean_net_return_30bps_proxy": -0.002036,
+        "year_counts": {
+          "2026": 825
+        },
+        "year_accuracy": {
+          "2026": 0.483636
+        },
+        "date_cluster_bootstrap95": [
+          0.380741,
+          0.594016
+        ],
+        "remove_busiest_date": {
+          "predictions": 769,
+          "gross_direction_accuracy": 0.507152
+        }
+      },
+      "external250_2024": {
+        "predictions": 3227,
+        "correct": 1782,
+        "gross_direction_accuracy": 0.552216,
+        "wilson95_lower": 0.535007,
+        "symbols": 221,
+        "entry_dates": 58,
+        "top_date_share": 0.032848,
+        "top_symbol_share": 0.012705,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 1627,
+        "net_long_win_rate_30bps_proxy": 0.504183,
+        "mean_net_return_30bps_proxy": 5e-06,
+        "year_counts": {
+          "2024": 3227
+        },
+        "year_accuracy": {
+          "2024": 0.552216
+        },
+        "date_cluster_bootstrap95": [
+          0.476699,
+          0.623994
+        ],
+        "remove_busiest_date": {
+          "predictions": 3121,
+          "gross_direction_accuracy": 0.559436
+        }
+      },
+      "external250_2025": {
+        "predictions": 3504,
+        "correct": 1969,
+        "gross_direction_accuracy": 0.561929,
+        "wilson95_lower": 0.545442,
+        "symbols": 243,
+        "entry_dates": 45,
+        "top_date_share": 0.042523,
+        "top_symbol_share": 0.008847,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 1754,
+        "net_long_win_rate_30bps_proxy": 0.500571,
+        "mean_net_return_30bps_proxy": 0.00143,
+        "year_counts": {
+          "2025": 3504
+        },
+        "year_accuracy": {
+          "2025": 0.561929
+        },
+        "date_cluster_bootstrap95": [
+          0.477027,
+          0.641853
+        ],
+        "remove_busiest_date": {
+          "predictions": 3355,
+          "gross_direction_accuracy": 0.580626
+        }
+      },
+      "external250_2026": {
+        "predictions": 2283,
+        "correct": 1094,
+        "gross_direction_accuracy": 0.479194,
+        "wilson95_lower": 0.458754,
+        "symbols": 237,
+        "entry_dates": 33,
+        "top_date_share": 0.061323,
+        "top_symbol_share": 0.011827,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 1004,
+        "net_long_win_rate_30bps_proxy": 0.439772,
+        "mean_net_return_30bps_proxy": -0.001044,
+        "year_counts": {
+          "2026": 2283
+        },
+        "year_accuracy": {
+          "2026": 0.479194
+        },
+        "date_cluster_bootstrap95": [
+          0.386955,
+          0.5788
+        ],
+        "remove_busiest_date": {
+          "predictions": 2143,
+          "gross_direction_accuracy": 0.462436
+        }
+      },
+      "development200_2024": {
+        "predictions": 3125,
+        "correct": 1706,
+        "gross_direction_accuracy": 0.54592,
+        "wilson95_lower": 0.528418,
+        "symbols": 182,
+        "entry_dates": 62,
+        "top_date_share": 0.02912,
+        "top_symbol_share": 0.01536,
+        "unobservable_exit": 1,
+        "net_long_wins_30bps_proxy": 1543,
+        "net_long_win_rate_30bps_proxy": 0.49376,
+        "mean_net_return_30bps_proxy": 0.000208,
+        "year_counts": {
+          "2024": 3125
+        },
+        "year_accuracy": {
+          "2024": 0.54592
+        },
+        "date_cluster_bootstrap95": [
+          0.475125,
+          0.615956
+        ],
+        "remove_busiest_date": {
+          "predictions": 3034,
+          "gross_direction_accuracy": 0.537245
+        }
+      },
+      "development200_2025": {
+        "predictions": 3078,
+        "correct": 1697,
+        "gross_direction_accuracy": 0.551332,
+        "wilson95_lower": 0.533708,
+        "symbols": 190,
+        "entry_dates": 45,
+        "top_date_share": 0.041261,
+        "top_symbol_share": 0.009747,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 1499,
+        "net_long_win_rate_30bps_proxy": 0.487005,
+        "mean_net_return_30bps_proxy": 0.000882,
+        "year_counts": {
+          "2025": 3078
+        },
+        "year_accuracy": {
+          "2025": 0.551332
+        },
+        "date_cluster_bootstrap95": [
+          0.462781,
+          0.633571
+        ],
+        "remove_busiest_date": {
+          "predictions": 2951,
+          "gross_direction_accuracy": 0.570993
+        }
+      },
+      "development200_2026": {
+        "predictions": 1897,
+        "correct": 931,
+        "gross_direction_accuracy": 0.490775,
+        "wilson95_lower": 0.46832,
+        "symbols": 186,
+        "entry_dates": 33,
+        "top_date_share": 0.062203,
+        "top_symbol_share": 0.012652,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 842,
+        "net_long_win_rate_30bps_proxy": 0.443859,
+        "mean_net_return_30bps_proxy": -0.001394,
+        "year_counts": {
+          "2026": 1897
+        },
+        "year_accuracy": {
+          "2026": 0.490775
+        },
+        "date_cluster_bootstrap95": [
+          0.394394,
+          0.591678
+        ],
+        "remove_busiest_date": {
+          "predictions": 1779,
+          "gross_direction_accuracy": 0.515458
+        }
+      },
+      "pooled_2025": {
+        "predictions": 7859,
+        "correct": 4385,
+        "gross_direction_accuracy": 0.557959,
+        "wilson95_lower": 0.546953,
+        "symbols": 517,
+        "entry_dates": 45,
+        "top_date_share": 0.041736,
+        "top_symbol_share": 0.003945,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 3881,
+        "net_long_win_rate_30bps_proxy": 0.493829,
+        "mean_net_return_30bps_proxy": 0.001015,
+        "year_counts": {
+          "2025": 7859
+        },
+        "year_accuracy": {
+          "2025": 0.557959
+        },
+        "date_cluster_bootstrap95": [
+          0.472346,
+          0.639302
+        ],
+        "remove_busiest_date": {
+          "predictions": 7531,
+          "gross_direction_accuracy": 0.577081
+        }
+      },
+      "pooled_2026": {
+        "predictions": 5005,
+        "correct": 2424,
+        "gross_direction_accuracy": 0.484316,
+        "wilson95_lower": 0.470488,
+        "symbols": 503,
+        "entry_dates": 33,
+        "top_date_share": 0.062138,
+        "top_symbol_share": 0.005395,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 2205,
+        "net_long_win_rate_30bps_proxy": 0.440559,
+        "mean_net_return_30bps_proxy": -0.00134,
+        "year_counts": {
+          "2026": 5005
+        },
+        "year_accuracy": {
+          "2026": 0.484316
+        },
+        "date_cluster_bootstrap95": [
+          0.390986,
+          0.583898
+        ],
+        "remove_busiest_date": {
+          "predictions": 4694,
+          "gross_direction_accuracy": 0.508948
+        }
+      },
+      "pooled_2025_26": {
+        "predictions": 12864,
+        "correct": 6809,
+        "gross_direction_accuracy": 0.529307,
+        "wilson95_lower": 0.520674,
+        "symbols": 526,
+        "entry_dates": 78,
+        "top_date_share": 0.025498,
+        "top_symbol_share": 0.004353,
+        "unobservable_exit": 0,
+        "net_long_wins_30bps_proxy": 6086,
+        "net_long_win_rate_30bps_proxy": 0.473103,
+        "mean_net_return_30bps_proxy": 9.9e-05,
+        "year_counts": {
+          "2025": 7859,
+          "2026": 5005
+        },
+        "year_accuracy": {
+          "2025": 0.557959,
+          "2026": 0.484316
+        },
+        "date_cluster_bootstrap95": [
+          0.46217,
+          0.594781
+        ],
+        "remove_busiest_date": {
+          "predictions": 12536,
+          "gross_direction_accuracy": 0.540045
+        }
+      }
+    },
+    "production_candidate": null
+  }
+}

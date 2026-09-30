@@ -1,0 +1,111 @@
+{
+  "purpose": "point-in-time cohort and raw data integrity only; no labels, forward returns or rule fitting",
+  "assignment_sha256": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950",
+  "data_sha256": "789d5137b853e864b42c2992bfdb276a1e4b3eb2801296b0069490d77e358c98",
+  "assigned_symbols": 100,
+  "quote_symbols": 100,
+  "raw_rows": 134752,
+  "traded_rows": 134291,
+  "valid_traded_rows": 134291,
+  "ohlc_bad_rows": 0,
+  "amount_div_volume_outside_ohlc_rows": 0,
+  "status_counts": {
+    "tradestatus=0,isST=0": 197,
+    "tradestatus=0,isST=1": 264,
+    "tradestatus=1,isST=0": 124224,
+    "tradestatus=1,isST=1": 10067
+  },
+  "selected_known_future_delisted_count": 5,
+  "selected_known_future_delisted_symbols": [
+    "000780.SZ",
+    "002118.SZ",
+    "002619.SZ",
+    "600146.SH",
+    "600647.SH"
+  ],
+  "selected_overlap_phase4_80_count": 4,
+  "normal_nonST_rows": 39782,
+  "normal_nonST_symbols": 96,
+  "normal_nonST_dates": 1608,
+  "by_snapshot_year": {
+    "2019-01-02_2019": {
+      "valid_traded_rows": 12157,
+      "normal_nonST_rows": 0,
+      "normal_nonST_symbols": 0,
+      "normal_nonST_dates": 0
+    },
+    "2019-01-02_2020": {
+      "valid_traded_rows": 12089,
+      "normal_nonST_rows": 2947,
+      "normal_nonST_symbols": 42,
+      "normal_nonST_dates": 216
+    },
+    "2019-01-02_2021": {
+      "valid_traded_rows": 12117,
+      "normal_nonST_rows": 2544,
+      "normal_nonST_symbols": 31,
+      "normal_nonST_dates": 243
+    },
+    "2019-01-02_2022": {
+      "valid_traded_rows": 11480,
+      "normal_nonST_rows": 3069,
+      "normal_nonST_symbols": 42,
+      "normal_nonST_dates": 242
+    },
+    "2019-01-02_2023": {
+      "valid_traded_rows": 11236,
+      "normal_nonST_rows": 3807,
+      "normal_nonST_symbols": 41,
+      "normal_nonST_dates": 242
+    },
+    "2019-01-02_2024": {
+      "valid_traded_rows": 11130,
+      "normal_nonST_rows": 3325,
+      "normal_nonST_symbols": 44,
+      "normal_nonST_dates": 242
+    },
+    "2019-01-02_2025": {
+      "valid_traded_rows": 11171,
+      "normal_nonST_rows": 5404,
+      "normal_nonST_symbols": 44,
+      "normal_nonST_dates": 243
+    },
+    "2019-01-02_2026": {
+      "valid_traded_rows": 8216,
+      "normal_nonST_rows": 3595,
+      "normal_nonST_symbols": 42,
+      "normal_nonST_dates": 180
+    },
+    "2023-01-03_2023": {
+      "valid_traded_rows": 12080,
+      "normal_nonST_rows": 0,
+      "normal_nonST_symbols": 0,
+      "normal_nonST_dates": 0
+    },
+    "2023-01-03_2024": {
+      "valid_traded_rows": 11916,
+      "normal_nonST_rows": 4108,
+      "normal_nonST_symbols": 45,
+      "normal_nonST_dates": 233
+    },
+    "2023-01-03_2025": {
+      "valid_traded_rows": 11891,
+      "normal_nonST_rows": 6749,
+      "normal_nonST_symbols": 45,
+      "normal_nonST_dates": 243
+    },
+    "2023-01-03_2026": {
+      "valid_traded_rows": 8808,
+      "normal_nonST_rows": 4234,
+      "normal_nonST_symbols": 43,
+      "normal_nonST_dates": 180
+    }
+  },
+  "sealed_validation_access": "phase2 assignment symbol identities only; no sealed quotes or outcomes",
+  "caveats": [
+    "This is a 100-symbol sample rather than the full point-in-time universe.",
+    "Membership and daily ST flags are BaoStock reported, not exchange independently verified.",
+    "The phase4 historical cohort has stock overlap; do not treat this entire cohort as independent of phase4.",
+    "Unadjusted corporate-action price jumps need separate treatment before return labels."
+  ]
+}

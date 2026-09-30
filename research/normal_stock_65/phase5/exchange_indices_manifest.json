@@ -1,0 +1,22 @@
+{
+  "created_utc": "2026-09-30T12:04:34.715621+00:00",
+  "source": "BaoStock 0.9.4 query_history_k_data_plus",
+  "query": {
+    "codes": {
+      "SSE_COMPOSITE": "sh.000001",
+      "SZSE_COMPONENT": "sz.399001"
+    },
+    "fields": "date,code,open,high,low,close,volume,amount,tradestatus",
+    "start": "2019-01-01",
+    "end": "2026-09-29",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "rows": {
+    "SSE_COMPOSITE": 1879,
+    "SZSE_COMPONENT": 1879
+  },
+  "total_rows": 3758,
+  "source_sha256": "5b82764d4ad1991d629cafdedd53602510fad968baa31f1b186b22c9f9e676ed",
+  "sealed_validation_access": "none"
+}

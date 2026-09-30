@@ -1,0 +1,43 @@
+{
+  "created_utc": "2026-09-30T12:03:46.957194+00:00",
+  "purpose": "point-in-time mainboard cohort raw quote collection; no labels or rule tuning",
+  "source": "BaoStock 0.9.4 query_history_k_data_plus",
+  "query": {
+    "fields": "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus,isST",
+    "start_date": "each assigned snapshot date",
+    "end_date": "2026-09-29",
+    "frequency": "d",
+    "adjustflag": "3"
+  },
+  "assignment_sha256": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950",
+  "assigned_symbols": 100,
+  "symbols_with_rows": 100,
+  "rows": 134752,
+  "status_counts": {
+    "tradestatus=0,isST=0": 197,
+    "tradestatus=0,isST=1": 264,
+    "tradestatus=1,isST=0": 124224,
+    "tradestatus=1,isST=1": 10067
+  },
+  "fetch_errors": {},
+  "sha256": {
+    "pit_unadjusted_baostock.csv": "789d5137b853e864b42c2992bfdb276a1e4b3eb2801296b0069490d77e358c98",
+    "pit_baostock_coverage.csv": "ac3c3b72199ce8f500830aa89a221eea96fcb7d30d0c0794934aeeda90aa7e49"
+  },
+  "sealed_validation_access": "none",
+  "caveats": [
+    "Unadjusted prices need corporate-action handling for returns and rolling factors.",
+    "tradestatus=0 marks non-executable bars.",
+    "Daily isST is source reported, not independently exchange verified."
+  ],
+  "resumed_utc": "2026-09-30T12:09:05.613504+00:00",
+  "retry_history": [
+    {
+      "reason": "BaoStock session expired after 80 symbols; manifest update interrupted after retry CSV write",
+      "symbols_retried": 20,
+      "original_quote_sha256": "d3ee711cee1564b5a6917c79f104ce8609fae0a213e528162723660471471bef",
+      "original_coverage_sha256": "bff1baa8f0ec74ed18f85ea43370f539a096d13958be09b64f5ff144260c2f85",
+      "prior_data_reconstructed_and_verified": true
+    }
+  ]
+}
