@@ -26,6 +26,12 @@ import com.jx.tracker.verification.ResearchVerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.core.io.ClassPathResource;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -139,26 +145,35 @@ public class RuleStrategyService {
         return readSnapshot(version.getSnapshotJson(), code);
     }
 
-    public RuleStrategyDetailDto getActiveStrategy() {
-        RuleStrategy active = strategyMapper.selectOne(new LambdaQueryWrapper<RuleStrategy>()
-                .eq(RuleStrategy::getStatus, "active"));
-        return active == null ? null : read(active);
+    /** All enabled applications run independently; ordering never selects a winner. */
+    public List<RuleStrategyDetailDto> getActiveStrategies() {
+        return strategyMapper.selectList(new LambdaQueryWrapper<RuleStrategy>()
+                .eq(RuleStrategy::getStatus, "active")
+                .orderByAsc(RuleStrategy::getStrategyCode)).stream().map(this::read).toList();
     }
 
-    /** Keep an active application's rule set executable when managing a formal rule. */
-    public void assertCanDeactivateRule(String ruleCode) {
-        RuleStrategyDetailDto active = getActiveStrategy();
-        if (active == null || active.getGroups() == null) {
-            return;
+    /** Compatibility for callers that require exactly one application. */
+    public RuleStrategyDetailDto getActiveStrategy() {
+        List<RuleStrategyDetailDto> active = getActiveStrategies();
+        if (active.size() > 1) {
+            throw badRequest("当前有多个启用方案，请明确指定应用方案");
         }
-        boolean referenced = active.getGroups().stream()
-                .filter(selected -> selected != null && selected.getGroup() != null
-                        && selected.getGroup().getMembers() != null)
-                .flatMap(selected -> selected.getGroup().getMembers().stream())
-                .anyMatch(member -> member != null && ruleCode.equals(member.getRuleCode()));
-        if (referenced) {
-            throw badRequest("正式规则 " + ruleCode + " 正被启用中的应用方案 "
-                    + active.getStrategyCode() + " 使用，请先停用或调整该应用方案");
+        return active.isEmpty() ? null : active.getFirst();
+    }
+
+    /** Keep every active application's rule set executable when managing a formal rule. */
+    public void assertCanDeactivateRule(String ruleCode) {
+        for (RuleStrategyDetailDto active : getActiveStrategies()) {
+            if (active.getGroups() == null) continue;
+            boolean referenced = active.getGroups().stream()
+                    .filter(selected -> selected != null && selected.getGroup() != null
+                            && selected.getGroup().getMembers() != null)
+                    .flatMap(selected -> selected.getGroup().getMembers().stream())
+                    .anyMatch(member -> member != null && ruleCode.equals(member.getRuleCode()));
+            if (referenced) {
+                throw badRequest("正式规则 " + ruleCode + " 正被启用中的应用方案 "
+                        + active.getStrategyCode() + " 使用，请先停用或调整该应用方案");
+            }
         }
     }
 
@@ -169,16 +184,13 @@ public class RuleStrategyService {
 
     private RuleStrategyDetailDto create(RuleStrategyDetailDto request, boolean refreshStockPool) {
         RuleStrategyDetailDto detail = normalize(request, null, refreshStockPool);
-        if ("active".equals(detail.getStatus())) {
-            deactivateCurrent(null);
-        }
         RuleStrategy row = new RuleStrategy();
         copyToRow(detail, row);
         try {
             strategyMapper.insert(row);
             insertVersion(row);
         } catch (DuplicateKeyException e) {
-            throw badRequest("应用方案编码已存在或并发启用冲突：" + detail.getStrategyCode());
+            throw badRequest("应用方案编码已存在：" + detail.getStrategyCode());
         }
         return detail;
     }
@@ -203,9 +215,6 @@ public class RuleStrategyService {
             request.setRiskThreshold(row.getRiskThreshold());
         }
         RuleStrategyDetailDto detail = normalize(request, row, request.getStockPoolType() != null);
-        if ("active".equals(detail.getStatus())) {
-            deactivateCurrent(code);
-        }
         copyToRow(detail, row);
         updateExisting(row);
         return detail;
@@ -232,7 +241,6 @@ public class RuleStrategyService {
         detail.setStatus(status);
         if ("active".equals(status)) {
             detail = normalize(detail, row, false);
-            deactivateCurrent(code);
         } else {
             detail.setVersion(nextVersion(row.getVersion()));
         }
@@ -286,11 +294,30 @@ public class RuleStrategyService {
                         throw badRequest("启用应用方案前，正式规则必须已启用：" + member.getRuleCode());
                     }
                     definitions.put(member.getRuleCode(), rule);
+                    if (P4_RULE_CODES.contains(member.getRuleCode()) && member.getRuleContent() != null) {
+                        assertFrozenP4Content(member.getRuleCode(), member.getRuleContent());
+                    }
+                    if (member.getRuleContent() == null || member.getRuleContent().isBlank()) {
+                        String currentVersion = rule.getCurrentVersionNo() == null ? rule.getVersion() : rule.getCurrentVersionNo();
+                        if (member.getRuleVersionId() != null || member.getRuleVersionNo() != null
+                                && !member.getRuleVersionNo().equals(currentVersion)) {
+                            // An archived published version must be loaded by the execution service.
+                            // Do not claim the mutable current definition is the frozen old content.
+                        } else {
+                            if (P4_RULE_CODES.contains(member.getRuleCode())) assertFrozenP4Content(member.getRuleCode(), rule.getRuleContent());
+                            member.setRuleContent(rule.getRuleContent());
+                            member.setRuleFormat(rule.getRuleFormat());
+                            member.setRuleName(rule.getRuleName());
+                            member.setRulePriority(rule.getPriority());
+                        }
+                    }
                 }
             }
         }
-        if ("active".equals(status) && (isP4Application(code, groups, definitions)
-                || requiresResearchVerification(resultCode(code, request, existing), groups))) {
+        boolean p4Application = isP4Application(code, groups, definitions);
+        // P4 is an explicitly enabled auxiliary signal. Runtime state never certifies research results.
+        if ("active".equals(status) && !p4Application
+                && requiresResearchVerification(resultCode(code, request, existing), groups)) {
             if (researchVerificationService == null
                     || !researchVerificationService.isVerifiedStrategy(resultCode(code, request, existing))) {
                 throw badRequest("研究方案必须先完成独立最终测试并登记为 verified，不能直接启用："
@@ -303,6 +330,10 @@ public class RuleStrategyService {
         result.setDescription(request.getDescription());
         result.setVersion(nextVersion(existing == null ? null : existing.getVersion()));
         result.setStatus(status);
+        if (p4Application) {
+            result.setUsageMode("auxiliary");
+            result.setResearchStatus("pending_final");
+        }
         result.setBullishThreshold(threshold(request.getBullishThreshold(), "看涨", new BigDecimal("55")));
         result.setBearishThreshold(threshold(request.getBearishThreshold(), "看跌", new BigDecimal("60")));
         result.setRiskThreshold(threshold(request.getRiskThreshold(), "高风险", new BigDecimal("80")));
@@ -311,14 +342,30 @@ public class RuleStrategyService {
         return result;
     }
 
+    private void assertFrozenP4Content(String ruleCode, String content) {
+        try {
+            var manifest = objectMapper.readTree(new ClassPathResource("rules/p4-vote-001.json").getInputStream());
+            String expected = manifest.path("rule_content_sha256").path(ruleCode).asText();
+            String actual = content == null ? "" : HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(content.getBytes(StandardCharsets.UTF_8)));
+            if (expected.isEmpty() || !expected.equals(actual)) {
+                throw badRequest("P4-VOTE-001 冻结规则内容校验失败，不能启用已变更规则：" + ruleCode);
+            }
+        } catch (IOException | NoSuchAlgorithmException e) {
+            throw new IllegalStateException("无法读取 P4-VOTE-001 冻结规则哈希", e);
+        }
+    }
+
     private String resultCode(String code, RuleStrategyDetailDto request, RuleStrategy existing) {
         return existing == null ? code : existing.getStrategyCode();
     }
 
     private boolean isP4Application(String code, List<RuleStrategyGroupDto> groups,
                                     Map<String, RuleDefinition> definitions) {
-        return P4_CODE.equals(code) || groups.stream().anyMatch(selected ->
-                P4_CODE.equals(selected.getGroupCode()) || selected.getGroup().getMembers().stream()
+        return P4_CODE.equals(code) || groups.stream().filter(java.util.Objects::nonNull).anyMatch(selected ->
+                P4_CODE.equals(selected.getGroupCode()) || selected.getGroup() != null
+                        && selected.getGroup().getMembers() != null
+                        && selected.getGroup().getMembers().stream().filter(java.util.Objects::nonNull)
                         .anyMatch(member -> P4_RULE_CODES.contains(member.getRuleCode())))
                 || definitions.values().stream().anyMatch(rule -> rule.getRuleContent() != null
                         && (rule.getRuleContent().contains(P4_VERSION)
@@ -384,21 +431,6 @@ public class RuleStrategyService {
         result.setStockPoolSymbols(symbols);
     }
 
-    private void deactivateCurrent(String exceptCode) {
-        List<RuleStrategy> active = strategyMapper.selectList(new LambdaQueryWrapper<RuleStrategy>()
-                .eq(RuleStrategy::getStatus, "active"));
-        for (RuleStrategy previous : active) {
-            if (previous.getStrategyCode().equals(exceptCode)) {
-                continue;
-            }
-            RuleStrategyDetailDto old = read(previous);
-            old.setStatus("disabled");
-            old.setVersion(nextVersion(previous.getVersion()));
-            copyToRow(old, previous);
-            updateExisting(previous);
-        }
-    }
-
     private void copyToRow(RuleStrategyDetailDto detail, RuleStrategy row) {
         row.setStrategyCode(detail.getStrategyCode());
         row.setStrategyName(detail.getStrategyName());
@@ -448,6 +480,10 @@ public class RuleStrategyService {
     private RuleStrategyDetailDto readSnapshot(String json, String code) {
         try {
             RuleStrategyDetailDto detail = objectMapper.readValue(json, RuleStrategyDetailDto.class);
+            if (detail.getGroups() != null && isP4Application(code, detail.getGroups(), Map.of())) {
+                detail.setUsageMode("auxiliary");
+                detail.setResearchStatus("pending_final");
+            }
             if (detail.getStockPoolType() == null) {
                 detail.setStockPoolType("all");
             }

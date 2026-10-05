@@ -68,8 +68,11 @@ public class StockActualResultService {
         BigDecimal return10d = forwardReturn(quotes, 10);
 
         return StockActualResult.builder()
+                .signalId(signal.getId())
                 .symbol(signal.getSymbol())
                 .signalDate(signal.getSignalDate())
+                .strategyCode(signal.getStrategyCode())
+                .strategyVersion(signal.getStrategyVersion())
                 .return1d(return1d)
                 .return3d(return3d)
                 .return5d(return5d)

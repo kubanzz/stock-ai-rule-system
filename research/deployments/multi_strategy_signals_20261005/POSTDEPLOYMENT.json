@@ -1,0 +1,151 @@
+{
+  "captured_at": "2026-10-05T19:18:23.206816+08:00",
+  "mode": "read_only_postdeployment_verification",
+  "database": "stock-ai-rule",
+  "all_checks_passed": true,
+  "checks": {
+    "old_counts_and_identity_digests_unchanged": true,
+    "legacy_content_fingerprints_unchanged": true,
+    "all_old_rows_marked_legacy": true,
+    "old_active_snapshot_db_sha256_unchanged": true,
+    "old_active_version_unchanged": true,
+    "all_actual_results_correctly_linked_to_legacy_signal": true,
+    "single_active_constraint_removed": true,
+    "two_expected_active_schemes": true,
+    "p4_active_auxiliary_pending_final": true,
+    "p4_three_rule_content_hashes_match_frozen": true,
+    "p4_frozen_100_symbols_match": true,
+    "p4_two_of_three_logic_preserved": true,
+    "flyway_v16_success": true
+  },
+  "table_stats": {
+    "stock_signal_daily": {
+      "count": 5546,
+      "before_count": 5546,
+      "count_unchanged": true,
+      "ordered_digest_sha256": "9d164e7734e48d0a884501f37eeab897870324c99e45a13a5b8a44784e9bf7c6",
+      "before_ordered_digest_sha256": "9d164e7734e48d0a884501f37eeab897870324c99e45a13a5b8a44784e9bf7c6",
+      "identity_digest_unchanged": true
+    },
+    "stock_signal_daily_history": {
+      "count": 5677,
+      "before_count": 5677,
+      "count_unchanged": true,
+      "ordered_digest_sha256": "717292732079b959b964efa060497b49cef009b2e77078dd3240f86a5f0206df",
+      "before_ordered_digest_sha256": "717292732079b959b964efa060497b49cef009b2e77078dd3240f86a5f0206df",
+      "identity_digest_unchanged": true
+    },
+    "stock_actual_result": {
+      "count": 5,
+      "before_count": 5,
+      "count_unchanged": true,
+      "ordered_digest_sha256": "0b9860c2620a8b44089e704600bb59c848866c67a421b597cb9cbf1b49d6970e",
+      "before_ordered_digest_sha256": "0b9860c2620a8b44089e704600bb59c848866c67a421b597cb9cbf1b49d6970e",
+      "identity_digest_unchanged": true
+    }
+  },
+  "legacy_counts": {
+    "stock_signal_daily": 5546,
+    "stock_signal_daily_history": 5677,
+    "stock_actual_result": 5
+  },
+  "active_schemes": [
+    {
+      "code": "RS_G144_G118_SZ125",
+      "version": "v2",
+      "status": "active",
+      "snapshot_db_sha256": "0a18faa51635534422eccafcd1fa4a55d4a616f6e0ce1274bbaab0dbe805e822"
+    },
+    {
+      "code": "P4-VOTE-001",
+      "version": "v2",
+      "status": "active",
+      "snapshot_db_sha256": "18063bfc603c39f47794767f792fc1378d6fc107b232b7bba933d16add8cde34"
+    }
+  ],
+  "p4": {
+    "version": "v2",
+    "usage_mode": "auxiliary",
+    "research_status": "pending_final",
+    "stock_pool_total": 100,
+    "rule_content_sha256": {
+      "R_P4_VOTE_001_CHANGE_PCT_5D": "440aa73f62888e84045444e4b39d124f47e2c5435b934362db5ffcd1b2ccf50c",
+      "R_P4_VOTE_001_OPEN_GAP": "e3943967ebce065e5aaea12c226699dcccc1f12ec5af4126bae442e872062d2e",
+      "R_P4_VOTE_001_INDEX_CLOSE_POSITION": "af7e31c248e512573ca5ea86daada85b433807cff8f061e74cd8f59d1c0b2bda"
+    }
+  },
+  "old_actual_links": [
+    {
+      "symbol": "600519.SH",
+      "actual_id": 1,
+      "signal_id": 2,
+      "signal_date": "2026-07-10",
+      "linked_symbol": "600519.SH",
+      "strategy_code": "LEGACY",
+      "strategy_version": "legacy",
+      "linked_signal_date": "2026-07-10",
+      "linked_strategy_code": "LEGACY",
+      "linked_strategy_version": "legacy"
+    },
+    {
+      "symbol": "000001.SZ",
+      "actual_id": 2,
+      "signal_id": 3,
+      "signal_date": "2026-07-10",
+      "linked_symbol": "000001.SZ",
+      "strategy_code": "LEGACY",
+      "strategy_version": "legacy",
+      "linked_signal_date": "2026-07-10",
+      "linked_strategy_code": "LEGACY",
+      "linked_strategy_version": "legacy"
+    },
+    {
+      "symbol": "002063.SZ",
+      "actual_id": 5,
+      "signal_id": 8,
+      "signal_date": "2026-07-10",
+      "linked_symbol": "002063.SZ",
+      "strategy_code": "LEGACY",
+      "strategy_version": "legacy",
+      "linked_signal_date": "2026-07-10",
+      "linked_strategy_code": "LEGACY",
+      "linked_strategy_version": "legacy"
+    },
+    {
+      "symbol": "600009.SH",
+      "actual_id": 6,
+      "signal_id": 9,
+      "signal_date": "2026-07-10",
+      "linked_symbol": "600009.SH",
+      "strategy_code": "LEGACY",
+      "strategy_version": "legacy",
+      "linked_signal_date": "2026-07-10",
+      "linked_strategy_code": "LEGACY",
+      "linked_strategy_version": "legacy"
+    },
+    {
+      "symbol": "300454.SZ",
+      "actual_id": 7,
+      "signal_id": 10,
+      "signal_date": "2026-07-10",
+      "linked_symbol": "300454.SZ",
+      "strategy_code": "LEGACY",
+      "strategy_version": "legacy",
+      "linked_signal_date": "2026-07-10",
+      "linked_strategy_code": "LEGACY",
+      "linked_strategy_version": "legacy"
+    }
+  ],
+  "flyway_v16": [
+    {
+      "script": "V16__parallel_strategy_signal_identity.sql",
+      "success": 1,
+      "version": "16",
+      "checksum": 34780787,
+      "installed_on": "2026-10-05 19:15:40.000000"
+    }
+  ],
+  "active_slot_column_count": 0,
+  "active_slot_unique_index_count": 0,
+  "note": "仅验证配置及迁移；未生成新信号、收益目标或正式最终验证样本。"
+}

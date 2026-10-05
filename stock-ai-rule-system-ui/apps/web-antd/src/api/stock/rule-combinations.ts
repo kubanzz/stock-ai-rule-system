@@ -6,7 +6,11 @@ import type {
 
 import { baseRequestClient } from '#/api/request';
 
-import { unwrapAjaxResult, unwrapStockPageResult } from './ajax-result';
+import {
+  normalizeStockApiError,
+  unwrapAjaxResult,
+  unwrapStockPageResult,
+} from './ajax-result';
 
 type RawResponse<T> = { data: T };
 
@@ -49,6 +53,8 @@ export interface RuleStrategy {
   groups: StrategyGroupMember[];
   riskThreshold: number;
   status: CombinationStatus;
+  usageMode?: 'auxiliary';
+  researchStatus?: 'pending_final';
   strategyCode: string;
   strategyName: string;
   version: string;
@@ -76,16 +82,24 @@ async function getList<T>(
   mockRows: T[],
 ): Promise<StockPageData<T>> {
   if (USE_STOCK_MOCK) return { rows: clone(mockRows), total: mockRows.length };
-  const response =
-    await baseRequestClient.get<RawResponse<StockPageResult<T>>>(path);
-  return unwrapStockPageResult(response.data);
+  try {
+    const response =
+      await baseRequestClient.get<RawResponse<StockPageResult<T>>>(path);
+    return unwrapStockPageResult(response.data);
+  } catch (error) {
+    throw normalizeStockApiError(error);
+  }
 }
 
 async function getOne<T>(path: string, mockValue: () => T): Promise<T> {
   if (USE_STOCK_MOCK) return clone(mockValue());
-  const response =
-    await baseRequestClient.get<RawResponse<StockAjaxResult<T>>>(path);
-  return unwrapAjaxResult(response.data);
+  try {
+    const response =
+      await baseRequestClient.get<RawResponse<StockAjaxResult<T>>>(path);
+    return unwrapAjaxResult(response.data);
+  } catch (error) {
+    throw normalizeStockApiError(error);
+  }
 }
 
 async function mutate<T>(
@@ -95,10 +109,14 @@ async function mutate<T>(
   mockMutation: () => T,
 ): Promise<T> {
   if (USE_STOCK_MOCK) return clone(mockMutation());
-  const response = await baseRequestClient[method]<
-    RawResponse<StockAjaxResult<T>>
-  >(path, body);
-  return unwrapAjaxResult(response.data);
+  try {
+    const response = await baseRequestClient[method]<
+      RawResponse<StockAjaxResult<T>>
+    >(path, body);
+    return unwrapAjaxResult(response.data);
+  } catch (error) {
+    throw normalizeStockApiError(error);
+  }
 }
 
 function requireMock<T>(
@@ -319,13 +337,6 @@ export function setRuleStrategyStatus(
         strategyCode,
         (item) => item.strategyCode,
       );
-      if (status === 'active') {
-        mockStrategies.forEach((item) => {
-          if (item.strategyCode !== strategyCode && item.status === 'active') {
-            item.status = 'disabled';
-          }
-        });
-      }
       row.status = status;
       return row;
     },

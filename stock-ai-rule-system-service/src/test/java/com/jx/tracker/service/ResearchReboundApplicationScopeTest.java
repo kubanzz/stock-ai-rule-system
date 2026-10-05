@@ -40,7 +40,7 @@ class ResearchReboundApplicationScopeTest {
         active.setStrategyCode("another-plan");
         active.setStockPoolType("watchlist");
         active.setStockPoolSymbols(List.of("000547.SZ", "600000.SH"));
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
         assertThat(scope.activeSymbols()).isEmpty();
         active.setGroups(List.of(researchGroup()));
         assertThat(scope.activeSymbols()).containsExactly("000547.SZ");
@@ -57,7 +57,7 @@ class ResearchReboundApplicationScopeTest {
         active.setStrategyCode("custom-plan");
         active.setStockPoolType("watchlist");
         active.setStockPoolSymbols(List.of("sz000547", "600000.SH", "000547.SZ"));
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
 
         assertThat(scope.hasBoundStockPool()).isTrue();
         assertThat(scope.activeApplicationSymbols()).containsExactly("000547.SZ", "600000.SH");
@@ -77,7 +77,7 @@ class ResearchReboundApplicationScopeTest {
         RuleStrategyDetailDto active = new RuleStrategyDetailDto();
         active.setStockPoolType("watchlist");
         active.setGroups(List.of(researchGroup()));
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
         assertThat(scope.hasBoundStockPool()).isTrue();
         assertThat(scope.activeApplicationSymbols()).isEmpty();
         assertThat(scope.restrictToApplication(null)).isEmpty();
@@ -103,7 +103,7 @@ class ResearchReboundApplicationScopeTest {
         assertThat(scope.hasBoundStockPool()).isFalse();
         assertThat(scope.restrictToApplication(List.of("600000"))).containsExactly("600000.SH");
         RuleStrategyDetailDto active = new RuleStrategyDetailDto();
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
         assertThat(scope.hasBoundStockPool()).isFalse();
         active.setStockPoolType("all");
         active.setStockPoolSymbols(List.of("000547.SZ"));
@@ -135,7 +135,7 @@ class ResearchReboundApplicationScopeTest {
         active.setStockPoolType("watchlist");
         active.setStockPoolSymbols(List.of("sh600116", "600000.SH"));
         active.setGroups(List.of(ruleGroup("R_P4_VOTE_001_OPEN_GAP")));
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
 
         assertThat(scope.activeSymbols()).containsExactly("600116.SH");
         active.setStockPoolType("all");
@@ -151,7 +151,7 @@ class ResearchReboundApplicationScopeTest {
         RuleStrategyService strategies = mock(RuleStrategyService.class);
         RuleStrategyDetailDto active = new RuleStrategyDetailDto();
         active.setGroups(List.of(ruleGroup("R_P4_VOTE_001_CHANGE_PCT_5D")));
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
         var quotes = mock(StockDailyQuoteMapper.class);
         when(quotes.selectCount(any())).thenReturn(251L);
         var scope = new ResearchReboundApplicationScope(strategies,
@@ -174,7 +174,7 @@ class ResearchReboundApplicationScopeTest {
         RuleStrategyService strategies = mock(RuleStrategyService.class);
         RuleStrategyDetailDto active = new RuleStrategyDetailDto();
         active.setGroups(List.of(researchGroup()));
-        when(strategies.getActiveStrategy()).thenReturn(active);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(active));
         var quotes = mock(StockDailyQuoteMapper.class);
         when(quotes.selectCount(any())).thenReturn(252L);
         var scope = new ResearchReboundApplicationScope(strategies,
@@ -200,6 +200,27 @@ class ResearchReboundApplicationScopeTest {
         assertThat(ResearchReboundApplicationScope.validQuote(quote, true)).isTrue();
         quote.setDataSource("mock");
         assertThat(ResearchReboundApplicationScope.validQuote(quote, true)).isFalse();
+    }
+
+    @Test
+    void combinesApplicationPoolsButKeepsResearchWarmupWithinItsOwningPool() {
+        RuleStrategyService strategies = mock(RuleStrategyService.class);
+        ResearchReboundFactorCalculator calculator = mock(ResearchReboundFactorCalculator.class);
+        when(calculator.getSymbols()).thenReturn(Set.of("000547.SZ", "002010.SZ"));
+        RuleStrategyDetailDto research = new RuleStrategyDetailDto(); research.setStockPoolType("watchlist");
+        research.setStockPoolSymbols(List.of("000547.SZ")); research.setGroups(List.of(researchGroup()));
+        RuleStrategyDetailDto other = new RuleStrategyDetailDto(); other.setStockPoolType("watchlist");
+        other.setStockPoolSymbols(List.of("002010.SZ", "600000.SH"));
+        when(strategies.getActiveStrategies()).thenReturn(List.of(research, other));
+        var scope = new ResearchReboundApplicationScope(strategies, calculator, mock(StockDailyQuoteMapper.class));
+
+        assertThat(scope.hasBoundStockPool()).isTrue();
+        assertThat(scope.activeApplicationSymbols()).containsExactly("000547.SZ", "002010.SZ", "600000.SH");
+        assertThat(scope.restrictToApplication(List.of("600000.SH", "600519.SH"))).containsExactly("600000.SH");
+        assertThat(scope.activeSymbols()).containsExactly("000547.SZ");
+        other.setStockPoolType("all");
+        assertThat(scope.hasBoundStockPool()).isFalse();
+        assertThat(scope.restrictToApplication(List.of("600519.SH"))).containsExactly("600519.SH");
     }
 
     private RuleStrategyGroupDto researchGroup() {

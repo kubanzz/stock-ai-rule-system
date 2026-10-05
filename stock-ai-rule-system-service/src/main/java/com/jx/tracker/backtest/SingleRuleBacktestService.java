@@ -243,7 +243,7 @@ public class SingleRuleBacktestService implements BacktestService {
         RuleStrategyDetailDto selectedStrategy = combination ? resolveCombination(request) : null;
         BigDecimal feeRate = defaultIfNull(request.getFeeRate(), DEFAULT_FEE_RATE);
         BigDecimal slippageRate = defaultIfNull(request.getSlippageRate(), DEFAULT_SLIPPAGE_RATE);
-        Set<String> stockPool = resolveStockPool(request);
+        Set<String> stockPool = restrictToStrategyStockPool(resolveStockPool(request), selectedStrategy);
         ensureHistoricalFactors(request, stockPool);
         if (candidateRule != null) {
             CandidateRuleValidation validation = validateCandidateRuleContent(candidateRule);
@@ -584,6 +584,14 @@ public class SingleRuleBacktestService implements BacktestService {
                 .toList();
     }
 
+    private Set<String> restrictToStrategyStockPool(Set<String> requested, RuleStrategyDetailDto strategy) {
+        if (!com.jx.tracker.rule.service.StrategyStockScope.isBound(strategy)) return requested;
+        Set<String> bound = com.jx.tracker.rule.service.StrategyStockScope.symbols(strategy).stream()
+                .filter(symbol -> isInStockPool(requested, symbol)).collect(Collectors.toSet());
+        // An empty set means unrestricted in legacy backtests, so use the explicit empty sentinel.
+        return bound.isEmpty() ? Set.of(EMPTY_STOCK_POOL) : bound;
+    }
+
     private boolean isInStockPool(Set<String> stockPool, String symbol) {
         if (stockPool.isEmpty()) {
             return true;
@@ -841,8 +849,11 @@ public class SingleRuleBacktestService implements BacktestService {
 
     private StockActualResult selectActualResult(StockSignalDaily signal) {
         List<StockActualResult> results = actualResultMapper.selectList(Wrappers.<StockActualResult>lambdaQuery()
+                .eq(signal.getId() != null, StockActualResult::getSignalId, signal.getId())
                 .eq(StockActualResult::getSymbol, signal.getSymbol())
                 .eq(StockActualResult::getSignalDate, signal.getSignalDate())
+                .eq(StockActualResult::getStrategyCode, signal.getStrategyCode())
+                .eq(StockActualResult::getStrategyVersion, signal.getStrategyVersion())
                 .last("LIMIT 1"));
         return results.isEmpty() ? null : results.get(0);
     }

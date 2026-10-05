@@ -11,6 +11,14 @@ import java.util.Map;
 @Builder
 public class StockAnalysisVo {
 
+    private Long signalId;
+
+    private String strategyCode;
+
+    private String strategyVersion;
+
+    private String strategyName;
+
     private String symbol;
 
     private String signal;

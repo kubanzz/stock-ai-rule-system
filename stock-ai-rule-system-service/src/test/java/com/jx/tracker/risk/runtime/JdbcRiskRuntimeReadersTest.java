@@ -47,6 +47,8 @@ class JdbcRiskRuntimeReadersTest {
                 CREATE TABLE stock_signal_daily_history (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY, signal_id BIGINT,
                     symbol VARCHAR(32), signal_date DATE, signal_direction VARCHAR(16),
+                    strategy_code VARCHAR(64) NOT NULL DEFAULT 'LEGACY',
+                    strategy_version VARCHAR(32) NOT NULL DEFAULT 'legacy',
                     confidence DECIMAL(8, 5), available_at TIMESTAMP
                 )
                 """);
@@ -173,6 +175,37 @@ class JdbcRiskRuntimeReadersTest {
             assertThat(candidate.direction()).isEqualTo(SignalDirection.BEARISH);
             assertThat(candidate.originalConfidence()).isEqualByComparingTo("0.91");
         });
+    }
+
+    @Test
+    void sameStockOppositeStrategySignalsRetainIndependentLatestPointInTimeVersions() {
+        jdbc.update("""
+                INSERT INTO stock_signal_daily_history
+                    (signal_id, symbol, signal_date, strategy_code, strategy_version,
+                     signal_direction, confidence, available_at)
+                VALUES
+                    (11, '600519.SH', ?, 'STRATEGY_A', 'v1', 'bullish', 0.80, ?),
+                    (12, '600519.SH', ?, 'STRATEGY_B', 'v2', 'bearish', 0.70, ?),
+                    (11, '600519.SH', ?, 'STRATEGY_A', 'v1', 'watch', 0.60, ?),
+                    (12, '600519.SH', ?, 'STRATEGY_B', 'v2', 'bullish', 0.90, ?)
+                """,
+                DATE, DATE.atTime(18, 0), DATE, DATE.atTime(18, 1),
+                DATE, DATE.atTime(19, 0), DATE, DATE.atTime(20, 1));
+
+        List<RiskSignalCandidate> candidates = new JdbcRiskSignalCandidateReader(jdbc).read(
+                DATE, List.of(stock("600519.SH")), List.of(RiskHorizon.SHORT_TERM), AS_OF);
+
+        assertThat(candidates).hasSize(2);
+        assertThat(candidates).filteredOn(candidate -> "signal:id:11".equals(candidate.signalReference()))
+                .singleElement().satisfies(candidate -> {
+                    assertThat(candidate.direction()).isEqualTo(SignalDirection.WATCH);
+                    assertThat(candidate.originalConfidence()).isEqualByComparingTo("0.60");
+                });
+        assertThat(candidates).filteredOn(candidate -> "signal:id:12".equals(candidate.signalReference()))
+                .singleElement().satisfies(candidate -> {
+                    assertThat(candidate.direction()).isEqualTo(SignalDirection.BEARISH);
+                    assertThat(candidate.originalConfidence()).isEqualByComparingTo("0.70");
+                });
     }
 
     private RiskObjectKey market() {

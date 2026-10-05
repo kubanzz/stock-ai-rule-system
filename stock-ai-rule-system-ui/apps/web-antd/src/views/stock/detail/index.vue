@@ -38,6 +38,11 @@ import {
 
 import { getStockResearchDetail, getWatchlists } from '#/api/stock';
 
+import {
+  signalIdentityKey,
+  signalStrategyLabel,
+} from '../signals/dashboard-display';
+
 const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
@@ -60,6 +65,11 @@ const symbol = computed(() =>
 const analysisDate = computed(() =>
   typeof route.query.date === 'string' ? route.query.date : undefined,
 );
+const analysisIdentity = computed(() => ({
+  signalId: typeof route.query.signalId === 'string' ? route.query.signalId : undefined,
+  strategyCode: typeof route.query.strategyCode === 'string' ? route.query.strategyCode : undefined,
+  strategyVersion: typeof route.query.strategyVersion === 'string' ? route.query.strategyVersion : undefined,
+}));
 const analysisVersionNo = computed(() => {
   const raw = route.query.versionNo;
   if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return undefined;
@@ -281,6 +291,7 @@ async function loadDetail() {
       symbol.value,
       analysisDate.value,
       analysisVersionNo.value,
+      analysisIdentity.value,
     );
     if (sequence === loadSequence) detail.value = result;
   } catch (error) {
@@ -357,18 +368,23 @@ function validConditions(value: unknown): SignalTraceCondition[] {
   );
 }
 
-function openHistoryDate(date: string) {
-  if (analysisDate.value === date && !analysisVersionNo.value) return;
-  const { versionNo: _versionNo, ...query } = route.query;
+function openHistoryRecord(record: PredictionRecord) {
+  const { versionNo: _versionNo, signalId: _signalId, ...query } = route.query;
   router.push({
     name: 'StockDetail',
     params: { symbol: symbol.value },
-    query: { ...query, date },
+    query: {
+      ...query,
+      date: record.date,
+      signalId: record.signalId === null || record.signalId === undefined ? undefined : String(record.signalId),
+      strategyCode: record.strategyCode ?? undefined,
+      strategyVersion: record.strategyVersion ?? undefined,
+    },
   });
 }
 
 function openLatestDate() {
-  const { date: _date, versionNo: _versionNo, ...query } = route.query;
+  const { date: _date, versionNo: _versionNo, signalId: _signalId, ...query } = route.query;
   router.push({ name: 'StockDetail', params: { symbol: symbol.value }, query });
 }
 
@@ -387,10 +403,10 @@ function openVersion(value: unknown) {
 }
 
 function historyRow(record: PredictionRecord) {
-  return { onClick: () => openHistoryDate(record.date) };
+  return { onClick: () => openHistoryRecord(record) };
 }
 
-watch(() => [route.params.symbol, route.query.date, route.query.versionNo], loadDetail, {
+watch(() => [route.params.symbol, route.query.date, route.query.versionNo, route.query.signalId, route.query.strategyCode, route.query.strategyVersion], loadDetail, {
   immediate: true,
 });
 watch(priceSeries, renderPriceChart, { deep: true });
@@ -424,6 +440,10 @@ openDefaultWatchlistStock();
         description="请选择关注列表中的股票查看研究数据。"
       />
       <template v-if="detail">
+        <div class="mb-4">
+          <Typography.Text type="secondary">应用方案：</Typography.Text>
+          <Tag>{{ signalStrategyLabel(detail) }} · {{ detail.strategyVersion ?? 'legacy' }}</Tag>
+        </div>
         <div v-if="analysisDate" class="mb-4 flex items-center gap-3">
           <Typography.Text>
             正在查看 {{ analysisDate }} 的研究记录{{ analysisVersionNo ? ` · v${analysisVersionNo}` : '' }}
@@ -798,6 +818,7 @@ openDefaultWatchlistStock();
           <Table
             :columns="[
               { title: '信号日期', dataIndex: 'date' },
+              { title: '应用方案 / 版本', dataIndex: 'strategyCode' },
               { title: '预测信号', dataIndex: 'signal' },
               { title: '预测方向', dataIndex: 'direction' },
               { title: '信号强度', dataIndex: 'confidence' },
@@ -808,14 +829,17 @@ openDefaultWatchlistStock();
             :data-source="detail.history"
             :pagination="false"
             :row-class-name="() => 'history-row'"
-            row-key="date"
+            :row-key="signalIdentityKey"
             size="small"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.dataIndex === 'date'">
-                <Button type="link" @click.stop="openHistoryDate(record.date)">
+                <Button type="link" @click.stop="openHistoryRecord(record as PredictionRecord)">
                   {{ record.date }}
                 </Button>
+              </template>
+              <template v-else-if="column.dataIndex === 'strategyCode'">
+                {{ signalStrategyLabel(record) }} · {{ record.strategyVersion ?? 'legacy' }}
               </template>
               <template v-else-if="column.dataIndex === 'signal'">
                 <Tag :color="signalColor(record.signal)">

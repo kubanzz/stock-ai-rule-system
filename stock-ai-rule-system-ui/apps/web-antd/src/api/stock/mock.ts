@@ -490,10 +490,14 @@ export function selectMockSignalDashboard(
 ): SignalDashboardOverview {
   const riskHorizon = query.riskHorizon ?? '1-5d';
   const signals = dashboardRiskSeeds
-    .map((seed): SignalDashboardRow => {
+    .map((seed, index): SignalDashboardRow => {
       const riskSnapshot = buildDashboardRiskSnapshot(seed, riskHorizon);
       return {
         ...seed.row,
+        signalId: seed.row.signalStatus === 'ready' ? index + 1 : undefined,
+        strategyCode: 'LEGACY',
+        strategyName: '历史默认方案',
+        strategyVersion: 'legacy',
         riskGateDecision: buildDashboardGateDecision(
           seed,
           riskSnapshot,
@@ -520,7 +524,8 @@ export function selectMockSignalDashboard(
       const maxMatched =
         query.confidenceMax === undefined ||
         (row.confidence ?? 2) <= query.confidenceMax;
-      return signalMatched && symbolMatched && minMatched && maxMatched;
+      const strategyMatched = !query.strategyCode || row.strategyCode === query.strategyCode;
+      return signalMatched && symbolMatched && minMatched && maxMatched && strategyMatched;
     });
   const pageNum = Math.max(1, query.pageNum ?? 1);
   const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));

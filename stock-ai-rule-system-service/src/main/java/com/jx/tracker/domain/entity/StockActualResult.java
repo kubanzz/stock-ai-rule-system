@@ -26,9 +26,18 @@ public class StockActualResult {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    /** 命中结论属于具体方案信号；无可关联信号的旧结果保持为空。 */
+    private Long signalId;
+
     private String symbol;
 
     private LocalDate signalDate;
+
+    @Builder.Default
+    private String strategyCode = StockSignalDaily.LEGACY_STRATEGY_CODE;
+
+    @Builder.Default
+    private String strategyVersion = StockSignalDaily.LEGACY_STRATEGY_VERSION;
 
     @TableField("return_1d")
     private BigDecimal return1d;

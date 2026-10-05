@@ -10,6 +10,8 @@ public class SignalGenerateRequestDto {
 
     private String symbol;
 
+    private String strategyCode;
+
     private LocalDate signalDate;
 
     private Map<String, Object> factors;

@@ -92,7 +92,7 @@ class StockConsoleQueryServiceImplResearchTest {
                    "direction":"bullish","level":"偏看涨",
                    "reason":"看涨规则得分达到阈值","signal":"bullish"}}
                 """);
-        when(signalMapper.selectOne(any())).thenReturn(signal);
+        when(signalMapper.selectList(any())).thenReturn(List.of(signal));
 
         var detail = service.research(SYMBOL, SIGNAL_DATE);
 
@@ -114,7 +114,7 @@ class StockConsoleQueryServiceImplResearchTest {
 
     @Test
     void legacySignalKeepsUnknownContributionAndOnlySameDayFactors() {
-        when(signalMapper.selectOne(any())).thenReturn(baseSignal());
+        when(signalMapper.selectList(any())).thenReturn(List.of(baseSignal()));
         when(factorMapper.selectOne(any())).thenReturn(StockFactorDaily.builder()
                 .symbol(SYMBOL).tradeDate(SIGNAL_DATE).factorJson("{\"close\":11}").build());
 
@@ -130,7 +130,7 @@ class StockConsoleQueryServiceImplResearchTest {
             assertThat(rule.contribution()).isNull();
         });
 
-        verify(signalMapper).selectOne(any());
+        verify(signalMapper, org.mockito.Mockito.atLeastOnce()).selectList(any());
     }
 
     @Test
@@ -142,7 +142,7 @@ class StockConsoleQueryServiceImplResearchTest {
                    "conditions":[],"bullishDelta":60,"bearishDelta":0,"riskDelta":0}],
                  "decision":{"signal":"bullish","reason":"证据不完整"}}
                 """);
-        when(signalMapper.selectOne(any())).thenReturn(signal);
+        when(signalMapper.selectList(any())).thenReturn(List.of(signal));
 
         var detail = service.research(SYMBOL, SIGNAL_DATE);
 
@@ -155,7 +155,7 @@ class StockConsoleQueryServiceImplResearchTest {
     void malformedSavedTraceIsPartialRatherThanLegacy() {
         StockSignalDaily signal = baseSignal();
         signal.setTraceJson("{broken");
-        when(signalMapper.selectOne(any())).thenReturn(signal);
+        when(signalMapper.selectList(any())).thenReturn(List.of(signal));
 
         var detail = service.research(SYMBOL, SIGNAL_DATE);
 
@@ -178,9 +178,9 @@ class StockConsoleQueryServiceImplResearchTest {
 
     @Test
     void unversionedResearchReturnsLatestAvailableVersionForSignalDate() {
-        when(signalMapper.selectOne(any())).thenReturn(baseSignal());
+        when(signalMapper.selectList(any())).thenReturn(List.of(baseSignal()));
         when(jdbcTemplate.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<StockConsoleVo.SignalVersion>>any(),
-                eq(SYMBOL), eq(Date.valueOf(SIGNAL_DATE)))).thenReturn(List.of(
+                eq(71L))).thenReturn(List.of(
                         new StockConsoleVo.SignalVersion(2, LocalDateTime.of(2026, 7, 10, 18, 0)),
                         new StockConsoleVo.SignalVersion(1, LocalDateTime.of(2026, 7, 10, 17, 0))));
 
@@ -202,7 +202,7 @@ class StockConsoleQueryServiceImplResearchTest {
                 eq(SYMBOL), eq(Date.valueOf(SIGNAL_DATE)), eq(1)))
                 .thenReturn(List.of(historical));
         when(jdbcTemplate.query(any(String.class), org.mockito.ArgumentMatchers.<RowMapper<StockConsoleVo.SignalVersion>>any(),
-                eq(SYMBOL), eq(Date.valueOf(SIGNAL_DATE))))
+                eq(71L)))
                 .thenReturn(List.of(new StockConsoleVo.SignalVersion(2, null),
                         new StockConsoleVo.SignalVersion(1, null)));
 
@@ -231,7 +231,7 @@ class StockConsoleQueryServiceImplResearchTest {
         StockSignalDaily signal = baseSignal();
         signal.setConfidence(null);
         signal.setRiskScore(null);
-        when(signalMapper.selectOne(any())).thenReturn(signal);
+        when(signalMapper.selectList(any())).thenReturn(List.of(signal));
         when(signalMapper.selectList(any())).thenReturn(List.of(signal));
 
         var detail = service.research(SYMBOL, SIGNAL_DATE);
@@ -242,9 +242,35 @@ class StockConsoleQueryServiceImplResearchTest {
                 assertThat(record.confidence()).isNull());
     }
 
+    @Test
+    void requiresIdentityWhenMultipleSchemesHaveSignalsOnTheSameDate() {
+        StockSignalDaily first = baseSignal();
+        first.setStrategyCode("PLAN_A");
+        StockSignalDaily second = baseSignal();
+        second.setId(72L);
+        second.setStrategyCode("PLAN_B");
+        when(signalMapper.selectList(any())).thenReturn(List.of(first, second));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.research(SYMBOL, SIGNAL_DATE))
+                .hasMessageContaining("多个方案信号");
+    }
+
+    @Test
+    void queriesSelectedSignalAndVersionsById() {
+        StockSignalDaily selected = baseSignal();
+        selected.setStrategyCode("PLAN_B");
+        selected.setStrategyVersion("v2");
+        when(signalMapper.selectList(any())).thenReturn(List.of(selected));
+        var detail = service.research(SYMBOL, SIGNAL_DATE, null, 71L, "PLAN_B", "v2");
+        assertThat(detail.signalId()).isEqualTo(71L);
+        assertThat(detail.strategyCode()).isEqualTo("PLAN_B");
+        assertThat(detail.strategyVersion()).isEqualTo("v2");
+        verify(jdbcTemplate).query(org.mockito.ArgumentMatchers.contains("WHERE signal_id = ?"),
+                org.mockito.ArgumentMatchers.<RowMapper<StockConsoleVo.SignalVersion>>any(), eq(71L));
+    }
+
     private StockSignalDaily baseSignal() {
         return StockSignalDaily.builder()
-                .symbol(SYMBOL).signalDate(SIGNAL_DATE).signal("bullish")
+                .id(71L).symbol(SYMBOL).signalDate(SIGNAL_DATE).signal("bullish")
                 .bullishScore(BigDecimal.valueOf(60)).confidence(new BigDecimal("0.6000"))
                 .riskScore(BigDecimal.ZERO).triggeredRules("[\"R1\"]")
                 .explanation("旧规则说明").build();

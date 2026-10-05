@@ -69,7 +69,7 @@ const columns: TableColumnsType<RuleStrategy> = [
   { title: '看跌阈值', dataIndex: 'bearishThreshold', width: 95 },
   { title: '风险阈值', dataIndex: 'riskThreshold', width: 95 },
   { title: '版本', dataIndex: 'version', width: 80 },
-  { title: '状态', dataIndex: 'status', width: 100 },
+  { title: '状态', dataIndex: 'status', width: 190 },
   { title: '操作', key: 'actions', width: 260 },
 ];
 
@@ -271,7 +271,7 @@ onMounted(load);
       class="mb-3"
       show-icon
       type="info"
-      message="同一时间只运行一个已启用方案。启用另一个方案会切换当前方案；评分未达到阈值时，最终信号仍可能是观望。"
+      message="可同时启用多个方案。各方案在自己的股票范围内独立生成信号，保留方案与版本，便于结合判断；评分未达到阈值时仍可能是观望。"
     />
     <div class="mb-3 flex items-center justify-between gap-3">
       <Typography.Text type="secondary"
@@ -307,6 +307,12 @@ onMounted(load);
                   ? '已停用'
                   : '草稿'
             }}
+          </Tag>
+          <Tag v-if="record.usageMode === 'auxiliary'" color="blue">
+            辅助决策
+          </Tag>
+          <Tag v-if="record.researchStatus === 'pending_final'" color="gold">
+            待最终验证
           </Tag>
         </template>
         <template v-else-if="column.key === 'actions'">

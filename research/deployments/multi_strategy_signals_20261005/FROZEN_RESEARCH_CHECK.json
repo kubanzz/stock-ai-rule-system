@@ -1,0 +1,13 @@
+{
+  "RESULT.json": true,
+  "HISTORICAL_TRIGGER_RECORDS.csv": true,
+  "FINAL_TRIGGER_RECORDS.csv": true,
+  "PROTOCOL.md": true,
+  "README.md": true,
+  "REPORT.md": true,
+  "test_report.py": true,
+  "generate_report.py": true,
+  "final_evaluator.py": true,
+  "forward_ledger.py": true,
+  "COMPLETION_AUDIT.md": true
+}

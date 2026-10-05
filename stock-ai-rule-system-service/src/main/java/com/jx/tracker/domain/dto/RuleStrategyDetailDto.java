@@ -12,6 +12,9 @@ public class RuleStrategyDetailDto {
     private String description;
     private String version;
     private String status;
+    /** 运行用途与研究验收分开；辅助启用不代表最终验证通过。 */
+    private String usageMode;
+    private String researchStatus;
     private BigDecimal bullishThreshold;
     private BigDecimal bearishThreshold;
     private BigDecimal riskThreshold;

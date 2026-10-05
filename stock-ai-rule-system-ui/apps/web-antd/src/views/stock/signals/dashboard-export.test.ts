@@ -16,6 +16,18 @@ function requireReadyRow(): SignalDashboardRow {
 }
 
 describe('signal dashboard CSV export', () => {
+  it('exports multiple strategy signals for the same stock without dropping identity', () => {
+    const common = requireReadyRow();
+    const csv = buildSignalDashboardCsv([
+      { ...common, signalId: 81, strategyCode: 'P4-VOTE-001', strategyVersion: 'v1', strategyName: 'P4 看涨辅助' },
+      { ...common, signalId: 82, strategyCode: 'RS_G144_G118_SZ125', strategyVersion: 'v2' },
+    ], '1-5d');
+
+    expect(csv.split('\n')).toHaveLength(3);
+    expect(csv).toContain('"信号编号","方案编码","方案版本","方案名称"');
+    expect(csv).toContain('"81","P4-VOTE-001","v1","P4 看涨辅助"');
+    expect(csv).toContain('"82","RS_G144_G118_SZ125","v2"');
+  });
   it('exports dimensions, evidence fields and the fixed decision notice', () => {
     const csv = buildSignalDashboardCsv([requireReadyRow()], '1-5d');
 

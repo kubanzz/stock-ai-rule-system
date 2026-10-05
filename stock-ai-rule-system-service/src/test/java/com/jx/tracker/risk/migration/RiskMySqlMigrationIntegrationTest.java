@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jx.tracker.domain.entity.CandidateRule;
+import com.jx.tracker.domain.entity.StockActualResult;
 import com.jx.tracker.domain.entity.StockSignalDaily;
+import com.jx.tracker.mapper.StockActualResultMapper;
 import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.rule.engine.JsonRuleToDroolsCompiler;
 import com.jx.tracker.rule.service.RuleSeedDeduplicationService;
@@ -74,7 +76,7 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult first = flyway.migrate();
             MigrateResult repeated = flyway.migrate();
 
-            assertThat(first.migrationsExecuted).isEqualTo(14);
+            assertThat(first.migrationsExecuted).isEqualTo(15);
             assertThat(repeated.migrationsExecuted).isZero();
             assertMigratedCandidateDefinitionsAreDrools(schema);
             assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
@@ -123,8 +125,8 @@ class RiskMySqlMigrationIntegrationTest {
             MigrateResult upgraded = flyway.migrate();
             LocalDateTime migrationFinishedAt = databaseNow(schema);
 
-            assertThat(upgraded.migrationsExecuted).isEqualTo(13);
-            assertThat(currentVersion(schema)).isEqualTo("14");
+            assertThat(upgraded.migrationsExecuted).isEqualTo(14);
+            assertThat(currentVersion(schema)).isEqualTo("16");
             assertMigratedCandidateDefinitionsAreDrools(schema);
             assertUnpublishedCandidatesDoNotDisableSeedRules(schema);
             assertJsonCheckpointRoundTrip(schema);
@@ -133,6 +135,124 @@ class RiskMySqlMigrationIntegrationTest {
             assertLayeredEvidenceDoesNotOverwrite(schema);
             assertExposureRevisionIsMonotonic(schema);
             assertSeedUsesOneConservativeMigrationTime(schema, migrationStartedAt, migrationFinishedAt);
+        } finally {
+            dropSchema(schema);
+        }
+    }
+
+    @Test
+    void parallelStrategyMigrationPreservesLegacyAndIsolatesSignalsAndActualResults() throws Exception {
+        String schema = schemaName();
+        createSchema(schema);
+        try {
+            flywayTo(schema, "14").migrate();
+            JdbcTemplate database = jdbc(schema);
+            database.update("""
+                    INSERT INTO stock_signal_daily (
+                        symbol, signal_date, `signal`, signal_direction, trace_json
+                    ) VALUES ('600519.SH', '2026-07-18', 'bullish', 'bullish', JSON_OBJECT('legacy', true))
+                    """);
+            long legacyId = database.queryForObject("SELECT id FROM stock_signal_daily", Long.class);
+            String legacyFingerprint = database.queryForObject(
+                    "SELECT signal_content_fingerprint FROM stock_signal_daily", String.class);
+            database.update("""
+                    INSERT INTO stock_signal_daily_history (
+                        signal_id, version_no, symbol, signal_date, `signal`, signal_direction,
+                        content_fingerprint, available_at
+                    ) SELECT id, 1, symbol, signal_date, `signal`, signal_direction,
+                             signal_content_fingerprint, '2026-07-18 18:00:00'
+                      FROM stock_signal_daily
+                    """);
+            database.update("""
+                    INSERT INTO stock_actual_result (symbol, signal_date, hit_1d)
+                    VALUES ('600519.SH', '2026-07-18', true), ('000001.SZ', '2026-07-18', false)
+                    """);
+
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(database.queryForObject("SELECT signal_content_fingerprint FROM stock_signal_daily",
+                    String.class)).isEqualTo(legacyFingerprint);
+            assertThat(database.queryForObject("SELECT COUNT(*) FROM stock_signal_daily_history", Integer.class))
+                    .isEqualTo(1);
+            assertThat(database.queryForObject("SELECT content_fingerprint FROM stock_signal_daily_history",
+                    String.class)).isEqualTo(legacyFingerprint);
+            assertThat(database.queryForMap("""
+                    SELECT strategy_code, strategy_version, signal_id FROM stock_actual_result
+                    WHERE symbol = '600519.SH'
+                    """)).containsEntry("strategy_code", "LEGACY")
+                    .containsEntry("strategy_version", "legacy").containsEntry("signal_id", legacyId);
+            assertThat(database.queryForObject("""
+                    SELECT signal_id FROM stock_actual_result WHERE symbol = '000001.SZ'
+                    """, Long.class)).isNull();
+
+            for (String code : List.of("STRATEGY_A", "STRATEGY_B")) {
+                database.update("""
+                        INSERT INTO rule_strategy (
+                            strategy_code, strategy_name, version, status,
+                            bullish_threshold, bearish_threshold, risk_threshold, snapshot_json
+                        ) VALUES (?, ?, 'v1', 'active', 60, 60, 80, JSON_OBJECT())
+                        """, code, code);
+            }
+            assertThat(database.queryForObject("SELECT COUNT(*) FROM rule_strategy WHERE status = 'active'",
+                    Integer.class)).isEqualTo(2);
+
+            SqlSessionFactory factory = signalSessionFactory(schema);
+            LocalDate date = LocalDate.of(2026, 7, 18);
+            StockSignalDaily a = signal("600519.SH", date, "bullish", "0.75");
+            a.setStrategyCode("STRATEGY_A");
+            a.setStrategyVersion("v1");
+            StockSignalDaily b = signal("600519.SH", date, "bearish", "0.80");
+            b.setStrategyCode("STRATEGY_B");
+            b.setStrategyVersion("v1");
+            StockSignalDaily a2 = signal("600519.SH", date, "watch", "0.50");
+            a2.setStrategyCode("STRATEGY_A");
+            a2.setStrategyVersion("v2");
+            writeSignalVersion(factory, a, date.atTime(18, 1));
+            writeSignalVersion(factory, b, date.atTime(18, 2));
+            writeSignalVersion(factory, a2, date.atTime(18, 2));
+            a.setExplanation("方案 A 独立更新");
+            writeSignalVersion(factory, a, date.atTime(18, 3));
+
+            try (SqlSession session = factory.openSession(true)) {
+                StockSignalDailyMapper signals = session.getMapper(StockSignalDailyMapper.class);
+                StockActualResultMapper actuals = session.getMapper(StockActualResultMapper.class);
+                for (StockSignalDaily original : List.of(a, b, a2)) {
+                    StockSignalDaily persisted = signals.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
+                            .eq(StockSignalDaily::getSymbol, original.getSymbol())
+                            .eq(StockSignalDaily::getSignalDate, date)
+                            .eq(StockSignalDaily::getStrategyCode, original.getStrategyCode())
+                            .eq(StockSignalDaily::getStrategyVersion, original.getStrategyVersion()));
+                    StockActualResult actual = StockActualResult.builder()
+                            .signalId(persisted.getId()).symbol(persisted.getSymbol()).signalDate(date)
+                            .strategyCode(persisted.getStrategyCode()).strategyVersion(persisted.getStrategyVersion())
+                            .return1d(new BigDecimal("0.01"))
+                            .hit1d("bullish".equals(persisted.getSignalDirection())).build();
+                    actuals.upsertActualResult(actual);
+                    actuals.upsertActualResult(actual);
+                }
+            }
+            assertThat(database.queryForObject("SELECT COUNT(*) FROM stock_signal_daily", Integer.class)).isEqualTo(4);
+            assertThat(database.queryForList("""
+                    SELECT strategy_code, strategy_version, signal_direction FROM stock_signal_daily
+                    WHERE strategy_code IN ('STRATEGY_A', 'STRATEGY_B') ORDER BY strategy_code, strategy_version
+                    """)).containsExactly(
+                    Map.of("strategy_code", "STRATEGY_A", "strategy_version", "v1", "signal_direction", "bullish"),
+                    Map.of("strategy_code", "STRATEGY_A", "strategy_version", "v2", "signal_direction", "watch"),
+                    Map.of("strategy_code", "STRATEGY_B", "strategy_version", "v1", "signal_direction", "bearish"));
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM stock_signal_daily_history WHERE strategy_code = 'STRATEGY_A' AND strategy_version = 'v1'
+                    """, Integer.class)).isEqualTo(2);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM stock_signal_daily_history WHERE strategy_code = 'STRATEGY_B'
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(database.queryForObject("""
+                    SELECT COUNT(*) FROM stock_actual_result WHERE symbol = '600519.SH'
+                    """, Integer.class)).isEqualTo(4);
+            assertThat(database.queryForObject("""
+                    SELECT hit_1d FROM stock_actual_result WHERE strategy_code = 'STRATEGY_A' AND strategy_version = 'v1'
+                    """, Boolean.class)).isTrue();
+            assertThat(database.queryForObject("""
+                    SELECT hit_1d FROM stock_actual_result WHERE strategy_code = 'STRATEGY_B'
+                    """, Boolean.class)).isFalse();
         } finally {
             dropSchema(schema);
         }
@@ -225,7 +345,7 @@ class RiskMySqlMigrationIntegrationTest {
                     WHERE candidate_code = 'CR_TREND_BEAR_GUARD_001'
                       AND status = 'published'
                     """, Integer.class)).isEqualTo(1);
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(3);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(4);
             assertThat(database.queryForObject("""
                     SELECT COUNT(*) FROM rule_definition
                     WHERE rule_code = 'R_DROOLS_BEARISH_GUARD_001'
@@ -277,7 +397,7 @@ class RiskMySqlMigrationIntegrationTest {
                         """, code);
             }
 
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(2);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(3);
             assertThat(database.queryForObject("""
                     SELECT rule_name FROM rule_definition WHERE rule_code = ?
                     """, String.class, codes.get(0))).isEqualTo("趋势与技术同步偏弱防守");
@@ -322,7 +442,7 @@ class RiskMySqlMigrationIntegrationTest {
         String schema = schemaName();
         createSchema(schema);
         try {
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(14);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(15);
             JdbcTemplate database = jdbc(schema);
             String candidateCode = "CR_TREND_BEAR_GUARD_001";
             String seedCode = "R_DROOLS_BEARISH_GUARD_001";
@@ -435,7 +555,7 @@ class RiskMySqlMigrationIntegrationTest {
                           '895fd65abd4d759a5de4232033d283d0b6a45ce8ccb1f7bb9e807f7cd4f68b5e'
                     """, Integer.class)).isEqualTo(1);
 
-            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(3);
+            assertThat(flyway(schema).migrate().migrationsExecuted).isEqualTo(4);
             assertThat(database.queryForObject("""
                     SELECT COUNT(*) FROM rule_definition
                     WHERE rule_code = 'R_DROOLS_OVERSOLD_NOTICE_001'
@@ -840,7 +960,9 @@ class RiskMySqlMigrationIntegrationTest {
                 mapper.upsertSignal(signal);
                 StockSignalDaily persisted = mapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
                         .eq(StockSignalDaily::getSymbol, signal.getSymbol())
-                        .eq(StockSignalDaily::getSignalDate, signal.getSignalDate()));
+                        .eq(StockSignalDaily::getSignalDate, signal.getSignalDate())
+                        .eq(StockSignalDaily::getStrategyCode, signal.getStrategyCode())
+                        .eq(StockSignalDaily::getStrategyVersion, signal.getStrategyVersion()));
                 assertThat(persisted).isNotNull();
                 mapper.insertSignalHistoryIfChanged(persisted.getId(), availableAt);
                 session.commit();
@@ -856,6 +978,8 @@ class RiskMySqlMigrationIntegrationTest {
         return StockSignalDaily.builder()
                 .symbol(symbol)
                 .signalDate(signalDate)
+                .generationType("regular")
+                .generatedAt(signalDate.atTime(18, 0))
                 .signal(direction)
                 .signalDirection(direction)
                 .signalLevel(bullish ? "偏看涨" : "偏看跌")
@@ -877,6 +1001,7 @@ class RiskMySqlMigrationIntegrationTest {
                 new DriverManagerDataSource(schemaUrl(schema), username, password)
         ));
         configuration.addMapper(StockSignalDailyMapper.class);
+        configuration.addMapper(StockActualResultMapper.class);
         return new MybatisSqlSessionFactoryBuilder().build(configuration);
     }
 

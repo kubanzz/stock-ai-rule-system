@@ -13,17 +13,21 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
 
     @Insert("""
             INSERT INTO stock_signal_daily (
-                symbol, signal_date, generation_type, generated_at, `signal`, signal_direction, signal_level,
+                symbol, signal_date, strategy_code, strategy_version, strategy_name, generation_type, generated_at, `signal`, signal_direction, signal_level,
                 bullish_score, bearish_score, risk_score, confidence, triggered_rules,
                 explanation, risk_disclaimer, trace_json
             ) VALUES (
                 #{signalRecord.symbol}, #{signalRecord.signalDate},
+                COALESCE(#{signalRecord.strategyCode}, 'LEGACY'),
+                COALESCE(#{signalRecord.strategyVersion}, 'legacy'),
+                #{signalRecord.strategyName},
                 #{signalRecord.generationType}, #{signalRecord.generatedAt},
                 #{signalRecord.signal}, #{signalRecord.signalDirection}, #{signalRecord.signalLevel},
                 #{signalRecord.bullishScore}, #{signalRecord.bearishScore}, #{signalRecord.riskScore},
                 #{signalRecord.confidence}, #{signalRecord.triggeredRules}, #{signalRecord.explanation},
                 #{signalRecord.riskDisclaimer}, #{signalRecord.traceJson}
             ) ON DUPLICATE KEY UPDATE
+                strategy_name = VALUES(strategy_name),
                 `signal` = VALUES(`signal`),
                 generation_type = VALUES(generation_type),
                 generated_at = VALUES(generated_at),
@@ -42,11 +46,14 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
 
     @Insert("""
             INSERT IGNORE INTO stock_signal_daily (
-                symbol, signal_date, generation_type, generated_at, `signal`, signal_direction, signal_level,
+                symbol, signal_date, strategy_code, strategy_version, strategy_name, generation_type, generated_at, `signal`, signal_direction, signal_level,
                 bullish_score, bearish_score, risk_score, confidence, triggered_rules,
                 explanation, risk_disclaimer, trace_json
             ) VALUES (
                 #{signalRecord.symbol}, #{signalRecord.signalDate},
+                COALESCE(#{signalRecord.strategyCode}, 'LEGACY'),
+                COALESCE(#{signalRecord.strategyVersion}, 'legacy'),
+                #{signalRecord.strategyName},
                 #{signalRecord.generationType}, #{signalRecord.generatedAt},
                 #{signalRecord.signal}, #{signalRecord.signalDirection}, #{signalRecord.signalLevel},
                 #{signalRecord.bullishScore}, #{signalRecord.bearishScore}, #{signalRecord.riskScore},
@@ -58,12 +65,14 @@ public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
 
     @Insert("""
             INSERT INTO stock_signal_daily_history (
-                signal_id, version_no, symbol, signal_date, `signal`, signal_direction, signal_level,
+                signal_id, version_no, symbol, signal_date, strategy_code, strategy_version, strategy_name, `signal`, signal_direction, signal_level,
                 bullish_score, bearish_score, risk_score, confidence, triggered_rules,
                 explanation, risk_disclaimer, trace_json, content_fingerprint, available_at
             )
             SELECT current_signal.id, COALESCE(latest.version_no, 0) + 1,
-                   current_signal.symbol, current_signal.signal_date, current_signal.`signal`,
+                   current_signal.symbol, current_signal.signal_date,
+                   current_signal.strategy_code, current_signal.strategy_version, current_signal.strategy_name,
+                   current_signal.`signal`,
                    current_signal.signal_direction, current_signal.signal_level,
                    current_signal.bullish_score, current_signal.bearish_score,
                    current_signal.risk_score, current_signal.confidence,

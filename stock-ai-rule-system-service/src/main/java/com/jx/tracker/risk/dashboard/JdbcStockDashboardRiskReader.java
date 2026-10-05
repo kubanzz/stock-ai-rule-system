@@ -3,6 +3,7 @@ package com.jx.tracker.risk.dashboard;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.model.GateDecision;
 import com.jx.tracker.risk.model.RiskDataQualityStatus;
@@ -70,8 +71,12 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
         Map<String, SnapshotRow> snapshots = latestSnapshots(parameters);
         Map<Long, List<RiskEvidence>> evidence = evidence(snapshots.values().stream()
                 .map(SnapshotRow::id).toList(), asOf);
-        Map<String, GateDecision> gates = latestGates(
-                parameters, distinctSymbols, tradeDate, snapshots);
+        Map<String, String> symbolsByReference = distinctSymbols.stream().collect(Collectors.toMap(
+                symbol -> RiskSignalCandidate.stockSignalReference(symbol, tradeDate),
+                Function.identity(), (first, ignored) -> first, LinkedHashMap::new));
+        Map<String, GateDecision> gates = new LinkedHashMap<>();
+        latestGates(parameters, symbolsByReference, snapshots).forEach((reference, gate) ->
+                gates.put(symbolsByReference.get(reference), gate));
 
         Set<String> resultSymbols = new LinkedHashSet<>();
         resultSymbols.addAll(snapshots.keySet());
@@ -81,6 +86,45 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
             SnapshotRow row = snapshots.get(symbol);
             RiskSnapshot snapshot = row == null ? null : row.snapshot(evidence.getOrDefault(row.id(), List.of()));
             result.put(symbol, new StockDashboardRiskOverlay(snapshot, gates.get(symbol)));
+        }
+        return Map.copyOf(result);
+    }
+
+    @Override
+    public Map<Long, StockDashboardRiskOverlay> findBySignals(
+            LocalDate tradeDate, RiskHorizon horizon, List<StockSignalDaily> signals, LocalDateTime asOf
+    ) {
+        if (tradeDate == null || horizon == null || asOf == null || signals == null || signals.isEmpty()) {
+            return Map.of();
+        }
+        List<StockSignalDaily> persistedSignals = signals.stream()
+                .filter(signal -> signal != null && signal.getId() != null
+                        && signal.getSymbol() != null && !signal.getSymbol().isBlank()
+                        && tradeDate.equals(signal.getSignalDate()))
+                .toList();
+        if (persistedSignals.isEmpty()) {
+            return Map.of();
+        }
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("tradeDate", tradeDate).addValue("horizon", horizon.getCode()).addValue("asOf", asOf)
+                .addValue("symbols", persistedSignals.stream().map(StockSignalDaily::getSymbol).distinct().toList());
+        Map<String, SnapshotRow> snapshots = latestSnapshots(parameters);
+        Map<Long, List<RiskEvidence>> evidence = evidence(snapshots.values().stream().map(SnapshotRow::id).toList(), asOf);
+        Map<String, String> symbolsByReference = persistedSignals.stream().collect(Collectors.toMap(
+                signal -> RiskSignalCandidate.stockSignalReference(signal.getId(), signal.getSymbol(), tradeDate,
+                        signal.getStrategyCode(), signal.getStrategyVersion()),
+                StockSignalDaily::getSymbol, (first, ignored) -> first, LinkedHashMap::new));
+        Map<String, GateDecision> gatesByReference = latestGates(parameters, symbolsByReference, snapshots);
+        Map<Long, StockDashboardRiskOverlay> result = new LinkedHashMap<>();
+        for (StockSignalDaily signal : persistedSignals) {
+            SnapshotRow row = snapshots.get(signal.getSymbol());
+            String reference = RiskSignalCandidate.stockSignalReference(signal.getId(), signal.getSymbol(), tradeDate,
+                    signal.getStrategyCode(), signal.getStrategyVersion());
+            GateDecision gate = gatesByReference.get(reference);
+            if (row != null || gate != null) {
+                RiskSnapshot snapshot = row == null ? null : row.snapshot(evidence.getOrDefault(row.id(), List.of()));
+                result.put(signal.getId(), new StockDashboardRiskOverlay(snapshot, gate));
+            }
         }
         return Map.copyOf(result);
     }
@@ -127,16 +171,12 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
 
     private Map<String, GateDecision> latestGates(
             MapSqlParameterSource parameters,
-            List<String> symbols,
-            LocalDate tradeDate,
+            Map<String, String> symbolByReference,
             Map<String, SnapshotRow> snapshots
     ) {
         if (snapshots.isEmpty()) {
             return Map.of();
         }
-        Map<String, String> symbolByReference = symbols.stream().collect(Collectors.toMap(
-                symbol -> RiskSignalCandidate.stockSignalReference(symbol, tradeDate),
-                Function.identity(), (first, ignored) -> first, LinkedHashMap::new));
         parameters.addValue("references", symbolByReference.keySet());
         List<GateRow> rows = jdbc.query("""
                 SELECT g.signal_reference, g.object_type, g.object_id,
@@ -164,7 +204,7 @@ public class JdbcStockDashboardRiskReader implements StockDashboardRiskReader {
             SnapshotRow selectedSnapshot = snapshots.get(symbol);
             if (symbol != null && selectedSnapshot != null
                     && selectedSnapshot.modelVersion().equals(row.decision().modelVersion())) {
-                latest.putIfAbsent(symbol, row.decision());
+                latest.putIfAbsent(row.signalReference(), row.decision());
             }
         });
         return latest;

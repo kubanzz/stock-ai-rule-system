@@ -83,6 +83,27 @@ class StockActualResultServiceTest {
         assertThat(actualResultMapper.inserted).isEmpty();
     }
 
+    @Test
+    void verifiesOppositeSignalsForSameStockAndDateSeparately() {
+        LocalDate date = LocalDate.of(2026, 1, 2);
+        StockSignalDaily bullish = StockSignalDaily.builder().id(71L).symbol("AAPL").signalDate(date)
+                .strategyCode("PLAN_A").strategyVersion("v1").signal("bullish").build();
+        StockSignalDaily bearish = StockSignalDaily.builder().id(72L).symbol("AAPL").signalDate(date)
+                .strategyCode("PLAN_B").strategyVersion("v3").signal("bearish").build();
+        signalMapper.selectResponses.add(List.of(bullish, bearish));
+        List<StockDailyQuote> prices = List.of(quote("AAPL", date, "100"), quote("AAPL", date.plusDays(1), "102"));
+        quoteMapper.selectResponses.add(prices);
+        quoteMapper.selectResponses.add(prices);
+
+        List<StockActualResult> results = service.verifySignals(date, date);
+
+        assertThat(results).extracting(StockActualResult::getSignalId).containsExactly(71L, 72L);
+        assertThat(results).extracting(StockActualResult::getStrategyCode).containsExactly("PLAN_A", "PLAN_B");
+        assertThat(results).extracting(StockActualResult::getStrategyVersion).containsExactly("v1", "v3");
+        assertThat(results).extracting(StockActualResult::getHit1d).containsExactly(true, false);
+        assertThat(actualResultMapper.inserted).hasSize(2);
+    }
+
     private StockDailyQuote quote(String symbol, LocalDate tradeDate, String closePrice) {
         return StockDailyQuote.builder()
                 .symbol(symbol)

@@ -1,6 +1,6 @@
 # 正常 A 股股票日筛选（研究口径）
 
-2026-10-05 `P4-VOTE-001` **已应用（已写入配置），草稿待启用**。三个固定基本规则、三选二规则组、冻结PIT100股票组及同编码应用方案已写入当前系统并通过API回读，基本规则、规则组及方案均为 `draft/v1`；原方案 `RS_G144_G118_SZ125` 的 `active/v2` 完整快照保持。编码、版本及100股成员核验见[部署记录](../deployments/p4_vote_001_20261005/DEPLOYMENT.md)；[独立应用状态](phase140_p4_vote_001_final_validation/APPLIED_STATUS.md)不修改冻结研究登记。本次保存不表示已运行P4规则，研究状态仍为 `pending_final`，最终窗口为 `2027-01-01..2029-12-31`，历史结果只作诊断，配置接入不代表稳定上涨预测价值已获验证。所有输出仅供辅助决策。
+2026-10-05 `P4-VOTE-001` **已应用并启用**：三基本规则 `active/v1`、三选二规则组 `active/v2`、固定PIT100股票组及应用方案 `active/v2` 已回读核验，与原 `RS_G144_G118_SZ125/active/v2` 并行，原快照和旧信号保留。各方案信号按股票、日期、编码、版本独立保存和展示。见[多方案部署记录](../deployments/multi_strategy_signals_20261005/DEPLOYMENT.md)及[应用状态](phase140_p4_vote_001_final_validation/APPLIED_STATUS.md)。研究仍为辅助用途 `pending_final`，最终窗口 `2027-01-01..2029-12-31` 不变；合格原始输入缺失时不生成P4信号。启用不表示已通过65%验收。
 
 固定筛选标识：`mainboard_liquid_stable_v1`。在完整行情上运行 `add_normal_universe_eligibility()`，再按 `symbol,trade_date` 将布尔标记关联到信号日事件；不能先筛事件再计算滚动窗口。脚本只读行情，不读后续收益或预测结果，也不写数据库。可复现命令：
 

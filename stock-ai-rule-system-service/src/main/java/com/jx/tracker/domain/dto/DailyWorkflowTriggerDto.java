@@ -11,6 +11,12 @@ public class DailyWorkflowTriggerDto {
 
     private Boolean dryRun;
 
+    private String strategyCode;
+
+    public String getStrategyCode() { return strategyCode; }
+
+    public void setStrategyCode(String strategyCode) { this.strategyCode = strategyCode; }
+
     public LocalDate getTradeDate() {
         return tradeDate;
     }

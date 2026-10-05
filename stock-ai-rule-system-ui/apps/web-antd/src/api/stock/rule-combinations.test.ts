@@ -15,6 +15,27 @@ beforeEach(() => {
 });
 
 describe('rule combination API', () => {
+  it('allows independently enabling and disabling multiple strategies in mock mode', async () => {
+    vi.stubEnv('VITE_STOCK_USE_MOCK', 'true');
+    const api = await import('./rule-combinations');
+    for (const strategyCode of ['S_FIRST', 'S_SECOND']) {
+      await api.createRuleStrategy({
+        bearishThreshold: 60,
+        bullishThreshold: 60,
+        groups: [{ groupCode: 'G_TEST', required: true, weight: 1 }],
+        riskThreshold: 80,
+        strategyCode,
+        strategyName: strategyCode,
+      });
+      await api.setRuleStrategyStatus(strategyCode, 'active');
+    }
+    expect((await api.getRuleStrategies()).rows.map((row) => row.status)).toEqual(['active', 'active']);
+
+    await api.setRuleStrategyStatus('S_SECOND', 'disabled');
+    expect((await api.getRuleStrategy('S_FIRST')).status).toBe('active');
+    expect((await api.getRuleStrategy('S_SECOND')).status).toBe('disabled');
+  });
+
   it('uses the backend for listing, saving, and applying a strategy in real mode', async () => {
     requestMocks.get.mockResolvedValue({
       data: { code: 200, rows: [], total: 0 },
@@ -51,6 +72,73 @@ describe('rule combination API', () => {
     expect(requestMocks.put).toHaveBeenCalledWith(
       '/rule-strategies/S_TEST/status',
       { status: 'active' },
+    );
+  });
+
+  it('shows the backend dependency rejection when activating a group', async () => {
+    const reason =
+      '启用规则组前，成员规则必须已启用：R_P4_VOTE_001_CHANGE_PCT_5D';
+    requestMocks.put.mockRejectedValue({ code: 400, msg: reason });
+    const api = await import('./rule-combinations');
+
+    await expect(
+      api.setRuleGroupStatus('P4-VOTE-001', 'active'),
+    ).rejects.toThrow(reason);
+    expect(requestMocks.put).toHaveBeenCalledWith(
+      '/rule-groups/P4-VOTE-001/status',
+      {
+        status: 'active',
+      },
+    );
+  });
+
+  it('shows the backend rejection from a nested HTTP response when activating a strategy', async () => {
+    const reason = '启用应用方案前，规则组必须已启用：P4-VOTE-001';
+    requestMocks.put.mockRejectedValue({
+      response: { data: { code: 400, msg: reason } },
+    });
+    const api = await import('./rule-combinations');
+
+    await expect(
+      api.setRuleStrategyStatus('P4-VOTE-001', 'active'),
+    ).rejects.toThrow(reason);
+  });
+
+  it('keeps business error messages returned with HTTP success when saving a group', async () => {
+    requestMocks.post.mockResolvedValue({
+      data: { code: 400, msg: '规则组编码已存在' },
+    });
+    const api = await import('./rule-combinations');
+
+    await expect(
+      api.createRuleGroup({
+        aggregation: 'WEIGHTED',
+        groupCode: 'P4-VOTE-001',
+        groupName: 'P4 规则组',
+        members: [{ required: false, ruleCode: 'R_P4', weight: 1 }],
+        minMatchedRules: 1,
+      }),
+    ).rejects.toThrow('规则组编码已存在');
+  });
+
+  it('normalizes list and detail HTTP failures and preserves network errors', async () => {
+    requestMocks.get.mockRejectedValueOnce({
+      code: 400,
+      msg: '规则组查询失败',
+    });
+    requestMocks.get.mockRejectedValueOnce({
+      response: { data: { code: 404, msg: '找不到应用方案' } },
+    });
+    const api = await import('./rule-combinations');
+
+    await expect(api.getRuleGroups()).rejects.toThrow('规则组查询失败');
+    await expect(api.getRuleStrategy('P4-VOTE-001')).rejects.toThrow(
+      '找不到应用方案',
+    );
+    const networkError = new Error('Network Error');
+    requestMocks.put.mockRejectedValue(networkError);
+    await expect(api.setRuleGroupStatus('P4-VOTE-001', 'active')).rejects.toBe(
+      networkError,
     );
   });
 

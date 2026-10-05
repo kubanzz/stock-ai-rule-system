@@ -23,12 +23,25 @@ import java.time.LocalDateTime;
 @Schema(name = "信号结果表")
 public class StockSignalDaily {
 
+    public static final String LEGACY_STRATEGY_CODE = "LEGACY";
+    public static final String LEGACY_STRATEGY_VERSION = "legacy";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
     private String symbol;
 
     private LocalDate signalDate;
+
+    /** 冻结的生成方案身份；旧记录不能据当前启用方案反推归属。 */
+    @Builder.Default
+    private String strategyCode = LEGACY_STRATEGY_CODE;
+
+    /** 信号生成时的方案名称，避免后续重命名改写历史显示。 */
+    private String strategyName;
+
+    @Builder.Default
+    private String strategyVersion = LEGACY_STRATEGY_VERSION;
 
     /** regular = 当期生成；backfill = 使用现行规则对历史交易日补算。 */
     private String generationType;

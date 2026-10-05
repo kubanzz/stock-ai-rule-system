@@ -269,7 +269,7 @@ describe('stock real backend contract', () => {
     expect(types).toContain('date?: string;');
     expect(toolbar).toContain('value-format="YYYY-MM-DD"');
     expect(signalPage).toContain(
-      'query: { date: query.date ?? dashboard.value?.tradeDate }',
+      'date: row.signalDate ?? query.date ?? dashboard.value?.tradeDate',
     );
     expect(detailPage).toContain('route.query.date');
     expect(detailPage).toContain('getStockResearchDetail');

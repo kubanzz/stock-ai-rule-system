@@ -44,6 +44,8 @@ public class StockConsoleController {
                                 @RequestParam(value = "symbol", required = false) String symbol,
                                 @RequestParam(value = "signal", required = false) String signal,
                                 @RequestParam(value = "industry", required = false) String industry,
+                                @RequestParam(value = "strategyCode", required = false) String strategyCode,
+                                @RequestParam(value = "strategyVersion", required = false) String strategyVersion,
                                 @RequestParam(value = "confidenceMin", required = false) BigDecimal confidenceMin,
                                 @RequestParam(value = "confidenceMax", required = false) BigDecimal confidenceMax,
                                 @RequestParam(value = "riskHorizon", defaultValue = "1-5d") String riskHorizon,
@@ -53,7 +55,7 @@ public class StockConsoleController {
                                 @RequestParam(value = "sortOrder", required = false) String sortOrder) {
         StockConsoleVo.SignalDashboardQuery query = new StockConsoleVo.SignalDashboardQuery(
                 date, market, poolCode, symbol, signal, industry, confidenceMin, confidenceMax,
-                pageNum, pageSize, sortField, sortOrder, RiskHorizon.fromCode(riskHorizon)
+                pageNum, pageSize, sortField, sortOrder, RiskHorizon.fromCode(riskHorizon), strategyCode, strategyVersion
         );
         return AjaxResult.success(stockDashboardQueryService.dashboard(query));
     }
@@ -121,8 +123,12 @@ public class StockConsoleController {
     @Operation(summary = "查询股票研究详情")
     public AjaxResult research(@PathVariable("symbol") String symbol,
                                @RequestParam(value = "date", required = false) LocalDate date,
-                               @RequestParam(value = "versionNo", required = false) Integer versionNo) {
-        return AjaxResult.success(stockConsoleQueryService.research(symbol, date, versionNo));
+                               @RequestParam(value = "versionNo", required = false) Integer versionNo,
+                               @RequestParam(value = "signalId", required = false) Long signalId,
+                               @RequestParam(value = "strategyCode", required = false) String strategyCode,
+                               @RequestParam(value = "strategyVersion", required = false) String strategyVersion) {
+        return AjaxResult.success(stockConsoleQueryService.research(symbol, date, versionNo,
+                signalId, strategyCode, strategyVersion));
     }
 
     @GetMapping("/rules/governance")

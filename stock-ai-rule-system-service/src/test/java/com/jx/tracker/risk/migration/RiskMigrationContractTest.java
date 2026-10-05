@@ -257,6 +257,28 @@ class RiskMigrationContractTest {
                 "DELETE FROM rule_definition", "DELETE FROM candidate_rule");
     }
 
+    @Test
+    void parallelStrategyMigrationKeepsLegacyIdentityAndMakesResultsSignalSpecific() throws IOException {
+        String migration = resource("/db/migration/V16__parallel_strategy_signal_identity.sql");
+
+        assertThat(migration).contains(
+                "DROP INDEX uk_rule_strategy_active_slot", "DROP COLUMN active_slot",
+                "strategy_code VARCHAR(64) NOT NULL DEFAULT 'LEGACY'",
+                "strategy_version VARCHAR(32) NOT NULL DEFAULT 'legacy'",
+                "strategy_name VARCHAR(128) NULL",
+                "DROP INDEX uk_stock_signal_daily_symbol_signal_date",
+                "uk_stock_signal_daily_strategy_identity (symbol, signal_date, strategy_code, strategy_version)",
+                "ALTER TABLE stock_signal_daily_history",
+                "WHEN strategy_code = 'LEGACY' AND strategy_version = 'legacy' AND trace_json IS NULL",
+                "WHEN strategy_code = 'LEGACY' AND strategy_version = 'legacy' THEN",
+                "ADD COLUMN signal_id BIGINT NULL",
+                "SET actual_result.signal_id = signal_record.id",
+                "uk_stock_actual_result_signal_id (signal_id)",
+                "uk_stock_actual_result_strategy_identity (symbol, signal_date, strategy_code, strategy_version)"
+        );
+        assertThat(migration).doesNotContain("DELETE FROM", "TRUNCATE", "UPDATE stock_signal_daily_history");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(path)) {
             assertThat(input).as(path).isNotNull();

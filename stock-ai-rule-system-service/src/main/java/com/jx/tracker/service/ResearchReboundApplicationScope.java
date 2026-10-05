@@ -52,42 +52,40 @@ public class ResearchReboundApplicationScope {
         this.p4Calculator = p4Calculator;
     }
 
+    /** A union can be bounded only when every enabled application is bounded. */
     public boolean hasBoundStockPool() {
-        return StrategyStockScope.isBound(strategyService.getActiveStrategy());
+        List<RuleStrategyDetailDto> active = strategyService.getActiveStrategies();
+        return !active.isEmpty() && active.stream().allMatch(StrategyStockScope::isBound);
     }
 
-    /** Empty is an empty bound pool, never permission to fall back to the market. */
+    /** Shared market-data collection uses the union; inference remains application-specific. */
     public Set<String> activeApplicationSymbols() {
-        RuleStrategyDetailDto active = strategyService.getActiveStrategy();
-        return normalizedSymbols(StrategyStockScope.symbols(active));
+        Set<String> symbols = new LinkedHashSet<>();
+        for (RuleStrategyDetailDto active : strategyService.getActiveStrategies()) {
+            symbols.addAll(normalizedSymbols(StrategyStockScope.symbols(active)));
+        }
+        return Collections.unmodifiableSet(symbols);
     }
 
-    /** A bound application's default target is its snapshot; explicit targets are intersected. */
     public List<String> restrictToApplication(Collection<String> requestedSymbols) {
-        RuleStrategyDetailDto active = strategyService.getActiveStrategy();
         Set<String> requested = normalizedSymbols(requestedSymbols);
-        if (!StrategyStockScope.isBound(active)) {
-            return List.copyOf(requested);
-        }
-        Set<String> allowed = normalizedSymbols(StrategyStockScope.symbols(active));
-        if (requestedSymbols == null || requestedSymbols.isEmpty()) {
-            return List.copyOf(allowed);
-        }
+        if (!hasBoundStockPool()) return List.copyOf(requested);
+        Set<String> allowed = activeApplicationSymbols();
+        if (requestedSymbols == null || requestedSymbols.isEmpty()) return List.copyOf(allowed);
         return requested.stream().filter(allowed::contains).toList();
     }
 
-    /** Only researched members used by research rules require the longer warm-up and index. */
+    /** Longer history is required only for a research application that includes this stock. */
     public Set<String> activeSymbols() {
-        RuleStrategyDetailDto active = strategyService.getActiveStrategy();
         Set<String> symbols = new LinkedHashSet<>();
-        if (usesRules(active, RESEARCH_RULE_CODES)) {
-            symbols.addAll(calculator.getSymbols());
-        }
-        if (usesRules(active, P4_RULE_CODES)) {
-            symbols.addAll(p4Calculator.getSymbols());
-        }
-        if (StrategyStockScope.isBound(active)) {
-            symbols.retainAll(normalizedSymbols(StrategyStockScope.symbols(active)));
+        for (RuleStrategyDetailDto active : strategyService.getActiveStrategies()) {
+            Set<String> applicationSymbols = new LinkedHashSet<>();
+            if (usesRules(active, RESEARCH_RULE_CODES)) applicationSymbols.addAll(calculator.getSymbols());
+            if (usesRules(active, P4_RULE_CODES)) applicationSymbols.addAll(p4Calculator.getSymbols());
+            if (StrategyStockScope.isBound(active)) {
+                applicationSymbols.retainAll(normalizedSymbols(StrategyStockScope.symbols(active)));
+            }
+            symbols.addAll(applicationSymbols);
         }
         return Collections.unmodifiableSet(symbols);
     }
@@ -108,7 +106,8 @@ public class ResearchReboundApplicationScope {
     }
 
     public LocalDate historyStart(String symbol, LocalDate endDate) {
-        boolean p4History = usesRules(strategyService.getActiveStrategy(), P4_RULE_CODES)
+        boolean p4History = strategyService.getActiveStrategies().stream().anyMatch(active ->
+                usesRules(active, P4_RULE_CODES) && StrategyStockScope.includes(active, SymbolNormalizer.normalize(symbol)))
                 && p4Calculator.isMember(SymbolNormalizer.normalize(symbol));
         long validRows = quoteMapper.selectCount(Wrappers.<StockDailyQuote>lambdaQuery()
                 .eq(StockDailyQuote::getSymbol, symbol)

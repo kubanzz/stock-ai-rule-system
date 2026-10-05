@@ -48,8 +48,10 @@ public class StockSignalController {
     @GetMapping("/api/signals")
     public PageResult<StockSignalItemVo> list(@RequestParam(value = "date", required = false) LocalDate date,
                                               @RequestParam(value = "signal", required = false) String signal,
-                                              @RequestParam(value = "symbol", required = false) String symbol) {
-        List<StockSignalItemVo> rows = stockSignalService.listSignals(date, signal, symbol)
+                                              @RequestParam(value = "symbol", required = false) String symbol,
+                                              @RequestParam(value = "strategyCode", required = false) String strategyCode,
+                                              @RequestParam(value = "strategyVersion", required = false) String strategyVersion) {
+        List<StockSignalItemVo> rows = stockSignalService.listSignals(date, signal, symbol, strategyCode, strategyVersion)
                 .stream()
                 .map(this::toItemVo)
                 .toList();
@@ -58,26 +60,25 @@ public class StockSignalController {
 
     @PostMapping("/api/signals/generate")
     public AjaxResult generate(@RequestBody SignalGenerateRequestDto dto) {
-        StockSignalDaily signal = stockSignalService.generateDailySignal(
-                dto.getSymbol(),
-                dto.getSignalDate(),
-                dto.getFactors()
-        );
-        return AjaxResult.success(signal);
+        return AjaxResult.success(stockSignalService.generateDailySignals(
+                dto.getSymbol(), dto.getSignalDate(), dto.getFactors(), dto.getStrategyCode()));
     }
 
     @PostMapping("/api/signals/generate-from-factors")
     public AjaxResult generateFromFactors(@RequestBody DailyWorkflowTriggerDto dto) {
         return AjaxResult.success(stockSignalService.generateDailySignalsFromFactors(
                 dto.getTradeDate(),
-                dto.getSymbols()
+                dto.getSymbols(), dto.getStrategyCode()
         ));
     }
 
     @GetMapping("/api/stocks/{symbol}/analysis")
     public AjaxResult analysis(@PathVariable("symbol") String symbol,
-                               @RequestParam(value = "date", required = false) LocalDate date) {
-        StockSignalDaily signal = stockSignalService.getSignal(symbol, date);
+                               @RequestParam(value = "date", required = false) LocalDate date,
+                               @RequestParam(value = "signalId", required = false) Long signalId,
+                               @RequestParam(value = "strategyCode", required = false) String strategyCode,
+                               @RequestParam(value = "strategyVersion", required = false) String strategyVersion) {
+        StockSignalDaily signal = stockSignalService.getSignal(symbol, date, signalId, strategyCode, strategyVersion);
         Map<String, Object> factors = readFactors(symbol, signal, date);
         if (signal == null) {
             return AjaxResult.success(StockAnalysisVo.builder()
@@ -88,6 +89,10 @@ public class StockSignalController {
                     .build());
         }
         return AjaxResult.success(StockAnalysisVo.builder()
+                .signalId(signal.getId())
+                .strategyCode(signal.getStrategyCode())
+                .strategyVersion(signal.getStrategyVersion())
+                .strategyName(signal.getStrategyName())
                 .symbol(signal.getSymbol())
                 .signal(signal.getSignal())
                 .factors(factors)
@@ -99,6 +104,10 @@ public class StockSignalController {
 
     private StockSignalItemVo toItemVo(StockSignalDaily signal) {
         return StockSignalItemVo.builder()
+                .signalId(signal.getId())
+                .strategyCode(signal.getStrategyCode())
+                .strategyVersion(signal.getStrategyVersion())
+                .strategyName(signal.getStrategyName())
                 .symbol(signal.getSymbol())
                 .signal(signal.getSignal())
                 .signalLevel(signal.getSignalLevel())

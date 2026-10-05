@@ -39,10 +39,35 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class StockSignalServiceTest {
+
+    @Test
+    void boundApplicationRejectsDirectOutsideStockAndSkipsBackfillWithoutDatabaseWrites() {
+        RuleStrategyDetailDto strategy = new RuleStrategyDetailDto();
+        strategy.setStockPoolType("watchlist");
+        strategy.setStockPoolSymbols(List.of("000062.SZ"));
+        RuleStrategyService strategies = mock(RuleStrategyService.class);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(strategy));
+        var rules = mock(RuleDefinitionMapper.class);
+        var factors = mock(StockFactorDailyMapper.class);
+        var signals = mock(StockSignalDailyMapper.class);
+        var engine = mock(RuleEngineExecutor.class);
+        StockSignalService service = new StockSignalService(rules, factors, signals, engine,
+                new SignalScoringService(), strategies, new StrategyExecutionService());
+        assertThatThrownBy(() -> service.generateDailySignal("600519.SH", LocalDate.of(2026, 9, 30), Map.of()))
+                .hasMessageContaining("不在当前应用方案绑定的股票分组中");
+        assertThat(service.backfillMissingSignalFromFactors("600519.SH", LocalDate.of(2026, 9, 30), "backfill"))
+                .isNull();
+        verifyNoInteractions(rules, factors, signals, engine);
+        strategy.setStockPoolSymbols(List.of());
+        assertThat(service.generateDailySignalsFromFactors(LocalDate.of(2026, 9, 30), List.of())).isEmpty();
+        verifyNoInteractions(rules, factors, signals, engine);
+    }
 
     @Test
     void activeStrategyFiltersProductionRulesAndPersistsItsDecisionTrace() throws Exception {
@@ -65,10 +90,14 @@ class StockSignalServiceTest {
         RuleStrategyDetailDto strategy = new RuleStrategyDetailDto();
         strategy.setStrategyCode("S_TREND");
         strategy.setVersion("v3");
+        strategy.setStockPoolType("watchlist");
+        strategy.setStockPoolCode("pool-1");
+        strategy.setStockPoolName("样本分组");
+        strategy.setStockPoolSymbols(List.of("AAPL"));
         strategy.setBullishThreshold(new BigDecimal("65"));
         strategy.setGroups(List.of(selected));
         RuleStrategyService strategyService = mock(RuleStrategyService.class);
-        when(strategyService.getActiveStrategy()).thenReturn(strategy);
+        when(strategyService.getActiveStrategies()).thenReturn(List.of(strategy));
 
         AtomicReference<List<String>> executedCodes = new AtomicReference<>();
         RuleEngineExecutor engine = request -> {
@@ -93,10 +122,41 @@ class StockSignalServiceTest {
         JsonNode trace = new ObjectMapper().readTree(signal.getTraceJson());
         assertThat(trace.path("strategyExecution").path("strategyCode").asText()).isEqualTo("S_TREND");
         assertThat(trace.path("strategyExecution").path("strategyVersion").asText()).isEqualTo("v3");
+        assertThat(trace.path("strategyExecution").path("stockPool").path("code").asText()).isEqualTo("pool-1");
+        assertThat(trace.path("strategyExecution").path("stockPool").path("symbols").get(0).asText()).isEqualTo("AAPL");
         assertThat(trace.path("strategyExecution").path("ruleContributions").get(0)
                 .path("actualRuleVersion").asText()).isEqualTo("v4");
         assertThat(trace.path("decision").path("thresholds").path("bullish").decimalValue())
                 .isEqualByComparingTo("65");
+    }
+
+    @Test
+    void batchGenerationIntersectsSavedScopeEvenIfMapperReturnsOtherStocks() {
+        var date = LocalDate.of(2026, 9, 30);
+        var strategy = new RuleStrategyDetailDto();
+        strategy.setStockPoolType("watchlist");
+        strategy.setStockPoolSymbols(List.of("AAPL"));
+        var group = new RuleGroupDetailDto();
+        group.setGroupCode("G"); group.setAggregation("OR"); group.setMembers(List.of());
+        var selected = new RuleStrategyGroupDto();selected.setGroupCode("G");selected.setGroup(group);
+        strategy.setGroups(List.of(selected));
+        var strategies = mock(RuleStrategyService.class);
+        when(strategies.getActiveStrategies()).thenReturn(List.of(strategy));
+        List<String> evaluated = new ArrayList<>();
+        RuleEngineExecutor engine = request -> {
+            evaluated.add(request.symbol());
+            return new RuleExecutionResult(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    List.of(), List.of(), List.of());
+        };
+        var service = new StockSignalService(fakeRuleDefinitionMapper(List.of()),
+                fakeStockFactorDailyMapper(List.of(
+                        StockFactorDaily.builder().symbol("AAPL").tradeDate(date).factorJson("{}").build(),
+                        StockFactorDaily.builder().symbol("MSFT").tradeDate(date).factorJson("{}").build())),
+                fakeStockSignalDailyMapper(new AtomicReference<>()), engine, new SignalScoringService(),
+                strategies, new StrategyExecutionService());
+        assertThat(service.generateDailySignalsFromFactors(date, List.of())).extracting(StockSignalDaily::getSymbol)
+                .containsExactly("AAPL");
+        assertThat(evaluated).containsExactly("AAPL");
     }
 
     @Test
@@ -262,11 +322,11 @@ class StockSignalServiceTest {
                 StockSignalDailyMapper.class.getClassLoader(),
                 new Class<?>[]{StockSignalDailyMapper.class},
                 (proxy, method, args) -> {
-                    if ("selectOne".equals(method.getName())) {
+                    if ("selectList".equals(method.getName())) {
                         initializeStockSignalDailyTableInfo();
                         String sqlSegment = String.valueOf(args[0].getClass().getMethod("getSqlSegment").invoke(args[0]));
                         capturedSqlSegment.set(sqlSegment);
-                        return latestSignal;
+                        return List.of(latestSignal);
                     }
                     throw new UnsupportedOperationException(method.getName());
                 }

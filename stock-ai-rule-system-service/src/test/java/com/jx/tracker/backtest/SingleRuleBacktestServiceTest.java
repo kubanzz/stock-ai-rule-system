@@ -864,6 +864,35 @@ class SingleRuleBacktestServiceTest {
                 .isEqualByComparingTo("35");
     }
 
+    @Test
+    void strategyBacktestIntersectsRequestWithFrozenStockGroup() throws Exception {
+        RuleGroupService groups = mock(RuleGroupService.class);
+        RuleStrategyService strategies = mock(RuleStrategyService.class);
+        RuleStrategyDetailDto selected = strategy("S_BOUND", "v2", new BigDecimal("55"),
+                selection(group("G_BOUND", "v1", "R_BOUND"), false));
+        selected.setStockPoolType("watchlist");
+        selected.setStockPoolCode("pool-bound");
+        selected.setStockPoolSymbols(List.of("AAPL"));
+        when(strategies.getStrategy("S_BOUND")).thenReturn(selected);
+        ruleDefinitionMapper.selectResponses.add(List.of(
+                productionRule("R_BOUND", "v1", "shortTermTrend", "up", "60")));
+        LocalDate date = LocalDate.of(2026, 1, 2);
+        factorMapper.selectResponses.add(List.of(
+                factor("AAPL", date, "{\"short_term_trend\":\"up\"}"),
+                factor("MSFT", date, "{\"short_term_trend\":\"up\"}")));
+        quoteMapper.selectResponses.add(List.of(
+                quote("AAPL", date, "10.00"), quote("AAPL", date.plusDays(3), "11.00")));
+        BacktestRequestDto request = request();
+        request.setObjectType(RuleObjectType.STRATEGY.getCode());request.setObjectCode("S_BOUND");
+        request.setHoldingPeriod(1);request.setStockPoolType("custom");request.setSymbols(List.of("AAPL", "MSFT"));
+        BacktestResult result = combinationService(groups, strategies).runSingleRuleBacktest(request);
+        assertThat(result.getTriggerCount()).isEqualTo(1);
+        JsonNode report = new ObjectMapper().readTree(result.getResultJson());
+        assertThat(report.path("combinationSnapshot").path("stockPoolCode").asText()).isEqualTo("pool-bound");
+        assertThat(report.path("combinationContributions").size()).isEqualTo(1);
+        assertThat(report.path("combinationContributions").get(0).path("symbol").asText()).isEqualTo("AAPL");
+    }
+
     private SingleRuleBacktestService combinationService(RuleGroupService groups,
                                                          RuleStrategyService strategies) {
         return new SingleRuleBacktestService(signalMapper.mapper, factorMapper.mapper,
@@ -907,7 +936,8 @@ class SingleRuleBacktestServiceTest {
             member.setRuleCode(ruleCode);
             member.setWeight(BigDecimal.ONE);
             member.setRequired(false);
-            member.setRuleVersionNo("v1");
+            // These aggregation fixtures model legacy groups without a pinned rule version.
+            // Frozen rule-version selection is covered by StrategyExecutionServiceTest.
             return member;
         }).toList());
         return group;

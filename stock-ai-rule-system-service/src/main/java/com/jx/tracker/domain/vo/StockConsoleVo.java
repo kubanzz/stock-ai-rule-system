@@ -49,7 +49,11 @@ public final class StockConsoleVo {
             String generationType,
             RiskSnapshot riskSnapshot,
             @JsonInclude(JsonInclude.Include.NON_NULL)
-            GateDecision riskGateDecision
+            GateDecision riskGateDecision,
+            Long signalId,
+            String strategyCode,
+            String strategyVersion,
+            String strategyName
     ) {
         public SignalRow(
                 String symbol, String name, BigDecimal price, BigDecimal changePct, String signal,
@@ -59,7 +63,7 @@ public final class StockConsoleVo {
         ) {
             this(symbol, name, price, changePct, signal, bullishScore, bearishScore, riskScore,
                     confidence, triggeredRuleCount, suggestedPeriod, updatedAt, signalStatus, quoteStatus,
-                    null, null, null, "missing", null, null, null);
+                    null, null, null, "missing", null, null, null, null, null, null, null);
         }
     }
 
@@ -76,7 +80,9 @@ public final class StockConsoleVo {
             int pageSize,
             String sortField,
             String sortOrder,
-            RiskHorizon riskHorizon
+            RiskHorizon riskHorizon,
+            String strategyCode,
+            String strategyVersion
     ) {
         private static final Set<String> SORT_FIELDS = Set.of(
                 "symbol", "price", "changePct", "signal", "bullishScore", "bearishScore",
@@ -89,11 +95,22 @@ public final class StockConsoleVo {
             symbol = trimToNull(symbol);
             signal = trimToNull(signal);
             industry = trimToNull(industry);
+            strategyCode = trimToNull(strategyCode);
+            strategyVersion = trimToNull(strategyVersion);
             pageNum = pageNum < 1 ? 1 : pageNum;
             pageSize = pageSize < 1 ? 20 : Math.min(pageSize, 100);
             sortField = sortField != null && SORT_FIELDS.contains(sortField) ? sortField : "confidence";
             sortOrder = "asc".equalsIgnoreCase(sortOrder) ? "asc" : "desc";
             riskHorizon = riskHorizon == null ? RiskHorizon.SHORT_TERM : riskHorizon;
+        }
+
+        public SignalDashboardQuery(
+                LocalDate date, String market, String poolCode, String symbol, String signal,
+                String industry, BigDecimal confidenceMin, BigDecimal confidenceMax,
+                int pageNum, int pageSize, String sortField, String sortOrder, RiskHorizon riskHorizon
+        ) {
+            this(date, market, poolCode, symbol, signal, industry, confidenceMin, confidenceMax,
+                    pageNum, pageSize, sortField, sortOrder, riskHorizon, null, null);
         }
 
         public SignalDashboardQuery(
@@ -275,7 +292,10 @@ public final class StockConsoleVo {
             BigDecimal confidence,
             BigDecimal actualReturn,
             String hitStatus,
-            List<String> triggeredRules
+            List<String> triggeredRules,
+            Long signalId,
+            String strategyCode,
+            String strategyVersion
     ) {
     }
 
@@ -301,7 +321,10 @@ public final class StockConsoleVo {
             String traceStatus,
             JsonNode trace,
             Long currentVersionNo,
-            List<SignalVersion> versions
+            List<SignalVersion> versions,
+            Long signalId,
+            String strategyCode,
+            String strategyVersion
     ) {
     }
 

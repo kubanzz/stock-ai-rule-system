@@ -111,13 +111,17 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 ? List.of()
                 : stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
                 .le(StockSignalDaily::getSignalDate, tradeDate)
-                .in(StockSignalDaily::getSymbol, candidateSymbols));
+                .in(StockSignalDaily::getSymbol, candidateSymbols)
+                .eq(query.strategyCode() != null, StockSignalDaily::getStrategyCode, query.strategyCode())
+                .eq(query.strategyVersion() != null, StockSignalDaily::getStrategyVersion, query.strategyVersion()));
         Set<String> candidateSymbolSet = Set.copyOf(candidateSymbols);
-        Map<String, StockSignalDaily> signalsBySymbol = signals.stream()
+        Map<String, StockSignalDaily> signalsByIdentity = signals.stream()
                 .filter(signal -> signal.getSignalDate() != null && !signal.getSignalDate().isAfter(tradeDate))
                 .filter(signal -> candidateSymbolSet.contains(SymbolNormalizer.normalize(signal.getSymbol())))
+                .filter(signal -> query.strategyCode() == null || query.strategyCode().equals(signal.getStrategyCode()))
+                .filter(signal -> query.strategyVersion() == null || query.strategyVersion().equals(signal.getStrategyVersion()))
                 .collect(Collectors.toMap(
-                        signal -> SymbolNormalizer.normalize(signal.getSymbol()),
+                        this::signalIdentity,
                         Function.identity(),
                         StockDashboardQueryServiceImpl::newerSignal,
                         LinkedHashMap::new
@@ -141,7 +145,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                         StockDashboardQueryServiceImpl::newerQuote,
                         LinkedHashMap::new
                 ));
-        List<StockSignalDaily> availableSignals = signalsBySymbol.values().stream()
+        List<StockSignalDaily> availableSignals = signalsByIdentity.values().stream()
                 .filter(this::isReadySignal)
                 .toList();
         List<StockSignalDaily> readySignals = availableSignals.stream()
@@ -167,13 +171,16 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         List<StockActualResult> filteredActualResults = actualResults.stream()
                 .filter(result -> tradeDate.equals(result.getSignalDate()))
                 .filter(result -> signalSymbolSet.contains(SymbolNormalizer.normalize(result.getSymbol())))
+                .filter(result -> currentSignals.stream().anyMatch(signal -> matchesActual(signal, result)))
                 .toList();
 
         List<StockConsoleVo.SignalRow> rows = candidates.stream()
-                .map(stock -> {
+                .flatMap(stock -> {
                     String symbol = SymbolNormalizer.normalize(stock.getSymbol());
-                    StockSignalDaily signal = signalsBySymbol.get(symbol);
-                    return toRow(signal, stock, quotesBySymbol.get(symbol), tradeDate);
+                    List<StockSignalDaily> stockSignals = signalsByIdentity.values().stream()
+                            .filter(signal -> symbol.equals(SymbolNormalizer.normalize(signal.getSymbol()))).toList();
+                    if (stockSignals.isEmpty()) return java.util.stream.Stream.of(toRow(null, stock, quotesBySymbol.get(symbol), tradeDate));
+                    return stockSignals.stream().map(signal -> toRow(signal, stock, quotesBySymbol.get(symbol), tradeDate));
                 })
                 .filter(row -> matchesRow(row, query))
                 .sorted(rowComparator(query.sortField(), query.sortOrder()))
@@ -306,7 +313,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 ready ? signal.getRiskScore() : null,
                 ready ? signal.getConfidence() : null,
                 ready ? triggeredRuleCount(signal.getTriggeredRules()) : 0,
-                ready ? "3-5日" : null,
+                ready ? "P4-VOTE-001".equals(signal.getStrategyCode())
+                        ? "1日（T+1开盘至T+2开盘）" : "3-5日" : null,
                 max(ready ? signalRecordUpdatedAt(signal) : null, quote == null ? null : quote.getSyncTime()),
                 ready ? "ready" : PENDING_SIGNAL,
                 quote == null ? PENDING_SIGNAL : "ready",
@@ -316,8 +324,27 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 freshness,
                 ready ? signal.getGenerationType() : null,
                 null,
-                null
+                null,
+                ready ? signal.getId() : null,
+                ready ? signal.getStrategyCode() : null,
+                ready ? signal.getStrategyVersion() : null,
+                ready ? strategyName(signal) : null
         );
+    }
+
+    private String signalIdentity(StockSignalDaily signal) {
+        return SymbolNormalizer.normalize(signal.getSymbol()) + "|" + signal.getStrategyCode() + "|" + signal.getStrategyVersion();
+    }
+
+    private boolean matchesActual(StockSignalDaily signal, StockActualResult result) {
+        if (result.getSignalId() != null) return result.getSignalId().equals(signal.getId());
+        return Objects.equals(signal.getStrategyCode(), result.getStrategyCode())
+                && Objects.equals(signal.getStrategyVersion(), result.getStrategyVersion());
+    }
+
+    private String strategyName(StockSignalDaily signal) {
+        if (StockSignalDaily.LEGACY_STRATEGY_CODE.equals(signal.getStrategyCode())) return "历史默认规则";
+        return StringUtils.hasText(signal.getStrategyName()) ? signal.getStrategyName() : signal.getStrategyCode();
     }
 
     private List<StockConsoleVo.SignalRow> attachRisk(
@@ -328,11 +355,27 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
         if (rows.isEmpty() || tradeDate == null) {
             return rows;
         }
-        List<String> symbols = rows.stream().map(StockConsoleVo.SignalRow::symbol).toList();
+        LocalDateTime asOf = LocalDateTime.now();
+        List<String> symbols = rows.stream().map(StockConsoleVo.SignalRow::symbol).distinct().toList();
         Map<String, StockDashboardRiskOverlay> overlays = stockDashboardRiskReader.findBySymbols(
-                tradeDate, horizon, symbols, LocalDateTime.now());
+                tradeDate, horizon, symbols, asOf);
         Map<String, StockDashboardRiskOverlay> safeOverlays = overlays == null ? Map.of() : overlays;
-        return rows.stream().map(row -> withRisk(row, safeOverlays.get(row.symbol()))).toList();
+        List<StockSignalDaily> signals = rows.stream().filter(row -> row.signalId() != null)
+                .map(row -> StockSignalDaily.builder().id(row.signalId()).symbol(row.symbol())
+                        .signalDate(row.signalDate()).strategyCode(row.strategyCode())
+                        .strategyVersion(row.strategyVersion()).build()).toList();
+        Map<Long, StockDashboardRiskOverlay> bySignal = stockDashboardRiskReader.findBySignals(
+                tradeDate, horizon, signals, asOf);
+        return rows.stream().map(row -> {
+            StockDashboardRiskOverlay overlay = bySignal == null || row.signalId() == null ? null : bySignal.get(row.signalId());
+            if (overlay == null) {
+                StockDashboardRiskOverlay stockOverlay = safeOverlays.get(row.symbol());
+                boolean legacy = row.strategyCode() == null || StockSignalDaily.LEGACY_STRATEGY_CODE.equals(row.strategyCode());
+                overlay = stockOverlay == null ? null : legacy ? stockOverlay
+                        : new StockDashboardRiskOverlay(stockOverlay.snapshot(), null);
+            }
+            return withRisk(row, overlay);
+        }).toList();
     }
 
     private StockConsoleVo.SignalRow withRisk(
@@ -346,7 +389,8 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 row.signalStatus(), row.quoteStatus(), row.signalDate(), row.quoteDate(),
                 row.signalGeneratedAt(), row.signalFreshness(), row.generationType(),
                 overlay == null ? null : overlay.snapshot(),
-                overlay == null ? null : overlay.gateDecision());
+                overlay == null ? null : overlay.gateDecision(),
+                row.signalId(), row.strategyCode(), row.strategyVersion(), row.strategyName());
     }
 
     private boolean isDirectionalSignal(String signal) {
@@ -493,7 +537,9 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             default -> Comparator.comparing(StockConsoleVo.SignalRow::confidence, valueComparator(order));
         };
         return primary.thenComparing(StockConsoleVo.SignalRow::symbol,
-                Comparator.nullsLast(Comparator.naturalOrder()));
+                Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(StockConsoleVo.SignalRow::strategyCode, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(StockConsoleVo.SignalRow::strategyVersion, Comparator.nullsLast(Comparator.naturalOrder()));
     }
 
     private <T extends Comparable<? super T>> Comparator<T> valueComparator(String order) {

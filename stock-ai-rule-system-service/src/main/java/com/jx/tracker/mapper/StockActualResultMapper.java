@@ -11,12 +11,17 @@ public interface StockActualResultMapper extends BaseMapper<StockActualResult> {
 
     @Insert("""
             INSERT INTO stock_actual_result (
-                symbol, signal_date, return_1d, return_3d, return_5d, return_10d, hit_1d, hit_5d
+                signal_id, symbol, signal_date, strategy_code, strategy_version,
+                return_1d, return_3d, return_5d, return_10d, hit_1d, hit_5d
             ) VALUES (
-                #{actualResult.symbol}, #{actualResult.signalDate}, #{actualResult.return1d},
+                #{actualResult.signalId}, #{actualResult.symbol}, #{actualResult.signalDate},
+                COALESCE(#{actualResult.strategyCode}, 'LEGACY'),
+                COALESCE(#{actualResult.strategyVersion}, 'legacy'),
+                #{actualResult.return1d},
                 #{actualResult.return3d}, #{actualResult.return5d}, #{actualResult.return10d},
                 #{actualResult.hit1d}, #{actualResult.hit5d}
             ) ON DUPLICATE KEY UPDATE
+                signal_id = COALESCE(VALUES(signal_id), signal_id),
                 return_1d = VALUES(return_1d),
                 return_3d = VALUES(return_3d),
                 return_5d = VALUES(return_5d),

@@ -2,6 +2,7 @@
 import type { DashboardQueryState } from '../dashboard-state';
 
 import type { WatchlistPool } from '#/api/stock';
+import type { RuleStrategy } from '#/api/stock/rule-combinations';
 
 import { computed } from 'vue';
 
@@ -15,6 +16,7 @@ const props = defineProps<{
   backfillRunning?: boolean;
   loading?: boolean;
   query: DashboardQueryState;
+  strategies?: RuleStrategy[];
   watchlists: WatchlistPool[];
 }>();
 
@@ -34,6 +36,14 @@ const poolOptions = computed(() =>
   })),
 );
 
+const strategyOptions = computed(() => [
+  { label: '历史默认方案', value: 'LEGACY' },
+  ...(props.strategies ?? []).map((strategy) => ({
+    label: `${strategy.strategyName}（${strategy.strategyCode} · ${strategy.status === 'active' ? '已启用' : '历史配置'}）`,
+    value: strategy.strategyCode,
+  })),
+]);
+
 const marketOptions = [
   { label: 'A股', value: 'A股' },
   { label: '港股', value: '港股' },
@@ -46,6 +56,12 @@ function updatePool(value: unknown) {
 
 function updateMarket(value: unknown) {
   emit('filters', { market: typeof value === 'string' ? value : undefined });
+}
+
+function updateStrategy(value: unknown) {
+  emit('filters', {
+    strategyCode: typeof value === 'string' && value ? value : undefined,
+  });
 }
 
 function updateDate(value: unknown) {
@@ -73,6 +89,18 @@ function updateRiskHorizon(value: unknown) {
           :options="poolOptions"
           :value="query.poolCode"
           @update:value="updatePool"
+        />
+      </div>
+      <div class="field-group field-strategy">
+        <span class="field-label">应用方案</span>
+        <Select
+          allow-clear
+          show-search
+          option-filter-prop="label"
+          placeholder="全部方案"
+          :options="strategyOptions"
+          :value="query.strategyCode"
+          @update:value="updateStrategy"
         />
       </div>
       <div class="field-group field-market">
@@ -106,8 +134,8 @@ function updateRiskHorizon(value: unknown) {
       <Tooltip
         :title="
           query.market === 'A股'
-            ? '补齐我的关注 A 股缺失的交易日行情，并重算因子和辅助决策信号'
-            : '目前仅支持我的关注中的 A 股'
+            ? '按所有已启用方案的股票范围补齐行情，各方案独立运算；未绑定分组时使用我的关注。上方股票池和方案用于筛选查看结果。'
+            : '目前仅支持 A 股行情与信号补齐'
         "
       >
         <Button
@@ -161,6 +189,10 @@ function updateRiskHorizon(value: unknown) {
   align-items: flex-end;
 }
 
+.toolbar-filters {
+  flex-wrap: wrap;
+}
+
 .field-group {
   display: grid;
   gap: 6px;
@@ -173,6 +205,10 @@ function updateRiskHorizon(value: unknown) {
 
 .field-pool {
   width: 190px;
+}
+
+.field-strategy {
+  width: 220px;
 }
 
 .field-market {
@@ -205,10 +241,11 @@ function updateRiskHorizon(value: unknown) {
 
   .toolbar-filters {
     display: grid;
-    grid-template-columns: 1fr 112px 148px 152px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .field-pool,
+  .field-strategy,
   .field-market,
   .field-date,
   .field-risk-horizon {

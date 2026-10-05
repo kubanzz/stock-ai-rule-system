@@ -185,6 +185,8 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
                 .in(StockSignalDaily::getSymbol, candidateSymbols)
                 .between(StockSignalDaily::getSignalDate, earliestDate, latestDate)
                 .in(StockSignalDaily::getSignalDate, tradingDates)
+                .eq(StringUtils.hasText(query.strategyCode()), StockSignalDaily::getStrategyCode, query.strategyCode())
+                .eq(StringUtils.hasText(query.strategyVersion()), StockSignalDaily::getStrategyVersion, query.strategyVersion())
                 .eq(StringUtils.hasText(query.signal()), StockSignalDaily::getSignal, query.signal())
                 .ge(query.confidenceMin() != null, StockSignalDaily::getConfidence, query.confidenceMin())
                 .le(query.confidenceMax() != null, StockSignalDaily::getConfidence, query.confidenceMax())
@@ -194,6 +196,8 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
         List<StockSignalDaily> scopedSignals = signals.stream()
                 .filter(signal -> candidateSymbolSet.contains(signal.getSymbol()))
                 .filter(signal -> tradingDateSet.contains(signal.getSignalDate()))
+                .filter(signal -> !StringUtils.hasText(query.strategyCode()) || query.strategyCode().equals(signal.getStrategyCode()))
+                .filter(signal -> !StringUtils.hasText(query.strategyVersion()) || query.strategyVersion().equals(signal.getStrategyVersion()))
                 .filter(signal -> signal.getSignal() != null && VALID_SIGNAL_TYPES.contains(signal.getSignal()))
                 .filter(signal -> !StringUtils.hasText(query.signal()) || query.signal().equals(signal.getSignal()))
                 .filter(signal -> query.confidenceMin() == null && query.confidenceMax() == null

@@ -32,6 +32,35 @@ export function isHistoricalSignal(
   return Boolean(row.signalDate && tradeDate && row.signalDate < tradeDate);
 }
 
+export function signalIdentityKey(row: {
+  date?: string;
+  signalDate?: null | string;
+  signalId?: null | number | string;
+  strategyCode?: null | string;
+  strategyVersion?: null | string;
+  symbol?: string;
+}) {
+  if (row.signalId !== null && row.signalId !== undefined) {
+    return `signal:${row.signalId}`;
+  }
+  return JSON.stringify([
+    row.symbol ?? '',
+    row.signalDate ?? row.date ?? '',
+    row.strategyCode ?? 'LEGACY',
+    row.strategyVersion ?? 'legacy',
+  ]);
+}
+
+export function signalStrategyLabel(row: {
+  strategyCode?: null | string;
+  strategyName?: null | string;
+}) {
+  if (!row.strategyCode || row.strategyCode === 'LEGACY') {
+    return '历史默认方案';
+  }
+  return row.strategyName || row.strategyCode;
+}
+
 export function backfillProgress(run: SignalBackfillRun) {
   return run.totalTasks > 0
     ? Math.min(100, Math.round((run.completedTasks / run.totalTasks) * 100))

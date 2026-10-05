@@ -59,9 +59,10 @@ public final class JdbcRiskSignalCandidateReader implements RiskSignalCandidateR
                 .addValue("tradeDate", tradeDate)
                 .addValue("symbols", symbols)
                 .addValue("asOf", asOf);
-        Map<String, StoredSignal> signals = new LinkedHashMap<>();
+        Map<Long, StoredSignal> signals = new LinkedHashMap<>();
         jdbcTemplate.query("""
-                SELECT id, symbol, signal_direction, confidence, available_at
+                SELECT id, signal_id, symbol, strategy_code, strategy_version,
+                       signal_direction, confidence, available_at
                 FROM stock_signal_daily_history
                 WHERE signal_date = :tradeDate
                   AND symbol IN (:symbols)
@@ -69,7 +70,7 @@ public final class JdbcRiskSignalCandidateReader implements RiskSignalCandidateR
                   AND signal_direction IS NOT NULL
                   AND confidence IS NOT NULL
                 ORDER BY symbol, available_at DESC, id DESC
-                """, parameters, this::mapSignal).forEach(signal -> signals.putIfAbsent(signal.symbol(), signal));
+                """, parameters, this::mapSignal).forEach(signal -> signals.putIfAbsent(signal.signalId(), signal));
 
         Map<String, List<IndustryExposure>> exposures = new LinkedHashMap<>();
         jdbcTemplate.query("""
@@ -102,7 +103,8 @@ public final class JdbcRiskSignalCandidateReader implements RiskSignalCandidateR
             relevantObjects.add(stock);
             for (RiskHorizon horizon : horizons) {
                 candidates.add(new RiskSignalCandidate(
-                        RiskSignalCandidate.stockSignalReference(stock.objectId(), tradeDate),
+                        RiskSignalCandidate.stockSignalReference(signal.signalId(), stock.objectId(), tradeDate,
+                                signal.strategyCode(), signal.strategyVersion()),
                         stock,
                         horizon,
                         tradeDate,
@@ -117,7 +119,10 @@ public final class JdbcRiskSignalCandidateReader implements RiskSignalCandidateR
 
     private StoredSignal mapSignal(ResultSet resultSet, int rowNum) throws SQLException {
         return new StoredSignal(
+                resultSet.getLong("signal_id"),
                 resultSet.getString("symbol"),
+                resultSet.getString("strategy_code"),
+                resultSet.getString("strategy_version"),
                 SignalDirection.fromCode(resultSet.getString("signal_direction")),
                 resultSet.getBigDecimal("confidence")
         );
@@ -146,6 +151,7 @@ public final class JdbcRiskSignalCandidateReader implements RiskSignalCandidateR
         return objectCatalog.sector(id.substring("SW1:".length()));
     }
 
-    private record StoredSignal(String symbol, SignalDirection direction, BigDecimal confidence) {
+    private record StoredSignal(long signalId, String symbol, String strategyCode, String strategyVersion,
+                                SignalDirection direction, BigDecimal confidence) {
     }
 }

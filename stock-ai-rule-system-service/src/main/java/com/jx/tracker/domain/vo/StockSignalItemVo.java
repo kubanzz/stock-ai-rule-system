@@ -10,6 +10,14 @@ import java.math.BigDecimal;
 @Builder
 public class StockSignalItemVo {
 
+    private Long signalId;
+
+    private String strategyCode;
+
+    private String strategyVersion;
+
+    private String strategyName;
+
     private String symbol;
 
     private String name;

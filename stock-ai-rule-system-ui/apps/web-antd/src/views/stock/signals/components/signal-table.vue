@@ -26,12 +26,16 @@ import {
 
 import { RiskGateTag, RiskLevelTag, RiskScoreDisplay } from '../../risk/shared';
 import {
+  isHistoricalSignal,
+  signalIdentityKey,
+  signalStrategyLabel,
+} from '../dashboard-display';
+import {
   formatConfidence,
   getRiskSnapshotState,
   RISK_SNAPSHOT_STATE_LABELS,
   RISK_STAGE_LABELS,
 } from '../risk-dashboard-state';
-import { isHistoricalSignal } from '../dashboard-display';
 import SignalRiskDetail from './signal-risk-detail.vue';
 
 const props = defineProps<{
@@ -39,8 +43,8 @@ const props = defineProps<{
   loading?: boolean;
   query: DashboardQueryState;
   rows: SignalDashboardRow[];
-  tradeDate?: string;
   total: number;
+  tradeDate?: string;
 }>();
 
 const emit = defineEmits<{
@@ -63,6 +67,12 @@ const columns: TableColumnsType<SignalDashboardRow> = [
     key: 'symbol',
     title: '股票',
     width: 142,
+  },
+  {
+    dataIndex: 'strategyCode',
+    key: 'strategyCode',
+    title: '应用方案 / 版本',
+    width: 188,
   },
   { dataIndex: 'price', key: 'price', title: '价格 / 行情日', width: 138 },
   {
@@ -276,8 +286,8 @@ function openRecord(record: Record<string, unknown>) {
       :data-source="rows"
       :loading="loading"
       :pagination="pagination"
-      row-key="symbol"
-      :scroll="{ x: 1470 }"
+      :row-key="signalIdentityKey"
+      :scroll="{ x: 1660 }"
       size="small"
       @change="handleTableChange"
     >
@@ -291,11 +301,16 @@ function openRecord(record: Record<string, unknown>) {
             <small>{{ record.name ?? '--' }}</small>
           </button>
         </template>
+        <template v-else-if="column.key === 'strategyCode'">
+          <div>{{ signalStrategyLabel(record) }}</div>
+          <small class="date-note">
+            {{ record.strategyCode ?? 'LEGACY' }} ·
+            {{ record.strategyVersion ?? 'legacy' }}
+          </small>
+        </template>
         <template v-else-if="column.key === 'price'">
           <div>{{ record.price ?? '--' }}</div>
-          <small class="date-note"
-            >行情日：{{ record.quoteDate ?? '暂无' }}</small
-          >
+          <small class="date-note">行情日：{{ record.quoteDate ?? '暂无' }}</small>
           <small v-if="record.quoteStatus === 'pending'" class="muted">
             行情待同步
           </small>
@@ -324,9 +339,7 @@ function openRecord(record: Record<string, unknown>) {
                 补算
               </Tag>
             </div>
-            <small class="date-note"
-              >信号日：{{ record.signalDate ?? '暂无' }}</small
-            >
+            <small class="date-note">信号日：{{ record.signalDate ?? '暂无' }}</small>
           </div>
         </template>
         <template v-else-if="column.key === 'confidence'">

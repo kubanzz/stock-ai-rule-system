@@ -428,12 +428,17 @@ export async function getStockResearchDetail(
   symbol: string,
   date?: string,
   versionNo?: number,
+  identity: {
+    signalId?: number | string;
+    strategyCode?: string;
+    strategyVersion?: string;
+  } = {},
 ) {
   return requestOrMock(
     async () => {
       const response = await baseRequestClient.get<
         RawResponse<StockAjaxResult<StockResearchDetail>>
-      >(`/stocks/${symbol}/research`, { params: { date, versionNo } });
+      >(`/stocks/${symbol}/research`, { params: { date, versionNo, ...identity } });
       return unwrapAjaxResult(response.data);
     },
     () => {

@@ -72,9 +72,12 @@ class StockDashboardQueryPersistenceTest {
                 """);
         jdbcTemplate.execute("""
                 CREATE TABLE stock_signal_daily (
+                    strategy_name VARCHAR(128),
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     symbol VARCHAR(32) NOT NULL,
                     signal_date DATE NOT NULL,
+                    strategy_code VARCHAR(64) DEFAULT 'LEGACY',
+                    strategy_version VARCHAR(32) DEFAULT 'legacy',
                     `signal` VARCHAR(32),
                     signal_direction VARCHAR(16),
                     signal_level VARCHAR(32),
@@ -123,9 +126,12 @@ class StockDashboardQueryPersistenceTest {
                 """);
         jdbcTemplate.execute("""
                 CREATE TABLE stock_actual_result (
+                    signal_id BIGINT,
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     symbol VARCHAR(32) NOT NULL,
                     signal_date DATE NOT NULL,
+                    strategy_code VARCHAR(64) DEFAULT 'LEGACY',
+                    strategy_version VARCHAR(32) DEFAULT 'legacy',
                     return_1d DECIMAL(18,6),
                     return_3d DECIMAL(18,6),
                     return_5d DECIMAL(18,6),
@@ -319,6 +325,35 @@ class StockDashboardQueryPersistenceTest {
                 ('mock', 'stock_list', 'skipped', NULL, '2026-07-10', '2026-07-10 19:00:00', '2026-07-10 19:01:00'),
                 ('mock', 'trade_calendar', 'success', NULL, '2026-07-10', '2026-07-10 20:00:00', '2026-07-10 20:01:00')
                 """);
+    }
+
+    @Test
+    void preservesSameDaySignalsForEachSchemeAndFiltersWithoutBorrowingOtherResults() {
+        jdbcTemplate.update("""
+                INSERT INTO stock_signal_daily(symbol, signal_date, strategy_code, strategy_version, strategy_name,
+                    `signal`, signal_direction, confidence, triggered_rules)
+                VALUES ('000001.SZ', '2026-07-10', 'PLAN_A', 'v1', '方案甲', 'bullish', 'bullish', 0.8, 'R1'),
+                       ('000001.SZ', '2026-07-10', 'PLAN_B', 'v2', '方案乙', 'bearish', 'bearish', 0.7, 'R2')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO stock_actual_result(signal_id, symbol, signal_date, strategy_code, strategy_version, hit_5d)
+                SELECT id, symbol, signal_date, strategy_code, strategy_version, FALSE
+                FROM stock_signal_daily WHERE strategy_code = 'PLAN_B'
+                """);
+        var all = service.dashboard(new StockConsoleVo.SignalDashboardQuery(DATE, "CN", "all", "000001.SZ",
+                null, null, null, null, 1, 20, "symbol", "asc"));
+        assertThat(all.signals()).hasSize(3);
+        assertThat(all.signals()).extracting(StockConsoleVo.SignalRow::strategyCode)
+                .containsExactlyInAnyOrder("LEGACY", "PLAN_A", "PLAN_B");
+        assertThat(all.signals()).extracting(StockConsoleVo.SignalRow::signalId).doesNotHaveDuplicates();
+        var planA = service.dashboard(new StockConsoleVo.SignalDashboardQuery(DATE, "CN", "all", "000001.SZ",
+                null, null, null, null, 1, 20, "symbol", "asc", null, "PLAN_A", "v1"));
+        assertThat(planA.signals()).singleElement().satisfies(row -> {
+            assertThat(row.strategyName()).isEqualTo("方案甲");
+            assertThat(row.signal()).isEqualTo("bullish");
+        });
+        assertThat(planA.metrics()).filteredOn(card -> "命中率（5日）".equals(card.label()))
+                .singleElement().satisfies(card -> assertThat(card.value()).isNull());
     }
 
     @Test

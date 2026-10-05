@@ -8,13 +8,14 @@ import type {
   SignalDashboardRow,
   WatchlistPool,
 } from '#/api/stock';
+import type { RuleStrategy } from '#/api/stock/rule-combinations';
 
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Alert, Progress, message } from 'ant-design-vue';
+import { Alert, message, Progress } from 'ant-design-vue';
 
 import {
   getLatestSignalBackfillRun,
@@ -23,6 +24,7 @@ import {
   getWatchlists,
   startSignalBackfill,
 } from '#/api/stock';
+import { getRuleStrategies } from '#/api/stock/rule-combinations';
 
 import RiskAlert from '../components/risk-alert.vue';
 import MarketContextPanel from './components/market-context-panel.vue';
@@ -31,12 +33,12 @@ import SignalMetricGrid from './components/signal-metric-grid.vue';
 import SignalTable from './components/signal-table.vue';
 import StockPickerDrawer from './components/stock-picker-drawer.vue';
 import WatchlistManagerDrawer from './components/watchlist-manager-drawer.vue';
-import { buildSignalDashboardCsv } from './dashboard-export';
 import {
   backfillProgress,
   backfillStageLabel,
   backfillStatusLabel,
 } from './dashboard-display';
+import { buildSignalDashboardCsv } from './dashboard-export';
 import {
   applyDashboardFilters,
   applyDashboardPagination,
@@ -63,6 +65,7 @@ const managerOpen = ref(false);
 const pickerOpen = ref(false);
 const dashboard = ref<SignalDashboardOverview>();
 const watchlists = ref<WatchlistPool[]>([]);
+const strategies = ref<RuleStrategy[]>([]);
 const query = reactive<DashboardQueryState>(createDashboardQuery());
 
 const initialMetrics: DashboardMetricCard[] = [
@@ -81,12 +84,14 @@ async function loadPageData(reloadPools = false) {
   try {
     const dashboardPromise = getSignalDashboard({ ...query });
     if (reloadPools || watchlists.value.length === 0) {
-      const [dashboardResult, poolResult] = await Promise.all([
+      const [dashboardResult, poolResult, strategyResult] = await Promise.all([
         dashboardPromise,
         getWatchlists({ market: query.market }),
+        getRuleStrategies(),
       ]);
       dashboard.value = dashboardResult;
       watchlists.value = poolResult;
+      strategies.value = strategyResult.rows;
       if (!poolResult.some((pool) => pool.poolId === query.poolCode)) {
         const fallback =
           poolResult.find((pool) => pool.poolId === 'my-follow') ??
@@ -249,7 +254,12 @@ function openDetail(row: SignalDashboardRow) {
   router.push({
     name: 'StockDetail',
     params: { symbol: row.symbol },
-    query: { date: query.date ?? dashboard.value?.tradeDate },
+    query: {
+      date: row.signalDate ?? query.date ?? dashboard.value?.tradeDate,
+      signalId: row.signalId === null || row.signalId === undefined ? undefined : String(row.signalId),
+      strategyCode: row.strategyCode ?? undefined,
+      strategyVersion: row.strategyVersion ?? undefined,
+    },
   });
 }
 
@@ -334,6 +344,7 @@ onUnmounted(() => {
         :backfill-running="backfillRunning"
         :loading="loading"
         :query="query"
+        :strategies="strategies"
         :watchlists="watchlists"
         @backfill="runBackfill"
         @export="exportRows"
@@ -352,11 +363,9 @@ onUnmounted(() => {
         />
         <template v-if="backfillRun">
           <div class="backfill-title">
-            <strong
-              >我的关注 A 股补齐任务：{{
+            <strong>股票行情与信号补齐任务：{{
                 backfillStatusLabel(backfillRun.status)
-              }}</strong
-            >
+              }}</strong>
             <span>{{ backfillStageLabel(backfillRun.stage) }}</span>
           </div>
           <Progress
@@ -368,25 +377,19 @@ onUnmounted(() => {
             size="small"
           />
           <div class="backfill-summary">
-            <span
-              >全部关注股票最近有完整行情的交易日：{{
+            <span>任务范围内股票最近有完整行情的交易日：{{
                 backfillRun.latestCompletedTradeDate ?? '暂无'
-              }}</span
-            >
+              }}</span>
             <span>股票：{{ backfillRun.totalSymbols }} 只</span>
             <span>交易日：{{ backfillRun.totalDates }} 天</span>
-            <span
-              >已处理：{{ backfillRun.completedTasks }}/{{
+            <span>已处理：{{ backfillRun.completedTasks }}/{{
                 backfillRun.totalTasks
               }}
-              项</span
-            >
+              项</span>
             <span>补齐行情：{{ backfillRun.syncedQuotes }} 条</span>
             <span>计算因子：{{ backfillRun.calculatedFactors }} 条</span>
-            <span
-              >生成信号：{{ backfillRun.generatedSignals }} 条（历史补算
-              {{ backfillRun.backfilledSignalCount }} 条）</span
-            >
+            <span>生成信号：{{ backfillRun.generatedSignals }} 条（历史补算
+              {{ backfillRun.backfilledSignalCount }} 条）</span>
           </div>
           <details
             v-if="

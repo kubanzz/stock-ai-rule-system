@@ -1,0 +1,167 @@
+{
+  "backend_suites": [
+    {
+      "name": "com.jx.tracker.signal.MultiStrategySignalGenerationTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.signal.StockSignalServiceTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.signal.StockSignalPointInTimePersistenceTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.signal.StrategyExecutionServiceTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.rule.service.RuleStrategyStockPoolTest",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.rule.service.RuleStrategyResearchGateTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.rule.service.RuleDefinitionDependencyProtectionTest",
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.service.ResearchReboundApplicationScopeTest",
+      "tests": "10",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.service.ResearchReboundSignalBackfillTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.service.SignalBackfillServiceTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.scheduler.StrategyStockPoolMarketDataCollectionTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.verification.StockActualResultServiceTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.service.impl.StockDashboardQueryServiceImplTest",
+      "tests": "19",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.service.impl.StockDashboardQueryPersistenceTest",
+      "tests": "12",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.service.impl.StockConsoleQueryServiceImplResearchTest",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.controller.StockConsoleControllerTest",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.risk.migration.RiskMigrationContractTest",
+      "tests": "14",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.risk.runtime.JdbcRiskRuntimeReadersTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.risk.dashboard.JdbcStockDashboardRiskReaderTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.backtest.SingleRuleBacktestServiceTest",
+      "tests": "41",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.ai.review.AiReviewServiceImplTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.jx.tracker.risk.migration.RiskMySqlMigrationIntegrationTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ],
+  "backend_tests": 194,
+  "failures": 0,
+  "errors": 0,
+  "frontend_related_tests": 59,
+  "frontend_typecheck": true,
+  "backend_package": true,
+  "research_frozen_files_unchanged": 11,
+  "validated_worktree": "dev with existing local changes; no Git commit created",
+  "jar_sha256": "dc318015b3b0bb8fd670f004e9e0c788ec7bdcaa2af88a23db789613d82f8f50"
+}

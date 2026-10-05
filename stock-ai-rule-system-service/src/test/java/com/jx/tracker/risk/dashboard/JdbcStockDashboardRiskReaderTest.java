@@ -1,6 +1,7 @@
 package com.jx.tracker.risk.dashboard;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.risk.gate.RiskSignalCandidate;
 import com.jx.tracker.risk.model.RiskGateStatus;
 import com.jx.tracker.risk.model.RiskHorizon;
@@ -140,6 +141,49 @@ class JdbcStockDashboardRiskReaderTest {
         assertThat(overlay.snapshot().modelVersion()).isEqualTo("risk-v2");
         assertThat(overlay.gateDecision().modelVersion()).isEqualTo("risk-v2");
         assertThat(overlay.gateDecision().object().objectType()).isEqualTo(com.jx.tracker.risk.model.RiskObjectType.MARKET);
+    }
+
+    @Test
+    void sameStockStrategiesShareSnapshotButNeverShareDirectionSpecificGate() {
+        JdbcTemplate jdbc = jdbc();
+        createSchema(jdbc);
+        LocalDate date = LocalDate.of(2026, 7, 10);
+        jdbc.update("""
+                INSERT INTO risk_score_snapshot VALUES
+                (1, 'stock', '000004.SZ', '1-5d', ?, 80, 80, 80, 80, 80, 1, 80,
+                 'critical', 'stampede', .9, .9, 'risk-v1', ?, ?, 'risk-engine', 'available', ?)
+                """, date, date.atTime(17, 0), date.atTime(17, 0), date.atTime(17, 0));
+        jdbc.update("""
+                INSERT INTO risk_gate_result VALUES
+                (1, 1, 'signal:id:11', 'stock', '000004.SZ', '1-5d', ?, 'bullish', .8, 0,
+                 'block', 0, '方案 A 独立建议', 'risk-v1', ?, ?, 'risk-gate', 'available', ?),
+                (2, 1, 'signal:id:12', 'stock', '000004.SZ', '1-5d', ?, 'bearish', .7, .7,
+                 'notice', 0, '方案 B 独立建议', 'risk-v1', ?, ?, 'risk-gate', 'available', ?),
+                (3, 1, ?, 'stock', '000004.SZ', '1-5d', ?, 'watch', .5, .5,
+                 'normal', 0, 'legacy 建议不得借用', 'risk-v1', ?, ?, 'risk-gate', 'available', ?)
+                """,
+                date, date.atTime(18, 0), date.atTime(18, 0), date.atTime(18, 0),
+                date, date.atTime(18, 1), date.atTime(18, 1), date.atTime(18, 1),
+                RiskSignalCandidate.stockSignalReference("000004.SZ", date), date,
+                date.atTime(19, 0), date.atTime(19, 0), date.atTime(19, 0));
+        List<StockSignalDaily> signals = List.of(
+                StockSignalDaily.builder().id(11L).symbol("000004.SZ").signalDate(date)
+                        .strategyCode("STRATEGY_A").strategyVersion("v1").build(),
+                StockSignalDaily.builder().id(12L).symbol("000004.SZ").signalDate(date)
+                        .strategyCode("STRATEGY_B").strategyVersion("v2").build(),
+                StockSignalDaily.builder().id(13L).symbol("000004.SZ").signalDate(date)
+                        .strategyCode("STRATEGY_C").strategyVersion("v1").build());
+
+        Map<Long, StockDashboardRiskOverlay> result = new JdbcStockDashboardRiskReader(jdbc, new ObjectMapper())
+                .findBySignals(date, RiskHorizon.SHORT_TERM, signals, date.atTime(20, 0));
+
+        assertThat(result).containsOnlyKeys(11L, 12L, 13L);
+        assertThat(result.get(11L).snapshot()).isEqualTo(result.get(12L).snapshot());
+        assertThat(result.get(11L).gateDecision().signalDirection()).isEqualTo(SignalDirection.BULLISH);
+        assertThat(result.get(11L).gateDecision().suggestedAction()).isEqualTo(RiskGateStatus.BLOCK);
+        assertThat(result.get(12L).gateDecision().signalDirection()).isEqualTo(SignalDirection.BEARISH);
+        assertThat(result.get(12L).gateDecision().suggestedAction()).isEqualTo(RiskGateStatus.NOTICE);
+        assertThat(result.get(13L).gateDecision()).isNull();
     }
 
     private JdbcTemplate jdbc() {

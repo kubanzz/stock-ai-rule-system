@@ -67,10 +67,19 @@ export interface StockSignalQuery {
   pageNum?: number;
   pageSize?: number;
   signal?: SignalType;
+  strategyCode?: string;
+  strategyVersion?: string;
   symbol?: string;
 }
 
-export interface StockSignalItem {
+export interface SignalStrategyIdentity {
+  signalId?: null | number | string;
+  strategyCode?: null | string;
+  strategyName?: null | string;
+  strategyVersion?: null | string;
+}
+
+export interface StockSignalItem extends SignalStrategyIdentity {
   bearishScore?: number;
   bullishScore: number;
   confidence: number;
@@ -107,7 +116,7 @@ export interface SparkPoint {
   value: number;
 }
 
-export interface SignalDashboardRow {
+export interface SignalDashboardRow extends SignalStrategyIdentity {
   bearishScore: null | number;
   bullishScore: null | number;
   changePct?: number;
@@ -193,6 +202,7 @@ export interface SignalDashboardQuery {
   signal?: DashboardSignalFilter;
   sortField?: string;
   sortOrder?: 'asc' | 'desc';
+  strategyCode?: string;
   symbol?: string;
 }
 
@@ -328,7 +338,7 @@ export interface SignalTrace {
   ruleEvaluations: SignalTraceRuleEvaluation[];
 }
 
-export interface PredictionRecord {
+export interface PredictionRecord extends SignalStrategyIdentity {
   actualReturn?: number;
   confidence: null | number;
   date: string;
@@ -343,7 +353,7 @@ export interface ResearchSignalVersion {
   versionNo: number;
 }
 
-export interface StockResearchDetail {
+export interface StockResearchDetail extends SignalStrategyIdentity {
   confidence: null | number;
   currentVersionNo: null | number;
   explanation: string;

@@ -22,6 +22,11 @@ public interface StockConsoleQueryService {
         return research(symbol, date);
     }
 
+    default StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date, Integer versionNo,
+                                                       Long signalId, String strategyCode, String strategyVersion) {
+        return research(symbol, date, versionNo);
+    }
+
     StockConsoleVo.RuleGovernanceOverview ruleGovernance(String ruleType, String status, String source);
 
     StockConsoleVo.RuleGovernanceDetail ruleGovernanceDetail(String ruleCode);

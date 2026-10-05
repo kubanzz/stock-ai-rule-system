@@ -1,5 +1,7 @@
 # P4-VOTE-001 系统应用状态
 
+`2026-10-05` 最新应用状态：三个基本规则已为 `active/v1`，规则组为 `active/v2`，应用方案为 `active/v2`，与原 `RS_G144_G118_SZ125/active/v2` 同时启用。信号已按股票、日期、方案编码、版本隔离，原方案完整快照及既有信号保留。P4仍为辅助用途 `pending_final`，11个冻结研究工件不变。当前合格原始行情输入未接通时会跳过P4并记录原因，不伪造信号。见[多方案部署记录](../../deployments/multi_strategy_signals_20261005/DEPLOYMENT.md)。下文保留首次配置写入时的状态。
+
 状态日期：`2026-10-05`（北京时间）。**已应用（已写入配置），草稿待启用**。三个基本规则、规则组和方案已保存为 `draft/v1`；原方案 `RS_G144_G118_SZ125` 保持 `active/v2` 完整快照，本次保存不表示已运行P4规则。本文件为独立应用记录，不修改本目录已冻结的规则来源、`REGISTRATION.json`、最终窗口、历史诊断及原有文档字节。
 
 已通过API回读核验的配置如下；完整写入及回读证据见[部署记录](../../deployments/p4_vote_001_20261005/DEPLOYMENT.md)与[VERIFICATION.json](../../deployments/p4_vote_001_20261005/VERIFICATION.json)。

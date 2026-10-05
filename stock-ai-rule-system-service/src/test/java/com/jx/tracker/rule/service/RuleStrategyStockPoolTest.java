@@ -191,6 +191,37 @@ class RuleStrategyStockPoolTest {
         verifyNoInteractions(pools, members);
     }
 
+    @Test
+    void enablingOnePlanPreservesEveryOtherActivePlanAndItsVersion() throws Exception {
+        RuleStrategy current = existingScopedRow();
+        RuleStrategy other = new RuleStrategy(); other.setId(2L); other.setStrategyCode("S_OTHER");
+        other.setStatus("active"); other.setVersion("v7"); other.setSnapshotJson("unchanged");
+        when(strategies.selectList(any())).thenReturn(List.of(other));
+
+        RuleStrategyDetailDto enabled = service.changeStatus("S_TEST", "active");
+
+        assertThat(enabled.getStatus()).isEqualTo("active");
+        assertThat(other.getStatus()).isEqualTo("active");
+        assertThat(other.getVersion()).isEqualTo("v7");
+        assertThat(other.getSnapshotJson()).isEqualTo("unchanged");
+        verify(strategies).updateById(current);
+        verify(strategies, org.mockito.Mockito.never()).updateById(other);
+    }
+
+    @Test
+    void singularActiveLookupRejectsSeveralPlansInsteadOfSelectingOne() throws Exception {
+        RuleStrategyDetailDto first = request(); first.setStatus("active"); first.setVersion("v1");
+        RuleStrategyDetailDto second = request(); second.setStrategyCode("S_SECOND");
+        second.setStatus("active"); second.setVersion("v2");
+        RuleStrategy firstRow = row(first), secondRow = row(second);
+        secondRow.setStrategyCode("S_SECOND");
+        when(strategies.selectList(any())).thenReturn(List.of(firstRow, secondRow));
+
+        assertThat(service.getActiveStrategies()).extracting(RuleStrategyDetailDto::getStrategyCode)
+                .containsExactly("S_TEST", "S_SECOND");
+        assertThatThrownBy(service::getActiveStrategy).hasMessageContaining("多个启用方案");
+    }
+
     private void databasePool(String name, String... symbols) {
         when(pools.selectOne(any())).thenReturn(StockWatchlist.builder()
                 .id(7L).poolCode("pool-sz125").poolName(name).build());

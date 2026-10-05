@@ -61,9 +61,10 @@ public class RuleDefinitionService {
 
     public RuleDefinition update(String ruleCode, RuleDefinitionUpsertDto dto) {
         RuleDefinition existing = getByCode(ruleCode);
-        // An edit that omits lifecycle status is a content/version update. Keep
-        // an active rule active so publishing a new version is not mistaken for
-        // an attempt to deactivate a rule selected by an active strategy.
+        // This direct-edit endpoint overwrites the current row without an archive.
+        // Rules used by an enabled application must use the version publication flow.
+        assertCanOverwriteRule(ruleCode);
+        // Preserve lifecycle state when an unreferenced rule is edited without one.
         if (dto != null && !hasText(dto.getStatus())) {
             dto.setStatus(existing.getStatus());
         }
@@ -109,6 +110,16 @@ public class RuleDefinitionService {
         existing.setStatus(status);
         ruleDefinitionMapper.updateById(existing);
         return existing;
+    }
+
+    private void assertCanOverwriteRule(String ruleCode) {
+        if (ruleStrategyService == null) return;
+        try {
+            ruleStrategyService.assertCanDeactivateRule(ruleCode);
+        } catch (ServiceException dependency) {
+            throw new ServiceException("不能原地编辑启用方案正在使用的正式规则，请通过规则版本发布流程更新，"
+                    + "或先停用引用方案：" + dependency.getMessage(), dependency.getCode());
+        }
     }
 
     private void assertCanDeactivateRule(String ruleCode) {

@@ -1,5 +1,6 @@
 package com.jx.tracker.risk.gate;
 
+import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.risk.model.RiskHorizon;
 import com.jx.tracker.risk.model.RiskObjectKey;
 import com.jx.tracker.risk.model.SignalDirection;
@@ -41,5 +42,18 @@ public record RiskSignalCandidate(
             throw new IllegalArgumentException("symbol and tradeDate are required");
         }
         return "signal:" + symbol.trim().toUpperCase(Locale.ROOT) + ":" + tradeDate;
+    }
+
+    /** 方案信号使用自己的稳定 id；legacy 继续读取迁移前的风险建议。 */
+    public static String stockSignalReference(Long signalId, String symbol, LocalDate tradeDate,
+                                              String strategyCode, String strategyVersion) {
+        if ((strategyCode == null || StockSignalDaily.LEGACY_STRATEGY_CODE.equals(strategyCode))
+                && (strategyVersion == null || StockSignalDaily.LEGACY_STRATEGY_VERSION.equals(strategyVersion))) {
+            return stockSignalReference(symbol, tradeDate);
+        }
+        if (signalId == null || signalId <= 0) {
+            throw new IllegalArgumentException("persisted strategy signal id is required");
+        }
+        return "signal:id:" + signalId;
     }
 }

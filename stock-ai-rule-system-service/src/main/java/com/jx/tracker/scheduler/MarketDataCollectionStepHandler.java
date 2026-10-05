@@ -18,6 +18,7 @@ import com.jx.tracker.domain.entity.StockWatchlistItem;
 import com.jx.tracker.mapper.StockWatchlistItemMapper;
 import com.jx.tracker.mapper.StockWatchlistMapper;
 import com.jx.tracker.mapper.StockDailyQuoteMapper;
+import com.jx.tracker.service.ResearchReboundApplicationScope;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -40,6 +41,7 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
     private final StockWatchlistMapper stockWatchlistMapper;
     private final StockWatchlistItemMapper stockWatchlistItemMapper;
     private final StockDailyQuoteMapper stockDailyQuoteMapper;
+    private final ResearchReboundApplicationScope reboundScope;
 
     public MarketDataCollectionStepHandler(
             MarketDataSyncService marketDataSyncService,
@@ -55,13 +57,25 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
         this(marketDataSyncService, tradeCalendarService, stockWatchlistMapper, stockWatchlistItemMapper, null);
     }
 
-    @Autowired
     public MarketDataCollectionStepHandler(
             MarketDataSyncService marketDataSyncService,
             TradeCalendarService tradeCalendarService,
             StockWatchlistMapper stockWatchlistMapper,
             StockWatchlistItemMapper stockWatchlistItemMapper,
             StockDailyQuoteMapper stockDailyQuoteMapper) {
+        this(marketDataSyncService, tradeCalendarService, stockWatchlistMapper,
+                stockWatchlistItemMapper, stockDailyQuoteMapper, null);
+    }
+
+    @Autowired
+    public MarketDataCollectionStepHandler(
+            MarketDataSyncService marketDataSyncService,
+            TradeCalendarService tradeCalendarService,
+            StockWatchlistMapper stockWatchlistMapper,
+            StockWatchlistItemMapper stockWatchlistItemMapper,
+            StockDailyQuoteMapper stockDailyQuoteMapper,
+            ResearchReboundApplicationScope reboundScope) {
+        this.reboundScope = reboundScope;
         this.marketDataSyncService = marketDataSyncService;
         this.tradeCalendarService = tradeCalendarService;
         this.stockWatchlistMapper = stockWatchlistMapper;
@@ -77,9 +91,8 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
     @Override
     public DailyWorkflowStepResultVo execute(DailyWorkflowContext context) {
         LocalDateTime startedAt = LocalDateTime.now();
-        // An empty request means "the current my-follow pool". Resolve it
-        // before the local fallback check so a provider outage does not make
-        // the workflow silently skip every watched stock.
+        // Resolve the bound application first, including explicit requests, so
+        // neither a provider fallback nor an empty intersection broadens its scope.
         resolveWatchedSymbols(context);
         try {
             return executeSync(context, startedAt);
@@ -92,15 +105,24 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
     }
 
     private void resolveWatchedSymbols(DailyWorkflowContext context) {
-        if (context == null || context.getRequest() == null
-                || context.getRequest().getSymbols() == null
-                || !context.getRequest().getSymbols().isEmpty()) {
+        if (context == null || context.getRequest() == null) {
             return;
         }
-        List<String> symbols = watchedSymbols();
-        if (!symbols.isEmpty()) {
+        if (reboundScope != null && reboundScope.hasBoundStockPool()) {
+            List<String> symbols = reboundScope.restrictToApplication(context.getRequest().getSymbols());
+            if (symbols.isEmpty()) {
+                throw new ServiceException("当前请求与应用方案绑定的股票分组没有可用交集，已停止任务");
+            }
             context.getRequest().setSymbols(symbols);
+            return;
         }
+        if (context.getRequest().getSymbols() == null || !context.getRequest().getSymbols().isEmpty()) {
+            return;
+        }
+        Set<String> symbols = new java.util.LinkedHashSet<>(reboundScope == null
+                ? Set.of() : reboundScope.activeApplicationSymbols());
+        symbols.addAll(watchedSymbols());
+        if (!symbols.isEmpty()) context.getRequest().setSymbols(List.copyOf(symbols));
     }
 
     private DailyWorkflowStepResultVo localQuoteFallback(
@@ -134,6 +156,7 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
         request.setTradeDate(tradeDate);
         List<MarketDataSyncResultDto> dailyQuotes = new ArrayList<>();
         List<String> requestedSymbols = request.getSymbols();
+        Set<String> reboundSymbols = reboundScope == null ? Set.of() : reboundScope.activeSymbols();
         List<String> watchlistSymbols = requestedSymbols == null || requestedSymbols.isEmpty()
                 ? watchedSymbols() : List.of();
         if (!watchlistSymbols.isEmpty()) {
@@ -143,7 +166,8 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
                 // 30 个自然日通常只有约 20 个交易日，达不到技术因子
                 // 计算要求的 26 个有效交易日；保留更充足的历史余量。
                 dailyQuotes.add(syncDailyQuotes(
-                        quoteRequest(context, symbol, tradeDate.minusDays(60)), symbol + " 最近60日行情"));
+                        quoteRequest(context, symbol, quoteHistoryStart(symbol, tradeDate, reboundSymbols)),
+                        symbol + " 历史行情"));
             }
         } else if (requestedSymbols == null || requestedSymbols.isEmpty()) {
             dailyQuotes.add(syncDailyQuotes(quoteRequest(context, null, tradeDate), "全市场收盘快照"));
@@ -152,8 +176,14 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
         } else {
             for (String symbol : requestedSymbols) {
                 dailyQuotes.add(syncDailyQuotes(
-                        quoteRequest(context, symbol, tradeDate.minusDays(60)), symbol + " 最近60日行情"));
+                        quoteRequest(context, symbol, quoteHistoryStart(symbol, tradeDate, reboundSymbols)),
+                        symbol + " 历史行情"));
             }
+        }
+        if (request.getSymbols() != null
+                && request.getSymbols().stream().anyMatch(reboundSymbols::contains)) {
+            dailyQuotes.add(syncDailyQuotes(quoteRequest(context, "000300.SH", tradeDate.minusDays(120)),
+                    "沪深300日线"));
         }
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("stockListStatus", stockList.getStatus());
@@ -171,6 +201,11 @@ public class MarketDataCollectionStepHandler implements DailyWorkflowStepHandler
                 "行情数据同步完成。",
                 details
         );
+    }
+
+    private LocalDate quoteHistoryStart(String symbol, LocalDate tradeDate, Set<String> reboundSymbols) {
+        return reboundSymbols.contains(symbol) ? reboundScope.historyStart(symbol, tradeDate)
+                : tradeDate.minusDays(60);
     }
 
     private boolean canUseLocalQuotes(DailyWorkflowContext context) {

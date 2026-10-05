@@ -201,6 +201,10 @@ public class RuleGroupService {
             }
             member.setWeight(weight(member.getWeight()));
             member.setRequired(Boolean.TRUE.equals(member.getRequired()));
+            member.setRuleContent(rule.getRuleContent());
+            member.setRuleFormat(rule.getRuleFormat());
+            member.setRuleName(rule.getRuleName());
+            member.setRulePriority(rule.getPriority());
             member.setRuleVersionId(rule.getCurrentVersionId());
             member.setRuleVersionNo(rule.getCurrentVersionNo() == null
                     ? rule.getVersion() : rule.getCurrentVersionNo());

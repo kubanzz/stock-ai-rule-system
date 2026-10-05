@@ -1,0 +1,16 @@
+{
+  "basic_rules_enabled": true,
+  "rule_group_enabled": true,
+  "strategy_enabled": true,
+  "strategy_enablement_waiting_for": null,
+  "original_active_strategy_preserved": true,
+  "research_status": "pending_final",
+  "frozen_window": "2027-01-01..2029-12-31",
+  "frozen_rule_changed": false,
+  "backend_tests_passed": 37,
+  "ui_tests_passed": 12,
+  "ui_typecheck_passed": true,
+  "package_passed": true,
+  "parallel_strategy_support": true,
+  "current_deployment": "../multi_strategy_signals_20261005/DEPLOYMENT.md"
+}

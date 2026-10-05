@@ -107,6 +107,26 @@ describe('stock api request mode', () => {
     });
   });
 
+  it('passes the selected strategy and signal identity to the research backend', async () => {
+    requestMocks.get.mockResolvedValue({ data: { code: 200, data: { versions: [] } } });
+    const api = await loadStockApi();
+    await api.getStockResearchDetail('600519.SH', '2026-09-30', undefined, {
+      signalId: '812',
+      strategyCode: 'P4-VOTE-001',
+      strategyVersion: 'v1',
+    });
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/stocks/600519.SH/research', {
+      params: {
+        date: '2026-09-30',
+        versionNo: undefined,
+        signalId: '812',
+        strategyCode: 'P4-VOTE-001',
+        strategyVersion: 'v1',
+      },
+    });
+  });
+
   it('returns the matching mock version without borrowing newer evidence', async () => {
     vi.stubEnv('VITE_STOCK_USE_MOCK', 'true');
 

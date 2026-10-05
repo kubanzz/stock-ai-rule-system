@@ -164,6 +164,12 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     @Override
     public StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date, Integer versionNo) {
+        return research(symbol, date, versionNo, null, null, null);
+    }
+
+    @Override
+    public StockConsoleVo.StockResearchDetail research(String symbol, LocalDate date, Integer versionNo,
+                                                      Long signalId, String strategyCode, String strategyVersion) {
         if (versionNo != null && versionNo < 1) {
             throw new ServiceException("信号版本号必须为正整数", 400);
         }
@@ -185,12 +191,12 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .industry("未分类")
                 .build());
         StockSignalDaily signal = versionNo == null
-                ? latestSignal(normalizedSymbol, date).orElse(null)
-                : historicalSignal(normalizedSymbol, date, versionNo)
+                ? latestSignal(normalizedSymbol, date, signalId, strategyCode, strategyVersion).orElse(null)
+                : historicalSignal(normalizedSymbol, date, versionNo, signalId, strategyCode, strategyVersion)
                     .orElseThrow(() -> new ServiceException("指定日期的信号版本不存在", 404));
         boolean signalReady = signal != null && StringUtils.hasText(signal.getSignal());
         List<StockConsoleVo.SignalVersion> versions = signalReady
-                ? signalVersions(normalizedSymbol, signal.getSignalDate()) : List.of();
+                ? signalVersions(signal) : List.of();
         Long currentVersionNo = versionNo != null ? Long.valueOf(versionNo)
                 : versions.isEmpty() ? null : Long.valueOf(versions.getFirst().versionNo());
         JsonNode trace = signalReady ? readTrace(signal.getTraceJson()) : null;
@@ -243,35 +249,46 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 traceStatus,
                 trace,
                 currentVersionNo,
-                versions
+                versions,
+                signalReady ? signal.getId() : null,
+                signalReady ? signal.getStrategyCode() : null,
+                signalReady ? signal.getStrategyVersion() : null
         );
     }
 
-    private List<StockConsoleVo.SignalVersion> signalVersions(String symbol, LocalDate signalDate) {
+    private List<StockConsoleVo.SignalVersion> signalVersions(StockSignalDaily signal) {
         return jdbcTemplate.query("""
                 SELECT version_no, available_at
                 FROM stock_signal_daily_history
-                WHERE symbol = ? AND signal_date = ?
+                WHERE signal_id = ?
                 ORDER BY version_no DESC
                 """, (rs, rowNum) -> new StockConsoleVo.SignalVersion(
                 rs.getLong("version_no"),
                 rs.getTimestamp("available_at") == null
-                        ? null : rs.getTimestamp("available_at").toLocalDateTime()),
-                symbol, Date.valueOf(signalDate));
+                        ? null : rs.getTimestamp("available_at").toLocalDateTime()), signal.getId());
     }
 
-    private Optional<StockSignalDaily> historicalSignal(String symbol, LocalDate signalDate, int versionNo) {
-        List<StockSignalDaily> results = jdbcTemplate.query("""
-                SELECT signal_id, symbol, signal_date, `signal`, signal_direction, signal_level,
+    private Optional<StockSignalDaily> historicalSignal(String symbol, LocalDate signalDate, int versionNo,
+                                                       Long signalId, String strategyCode, String strategyVersion) {
+        String sql = """
+                SELECT signal_id, symbol, signal_date, strategy_code, strategy_version, strategy_name,
+                       `signal`, signal_direction, signal_level,
                        bullish_score, bearish_score, risk_score, confidence, triggered_rules,
                        explanation, risk_disclaimer, trace_json
                 FROM stock_signal_daily_history
                 WHERE symbol = ? AND signal_date = ? AND version_no = ?
-                LIMIT 1
-                """, (rs, rowNum) -> StockSignalDaily.builder()
+                """;
+        List<Object> args = new ArrayList<>(List.of(symbol, Date.valueOf(signalDate), versionNo));
+        if (signalId != null) { sql += " AND signal_id = ?"; args.add(signalId); }
+        if (StringUtils.hasText(strategyCode)) { sql += " AND strategy_code = ?"; args.add(strategyCode); }
+        if (StringUtils.hasText(strategyVersion)) { sql += " AND strategy_version = ?"; args.add(strategyVersion); }
+        List<StockSignalDaily> results = jdbcTemplate.query(sql, (rs, rowNum) -> StockSignalDaily.builder()
                 .id(rs.getLong("signal_id"))
                 .symbol(rs.getString("symbol"))
                 .signalDate(rs.getDate("signal_date").toLocalDate())
+                .strategyCode(rs.getString("strategy_code"))
+                .strategyVersion(rs.getString("strategy_version"))
+                .strategyName(rs.getString("strategy_name"))
                 .signal(rs.getString("signal"))
                 .signalDirection(rs.getString("signal_direction"))
                 .signalLevel(rs.getString("signal_level"))
@@ -283,7 +300,8 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .explanation(rs.getString("explanation"))
                 .riskDisclaimer(rs.getString("risk_disclaimer"))
                 .traceJson(rs.getString("trace_json"))
-                .build(), symbol, Date.valueOf(signalDate), versionNo);
+                .build(), args.toArray());
+        if (results.size() > 1) throw new ServiceException("同日存在多个方案信号，请指定 signalId 或方案及版本", 400);
         return results.stream().findFirst();
     }
 
@@ -946,15 +964,22 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 .last("LIMIT 1")));
     }
 
-    private Optional<StockSignalDaily> latestSignal(String symbol, LocalDate date) {
-        if (!StringUtils.hasText(symbol)) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
+    private Optional<StockSignalDaily> latestSignal(String symbol, LocalDate date, Long signalId,
+                                                   String strategyCode, String strategyVersion) {
+        if (!StringUtils.hasText(symbol)) return Optional.empty();
+        List<StockSignalDaily> signals = stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
                 .eq(StockSignalDaily::getSymbol, symbol)
                 .eq(date != null, StockSignalDaily::getSignalDate, date)
-                .orderByDesc(date == null, StockSignalDaily::getSignalDate)
-                .last("LIMIT 1")));
+                .eq(signalId != null, StockSignalDaily::getId, signalId)
+                .eq(StringUtils.hasText(strategyCode), StockSignalDaily::getStrategyCode, strategyCode)
+                .eq(StringUtils.hasText(strategyVersion), StockSignalDaily::getStrategyVersion, strategyVersion)
+                .orderByDesc(StockSignalDaily::getSignalDate)
+                .orderByDesc(StockSignalDaily::getId)
+                .last("LIMIT 2"));
+        if (signals.size() > 1 && signals.get(0).getSignalDate().equals(signals.get(1).getSignalDate())) {
+            throw new ServiceException("同日存在多个方案信号，请指定 signalId 或方案及版本", 400);
+        }
+        return signals.stream().findFirst();
     }
 
     private Optional<StockFactorDaily> factorOnDate(String symbol, LocalDate date) {
@@ -1125,8 +1150,11 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
 
     private StockConsoleVo.PredictionRecord predictionRecord(StockSignalDaily signal) {
         StockActualResult actual = stockActualResultMapper.selectOne(new LambdaQueryWrapper<StockActualResult>()
+                .eq(signal.getId() != null, StockActualResult::getSignalId, signal.getId())
                 .eq(StockActualResult::getSymbol, signal.getSymbol())
                 .eq(StockActualResult::getSignalDate, signal.getSignalDate())
+                .eq(StockActualResult::getStrategyCode, signal.getStrategyCode())
+                .eq(StockActualResult::getStrategyVersion, signal.getStrategyVersion())
                 .last("LIMIT 1"));
         String hitStatus = actual == null || actual.getHit5d() == null
                 ? "待验证" : Boolean.TRUE.equals(actual.getHit5d()) ? "命中" : "未命中";
@@ -1135,7 +1163,7 @@ public class StockConsoleQueryServiceImpl implements StockConsoleQueryService {
                 direction(signal.getSignalDirection(), signal.getSignal()),
                 confidencePercentOrNull(signal.getConfidence()),
                         actual == null ? null : percentage(actual.getReturn5d()), hitStatus,
-                splitRules(signal.getTriggeredRules()));
+                splitRules(signal.getTriggeredRules()), signal.getId(), signal.getStrategyCode(), signal.getStrategyVersion());
     }
 
     private StockConsoleVo.RuleSummary toRuleSummary(RuleDefinition rule) {

@@ -1,0 +1,14 @@
+{
+  "PREDEPLOYMENT.json": "fbcdef9e624d68fce071de30c8939bae4f84e0f022861d4bbe5d8647cd054f8a",
+  "backend-tests-final.log": "6d7d47f5efebe4bbf84ac11bfdbc5509a6bbd0beef2d66207d0e66df568cb76c",
+  "backend-tests.log": "b4a12d17934812fffe6aa76229abbaa3cd6c0f2ce9e3fe505f376e14fe9843c2",
+  "compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "configuration-before.sql": "d26ac6d32127396f35101e4fc8ba035eca2321ed67656f4ef8be6bedef360c4a",
+  "flyway-checksums-before.json": "8198ec2ebbf61020d5466a3e4765dd08e4cfde08920416d97448c4d6779073fb",
+  "query-tests.log": "bd4657889e58e36d1d72966643cc6b9289e913f4f6976594ea0bbdef3660287e",
+  "schema-before.sql": "73868e0a3ef8952438886bc2ebd529507d7701951d0e4b0317e66345ee7f81f2",
+  "signal-data-before.sql": "6be8afdc6da77d6ae7ff46bcd8778bbc705d797f1aa3e185f0ebcf3e14267c2d",
+  "stock_actual_result-identity-before.tsv": "0b9860c2620a8b44089e704600bb59c848866c67a421b597cb9cbf1b49d6970e",
+  "stock_signal_daily-identity-before.tsv": "9d164e7734e48d0a884501f37eeab897870324c99e45a13a5b8a44784e9bf7c6",
+  "stock_signal_daily_history-identity-before.tsv": "717292732079b959b964efa060497b49cef009b2e77078dd3240f86a5f0206df"
+}

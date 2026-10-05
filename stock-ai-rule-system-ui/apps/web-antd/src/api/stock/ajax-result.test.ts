@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { unwrapAjaxResult, unwrapStockPageResult } from './ajax-result';
+import {
+  normalizeStockApiError,
+  unwrapAjaxResult,
+  unwrapStockPageResult,
+} from './ajax-result';
 
 describe('stock ajax result helpers', () => {
   it('unwraps backend AjaxResult when code is 200', () => {
@@ -34,5 +38,30 @@ describe('stock ajax result helpers', () => {
         msg: '规则服务暂不可用',
       }),
     ).toThrow('规则服务暂不可用');
+  });
+
+  it('normalizes rejected backend response bodies into readable errors', () => {
+    const error = normalizeStockApiError({
+      code: 400,
+      msg: '成员规则尚未启用',
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe('成员规则尚未启用');
+  });
+
+  it('prefers the backend msg over an HTTP client error message', () => {
+    const error = Object.assign(
+      new Error('Request failed with status code 400'),
+      {
+        response: { data: { code: 400, msg: '规则组尚未启用' } },
+      },
+    );
+    expect(normalizeStockApiError(error).message).toBe('规则组尚未启用');
+  });
+
+  it('preserves network errors and provides a fallback for unknown failures', () => {
+    const error = new Error('Network Error');
+    expect(normalizeStockApiError(error)).toBe(error);
+    expect(normalizeStockApiError(undefined).message).toBe('股票业务请求失败');
   });
 });

@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -105,9 +106,10 @@ class SignalBackfillServiceTest {
                     .tradeDate(request.getTradeDate()).factors(Map.of("data_status", "normal")).build();
         });
         StockSignalService signalService = mock(StockSignalService.class);
-        when(signalService.backfillMissingSignalFromFactors(any(), any(), any()))
-                .thenAnswer(invocation -> StockSignalDaily.builder()
-                        .symbol(invocation.getArgument(0)).signalDate(invocation.getArgument(1)).build());
+        when(signalService.needsSignalGeneration(any(), any(), anyBoolean())).thenReturn(true);
+        when(signalService.backfillMissingSignalsBatch(any(), any(), any(), anyBoolean()))
+                .thenAnswer(invocation -> new StockSignalService.SignalGenerationBatch(List.of(StockSignalDaily.builder()
+                        .symbol(invocation.getArgument(0)).signalDate(invocation.getArgument(1)).build()), List.of()));
         SignalBackfillRunMapper runMapper = mock(SignalBackfillRunMapper.class);
         Map<String, SignalBackfillRun> runs = new HashMap<>();
         when(runMapper.insert(any(SignalBackfillRun.class))).thenAnswer(invocation -> {
@@ -225,8 +227,9 @@ class SignalBackfillServiceTest {
                     .tradeDate(request.getTradeDate()).factors(Map.of("data_status", "normal")).build();
         });
         StockSignalService signals = mock(StockSignalService.class);
-        when(signals.backfillMissingSignalFromFactors(any(), any(), any()))
-                .thenReturn(StockSignalDaily.builder().signalDate(last).build());
+        when(signals.needsSignalGeneration(any(), any(), anyBoolean())).thenReturn(true);
+        when(signals.backfillMissingSignalsBatch(any(), any(), any(), anyBoolean()))
+                .thenReturn(new StockSignalService.SignalGenerationBatch(List.of(StockSignalDaily.builder().signalDate(last).build()), List.of()));
         SignalBackfillRunMapper runs = mock(SignalBackfillRunMapper.class);
         Map<String, SignalBackfillRun> store = new HashMap<>();
         when(runs.insert(any(SignalBackfillRun.class))).thenAnswer(invocation -> {

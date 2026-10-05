@@ -53,13 +53,29 @@ class RuleDefinitionDependencyProtectionTest {
     }
 
     @Test
-    void activeContentUpdateCanPublishNewVersionWithoutDependencyCheck() {
+    void unreferencedActiveContentUpdateChecksDependencyThenRemainsEditable() {
         when(mapper.selectOne(any())).thenReturn(existing("R_TREND"));
 
         service.update("R_TREND", updateRequest("active"));
 
-        verify(strategies, never()).assertCanDeactivateRule(any());
+        verify(strategies).assertCanDeactivateRule("R_TREND");
         verify(mapper).updateById(any(RuleDefinition.class));
+    }
+
+    @Test
+    void directEditOfActiveReferencedRuleCannotReuseVersionLabelOrRewriteFrozenContent() {
+        RuleDefinition existing = existing("R_TREND"); existing.setVersion("v1");
+        when(mapper.selectOne(any())).thenReturn(existing);
+        doThrow(new ServiceException("正式规则 R_TREND 正被启用中的应用方案 S_ACTIVE 使用", 400))
+                .when(strategies).assertCanDeactivateRule("R_TREND");
+        RuleDefinitionUpsertDto edited = updateRequest("active"); edited.setVersion("v1");
+        edited.setRuleContent("rule \"R_TREND\" when then System.out.println(1); end");
+
+        assertThatThrownBy(() -> service.update("R_TREND", edited))
+                .isInstanceOf(ServiceException.class).hasMessageContaining("不能原地编辑")
+                .hasMessageContaining("规则版本发布流程").hasMessageContaining("S_ACTIVE");
+        verify(mapper, never()).updateById(any(RuleDefinition.class));
+        verify(deduplication, never()).assertNoActiveDuplicate(any(), any());
     }
 
     @Test
@@ -96,8 +112,8 @@ class RuleDefinitionDependencyProtectionTest {
     void activeStrategyOnlyBlocksItsOwnReferencedRules() {
         RuleStrategyService realStrategies = new RuleStrategyService(null, null, null, null, null) {
             @Override
-            public RuleStrategyDetailDto getActiveStrategy() {
-                return activeStrategy("R_TREND");
+            public List<RuleStrategyDetailDto> getActiveStrategies() {
+                return List.of(activeStrategy("R_TREND"));
             }
         };
 

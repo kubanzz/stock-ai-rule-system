@@ -45,13 +45,15 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Fetches every missing open day for the A-share "my-follow" pool, then computes only absent signals. */
+/** Fetches missing open days for the bound application pool, or the legacy "my-follow" pool. */
 @Service
 public class SignalBackfillService {
 
@@ -73,9 +75,9 @@ public class SignalBackfillService {
     private final ObjectMapper objectMapper;
     private final TaskExecutor taskExecutor;
     private final Clock clock;
+    private final ResearchReboundApplicationScope reboundScope;
     private String activeRunId;
 
-    @Autowired
     public SignalBackfillService(
             MarketDataProviderResolver providerResolver,
             MarketDataSyncService marketDataSyncService,
@@ -94,6 +96,26 @@ public class SignalBackfillService {
                 runMapper, objectMapper, taskExecutor, Clock.system(SHANGHAI));
     }
 
+    @Autowired
+    public SignalBackfillService(
+            MarketDataProviderResolver providerResolver,
+            MarketDataSyncService marketDataSyncService,
+            TradeCalendarService tradeCalendarService,
+            StockWatchlistMapper watchlistMapper,
+            StockWatchlistItemMapper watchlistItemMapper,
+            StockDailyQuoteMapper quoteMapper,
+            StockSignalDailyMapper signalMapper,
+            IStockFactorDailyService factorService,
+            StockSignalService signalService,
+            SignalBackfillRunMapper runMapper,
+            ObjectMapper objectMapper,
+            @Qualifier("applicationTaskExecutor") TaskExecutor taskExecutor,
+            ResearchReboundApplicationScope reboundScope) {
+        this(providerResolver, marketDataSyncService, tradeCalendarService, watchlistMapper,
+                watchlistItemMapper, quoteMapper, signalMapper, factorService, signalService,
+                runMapper, objectMapper, taskExecutor, Clock.system(SHANGHAI), reboundScope);
+    }
+
     SignalBackfillService(
             MarketDataProviderResolver providerResolver,
             MarketDataSyncService marketDataSyncService,
@@ -108,6 +130,27 @@ public class SignalBackfillService {
             ObjectMapper objectMapper,
             TaskExecutor taskExecutor,
             Clock clock) {
+        this(providerResolver, marketDataSyncService, tradeCalendarService, watchlistMapper,
+                watchlistItemMapper, quoteMapper, signalMapper, factorService, signalService,
+                runMapper, objectMapper, taskExecutor, clock, null);
+    }
+
+    SignalBackfillService(
+            MarketDataProviderResolver providerResolver,
+            MarketDataSyncService marketDataSyncService,
+            TradeCalendarService tradeCalendarService,
+            StockWatchlistMapper watchlistMapper,
+            StockWatchlistItemMapper watchlistItemMapper,
+            StockDailyQuoteMapper quoteMapper,
+            StockSignalDailyMapper signalMapper,
+            IStockFactorDailyService factorService,
+            StockSignalService signalService,
+            SignalBackfillRunMapper runMapper,
+            ObjectMapper objectMapper,
+            TaskExecutor taskExecutor,
+            Clock clock,
+            ResearchReboundApplicationScope reboundScope) {
+        this.reboundScope = reboundScope;
         this.providerResolver = providerResolver;
         this.marketDataSyncService = marketDataSyncService;
         this.tradeCalendarService = tradeCalendarService;
@@ -187,10 +230,19 @@ public class SignalBackfillService {
             progress.stage = "CALENDAR";
             publish(progress);
 
-            List<String> symbols = watchedSymbols(progress);
+            boolean boundPool = reboundScope != null && reboundScope.hasBoundStockPool();
+            Set<String> applicationSymbols = new LinkedHashSet<>(reboundScope == null
+                    ? Set.of() : reboundScope.activeApplicationSymbols());
+            if (!boundPool) applicationSymbols.addAll(watchedSymbols(progress));
+            List<String> symbols = aShareSymbols(applicationSymbols, progress);
+            Set<String> reboundSymbols = new LinkedHashSet<>(
+                    reboundScope == null ? Set.of() : reboundScope.activeSymbols());
+            reboundSymbols.retainAll(symbols);
             progress.totalSymbols = symbols.size();
             if (symbols.isEmpty()) {
-                throw new ServiceException("“我的关注”中没有可补齐的 A 股股票");
+                throw new ServiceException(boundPool
+                        ? "当前应用方案绑定的股票分组快照中没有可补齐的 A 股股票，已停止任务"
+                        : "“我的关注”中没有可补齐的 A 股股票");
             }
             LocalDate cutoff = completedCutoff();
             Map<String, LocalDate> starts = new LinkedHashMap<>();
@@ -247,6 +299,13 @@ public class SignalBackfillService {
                         && earliest.getTradeDate().isAfter(start)) {
                     start = earliest.getTradeDate();
                 }
+                if (reboundSymbols.contains(symbol)) {
+                    LocalDate requiredStart = reboundScope.historyStart(symbol, cutoff);
+                    if (requiredStart.isBefore(cutoff.minusDays(60))) {
+                        start = requiredStart;
+                        warmingUp.put(symbol, true);
+                    }
+                }
                 starts.put(symbol, start.isAfter(cutoff) ? cutoff : start);
             }
             LocalDate calendarStart = starts.values().stream().min(Comparator.naturalOrder()).orElse(cutoff);
@@ -276,10 +335,21 @@ public class SignalBackfillService {
             Map<String, List<LocalDate>> gapsBySymbol = scanGaps(symbols, starts, dates);
             LocalDate latestOpenDate = dates.getLast();
             Map<String, Boolean> latestRefreshSucceeded = new HashMap<>();
+            boolean benchmarkRefreshed = reboundSymbols.isEmpty()
+                    || syncReboundBenchmark(calendarStart, latestOpenDate, queued.runId(), progress);
             progress.stage = "SYNCING_QUOTES";
             publish(progress);
             for (String symbol : symbols) {
                 List<LocalDate> syncDates = new ArrayList<>(gapsBySymbol.getOrDefault(symbol, List.of()));
+                if (reboundSymbols.contains(symbol)) {
+                    // QFQ can revise earlier prices after a corporate action. Refresh
+                    // the full short factor window together, not only today's bar.
+                    Set<LocalDate> refreshWindow = new LinkedHashSet<>(syncDates);
+                    dates.stream().filter(date -> !date.isBefore(latestOpenDate.minusDays(60)))
+                            .forEach(refreshWindow::add);
+                    syncDates = new ArrayList<>(refreshWindow);
+                    syncDates.sort(Comparator.naturalOrder());
+                }
                 // The latest session may contain a valid-looking intraday snapshot.
                 // Always refresh its final daily bar after market close.
                 if (!syncDates.contains(latestOpenDate)) {
@@ -376,7 +446,11 @@ public class SignalBackfillService {
                                 && earliestKnownDate.get(symbol) != null
                                 && date.isBefore(earliestKnownDate.get(symbol));
                         if (!preListingWarmup) {
-                            blockedByGap.put(symbol, true);
+                            // The frozen study counts valid observations and skips
+                            // suspended dates; only the legacy path blocks future dates.
+                            if (!reboundSymbols.contains(symbol)) {
+                                blockedByGap.put(symbol, true);
+                            }
                             progress.missingQuotes.add(new SignalBackfillRunVo.Gap(symbol, date,
                                     quote == null ? "行情未发布或缺失" : "行情字段不完整或来源为模拟数据"));
                         }
@@ -387,17 +461,12 @@ public class SignalBackfillService {
                         progress.syncedQuotes++;
                     }
                     completeBars.merge(symbol, 1, Integer::sum);
-                    StockSignalDaily signal = signalMapper.selectOne(Wrappers.<StockSignalDaily>lambdaQuery()
-                            .eq(StockSignalDaily::getSymbol, symbol)
-                            .eq(StockSignalDaily::getSignalDate, date)
-                            .last("LIMIT 1"));
                     if (date.equals(latestOpenDate) && !Boolean.TRUE.equals(latestRefreshSucceeded.get(symbol))) {
                         progress.completedTasks++;
                         continue;
                     }
-                    if (signal == null || date.equals(latestOpenDate)
-                            && date.equals(LocalDate.now(clock))
-                            && !"backfill".equals(signal.getGenerationType())) {
+                    boolean refreshRegular = date.equals(latestOpenDate) && date.equals(LocalDate.now(clock));
+                    if (signalService.needsSignalGeneration(symbol, date, refreshRegular)) {
                         try {
                             if (Boolean.TRUE.equals(blockedByGap.get(symbol))) {
                                 progress.failures.add(new SignalBackfillRunVo.Failure(symbol, date,
@@ -405,12 +474,14 @@ public class SignalBackfillService {
                                 progress.completedTasks++;
                                 continue;
                             }
-                            if (!hasRealFactorHistory(symbol, date)) {
+                            // Shared inputs can satisfy a short-history plan even while another plan warms up.
+                            // Research-specific availability is evaluated independently after factor calculation.
+                            int requiredHistory = FACTOR_HISTORY_SIZE;
+                            if (!hasRealFactorHistory(symbol, date, false)) {
                                 if (!Boolean.TRUE.equals(warmingUp.get(symbol))
-                                        || completeBars.get(symbol) >= FACTOR_HISTORY_SIZE
-                                        || date.equals(latestOpenDate)) {
+                                        || completeBars.get(symbol) >= requiredHistory || date.equals(latestOpenDate)) {
                                     progress.failures.add(new SignalBackfillRunVo.Failure(symbol, date,
-                                            "CALCULATING", "真实行情历史不足 26 个交易日，未生成信号"));
+                                            "CALCULATING", "真实行情历史不足 " + requiredHistory + " 个交易日，未生成信号"));
                                 }
                                 progress.completedTasks++;
                                 continue;
@@ -424,16 +495,13 @@ public class SignalBackfillService {
                             } else {
                                 progress.calculatedFactors++;
                                 boolean historical = date.isBefore(LocalDate.now(clock));
-                                StockSignalDaily generated = signal == null
-                                        ? signalService.backfillMissingSignalFromFactors(
-                                                symbol, date, historical ? "backfill" : "regular")
-                                        : signalService.generateDailySignalsFromFactors(date, List.of(symbol))
-                                                .stream().findFirst().orElse(null);
-                                if (generated != null) {
-                                    progress.generatedSignals++;
-                                    if (historical) {
-                                        progress.backfilledSignalCount++;
-                                    }
+                                var batch = signalService.backfillMissingSignalsBatch(
+                                        symbol, date, historical ? "backfill" : "regular", refreshRegular);
+                                progress.generatedSignals += batch.signals().size();
+                                if (historical) progress.backfilledSignalCount += batch.signals().size();
+                                for (var failure : batch.failures()) {
+                                    progress.failures.add(new SignalBackfillRunVo.Failure(symbol, date, "CALCULATING",
+                                            failure.strategyCode() + "/" + failure.strategyVersion() + "：" + failure.reason()));
                                 }
                             }
                         } catch (RuntimeException ex) {
@@ -470,10 +538,14 @@ public class SignalBackfillService {
         if (watchlist == null || watchlist.getId() == null) {
             return List.of();
         }
-        return watchlistItemMapper.selectList(Wrappers.<StockWatchlistItem>lambdaQuery()
+        return aShareSymbols(watchlistItemMapper.selectList(Wrappers.<StockWatchlistItem>lambdaQuery()
                         .eq(StockWatchlistItem::getWatchlistId, watchlist.getId())
                         .orderByAsc(StockWatchlistItem::getSortOrder))
-                .stream().map(StockWatchlistItem::getSymbol).filter(Objects::nonNull)
+                .stream().map(StockWatchlistItem::getSymbol).toList(), progress);
+    }
+
+    private List<String> aShareSymbols(java.util.Collection<String> symbols, Progress progress) {
+        return symbols.stream().filter(Objects::nonNull)
                 .map(SymbolNormalizer::normalize).distinct()
                 .filter(symbol -> {
                     if ("CN".equals(SymbolNormalizer.parseMarket(symbol))) {
@@ -574,19 +646,58 @@ public class SignalBackfillService {
                 && quote.getDataSource() != null && !"mock".equalsIgnoreCase(quote.getDataSource());
     }
 
-    private boolean hasRealFactorHistory(String symbol, LocalDate date) {
+    private boolean hasRealFactorHistory(String symbol, LocalDate date, boolean rebound) {
         // The factor calculation uses up to 80 real rows; ensure at least its
         // 26-bar minimum exists before spending a calculation attempt.
         List<StockDailyQuote> history = quoteMapper.selectList(Wrappers.<StockDailyQuote>lambdaQuery()
                 .eq(StockDailyQuote::getSymbol, symbol)
                 .le(StockDailyQuote::getTradeDate, date)
                 .orderByDesc(StockDailyQuote::getTradeDate)
-                .last("LIMIT 80"));
+                .last(rebound ? "LIMIT 450" : "LIMIT 80"));
         if (history == null) {
             return false;
         }
-        long realComplete = history.stream().filter(this::completeQuote).count();
-        return realComplete >= FACTOR_HISTORY_SIZE;
+        long realComplete = history.stream().filter(quote -> rebound
+                ? ResearchReboundApplicationScope.validQuote(quote, true) : completeQuote(quote)).count();
+        return realComplete >= (rebound ? 252 : FACTOR_HISTORY_SIZE);
+    }
+
+    private boolean syncReboundBenchmark(LocalDate firstSignalDate, LocalDate lastSignalDate,
+                                         String runId, Progress progress) {
+        DailyQuoteSyncRequestDto request = new DailyQuoteSyncRequestDto();
+        request.setTargetSymbol("000300.SH");
+        request.setStartDate(firstSignalDate.minusDays(120));
+        request.setEndDate(lastSignalDate);
+        request.setTriggerType("signal-backfill");
+        request.setTriggerBy(runId);
+        try {
+            MarketDataSyncResultDto result = marketDataSyncService.syncDailyQuotes(request);
+            if (result != null && MarketDataSyncStatus.SUCCESS.getCode().equals(result.getStatus())
+                    && (result.getFailed() == null || result.getFailed() == 0)
+                    && (result.getScanned() == null || result.getScanned() > 0)
+                    && hasReboundBenchmark(lastSignalDate)) {
+                return true;
+            }
+            progress.failures.add(new SignalBackfillRunVo.Failure("000300.SH", lastSignalDate,
+                    "SYNCING_QUOTES", "沪深300行情同步失败或缺少同日数据：" + syncError(result)));
+        } catch (RuntimeException ex) {
+            progress.failures.add(new SignalBackfillRunVo.Failure("000300.SH", lastSignalDate,
+                    "SYNCING_QUOTES", clean(ex)));
+        }
+        return false;
+    }
+
+    private boolean hasReboundBenchmark(LocalDate date) {
+        List<StockDailyQuote> quotes = quoteMapper.selectList(Wrappers.<StockDailyQuote>lambdaQuery()
+                .eq(StockDailyQuote::getSymbol, "000300.SH")
+                .le(StockDailyQuote::getTradeDate, date)
+                .orderByDesc(StockDailyQuote::getTradeDate).last("LIMIT 120"));
+        if (quotes == null) {
+            return false;
+        }
+        List<StockDailyQuote> valid = quotes.stream()
+                .filter(quote -> ResearchReboundApplicationScope.validQuote(quote, false)).toList();
+        return valid.size() >= 60 && valid.stream().anyMatch(quote -> date.equals(quote.getTradeDate()));
     }
 
     private String syncError(MarketDataSyncResultDto result) {

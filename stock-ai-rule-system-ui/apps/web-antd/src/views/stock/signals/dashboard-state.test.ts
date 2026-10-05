@@ -8,6 +8,15 @@ import {
 } from './dashboard-state';
 
 describe('signal dashboard query state', () => {
+  it('changes the selected strategy without resetting stock scope and signal filters', () => {
+    const current = { ...createDashboardQuery(), pageNum: 3, signal: 'bullish' as const, poolCode: 'research-pit100' };
+    expect(applyDashboardFilters(current, { strategyCode: 'P4-VOTE-001' })).toMatchObject({
+      pageNum: 1,
+      signal: 'bullish',
+      poolCode: 'research-pit100',
+      strategyCode: 'P4-VOTE-001',
+    });
+  });
   it('creates stable defaults for the server-side dashboard query', () => {
     expect(createDashboardQuery()).toEqual({
       market: 'A股',

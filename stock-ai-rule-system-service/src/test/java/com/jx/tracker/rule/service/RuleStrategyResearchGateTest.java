@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
 class RuleStrategyResearchGateTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"strategy", "group", "atom", "renamedContent"})
-    void p4PendingFinalCannotActivateThroughCodeOrContentCopies(String recognition) {
+    void p4CanActivateAsAuxiliaryWithoutChangingFinalVerification(String recognition) throws Exception {
         RuleGroupService groups = mock(RuleGroupService.class);
         RuleGroupDetailDto group = new RuleGroupDetailDto();
         group.setGroupCode("group".equals(recognition) ? "P4-VOTE-001" : "G_COPY");
@@ -46,6 +46,10 @@ class RuleStrategyResearchGateTest {
         rule.setRuleContent("renamedContent".equals(recognition)
                 ? "rule \"R_COPY\" when eval(p4_vote_001_version == \"p4-vote-001-v1\") then end"
                 : "rule \"R_COPY\" when then end");
+        if ("atom".equals(recognition)) {
+            rule.setRuleContent(new String(new org.springframework.core.io.ClassPathResource(
+                    "rules/R_P4_VOTE_001_OPEN_GAP.drl").getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        }
         RuleDefinitionMapper definitions = mock(RuleDefinitionMapper.class);
         when(definitions.selectOne(any())).thenReturn(rule);
         RuleStrategyMapper strategies = mock(RuleStrategyMapper.class);
@@ -62,14 +66,78 @@ class RuleStrategyResearchGateTest {
         selected.setGroupCode(group.getGroupCode());
         request.setGroups(List.of(selected));
 
-        assertThatThrownBy(() -> service.create(request)).isInstanceOf(ServiceException.class)
-                .hasMessageContaining("verified");
-        verify(strategies, never()).insert(any(RuleStrategy.class));
-        verify(verification).isVerifiedStrategy(request.getStrategyCode());
+        request.setResearchStatus("verified"); // Client input cannot certify final-test success.
+        RuleStrategyDetailDto enabled = service.create(request);
+        assertThat(enabled.getStatus()).isEqualTo("active");
+        assertThat(enabled.getUsageMode()).isEqualTo("auxiliary");
+        assertThat(enabled.getResearchStatus()).isEqualTo("pending_final");
+        verify(strategies).insert(any(RuleStrategy.class));
+        verifyNoInteractions(verification);
 
         request.setStatus("draft");
-        assertThat(service.create(request).getStatus()).isEqualTo("draft");
-        verify(strategies).insert(any(RuleStrategy.class));
+        RuleStrategyDetailDto draft = service.create(request);
+        assertThat(draft.getStatus()).isEqualTo("draft");
+        // A renamed rule body is classified when activating; draft content is not loaded.
+        if (!"renamedContent".equals(recognition)) {
+            assertThat(draft.getResearchStatus()).isEqualTo("pending_final");
+        }
+    }
+
+    @Test
+    void refusesP4ContentEditedUnderTheSameVersionLabel() {
+        RuleGroupMemberDto member = new RuleGroupMemberDto(); member.setRuleCode("R_P4_VOTE_001_OPEN_GAP");
+        member.setRuleVersionNo("v1");
+        RuleGroupDetailDto group = new RuleGroupDetailDto(); group.setGroupCode("P4-VOTE-001");
+        group.setVersion("v1"); group.setStatus("active"); group.setMembers(List.of(member));
+        RuleGroupService groups = mock(RuleGroupService.class); when(groups.getGroup("P4-VOTE-001")).thenReturn(group);
+        RuleDefinitionMapper definitions = mock(RuleDefinitionMapper.class);
+        when(definitions.selectOne(any())).thenReturn(RuleDefinition.builder().ruleCode(member.getRuleCode())
+                .ruleFormat("drools").status("active").enabled(true).version("v1").ruleContent("modified rule").build());
+        RuleStrategyService service = new RuleStrategyService(mock(RuleStrategyMapper.class),
+                mock(RuleStrategyVersionMapper.class), groups, definitions, new ObjectMapper());
+        RuleStrategyDetailDto request = new RuleStrategyDetailDto(); request.setStrategyCode("P4-VOTE-001");
+        request.setStrategyName("冻结方案"); request.setStatus("active");
+        RuleStrategyGroupDto selection = new RuleStrategyGroupDto(); selection.setGroupCode("P4-VOTE-001");
+        request.setGroups(List.of(selection));
+        assertThatThrownBy(() -> service.create(request)).hasMessageContaining("冻结规则内容校验失败");
+    }
+
+    @Test
+    void enablingSavedP4DraftRefreshesGroupAndRetainsFrozenScope() throws Exception {
+        RuleGroupDetailDto group = new RuleGroupDetailDto();
+        group.setGroupCode("P4-VOTE-001");group.setStatus("active");group.setVersion("v2");
+        group.setMembers(List.of());
+        RuleGroupService groups = mock(RuleGroupService.class);
+        when(groups.getGroup("P4-VOTE-001")).thenReturn(group);
+        RuleStrategyGroupDto selected = new RuleStrategyGroupDto();
+        selected.setGroupCode("P4-VOTE-001");selected.setGroupVersion("v1");
+        RuleStrategyDetailDto draft = new RuleStrategyDetailDto();
+        draft.setStrategyCode("P4-VOTE-001");draft.setStrategyName("冻结三选二");
+        draft.setStatus("draft");draft.setVersion("v1");draft.setGroups(List.of(selected));
+        draft.setStockPoolType("watchlist");draft.setStockPoolCode("pit100");
+        draft.setStockPoolSymbols(List.of("600418.SH", "000030.SZ"));
+        ObjectMapper json = new ObjectMapper();
+        RuleStrategy row = new RuleStrategy();row.setId(4L);row.setStrategyCode("P4-VOTE-001");
+        row.setStatus("draft");row.setVersion("v1");row.setSnapshotJson(json.writeValueAsString(draft));
+        RuleStrategyMapper strategies = mock(RuleStrategyMapper.class);
+        when(strategies.selectOne(any())).thenReturn(row);
+        when(strategies.updateById(any(RuleStrategy.class))).thenReturn(1);
+        RuleStrategyVersionMapper versions = mock(RuleStrategyVersionMapper.class);
+        when(versions.insert(any(RuleStrategyVersion.class))).thenReturn(1);
+        ResearchVerificationService verification = mock(ResearchVerificationService.class);
+        RuleStrategyService service = new RuleStrategyService(strategies, versions, groups,
+                mock(RuleDefinitionMapper.class), json, null, null, null, verification);
+
+        RuleStrategyDetailDto enabled = service.changeStatus("P4-VOTE-001", "active");
+        assertThat(enabled.getStatus()).isEqualTo("active");
+        assertThat(enabled.getVersion()).isEqualTo("v2");
+        assertThat(enabled.getUsageMode()).isEqualTo("auxiliary");
+        assertThat(enabled.getResearchStatus()).isEqualTo("pending_final");
+        assertThat(enabled.getGroups().getFirst().getGroupVersion()).isEqualTo("v2");
+        assertThat(enabled.getStockPoolSymbols()).containsExactly("600418.SH", "000030.SZ");
+        verifyNoInteractions(verification);
+        RuleStrategyDetailDto saved = json.readValue(row.getSnapshotJson(), RuleStrategyDetailDto.class);
+        assertThat(saved.getResearchStatus()).isEqualTo("pending_final");
     }
 
     @Test

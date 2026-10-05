@@ -10,6 +10,10 @@ type CsvCell = null | number | string | undefined;
 const CSV_HEADERS = [
   '股票代码',
   '名称',
+  '信号编号',
+  '方案编码',
+  '方案版本',
+  '方案名称',
   '价格',
   '行情交易日',
   '涨跌幅',
@@ -73,6 +77,10 @@ function dashboardRow(
   return [
     row.symbol,
     row.name,
+    row.signalId,
+    row.strategyCode ?? 'LEGACY',
+    row.strategyVersion ?? 'legacy',
+    row.strategyName,
     row.price,
     row.quoteDate,
     row.changePct,

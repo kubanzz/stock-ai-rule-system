@@ -35,9 +35,9 @@ public class RuleStrategyController {
     }
 
     @GetMapping("/active")
-    @Operation(summary = "查询当前启用的应用方案")
+    @Operation(summary = "查询所有启用的应用方案")
     public AjaxResult active() {
-        return AjaxResult.success(service.getActiveStrategy());
+        return AjaxResult.success(service.getActiveStrategies());
     }
 
     @GetMapping("/{code}")

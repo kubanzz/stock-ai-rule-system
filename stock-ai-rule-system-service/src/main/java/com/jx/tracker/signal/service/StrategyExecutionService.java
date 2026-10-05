@@ -5,8 +5,15 @@ import com.jx.tracker.domain.dto.RuleGroupMemberDto;
 import com.jx.tracker.domain.dto.RuleStrategyDetailDto;
 import com.jx.tracker.domain.dto.RuleStrategyGroupDto;
 import com.jx.tracker.domain.entity.RuleDefinition;
+import com.jx.tracker.domain.entity.RuleVersion;
+import com.jx.tracker.mapper.RuleVersionMapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.BeanUtils;
+import java.util.Objects;
 import com.jx.tracker.rule.engine.RuleEvaluation;
 import com.jx.tracker.rule.engine.RuleExecutionResult;
+import com.jx.tracker.rule.service.StrategyStockScope;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -27,29 +34,84 @@ public class StrategyExecutionService {
     // raw contributions beyond the range of stock_signal_daily DECIMAL(10,4).
     private static final BigDecimal MAX_EFFECTIVE_SCORE = new BigDecimal("100");
 
+    private final RuleVersionMapper versionMapper;
+
+    public StrategyExecutionService() { this(null); }
+
+    @Autowired
+    public StrategyExecutionService(RuleVersionMapper versionMapper) {
+        this.versionMapper = versionMapper;
+    }
+
     public List<RuleDefinition> selectRules(RuleStrategyDetailDto strategy, List<RuleDefinition> availableRules) {
         if (strategy == null) {
             return availableRules == null ? List.of() : List.copyOf(availableRules);
         }
-        Set<String> selectedCodes = new HashSet<>();
+        Map<String, RuleGroupMemberDto> selectedMembers = new LinkedHashMap<>();
         for (RuleStrategyGroupDto selectedGroup : groups(strategy)) {
             for (RuleGroupMemberDto member : members(selectedGroup.getGroup())) {
-                selectedCodes.add(member.getRuleCode());
+                RuleGroupMemberDto previous = selectedMembers.putIfAbsent(member.getRuleCode(), member);
+                if (previous != null && (!Objects.equals(previous.getRuleVersionId(), member.getRuleVersionId())
+                        || !Objects.equals(previous.getRuleVersionNo(), member.getRuleVersionNo())
+                        || !Objects.equals(previous.getRuleContent(), member.getRuleContent()))) {
+                    throw new IllegalArgumentException("同一应用方案不能引用同一规则的不同版本：" + member.getRuleCode());
+                }
             }
         }
         Map<String, RuleDefinition> selected = new LinkedHashMap<>();
         for (RuleDefinition rule : availableRules == null ? List.<RuleDefinition>of() : availableRules) {
-            if (rule != null && selectedCodes.contains(rule.getRuleCode())) {
-                selected.putIfAbsent(rule.getRuleCode(), rule);
+            if (rule != null && selectedMembers.containsKey(rule.getRuleCode())) {
+                selected.putIfAbsent(rule.getRuleCode(), pinnedRule(rule, selectedMembers.get(rule.getRuleCode())));
             }
         }
-        Set<String> missing = new HashSet<>(selectedCodes);
+        Set<String> missing = new HashSet<>(selectedMembers.keySet());
         missing.removeAll(selected.keySet());
         if (!missing.isEmpty()) {
             throw new IllegalArgumentException("Selected strategy includes unavailable active rules: "
                     + String.join(", ", missing.stream().sorted().toList()));
         }
         return List.copyOf(selected.values());
+    }
+
+    /** Execute the content pinned by the group's saved snapshot, even after a later publication. */
+    private RuleDefinition pinnedRule(RuleDefinition current, RuleGroupMemberDto member) {
+        String expected = member.getRuleVersionNo();
+        Long expectedId = member.getRuleVersionId();
+        if (member.getRuleContent() != null && !member.getRuleContent().isBlank()) {
+            RuleDefinition pinned = new RuleDefinition();
+            BeanUtils.copyProperties(current, pinned);
+            pinned.setRuleContent(member.getRuleContent());
+            pinned.setRuleFormat(member.getRuleFormat() == null ? current.getRuleFormat() : member.getRuleFormat());
+            pinned.setRuleName(member.getRuleName() == null ? current.getRuleName() : member.getRuleName());
+            pinned.setPriority(member.getRulePriority() == null ? current.getPriority() : member.getRulePriority());
+            pinned.setVersion(expected == null ? current.getVersion() : expected);
+            pinned.setCurrentVersionNo(expected);
+            pinned.setCurrentVersionId(expectedId);
+            return pinned;
+        }
+        if (expected == null && expectedId == null) return current; // legacy group snapshots
+        String currentVersion = current.getCurrentVersionNo() == null
+                ? current.getVersion() : current.getCurrentVersionNo();
+        if (expectedId == null && (expected == null || Objects.equals(expected, currentVersion))) return current;
+        if (versionMapper == null) {
+            throw new IllegalArgumentException("缺少方案冻结的规则版本：" + current.getRuleCode() + "/" + expected);
+        }
+        RuleVersion frozen = expectedId == null
+                ? versionMapper.selectOne(Wrappers.<RuleVersion>lambdaQuery()
+                    .eq(RuleVersion::getRuleId, current.getId()).eq(RuleVersion::getVersionNo, expected))
+                : versionMapper.selectById(expectedId);
+        if (frozen == null || !Objects.equals(current.getId(), frozen.getRuleId())
+                || expected != null && !Objects.equals(expected, frozen.getVersionNo())
+                || frozen.getRuleContent() == null || frozen.getRuleContent().isBlank()) {
+            throw new IllegalArgumentException("缺少方案冻结的规则版本：" + current.getRuleCode() + "/" + expected);
+        }
+        RuleDefinition pinned = new RuleDefinition();
+        BeanUtils.copyProperties(current, pinned);
+        pinned.setRuleContent(frozen.getRuleContent());
+        pinned.setVersion(frozen.getVersionNo());
+        pinned.setCurrentVersionNo(frozen.getVersionNo());
+        pinned.setCurrentVersionId(frozen.getId());
+        return pinned;
     }
 
     public StrategyExecutionResult aggregate(RuleStrategyDetailDto strategy, RuleExecutionResult raw) {
@@ -190,7 +252,10 @@ public class StrategyExecutionService {
                 strategy.getVersion(), selectedGroupSnapshot, List.copyOf(groupContributions),
                 List.copyOf(contributions), rawWeightedScores, effectiveScores,
                 !sameScores(rawWeightedScores, effectiveScores),
-                directionGatePassed, List.copyOf(unmetRequiredGroups));
+                directionGatePassed, List.copyOf(unmetRequiredGroups),
+                new StockPoolSnapshot(strategy.getStockPoolType() == null ? "all" : strategy.getStockPoolType(),
+                        strategy.getStockPoolCode(), strategy.getStockPoolName(),
+                        StrategyStockScope.symbols(strategy)));
         return new StrategyExecutionResult(result, trace);
     }
 
@@ -267,7 +332,10 @@ public class StrategyExecutionService {
                                          Scores rawWeightedScores, Scores effectiveScores,
                                          boolean capApplied,
                                          boolean requiredGroupGatePassed,
-                                         List<String> unmetRequiredGroups) { }
+                                         List<String> unmetRequiredGroups,
+                                         StockPoolSnapshot stockPool) { }
+
+    public record StockPoolSnapshot(String type, String code, String name, List<String> symbols) { }
 
     public record SelectedGroup(String groupCode, String groupVersion, BigDecimal weight,
                                 boolean required) { }

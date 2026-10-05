@@ -5,6 +5,9 @@ import com.jx.tracker.domain.dto.RuleGroupMemberDto;
 import com.jx.tracker.domain.dto.RuleStrategyDetailDto;
 import com.jx.tracker.domain.dto.RuleStrategyGroupDto;
 import com.jx.tracker.domain.entity.RuleDefinition;
+import com.jx.tracker.domain.entity.RuleVersion;
+import com.jx.tracker.mapper.RuleVersionMapper;
+import static org.mockito.Mockito.*;
 import com.jx.tracker.rule.engine.RuleEvaluation;
 import com.jx.tracker.rule.engine.RuleExecutionResult;
 import com.jx.tracker.signal.service.StrategyExecutionService;
@@ -156,6 +159,68 @@ class StrategyExecutionServiceTest {
                 .isEqualByComparingTo("30000");
         assertThat(result.trace().effectiveScores().risk()).isEqualByComparingTo("100");
         assertThat(result.trace().capApplied()).isTrue();
+    }
+
+    @Test
+    void executesFrozenRuleContentAfterCurrentDefinitionPublishesNewVersion() {
+        RuleGroupMemberDto pinned = member("R_SHARED", "1", false);
+        pinned.setRuleVersionId(11L); pinned.setRuleVersionNo("v1");
+        RuleStrategyDetailDto plan = strategy(List.of(selected("frozen", "OR", 1,
+                false, BigDecimal.ONE, pinned)));
+        RuleDefinition current = RuleDefinition.builder().id(5L).ruleCode("R_SHARED")
+                .version("v2").currentVersionId(12L).currentVersionNo("v2").ruleContent("new content").build();
+        RuleVersionMapper versions = mock(RuleVersionMapper.class);
+        when(versions.selectById(11L)).thenReturn(RuleVersion.builder().id(11L).ruleId(5L)
+                .versionNo("v1").ruleContent("frozen content").build());
+
+        RuleDefinition selectedRule = new StrategyExecutionService(versions).selectRules(plan, List.of(current)).getFirst();
+
+        assertThat(selectedRule.getRuleContent()).isEqualTo("frozen content");
+        assertThat(selectedRule.getVersion()).isEqualTo("v1");
+        assertThat(current.getRuleContent()).isEqualTo("new content");
+        assertThat(current.getVersion()).isEqualTo("v2");
+    }
+
+    @Test
+    void missingFrozenVersionFailsInsteadOfExecutingCurrentContent() {
+        RuleGroupMemberDto pinned = member("R_SHARED", "1", false); pinned.setRuleVersionNo("v1");
+        RuleStrategyDetailDto plan = strategy(List.of(selected("frozen", "OR", 1,
+                false, BigDecimal.ONE, pinned)));
+        RuleDefinition current = RuleDefinition.builder().id(5L).ruleCode("R_SHARED")
+                .version("v2").ruleContent("new content").build();
+        assertThatThrownBy(() -> service.selectRules(plan, List.of(current))).hasMessageContaining("冻结的规则版本");
+    }
+
+    @Test
+    void frozenInlineDefinitionSurvivesEditsThatReuseTheSameVersionLabel() {
+        RuleGroupMemberDto pinned = member("R_SHARED", "1", false);
+        pinned.setRuleVersionNo("v1"); pinned.setRuleContent("original content");
+        pinned.setRuleFormat("drools"); pinned.setRuleName("冻结名称"); pinned.setRulePriority(20);
+        RuleStrategyDetailDto plan = strategy(List.of(selected("frozen", "OR", 1,
+                false, BigDecimal.ONE, pinned)));
+        RuleDefinition mutable = RuleDefinition.builder().ruleCode("R_SHARED").version("v1")
+                .ruleContent("edited with same label").ruleName("修改名称").priority(99).build();
+        RuleDefinition executable = service.selectRules(plan, List.of(mutable)).getFirst();
+        assertThat(executable.getRuleContent()).isEqualTo("original content");
+        assertThat(executable.getRuleName()).isEqualTo("冻结名称");
+        assertThat(executable.getPriority()).isEqualTo(20);
+        assertThat(mutable.getRuleContent()).isEqualTo("edited with same label");
+    }
+
+    @Test
+    void pinnedArchiveIdLoadsArchiveEvenWhenCurrentVersionIdAndLabelAreUnchanged() {
+        RuleGroupMemberDto pinned = member("R_SHARED", "1", false);
+        pinned.setRuleVersionId(11L); pinned.setRuleVersionNo("v1");
+        RuleStrategyDetailDto plan = strategy(List.of(selected("frozen", "OR", 1,
+                false, BigDecimal.ONE, pinned)));
+        RuleDefinition mutable = RuleDefinition.builder().id(5L).ruleCode("R_SHARED").version("v1")
+                .currentVersionId(11L).currentVersionNo("v1").ruleContent("edited content").build();
+        RuleVersionMapper versions = mock(RuleVersionMapper.class);
+        when(versions.selectById(11L)).thenReturn(RuleVersion.builder().id(11L).ruleId(5L)
+                .versionNo("v1").ruleContent("archive content").build());
+        assertThat(new StrategyExecutionService(versions).selectRules(plan, List.of(mutable)).getFirst().getRuleContent())
+                .isEqualTo("archive content");
+        verify(versions).selectById(11L);
     }
 
     private RuleStrategyDetailDto strategy(List<RuleStrategyGroupDto> groups) {
