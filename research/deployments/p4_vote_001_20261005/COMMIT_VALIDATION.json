@@ -1,0 +1,124 @@
+{
+  "validation_scope": "HEAD + staged files; independent snapshot, no unstaged files",
+  "base_commit": "3b42a85eacaf743983785254e49906a4d0938196",
+  "branch": "dev",
+  "upstream": "origin/dev",
+  "backend": {
+    "java": "21",
+    "test_count": 71,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "suites": [
+      {
+        "name": "com.jx.tracker.factor.P4VoteFactorCalculatorTest",
+        "tests": "7",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.factor.ResearchReboundFactorCalculatorTest",
+        "tests": "12",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.rule.P4VoteRulesTest",
+        "tests": "2",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.rule.ResearchReboundRulesTest",
+        "tests": "4",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.rule.service.RuleDefinitionDependencyProtectionTest",
+        "tests": "6",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.rule.service.RuleStrategyResearchGateTest",
+        "tests": "5",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.rule.service.RuleStrategyStockPoolTest",
+        "tests": "9",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.rule.service.RuleStrategyThresholdValidationTest",
+        "tests": "1",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.service.ResearchReboundApplicationScopeTest",
+        "tests": "9",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.service.impl.StockFactorDailyP4VoteIntegrationTest",
+        "tests": "2",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.service.impl.StockFactorDailyResearchReboundIntegrationTest",
+        "tests": "3",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.service.impl.StockWatchlistPersistenceTest",
+        "tests": "6",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "com.jx.tracker.verification.ResearchVerificationServiceTest",
+        "tests": "5",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0"
+      }
+    ]
+  },
+  "research": {
+    "test_count": 8,
+    "passed": 8,
+    "command": "python -m pytest -q research/normal_stock_65/phase140_p4_vote_001_final_validation"
+  },
+  "package": {
+    "command": "mvn -q -DskipTests package",
+    "passed": true
+  },
+  "checks": {
+    "staged_diff_check": true,
+    "frozen_artifact_sha256_matches": 11,
+    "original_active_snapshot_unchanged": true
+  },
+  "resolved_attempts": [
+    "默认python3缺少pytest，使用临时虚拟环境及Bundled Python运行。",
+    "HEAD股票池H2测试因补算恢复表不存在而启动失败，纳入现有MockBean隔离修正后71项全通过。"
+  ]
+}

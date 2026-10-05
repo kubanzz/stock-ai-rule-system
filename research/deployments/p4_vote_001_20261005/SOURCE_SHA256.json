@@ -1,0 +1,23 @@
+{
+  "research/normal_stock_65/phase4/bullish_group_results.json": "9c4bd808c4246a13668d2c5db83a45f7e3ab336a72046a34b407c85b14af29cc",
+  "research/normal_stock_65/phase5/pit_fixed_vote_stress.json": "b4501775cb5e57982648624b6400d3312be0a2a5e80467fbc77e71631651d8a7",
+  "research/normal_stock_65/phase6/pit_older_fixed_vote_stress.json": "8dc21e08f7605d9e76777c1cd6e185461ec41a5d80bb1863887be1fc4b81e200",
+  "research/normal_stock_65/phase5/pit_assignment.csv": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950",
+  "research/normal_stock_65/phase140_p4_vote_001_final_validation/REGISTRATION.json": "3cf1b9cdf0cb3f18e2bad3d667dc90c366ed0cdf4dbf0d12b3dbd81e73235f6b",
+  "stock-ai-rule-system-service/src/main/java/com/jx/tracker/factor/P4VoteFactorCalculator.java": "9f01eb5020038677119c85f360199cb54afed06f3eaf5c3e8f7b5f5e8fc919d7",
+  "stock-ai-rule-system-service/src/main/java/com/jx/tracker/service/impl/StockFactorDailyServiceImpl.java": "f79e4847158c587aa69a91a7283bb9fc6ad20d2e2fd493f0d6ba8949faf3daa2",
+  "stock-ai-rule-system-service/src/main/java/com/jx/tracker/service/ResearchReboundApplicationScope.java": "7e90ab86ebba23c933bbbadb7a4fdeadf5edd586f1d48083441814de2a3bb124",
+  "stock-ai-rule-system-service/src/main/java/com/jx/tracker/rule/service/RuleStrategyService.java": "411747501004d20b54d8e432ec5dd5e49d0b34aaeb11005760f21eeeac077621",
+  "stock-ai-rule-system-service/src/main/resources/rules/R_P4_VOTE_001_CHANGE_PCT_5D.drl": "440aa73f62888e84045444e4b39d124f47e2c5435b934362db5ffcd1b2ccf50c",
+  "stock-ai-rule-system-service/src/main/resources/rules/R_P4_VOTE_001_OPEN_GAP.drl": "e3943967ebce065e5aaea12c226699dcccc1f12ec5af4126bae442e872062d2e",
+  "stock-ai-rule-system-service/src/main/resources/rules/R_P4_VOTE_001_INDEX_CLOSE_POSITION.drl": "af7e31c248e512573ca5ea86daada85b433807cff8f061e74cd8f59d1c0b2bda",
+  "stock-ai-rule-system-service/src/main/resources/rules/p4-vote-001.json": "d078f2606627c7f9ecb7a6f793d25f7ff4cd2087196ed392cdde56f82dc29629",
+  "stock-ai-rule-system-service/src/main/resources/rules/p4-vote-001-pit-assignment.csv": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950",
+  "doc/股票因子规则预测与 AI 规则优化系统设计方案.md": "cf1354e504657d93759b67c6d943ce8c8b3465bf3458fcfe7568d406ba810d90",
+  "research/normal_stock_65/README.md": "c47d0e295885454995843c3c201d2d860f5ec3c7a0d6dd29e4caa5e44f7a2e84",
+  "research/normal_stock_65/phase4/BULLISH_GROUP_REPORT.md": "7763afe13097ca699ac25e343c28315b210542141ebd55a5414459bec02499a6",
+  "research/normal_stock_65/phase5/README.md": "6262660ef87487f6634d741cf0228029f6f7a60a75093cd2fc4c0b8eefeec4c7",
+  "research/normal_stock_65/phase6/REPORT.md": "2d6deb7cde906a5c69e88c9c26776b2dd57821b3d68e8ce8fdc1ecdcf191be41",
+  "research/normal_stock_65/phase140_p4_vote_001_final_validation/APPLIED_STATUS.md": "df19b77bd5541d82859d7490d0917517abe78489e3a005c59e8a0ccf0569b451",
+  "stock-ai-rule-system-service/target/stock-ai-rule-system-service-1.0.0.jar": "35245b555472b26ddfc6ef30aa035e0560d8e2df344ede561325ec8a41ba1efc"
+}

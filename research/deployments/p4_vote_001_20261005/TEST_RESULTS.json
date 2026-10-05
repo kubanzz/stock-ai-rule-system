@@ -1,0 +1,79 @@
+[
+  {
+    "name": "com.jx.tracker.factor.P4VoteFactorCalculatorTest",
+    "tests": "7",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.rule.P4VoteRulesTest",
+    "tests": "2",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.service.impl.StockFactorDailyP4VoteIntegrationTest",
+    "tests": "2",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.service.ResearchReboundApplicationScopeTest",
+    "tests": "9",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.rule.service.RuleStrategyResearchGateTest",
+    "tests": "5",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.rule.service.RuleStrategyStockPoolTest",
+    "tests": "9",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.rule.service.RuleStrategyThresholdValidationTest",
+    "tests": "1",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.rule.service.RuleDefinitionDependencyProtectionTest",
+    "tests": "6",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.rule.ResearchReboundRulesTest",
+    "tests": "4",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.factor.ResearchReboundFactorCalculatorTest",
+    "tests": "12",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  },
+  {
+    "name": "com.jx.tracker.service.impl.StockWatchlistPersistenceTest",
+    "tests": "6",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0"
+  }
+]

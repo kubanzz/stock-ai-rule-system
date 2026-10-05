@@ -1,0 +1,944 @@
+{
+  "schema_version": 1,
+  "experiment_id": "P4-VOTE-001",
+  "created_at_utc": "2026-10-04T00:00:00+00:00",
+  "classification": "待最终验证",
+  "final_classification": null,
+  "classification_basis": [
+    "规则源、冻结结果、窗口和股票范围已登记，但真实前瞻窗口尚未结束，当前观察数为0。",
+    "因此没有可进入最终分母的成熟非重叠信号，无法宣称通过、未通过或支持不足。",
+    "窗口结束后才触发最终三分类；不得延长窗口凑足样本。"
+  ],
+  "decision_scope": "仅为看涨辅助决策信号研究；不构成确定性预测、收益保证或自动交易授权。",
+  "rule": {
+    "version": "P4-VOTE-001",
+    "source_path": "research/normal_stock_65/phase4/bullish_group_results.json",
+    "source_sha256": "9c4bd808c4246a13668d2c5db83a45f7e3ab336a72046a34b407c85b14af29cc",
+    "frozen_path": "research/normal_stock_65/phase5/pit_fixed_vote_stress.json",
+    "frozen_sha256": "b4501775cb5e57982648624b6400d3312be0a2a5e80467fbc77e71631651d8a7",
+    "members": [
+      {
+        "field": "change_pct_5d",
+        "op": "<=",
+        "value": -0.1,
+        "family": "momentum"
+      },
+      {
+        "field": "open_gap",
+        "op": ">=",
+        "value": 0.02,
+        "family": "candle"
+      },
+      {
+        "field": "index_close_position",
+        "op": "<=",
+        "value": 0.2,
+        "family": "market"
+      }
+    ],
+    "logic": "三选二（命中至少2条）",
+    "prediction_cycle": "T日收盘发信号；T+1市场开盘入场；T+2市场开盘退出",
+    "up_definition": "exit_open > entry_open",
+    "mature_missing_policy": "成熟目标缺失、停牌或无有效开盘计错并保留分母"
+  },
+  "data_boundary": {
+    "historical_diagnostics": [
+      "2010-01-04..2018-12-31",
+      "2020-01-13..2026-09-29"
+    ],
+    "date_equal_basis": "entry_date cohort; signal_dates remains the signal-date support count",
+    "historical_use": "只作诊断，不调参、不删样本、不挑年份、不替代最终验证",
+    "final_validation": {
+      "status": "FROZEN_RULE_PENDING_36_MONTH_FINAL",
+      "signal_start": "2027-01-01",
+      "signal_end": "2029-12-31",
+      "stage_semantics": "three complete calendar years; pre-registered default because source freeze evidence is 2026-09-30 and the final window starts at the next calendar year",
+      "stages": [
+        {
+          "id": "2027",
+          "signal_start": "2027-01-01",
+          "signal_end": "2027-12-31"
+        },
+        {
+          "id": "2028",
+          "signal_start": "2028-01-01",
+          "signal_end": "2028-12-31"
+        },
+        {
+          "id": "2029",
+          "signal_start": "2029-01-01",
+          "signal_end": "2029-12-31"
+        }
+      ],
+      "prediction": "T close -> T+1 market-session open to T+2 market-session open",
+      "up_definition": "exit_open > entry_open; mature missing or suspended open counts wrong",
+      "nonoverlap": "same stock, entry_date strictly later than prior retained exit_date",
+      "required_support": {
+        "signals": 100,
+        "signal_dates": 30,
+        "symbols": 20
+      },
+      "required_accuracy": 0.65,
+      "finalized": false,
+      "window_ended": false,
+      "reason": "P4-VOTE-001 独立冻结登记完成；2027—2029 三个完整自然年为前瞻窗口。"
+    },
+    "final_observation_source": "未接入；没有读取封存验证集"
+  },
+  "incremental_conditions": {
+    "status": "未测试",
+    "new_development_data_used": false,
+    "predeclared_categories": [],
+    "parameter_ranges": {},
+    "combination_count": 0,
+    "final_data_used_for_selection": false,
+    "reason": "当前没有新的、事前登记的开发数据；不以历史或最终数据反向选择增量条件。"
+  },
+  "historical_diagnostics": {
+    "phase4_development_2020_2023": {
+      "source_summary": "results.vote[0] from phase4/bullish_group_results.json",
+      "raw_predictions": 727,
+      "fit_score": 0.56587,
+      "development_2024_2026_nonoverlap": {
+        "raw_predictions": 1360,
+        "predictions_nonoverlap": 1277,
+        "correct": 810,
+        "direction_accuracy": 0.6343,
+        "direction_wilson95_lower": 0.60752,
+        "direction_date_cluster95_lower": 0.55267,
+        "coverage_raw": 0.008248,
+        "eligible_denominator": 164881,
+        "symbols": 440,
+        "entry_dates": 142,
+        "top_symbol_share": 0.00783,
+        "top_date_share": 0.12843,
+        "unobservable_counted_wrong": 0,
+        "blocked_exits": 0,
+        "executable_long_positions": 1277,
+        "net_long_wins": 767,
+        "net_long_win_rate": 0.60063,
+        "net_long_wilson95_lower": 0.5735,
+        "mean_net_long_return": 0.006848
+      },
+      "development_years": {
+        "2024": {
+          "raw_predictions": 555,
+          "predictions_nonoverlap": 538,
+          "correct": 374,
+          "direction_accuracy": 0.69517,
+          "direction_wilson95_lower": 0.655,
+          "direction_date_cluster95_lower": 0.5732,
+          "coverage_raw": 0.011923,
+          "eligible_denominator": 46547,
+          "symbols": 312,
+          "entry_dates": 57,
+          "top_symbol_share": 0.01301,
+          "top_date_share": 0.30483,
+          "unobservable_counted_wrong": 0,
+          "blocked_exits": 0,
+          "executable_long_positions": 538,
+          "net_long_wins": 359,
+          "net_long_win_rate": 0.66729,
+          "net_long_wilson95_lower": 0.62641,
+          "mean_net_long_return": 0.011137
+        },
+        "2025": {
+          "raw_predictions": 309,
+          "predictions_nonoverlap": 286,
+          "correct": 159,
+          "direction_accuracy": 0.55594,
+          "direction_wilson95_lower": 0.498,
+          "direction_date_cluster95_lower": 0.4576,
+          "coverage_raw": 0.004489,
+          "eligible_denominator": 68840,
+          "symbols": 199,
+          "entry_dates": 46,
+          "top_symbol_share": 0.01748,
+          "top_date_share": 0.18531,
+          "unobservable_counted_wrong": 0,
+          "blocked_exits": 0,
+          "executable_long_positions": 286,
+          "net_long_wins": 148,
+          "net_long_win_rate": 0.51748,
+          "net_long_wilson95_lower": 0.45972,
+          "mean_net_long_return": 0.00305
+        },
+        "2026": {
+          "raw_predictions": 496,
+          "predictions_nonoverlap": 453,
+          "correct": 277,
+          "direction_accuracy": 0.61148,
+          "direction_wilson95_lower": 0.56584,
+          "direction_date_cluster95_lower": 0.45737,
+          "coverage_raw": 0.010021,
+          "eligible_denominator": 49494,
+          "symbols": 276,
+          "entry_dates": 39,
+          "top_symbol_share": 0.01325,
+          "top_date_share": 0.24062,
+          "unobservable_counted_wrong": 0,
+          "blocked_exits": 0,
+          "executable_long_positions": 453,
+          "net_long_wins": 260,
+          "net_long_win_rate": 0.57395,
+          "net_long_wilson95_lower": 0.52798,
+          "mean_net_long_return": 0.004153
+        }
+      },
+      "trigger_records_available": false,
+      "interpretation": "phase4 aggregate only; not used for selection or final validation"
+    },
+    "phase5_pit_2020_2023": {
+      "period": "phase5_pit_2020_2023",
+      "data_range": {
+        "signal_start": "2020-01-13",
+        "signal_end": "2023-12-27"
+      },
+      "statistics": {
+        "raw_trigger_count": 113,
+        "nonoverlap_signal_count": 104,
+        "correct": 66,
+        "accuracy": 0.634615,
+        "wilson_95": {
+          "lower": 0.53881,
+          "upper": 0.72083
+        },
+        "date_cluster_95": {
+          "lower": 0.5,
+          "upper": 0.750102,
+          "method": "date_cluster_bootstrap_95",
+          "clusters": 56,
+          "seed": 20260930,
+          "draws": 1000
+        },
+        "date_equal_accuracy": 0.587032,
+        "date_equal_basis": "entry_date",
+        "signal_dates": 56,
+        "entry_dates": 56,
+        "symbols": 28,
+        "top_date_share": 0.125,
+        "top_entry_date_share": 0.125,
+        "top_symbol_share": 0.096154,
+        "missing_target_or_unobservable": 0,
+        "suspended_or_nontrading_target": 0,
+        "blocked_exit": 0,
+        "eligible_event_count": 11643,
+        "same_date_baseline": {
+          "signal_count": 104,
+          "signal_dates": 56,
+          "entry_dates": 56,
+          "signal_accuracy": 0.634615,
+          "signal_date_equal_accuracy": 0.587032,
+          "all_eligible_baseline_event_weighted": 0.631225,
+          "all_eligible_baseline_date_equal": 0.54864,
+          "lift_event_weighted_pp": 0.339,
+          "lift_date_equal_pp": 3.839,
+          "bootstrap_lift_95": {
+            "lower_pp": -5.82,
+            "upper_pp": 7.323,
+            "method": "entry_date_cluster_bootstrap_95",
+            "seed": 20260930,
+            "draws": 1000
+          }
+        },
+        "years": {
+          "2020": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 22,
+            "correct": 15,
+            "accuracy": 0.681818,
+            "wilson_95": {
+              "lower": 0.473186,
+              "upper": 0.836394
+            },
+            "date_cluster_95": {
+              "lower": 0.5,
+              "upper": 0.842206,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 15,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.677778,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 15,
+            "entry_dates": 15,
+            "symbols": 15,
+            "top_date_share": 0.272727,
+            "top_entry_date_share": 0.272727,
+            "top_symbol_share": 0.181818,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2021": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 12,
+            "correct": 7,
+            "accuracy": 0.583333,
+            "wilson_95": {
+              "lower": 0.319511,
+              "upper": 0.80674
+            },
+            "date_cluster_95": {
+              "lower": null,
+              "upper": null,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 9
+            },
+            "date_equal_accuracy": 0.722222,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 9,
+            "entry_dates": 9,
+            "symbols": 9,
+            "top_date_share": 0.25,
+            "top_entry_date_share": 0.25,
+            "top_symbol_share": 0.25,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2022": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 46,
+            "correct": 26,
+            "accuracy": 0.565217,
+            "wilson_95": {
+              "lower": 0.422474,
+              "upper": 0.697907
+            },
+            "date_cluster_95": {
+              "lower": 0.406229,
+              "upper": 0.703704,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 22,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.486688,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 22,
+            "entry_dates": 22,
+            "symbols": 19,
+            "top_date_share": 0.152174,
+            "top_entry_date_share": 0.152174,
+            "top_symbol_share": 0.086957,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2023": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 24,
+            "correct": 18,
+            "accuracy": 0.75,
+            "wilson_95": {
+              "lower": 0.551006,
+              "upper": 0.880006
+            },
+            "date_cluster_95": {
+              "lower": 0.25,
+              "upper": 0.941176,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 10,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.55,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 10,
+            "entry_dates": 10,
+            "symbols": 16,
+            "top_date_share": 0.541667,
+            "top_entry_date_share": 0.541667,
+            "top_symbol_share": 0.208333,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          }
+        },
+        "trigger_record_count": 113
+      }
+    },
+    "phase5_pit_2024_2026": {
+      "period": "phase5_pit_2024_2026",
+      "data_range": {
+        "signal_start": "2024-01-02",
+        "signal_end": "2026-09-24"
+      },
+      "statistics": {
+        "raw_trigger_count": 216,
+        "nonoverlap_signal_count": 209,
+        "correct": 140,
+        "accuracy": 0.669856,
+        "wilson_95": {
+          "lower": 0.603539,
+          "upper": 0.730043
+        },
+        "date_cluster_95": {
+          "lower": 0.541867,
+          "upper": 0.760482,
+          "method": "date_cluster_bootstrap_95",
+          "clusters": 66,
+          "seed": 20260930,
+          "draws": 1000
+        },
+        "date_equal_accuracy": 0.55456,
+        "date_equal_basis": "entry_date",
+        "signal_dates": 66,
+        "entry_dates": 66,
+        "symbols": 80,
+        "top_date_share": 0.143541,
+        "top_entry_date_share": 0.143541,
+        "top_symbol_share": 0.033493,
+        "missing_target_or_unobservable": 0,
+        "suspended_or_nontrading_target": 0,
+        "blocked_exit": 0,
+        "eligible_event_count": 26021,
+        "same_date_baseline": {
+          "signal_count": 209,
+          "signal_dates": 66,
+          "entry_dates": 66,
+          "signal_accuracy": 0.669856,
+          "signal_date_equal_accuracy": 0.55456,
+          "all_eligible_baseline_event_weighted": 0.655135,
+          "all_eligible_baseline_date_equal": 0.53232,
+          "lift_event_weighted_pp": 1.472,
+          "lift_date_equal_pp": 2.224,
+          "bootstrap_lift_95": {
+            "lower_pp": -4.329,
+            "upper_pp": 8.223,
+            "method": "entry_date_cluster_bootstrap_95",
+            "seed": 20260930,
+            "draws": 1000
+          }
+        },
+        "years": {
+          "2024": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 93,
+            "correct": 64,
+            "accuracy": 0.688172,
+            "wilson_95": {
+              "lower": 0.588144,
+              "upper": 0.773271
+            },
+            "date_cluster_95": {
+              "lower": 0.484824,
+              "upper": 0.793829,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 29,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.561494,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 29,
+            "entry_dates": 29,
+            "symbols": 57,
+            "top_date_share": 0.322581,
+            "top_entry_date_share": 0.322581,
+            "top_symbol_share": 0.053763,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2025": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 43,
+            "correct": 24,
+            "accuracy": 0.55814,
+            "wilson_95": {
+              "lower": 0.411076,
+              "upper": 0.695667
+            },
+            "date_cluster_95": {
+              "lower": 0.36,
+              "upper": 0.755102,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 16,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.489347,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 16,
+            "entry_dates": 16,
+            "symbols": 35,
+            "top_date_share": 0.255814,
+            "top_entry_date_share": 0.255814,
+            "top_symbol_share": 0.069767,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2026": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 73,
+            "correct": 52,
+            "accuracy": 0.712329,
+            "wilson_95": {
+              "lower": 0.599945,
+              "upper": 0.803483
+            },
+            "date_cluster_95": {
+              "lower": 0.49273,
+              "upper": 0.852258,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 21,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.594671,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 21,
+            "entry_dates": 21,
+            "symbols": 52,
+            "top_date_share": 0.287671,
+            "top_entry_date_share": 0.287671,
+            "top_symbol_share": 0.082192,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          }
+        },
+        "trigger_record_count": 216
+      }
+    },
+    "phase6_older_2010_2018": {
+      "period": "phase6_older_2010_2018",
+      "data_range": {
+        "signal_start": "2011-01-18",
+        "signal_end": "2018-12-26"
+      },
+      "statistics": {
+        "raw_trigger_count": 309,
+        "nonoverlap_signal_count": 288,
+        "correct": 164,
+        "accuracy": 0.569444,
+        "wilson_95": {
+          "lower": 0.511714,
+          "upper": 0.625346
+        },
+        "date_cluster_95": {
+          "lower": 0.478234,
+          "upper": 0.658706,
+          "method": "date_cluster_bootstrap_95",
+          "clusters": 147,
+          "seed": 20260930,
+          "draws": 1000
+        },
+        "date_equal_accuracy": 0.561952,
+        "date_equal_basis": "entry_date",
+        "signal_dates": 147,
+        "entry_dates": 147,
+        "symbols": 81,
+        "top_date_share": 0.055556,
+        "top_entry_date_share": 0.055556,
+        "top_symbol_share": 0.0625,
+        "missing_target_or_unobservable": 3,
+        "suspended_or_nontrading_target": 3,
+        "blocked_exit": 2,
+        "eligible_event_count": 42559,
+        "same_date_baseline": {
+          "signal_count": 288,
+          "signal_dates": 147,
+          "entry_dates": 147,
+          "signal_accuracy": 0.569444,
+          "signal_date_equal_accuracy": 0.561952,
+          "all_eligible_baseline_event_weighted": 0.563478,
+          "all_eligible_baseline_date_equal": 0.55163,
+          "lift_event_weighted_pp": 0.597,
+          "lift_date_equal_pp": 1.032,
+          "bootstrap_lift_95": {
+            "lower_pp": -3.277,
+            "upper_pp": 4.358,
+            "method": "entry_date_cluster_bootstrap_95",
+            "seed": 20260930,
+            "draws": 1000
+          }
+        },
+        "years": {
+          "2010": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 0,
+            "correct": 0,
+            "accuracy": null,
+            "wilson_95": {
+              "lower": null,
+              "upper": null
+            },
+            "date_cluster_95": {
+              "lower": null,
+              "upper": null,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 0
+            },
+            "date_equal_accuracy": null,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 0,
+            "entry_dates": 0,
+            "symbols": 0,
+            "top_date_share": null,
+            "top_entry_date_share": null,
+            "top_symbol_share": null,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2011": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 50,
+            "correct": 29,
+            "accuracy": 0.58,
+            "wilson_95": {
+              "lower": 0.442334,
+              "upper": 0.70625
+            },
+            "date_cluster_95": {
+              "lower": 0.344778,
+              "upper": 0.822255,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 22,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.580808,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 22,
+            "entry_dates": 22,
+            "symbols": 21,
+            "top_date_share": 0.18,
+            "top_entry_date_share": 0.18,
+            "top_symbol_share": 0.16,
+            "missing_target_or_unobservable": 2,
+            "suspended_or_nontrading_target": 2,
+            "blocked_exit": 1
+          },
+          "2012": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 25,
+            "correct": 12,
+            "accuracy": 0.48,
+            "wilson_95": {
+              "lower": 0.300313,
+              "upper": 0.665015
+            },
+            "date_cluster_95": {
+              "lower": 0.190476,
+              "upper": 0.769286,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 15,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.5,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 15,
+            "entry_dates": 15,
+            "symbols": 10,
+            "top_date_share": 0.16,
+            "top_entry_date_share": 0.16,
+            "top_symbol_share": 0.32,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2013": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 21,
+            "correct": 11,
+            "accuracy": 0.52381,
+            "wilson_95": {
+              "lower": 0.323695,
+              "upper": 0.71656
+            },
+            "date_cluster_95": {
+              "lower": 0.3125,
+              "upper": 0.722222,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 13,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.558974,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 13,
+            "entry_dates": 13,
+            "symbols": 13,
+            "top_date_share": 0.238095,
+            "top_entry_date_share": 0.238095,
+            "top_symbol_share": 0.142857,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2014": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 20,
+            "correct": 15,
+            "accuracy": 0.75,
+            "wilson_95": {
+              "lower": 0.531299,
+              "upper": 0.888138
+            },
+            "date_cluster_95": {
+              "lower": 0.523758,
+              "upper": 0.947368,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 13,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.717949,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 13,
+            "entry_dates": 13,
+            "symbols": 17,
+            "top_date_share": 0.15,
+            "top_entry_date_share": 0.15,
+            "top_symbol_share": 0.1,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2015": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 39,
+            "correct": 23,
+            "accuracy": 0.589744,
+            "wilson_95": {
+              "lower": 0.434186,
+              "upper": 0.729207
+            },
+            "date_cluster_95": {
+              "lower": 0.290323,
+              "upper": 0.789529,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 22,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.454545,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 22,
+            "entry_dates": 22,
+            "symbols": 25,
+            "top_date_share": 0.179487,
+            "top_entry_date_share": 0.179487,
+            "top_symbol_share": 0.230769,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2016": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 34,
+            "correct": 26,
+            "accuracy": 0.764706,
+            "wilson_95": {
+              "lower": 0.600039,
+              "upper": 0.87563
+            },
+            "date_cluster_95": {
+              "lower": 0.5,
+              "upper": 0.89801,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 19,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.622807,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 19,
+            "entry_dates": 19,
+            "symbols": 26,
+            "top_date_share": 0.235294,
+            "top_entry_date_share": 0.235294,
+            "top_symbol_share": 0.147059,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2017": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 24,
+            "correct": 10,
+            "accuracy": 0.416667,
+            "wilson_95": {
+              "lower": 0.244676,
+              "upper": 0.611653
+            },
+            "date_cluster_95": {
+              "lower": 0.2,
+              "upper": 0.666667,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 13,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.435897,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 13,
+            "entry_dates": 13,
+            "symbols": 22,
+            "top_date_share": 0.208333,
+            "top_entry_date_share": 0.208333,
+            "top_symbol_share": 0.083333,
+            "missing_target_or_unobservable": 0,
+            "suspended_or_nontrading_target": 0,
+            "blocked_exit": 0
+          },
+          "2018": {
+            "raw_trigger_count": null,
+            "nonoverlap_signal_count": 75,
+            "correct": 38,
+            "accuracy": 0.506667,
+            "wilson_95": {
+              "lower": 0.395984,
+              "upper": 0.6167
+            },
+            "date_cluster_95": {
+              "lower": 0.374947,
+              "upper": 0.686331,
+              "method": "date_cluster_bootstrap_95",
+              "clusters": 30,
+              "seed": 20260930,
+              "draws": 1000
+            },
+            "date_equal_accuracy": 0.607639,
+            "date_equal_basis": "entry_date",
+            "signal_dates": 30,
+            "entry_dates": 30,
+            "symbols": 41,
+            "top_date_share": 0.213333,
+            "top_entry_date_share": 0.213333,
+            "top_symbol_share": 0.053333,
+            "missing_target_or_unobservable": 1,
+            "suspended_or_nontrading_target": 1,
+            "blocked_exit": 1
+          }
+        },
+        "trigger_record_count": 309
+      }
+    }
+  },
+  "final_validation": {
+    "window": {
+      "status": "FROZEN_RULE_PENDING_36_MONTH_FINAL",
+      "signal_start": "2027-01-01",
+      "signal_end": "2029-12-31",
+      "stage_semantics": "three complete calendar years; pre-registered default because source freeze evidence is 2026-09-30 and the final window starts at the next calendar year",
+      "stages": [
+        {
+          "id": "2027",
+          "signal_start": "2027-01-01",
+          "signal_end": "2027-12-31"
+        },
+        {
+          "id": "2028",
+          "signal_start": "2028-01-01",
+          "signal_end": "2028-12-31"
+        },
+        {
+          "id": "2029",
+          "signal_start": "2029-01-01",
+          "signal_end": "2029-12-31"
+        }
+      ],
+      "prediction": "T close -> T+1 market-session open to T+2 market-session open",
+      "up_definition": "exit_open > entry_open; mature missing or suspended open counts wrong",
+      "nonoverlap": "same stock, entry_date strictly later than prior retained exit_date",
+      "required_support": {
+        "signals": 100,
+        "signal_dates": 30,
+        "symbols": 20
+      },
+      "required_accuracy": 0.65,
+      "finalized": false,
+      "window_ended": false,
+      "reason": "P4-VOTE-001 独立冻结登记完成；2027—2029 三个完整自然年为前瞻窗口。"
+    },
+    "statistics": {
+      "status": "待最终验证",
+      "observations": 0,
+      "mature_nonoverlap_signals": 0,
+      "mature_signal_dates": 0,
+      "mature_symbols": 0,
+      "correct": 0,
+      "accuracy": null,
+      "date_equal_accuracy": null,
+      "same_date_baseline": null,
+      "confidence_interval_95": {
+        "lower": null,
+        "upper": null
+      },
+      "date_concentration": null,
+      "stock_concentration": null,
+      "missing_targets": 0,
+      "suspended_targets": 0,
+      "target_observation_note": "无最终观察记录；0 表示尚未观察，不表示已证明不存在缺失或停牌。",
+      "coverage_complete": false,
+      "maturity_complete": false,
+      "stage_statistics": {
+        "2027": {
+          "signals": 0,
+          "dates": 0,
+          "symbols": 0,
+          "correct": 0,
+          "accuracy": null
+        },
+        "2028": {
+          "signals": 0,
+          "dates": 0,
+          "symbols": 0,
+          "correct": 0,
+          "accuracy": null
+        },
+        "2029": {
+          "signals": 0,
+          "dates": 0,
+          "symbols": 0,
+          "correct": 0,
+          "accuracy": null
+        }
+      }
+    },
+    "status": "待最终验证",
+    "failure_reasons": [
+      "真实前瞻观测记录为0。",
+      "36个月窗口尚未结束，完整市场日覆盖、成熟目标和逐触发记录均未形成。",
+      "当前尚未进入终局门槛判定；窗口结束后若支持量不足才标记支持不足。"
+    ]
+  },
+  "artifacts": {
+    "historical_trigger_records": "HISTORICAL_TRIGGER_RECORDS.csv",
+    "final_trigger_records": "FINAL_TRIGGER_RECORDS.csv",
+    "historical_trigger_record_count": 638,
+    "final_trigger_record_count": 0,
+    "stock_scope": "phase5/pit_assignment.csv",
+    "stock_scope_count": 100,
+    "stock_scope_sha256": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950"
+  },
+  "input_sha256": {
+    "phase4_rule_source": "9c4bd808c4246a13668d2c5db83a45f7e3ab336a72046a34b407c85b14af29cc",
+    "phase5_frozen_result": "b4501775cb5e57982648624b6400d3312be0a2a5e80467fbc77e71631651d8a7",
+    "phase6_historical_diagnostic": "8dc21e08f7605d9e76777c1cd6e185461ec41a5d80bb1863887be1fc4b81e200",
+    "phase5_quotes": "789d5137b853e864b42c2992bfdb276a1e4b3eb2801296b0069490d77e358c98",
+    "phase5_assignment": "fa6b9a06e3ca0f79ccf0a3757961a03e68cc508b7dab770be2ec87102f7c3950",
+    "phase5_index": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24",
+    "phase6_quotes": "e51492e0d7db91a2cc3dedb10a43f912f0529fd3eb18b74eb03a3c5f7b7ca65f",
+    "phase6_assignment": "7e15889699f89f8bcfef71d8994c0c3ca45e9b9beae4aee137524bbce6bef021",
+    "phase6_index": "88286672b859b9801db25ae9b1f9893f6a5b6b2de83105e807214e7112efe65d",
+    "phase5_calculator": "14db8b3549c1c1ded0b648ba68e037316d36affe8e8b6baf8bb143f20e691044",
+    "phase6_calculator": "812594cd5785b8b86272121d8739242cc7d944b8ebca85e4c877489f41ee7232",
+    "universe_calculator": "f7b1d9910a0c71deabc4d9516c309d71b2fa24b6e7eb051adf96897e96ddcc30",
+    "factor_calculator": "597e22efbe060febc321d6c5ebc63710a74d0c620a74173ae0d695e283d2ef0d"
+  },
+  "code_sha256": {
+    "generate_report.py": "75cc0b081671b87e0cc05c3240949182760c526594d0f819a651d94ab199325e",
+    "final_evaluator.py": "2e374ac477ddf2758e589f78bf4f11f3b01e815b0580ffaa18796e1bae8bc49d",
+    "forward_ledger.py": "d6671fc961a44706233b93377fa2095c9e7df402efa46f540e505e5bca068b1c"
+  },
+  "result_sha256": "64d1db0a0503589d4ff1aa539ae5de1883e03a3910b161dfd29e19811355018a"
+}

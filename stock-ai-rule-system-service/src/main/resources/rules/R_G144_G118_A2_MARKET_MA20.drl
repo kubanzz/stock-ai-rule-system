@@ -1,0 +1,20 @@
+import java.math.BigDecimal;
+import com.jx.tracker.rule.engine.StockFactorFact;
+
+rule "R_G144_G118_A2_MARKET_MA20"
+when
+    $f : StockFactorFact(
+        matches("research_rebound_version", "eq", "g144-g118-v1"),
+        matches("research_rebound_eligible", "eq", "true"),
+        matches("research_volatility_20d", "lte", "0.02"),
+        matches("research_return_1d", "lte", "-0.03"),
+        matches("research_intraday_return", "lte", "-0.03"),
+        matches("research_volume_ratio_5d", "lte", "1"),
+        matches("research_hs300_distance_ma20", "lt", "0")
+    )
+then
+    // 同一方案内三分支总分上限55；命中次数不代表独立证据或预测胜率。
+    $f.addBullishScore(new BigDecimal("55").subtract($f.getBullishScore()).max(BigDecimal.ZERO));
+    $f.addTriggeredRule("R_G144_G118_A2_MARKET_MA20");
+    $f.addExplanation("G144/G118共用：低波动缩量下跌＋沪深300收盘低于20日均线；固定125股，T收盘判断T+1开盘至T+2开盘；辅助看涨信号，55为评分并非上涨概率，未达到跨年稳定65%。");
+end

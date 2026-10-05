@@ -2,6 +2,7 @@ package com.jx.tracker.service.impl;
 
 import com.jx.tracker.domain.vo.StockConsoleVo;
 import com.jx.tracker.exception.ServiceException;
+import com.jx.tracker.mapper.SignalBackfillRunMapper;
 import com.jx.tracker.service.StockWatchlistService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,6 +29,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 })
 @ActiveProfiles("test")
 class StockWatchlistPersistenceTest {
+
+    /**
+     * The test owns only the watchlist tables. Mock the unrelated restart
+     * recovery mapper so SignalBackfillService's ApplicationReady listener
+     * does not require Flyway V14 during this focused H2 persistence test.
+     */
+    @MockBean
+    private SignalBackfillRunMapper signalBackfillRunMapper;
 
     @Autowired
     private StockWatchlistService service;

@@ -1,0 +1,25 @@
+{
+  "groupCode": "P4-VOTE-001",
+  "groupName": "P4-VOTE-001：三选二看涨投票",
+  "description": "已写入配置，草稿待启用；固定三条件至少命中两条。每条30分，评分不是上涨概率；pending_final，辅助决策信号。",
+  "status": "draft",
+  "aggregation": "WEIGHTED",
+  "minMatchedRules": 2,
+  "members": [
+    {
+      "ruleCode": "R_P4_VOTE_001_CHANGE_PCT_5D",
+      "weight": 1,
+      "required": false
+    },
+    {
+      "ruleCode": "R_P4_VOTE_001_OPEN_GAP",
+      "weight": 1,
+      "required": false
+    },
+    {
+      "ruleCode": "R_P4_VOTE_001_INDEX_CLOSE_POSITION",
+      "weight": 1,
+      "required": false
+    }
+  ]
+}

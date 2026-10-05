@@ -1,0 +1,78 @@
+{
+  "purpose": "implementation parity with frozen historical raw data, not final validation or condition selection",
+  "source_sha256": {
+    "research/normal_stock_65/phase5/pit_unadjusted_baostock.csv": "789d5137b853e864b42c2992bfdb276a1e4b3eb2801296b0069490d77e358c98",
+    "research/normal_stock_65/phase4/hs300_unadjusted_baostock.csv": "67d0e46acf1f9d9095592a3d4e98baac77e902a95f6633d20fe803d2444edb24"
+  },
+  "generator": "Python pandas 1.1.3; phase5.stress_frozen_vote.event_frame; 252+ full observed history through T",
+  "samples": [
+    {
+      "symbol": "600570.SH",
+      "signal_date": "2020-07-20",
+      "stock_csv": "p4-vote-001-parity-stock-0.csv",
+      "index_csv": "p4-vote-001-parity-index-0.csv",
+      "expected": {
+        "eligible": true,
+        "change_pct_5d": -0.10362257792754836,
+        "open_gap": 0.03899748403328829,
+        "index_close_position": 0.9889075136447397,
+        "volume_ratio_5d": 0.761051181402207,
+        "volatility_20d": 0.03257168815452269,
+        "max_abs_return_20d": 0.07532467532467535,
+        "median_amount_20d": 2385309052.0
+      },
+      "daily_is_st": "0"
+    },
+    {
+      "symbol": "600418.SH",
+      "signal_date": "2022-03-10",
+      "stock_csv": "p4-vote-001-parity-stock-1.csv",
+      "index_csv": "p4-vote-001-parity-index-1.csv",
+      "expected": {
+        "eligible": true,
+        "change_pct_5d": -0.12049963262307117,
+        "open_gap": 0.026382978723404227,
+        "index_close_position": 0.09179629939807568,
+        "volume_ratio_5d": 0.7932118342354451,
+        "volatility_20d": 0.03031435823367486,
+        "max_abs_return_20d": 0.07153502235469444,
+        "median_amount_20d": 531530509.545
+      },
+      "daily_is_st": "0"
+    },
+    {
+      "symbol": "603998.SH",
+      "signal_date": "2025-11-21",
+      "stock_csv": "p4-vote-001-parity-stock-2.csv",
+      "index_csv": "p4-vote-001-parity-index-2.csv",
+      "expected": {
+        "eligible": true,
+        "change_pct_5d": -0.11990776325903152,
+        "open_gap": -0.006734006734006703,
+        "index_close_position": 0.005763474168624417,
+        "volume_ratio_5d": 0.5923350069282419,
+        "volatility_20d": 0.022081669211043743,
+        "max_abs_return_20d": 0.049193548387096664,
+        "median_amount_20d": 140983554.75
+      },
+      "daily_is_st": "0"
+    },
+    {
+      "symbol": "603998.SH",
+      "signal_date": "2024-12-10",
+      "stock_csv": "p4-vote-001-parity-stock-3.csv",
+      "index_csv": "p4-vote-001-parity-index-3.csv",
+      "expected": {
+        "eligible": true,
+        "change_pct_5d": -0.009734513274336387,
+        "open_gap": 0.022321428571428603,
+        "index_close_position": 0.06095539095974162,
+        "volume_ratio_5d": 0.9433892365099257,
+        "volatility_20d": 0.02174814318506519,
+        "max_abs_return_20d": 0.05345622119815663,
+        "median_amount_20d": 68093689.44
+      },
+      "daily_is_st": "0"
+    }
+  ]
+}

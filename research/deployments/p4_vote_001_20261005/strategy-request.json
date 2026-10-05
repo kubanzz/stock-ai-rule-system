@@ -1,0 +1,18 @@
+{
+  "strategyCode": "P4-VOTE-001",
+  "strategyName": "P4-VOTE-001：冻结PIT100三选二看涨方案",
+  "description": "已应用（已写入系统配置），草稿待启用；pending_final。固定PIT100、原正常股资格、三选二；T收盘预测T+1开盘至T+2开盘，exit_open>entry_open为上涨。最终窗口2027-01-01至2029-12-31；评分非胜率，仅为辅助决策信号，不保证收益。",
+  "status": "draft",
+  "bullishThreshold": 60,
+  "bearishThreshold": 60,
+  "riskThreshold": 80,
+  "stockPoolType": "watchlist",
+  "stockPoolCode": "custom-2d568d16b60c49f5ab85fa403568f21e",
+  "groups": [
+    {
+      "groupCode": "P4-VOTE-001",
+      "weight": 1,
+      "required": true
+    }
+  ]
+}

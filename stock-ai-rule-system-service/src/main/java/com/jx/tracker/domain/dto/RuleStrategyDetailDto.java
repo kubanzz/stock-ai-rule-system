@@ -15,5 +15,9 @@ public class RuleStrategyDetailDto {
     private BigDecimal bullishThreshold;
     private BigDecimal bearishThreshold;
     private BigDecimal riskThreshold;
+    private String stockPoolType;
+    private String stockPoolCode;
+    private String stockPoolName;
+    private List<String> stockPoolSymbols;
     private List<RuleStrategyGroupDto> groups;
 }

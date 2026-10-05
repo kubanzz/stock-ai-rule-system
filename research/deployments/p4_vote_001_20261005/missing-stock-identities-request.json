@@ -1,0 +1,47 @@
+[
+  {
+    "symbol": "000780.SZ",
+    "name": "ST平能",
+    "market": "A股",
+    "exchange": "SZ",
+    "status": "delisted",
+    "dataSource": "research:archived_pit_identity",
+    "lastSyncTime": "2026-10-05T15:00:00"
+  },
+  {
+    "symbol": "002118.SZ",
+    "name": "*ST紫鑫",
+    "market": "A股",
+    "exchange": "SZ",
+    "status": "delisted",
+    "dataSource": "research:archived_pit_identity",
+    "lastSyncTime": "2026-10-05T15:00:00"
+  },
+  {
+    "symbol": "002619.SZ",
+    "name": "*ST艾格",
+    "market": "A股",
+    "exchange": "SZ",
+    "status": "delisted",
+    "dataSource": "research:archived_pit_identity",
+    "lastSyncTime": "2026-10-05T15:00:00"
+  },
+  {
+    "symbol": "600146.SH",
+    "name": "退市环球",
+    "market": "A股",
+    "exchange": "SH",
+    "status": "delisted",
+    "dataSource": "research:archived_pit_identity",
+    "lastSyncTime": "2026-10-05T15:00:00"
+  },
+  {
+    "symbol": "600647.SH",
+    "name": "退市同达",
+    "market": "A股",
+    "exchange": "SH",
+    "status": "delisted",
+    "dataSource": "research:archived_pit_identity",
+    "lastSyncTime": "2026-10-05T15:00:00"
+  }
+]

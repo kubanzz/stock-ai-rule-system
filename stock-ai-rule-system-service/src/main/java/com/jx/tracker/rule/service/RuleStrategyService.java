@@ -10,19 +10,29 @@ import com.jx.tracker.domain.dto.RuleStrategyGroupDto;
 import com.jx.tracker.domain.entity.RuleDefinition;
 import com.jx.tracker.domain.entity.RuleStrategy;
 import com.jx.tracker.domain.entity.RuleStrategyVersion;
+import com.jx.tracker.domain.entity.StockWatchlist;
+import com.jx.tracker.domain.entity.StockWatchlistItem;
 import com.jx.tracker.domain.enums.RuleFormat;
 import com.jx.tracker.domain.enums.RuleLifecycleStatus;
 import com.jx.tracker.exception.ServiceException;
 import com.jx.tracker.mapper.RuleDefinitionMapper;
+import com.jx.tracker.mapper.RuleOperationLogMapper;
 import com.jx.tracker.mapper.RuleStrategyMapper;
 import com.jx.tracker.mapper.RuleStrategyVersionMapper;
+import com.jx.tracker.mapper.StockWatchlistMapper;
+import com.jx.tracker.mapper.StockWatchlistItemMapper;
+import com.jx.tracker.market.data.util.SymbolNormalizer;
+import com.jx.tracker.verification.ResearchVerificationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -30,23 +40,70 @@ import java.util.regex.Pattern;
 public class RuleStrategyService {
     private static final Pattern CODE = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
     private static final Set<String> STATUSES = Set.of("draft", "active", "disabled");
+    private static final String P4_CODE = "P4-VOTE-001";
+    private static final String P4_VERSION = "p4-vote-001-v1";
+    private static final Set<String> P4_RULE_CODES = Set.of(
+            "R_P4_VOTE_001_CHANGE_PCT_5D", "R_P4_VOTE_001_OPEN_GAP",
+            "R_P4_VOTE_001_INDEX_CLOSE_POSITION");
+    private static final Set<String> RESEARCH_RULE_CODES = Set.of(
+            "R_G144_A1_MARKET_LOW", "R_G118_A1_MARKET_MA60", "R_G144_G118_A2_MARKET_MA20",
+            "R_P4_VOTE_001_CHANGE_PCT_5D", "R_P4_VOTE_001_OPEN_GAP",
+            "R_P4_VOTE_001_INDEX_CLOSE_POSITION");
 
     private final RuleStrategyMapper strategyMapper;
     private final RuleStrategyVersionMapper versionMapper;
     private final RuleGroupService groupService;
     private final RuleDefinitionMapper definitionMapper;
     private final ObjectMapper objectMapper;
+    private final StockWatchlistMapper watchlistMapper;
+    private final StockWatchlistItemMapper watchlistItemMapper;
+    private final ResearchVerificationService researchVerificationService;
 
     public RuleStrategyService(RuleStrategyMapper strategyMapper,
                                RuleStrategyVersionMapper versionMapper,
                                RuleGroupService groupService,
                                RuleDefinitionMapper definitionMapper,
                                ObjectMapper objectMapper) {
+        this(strategyMapper, versionMapper, groupService, definitionMapper, objectMapper, null, null, null, null);
+    }
+
+    public RuleStrategyService(RuleStrategyMapper strategyMapper,
+                               RuleStrategyVersionMapper versionMapper,
+                               RuleGroupService groupService,
+                               RuleDefinitionMapper definitionMapper,
+                               ObjectMapper objectMapper, RuleOperationLogMapper operationLogMapper) {
+        this(strategyMapper, versionMapper, groupService, definitionMapper, objectMapper,
+                operationLogMapper, null, null, null);
+    }
+
+    @Autowired
+    public RuleStrategyService(RuleStrategyMapper strategyMapper,
+                               RuleStrategyVersionMapper versionMapper,
+                               RuleGroupService groupService,
+                               RuleDefinitionMapper definitionMapper,
+                               ObjectMapper objectMapper, RuleOperationLogMapper operationLogMapper,
+                               StockWatchlistMapper watchlistMapper,
+                               StockWatchlistItemMapper watchlistItemMapper,
+                               ResearchVerificationService researchVerificationService) {
         this.strategyMapper = strategyMapper;
         this.versionMapper = versionMapper;
         this.groupService = groupService;
         this.definitionMapper = definitionMapper;
         this.objectMapper = objectMapper;
+        this.watchlistMapper = watchlistMapper;
+        this.watchlistItemMapper = watchlistItemMapper;
+        this.researchVerificationService = researchVerificationService;
+    }
+
+    public RuleStrategyService(RuleStrategyMapper strategyMapper,
+                               RuleStrategyVersionMapper versionMapper,
+                               RuleGroupService groupService,
+                               RuleDefinitionMapper definitionMapper,
+                               ObjectMapper objectMapper, RuleOperationLogMapper operationLogMapper,
+                               StockWatchlistMapper watchlistMapper,
+                               StockWatchlistItemMapper watchlistItemMapper) {
+        this(strategyMapper, versionMapper, groupService, definitionMapper, objectMapper,
+                operationLogMapper, watchlistMapper, watchlistItemMapper, null);
     }
 
     public List<RuleStrategyDetailDto> listStrategies(String status) {
@@ -107,7 +164,11 @@ public class RuleStrategyService {
 
     @Transactional
     public RuleStrategyDetailDto create(RuleStrategyDetailDto request) {
-        RuleStrategyDetailDto detail = normalize(request, null);
+        return create(request, true);
+    }
+
+    private RuleStrategyDetailDto create(RuleStrategyDetailDto request, boolean refreshStockPool) {
+        RuleStrategyDetailDto detail = normalize(request, null, refreshStockPool);
         if ("active".equals(detail.getStatus())) {
             deactivateCurrent(null);
         }
@@ -141,7 +202,7 @@ public class RuleStrategyService {
         if (request.getRiskThreshold() == null) {
             request.setRiskThreshold(row.getRiskThreshold());
         }
-        RuleStrategyDetailDto detail = normalize(request, row);
+        RuleStrategyDetailDto detail = normalize(request, row, request.getStockPoolType() != null);
         if ("active".equals(detail.getStatus())) {
             deactivateCurrent(code);
         }
@@ -157,7 +218,7 @@ public class RuleStrategyService {
         detail.setStrategyName(newName);
         detail.setStatus("draft");
         detail.setVersion(null);
-        return create(detail);
+        return create(detail, false);
     }
 
     @Transactional
@@ -170,7 +231,7 @@ public class RuleStrategyService {
         RuleStrategyDetailDto detail = read(row);
         detail.setStatus(status);
         if ("active".equals(status)) {
-            detail = normalize(detail, row);
+            detail = normalize(detail, row, false);
             deactivateCurrent(code);
         } else {
             detail.setVersion(nextVersion(row.getVersion()));
@@ -180,7 +241,8 @@ public class RuleStrategyService {
         return detail;
     }
 
-    private RuleStrategyDetailDto normalize(RuleStrategyDetailDto request, RuleStrategy existing) {
+    private RuleStrategyDetailDto normalize(RuleStrategyDetailDto request, RuleStrategy existing,
+                                            boolean refreshStockPool) {
         if (request == null) {
             throw badRequest("应用方案配置不能为空");
         }
@@ -200,6 +262,7 @@ public class RuleStrategyService {
             throw badRequest("应用方案至少需要一个规则组");
         }
         Set<String> groupCodes = new HashSet<>();
+        Map<String, RuleDefinition> definitions = new HashMap<>();
         for (RuleStrategyGroupDto selected : groups) {
             if (selected == null || selected.getGroupCode() == null
                     || !groupCodes.add(selected.getGroupCode())) {
@@ -222,7 +285,16 @@ public class RuleStrategyService {
                             || Boolean.FALSE.equals(rule.getEnabled())) {
                         throw badRequest("启用应用方案前，正式规则必须已启用：" + member.getRuleCode());
                     }
+                    definitions.put(member.getRuleCode(), rule);
                 }
+            }
+        }
+        if ("active".equals(status) && (isP4Application(code, groups, definitions)
+                || requiresResearchVerification(resultCode(code, request, existing), groups))) {
+            if (researchVerificationService == null
+                    || !researchVerificationService.isVerifiedStrategy(resultCode(code, request, existing))) {
+                throw badRequest("研究方案必须先完成独立最终测试并登记为 verified，不能直接启用："
+                        + resultCode(code, request, existing));
             }
         }
         RuleStrategyDetailDto result = new RuleStrategyDetailDto();
@@ -234,8 +306,82 @@ public class RuleStrategyService {
         result.setBullishThreshold(threshold(request.getBullishThreshold(), "看涨", new BigDecimal("55")));
         result.setBearishThreshold(threshold(request.getBearishThreshold(), "看跌", new BigDecimal("60")));
         result.setRiskThreshold(threshold(request.getRiskThreshold(), "高风险", new BigDecimal("80")));
+        copyStockPool(request, existing, refreshStockPool, result);
         result.setGroups(groups);
         return result;
+    }
+
+    private String resultCode(String code, RuleStrategyDetailDto request, RuleStrategy existing) {
+        return existing == null ? code : existing.getStrategyCode();
+    }
+
+    private boolean isP4Application(String code, List<RuleStrategyGroupDto> groups,
+                                    Map<String, RuleDefinition> definitions) {
+        return P4_CODE.equals(code) || groups.stream().anyMatch(selected ->
+                P4_CODE.equals(selected.getGroupCode()) || selected.getGroup().getMembers().stream()
+                        .anyMatch(member -> P4_RULE_CODES.contains(member.getRuleCode())))
+                || definitions.values().stream().anyMatch(rule -> rule.getRuleContent() != null
+                        && (rule.getRuleContent().contains(P4_VERSION)
+                            || rule.getRuleContent().contains("p4_vote_001_")));
+    }
+
+    private boolean requiresResearchVerification(String strategyCode, List<RuleStrategyGroupDto> groups) {
+        if (strategyCode != null && (strategyCode.startsWith("RS_") || strategyCode.startsWith("RESEARCH_"))) {
+            return true;
+        }
+        return groups != null && groups.stream().filter(java.util.Objects::nonNull)
+                .map(RuleStrategyGroupDto::getGroup).filter(java.util.Objects::nonNull)
+                .flatMap(group -> group.getMembers() == null ? java.util.stream.Stream.empty() : group.getMembers().stream())
+                .filter(java.util.Objects::nonNull)
+                .map(RuleGroupMemberDto::getRuleCode)
+                .anyMatch(RESEARCH_RULE_CODES::contains);
+    }
+
+    private void copyStockPool(RuleStrategyDetailDto request, RuleStrategy existing,
+                               boolean refreshStockPool, RuleStrategyDetailDto result) {
+        RuleStrategyDetailDto source = !refreshStockPool && request.getStockPoolType() == null
+                && existing != null ? read(existing) : request;
+        String type = source.getStockPoolType() == null ? "all" : source.getStockPoolType().trim();
+        if ("all".equals(type)) {
+            result.setStockPoolType("all");
+            result.setStockPoolCode(null);
+            result.setStockPoolName(null);
+            result.setStockPoolSymbols(List.of());
+            return;
+        }
+        if (!"watchlist".equals(type)) {
+            throw badRequest("适用股票范围仅支持 all、watchlist");
+        }
+        result.setStockPoolType("watchlist");
+        if (!refreshStockPool) {
+            // Copies and status changes retain the version's exact stock universe.
+            result.setStockPoolCode(source.getStockPoolCode());
+            result.setStockPoolName(source.getStockPoolName());
+            result.setStockPoolSymbols(source.getStockPoolSymbols() == null
+                    ? List.of() : List.copyOf(source.getStockPoolSymbols()));
+            return;
+        }
+        String poolCode = source.getStockPoolCode() == null ? null : source.getStockPoolCode().trim();
+        if (poolCode == null || poolCode.isBlank()) {
+            throw badRequest("请选择应用方案适用的股票分组");
+        }
+        StockWatchlist pool = watchlistMapper.selectOne(new LambdaQueryWrapper<StockWatchlist>()
+                .eq(StockWatchlist::getPoolCode, poolCode).last("FOR UPDATE"));
+        if (pool == null) {
+            throw badRequest("股票分组不存在：" + poolCode);
+        }
+        List<String> symbols = watchlistItemMapper.selectList(new LambdaQueryWrapper<StockWatchlistItem>()
+                        .eq(StockWatchlistItem::getWatchlistId, pool.getId())
+                        .orderByAsc(StockWatchlistItem::getSymbol))
+                .stream().map(StockWatchlistItem::getSymbol)
+                .filter(symbol -> symbol != null && !symbol.isBlank())
+                .map(SymbolNormalizer::normalize).distinct().sorted().toList();
+        if (symbols.isEmpty()) {
+            throw badRequest("股票分组为空，请先添加股票：" + poolCode);
+        }
+        result.setStockPoolCode(pool.getPoolCode());
+        result.setStockPoolName(pool.getPoolName());
+        result.setStockPoolSymbols(symbols);
     }
 
     private void deactivateCurrent(String exceptCode) {
@@ -301,7 +447,18 @@ public class RuleStrategyService {
 
     private RuleStrategyDetailDto readSnapshot(String json, String code) {
         try {
-            return objectMapper.readValue(json, RuleStrategyDetailDto.class);
+            RuleStrategyDetailDto detail = objectMapper.readValue(json, RuleStrategyDetailDto.class);
+            if (detail.getStockPoolType() == null) {
+                detail.setStockPoolType("all");
+            }
+            if ("all".equals(detail.getStockPoolType())) {
+                detail.setStockPoolCode(null);
+                detail.setStockPoolName(null);
+                detail.setStockPoolSymbols(List.of());
+            } else if (detail.getStockPoolSymbols() == null) {
+                detail.setStockPoolSymbols(List.of());
+            }
+            return detail;
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("应用方案快照无法解析：" + code, e);
         }

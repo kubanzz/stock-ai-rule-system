@@ -1,0 +1,15 @@
+import java.math.BigDecimal;
+import com.jx.tracker.rule.engine.StockFactorFact;
+
+rule "R_P4_VOTE_001_CHANGE_PCT_5D"
+when
+    $f : StockFactorFact(
+        matches("p4_vote_001_version", "eq", "p4-vote-001-v1"),
+        matches("p4_vote_001_eligible", "eq", "true"),
+        matches("p4_vote_001_change_pct_5d", "lte", "-0.10")
+    )
+then
+    $f.addBullishScore(new BigDecimal("30"));
+    $f.addTriggeredRule("R_P4_VOTE_001_CHANGE_PCT_5D");
+    $f.addExplanation("P4-VOTE-001：近5个有效观测日下跌至少10%；三项至少满足两项才形成看涨辅助信号。T日收盘判断T+1开盘至T+2开盘；30为规则评分，不是上涨概率。已写入系统，待启用；稳定预测价值待36个月最终验证，不保证收益。");
+end

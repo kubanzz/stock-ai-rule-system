@@ -1,0 +1,15 @@
+import java.math.BigDecimal;
+import com.jx.tracker.rule.engine.StockFactorFact;
+
+rule "R_P4_VOTE_001_INDEX_CLOSE_POSITION"
+when
+    $f : StockFactorFact(
+        matches("p4_vote_001_version", "eq", "p4-vote-001-v1"),
+        matches("p4_vote_001_eligible", "eq", "true"),
+        matches("p4_vote_001_index_close_position", "lte", "0.20")
+    )
+then
+    $f.addBullishScore(new BigDecimal("30"));
+    $f.addTriggeredRule("R_P4_VOTE_001_INDEX_CLOSE_POSITION");
+    $f.addExplanation("P4-VOTE-001：沪深300收盘位于当日区间底部20%；三项至少满足两项才形成看涨辅助信号。T日收盘判断T+1开盘至T+2开盘；30为规则评分，不是上涨概率。已写入系统，待启用；稳定预测价值待36个月最终验证，不保证收益。");
+end

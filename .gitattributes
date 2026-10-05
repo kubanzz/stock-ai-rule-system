@@ -1,0 +1,3 @@
+# 冻结研究 CSV 的原始 CRLF 字节参与 SHA-256，不做检出/提交换行转换。
+research/normal_stock_65/phase140_p4_vote_001_final_validation/*.csv -text whitespace=cr-at-eol
+stock-ai-rule-system-service/src/main/resources/rules/p4-vote-001-pit-assignment.csv -text whitespace=cr-at-eol

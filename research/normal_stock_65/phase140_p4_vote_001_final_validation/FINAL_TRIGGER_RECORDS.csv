@@ -1,0 +1,1 @@
+period,symbol,signal_date,entry_date,exit_date,rule_version,logic,change_pct_5d,open_gap,index_close_position,atom_change_pct_5d,atom_open_gap,atom_index_close_position,matched_rule_count,raw_trigger,dedup_status,target_mature,entry_open,exit_open,entry_volume,exit_volume,target_observable,up_correct,blocked_exit,missing_target_reason
