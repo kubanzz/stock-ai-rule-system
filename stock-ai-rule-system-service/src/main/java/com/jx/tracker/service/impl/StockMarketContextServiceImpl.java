@@ -182,6 +182,9 @@ public class StockMarketContextServiceImpl implements StockMarketContextService 
         LocalDate earliestDate = tradingDates.getLast();
         LocalDate latestDate = tradingDates.getFirst();
         List<StockSignalDaily> signals = stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
+                .select(StockSignalDaily::getSymbol, StockSignalDaily::getSignalDate,
+                        StockSignalDaily::getStrategyCode, StockSignalDaily::getStrategyVersion,
+                        StockSignalDaily::getSignal, StockSignalDaily::getConfidence)
                 .in(StockSignalDaily::getSymbol, candidateSymbols)
                 .between(StockSignalDaily::getSignalDate, earliestDate, latestDate)
                 .in(StockSignalDaily::getSignalDate, tradingDates)

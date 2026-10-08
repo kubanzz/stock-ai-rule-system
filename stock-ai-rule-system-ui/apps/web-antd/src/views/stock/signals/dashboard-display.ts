@@ -66,3 +66,16 @@ export function backfillProgress(run: SignalBackfillRun) {
     ? Math.min(100, Math.round((run.completedTasks / run.totalTasks) * 100))
     : 0;
 }
+
+export function backfillErrorMessage(error: unknown, fallback: string) {
+  const details =
+    error && typeof error === 'object'
+      ? (error as { message?: unknown; msg?: unknown })
+      : undefined;
+  const reason = details?.msg ?? details?.message;
+  // The request client also rejects with plain response objects, not just Error.
+  // Render a short message only; never stringify a response or stack trace.
+  return typeof reason === 'string' && reason.trim()
+    ? reason.split('\n')[0]!.trim().slice(0, 240)
+    : fallback;
+}

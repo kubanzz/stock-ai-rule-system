@@ -1,7 +1,11 @@
 package com.jx.tracker.service.impl;
 
 import com.jx.tracker.domain.vo.StockConsoleVo;
+import com.jx.tracker.domain.entity.StockDailyQuote;
+import com.jx.tracker.domain.entity.StockSignalDaily;
 import com.jx.tracker.mapper.SignalBackfillRunMapper;
+import com.jx.tracker.mapper.StockDailyQuoteMapper;
+import com.jx.tracker.mapper.StockSignalDailyMapper;
 import com.jx.tracker.service.StockDashboardQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +18,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.datasource.druid.initialSize=0",
         "spring.datasource.druid.minIdle=0",
         "spring.datasource.druid.maxActive=2",
+        "spring.datasource.druid.maxWait=10000",
         "spring.datasource.druid.validationQuery=SELECT 1",
         "spring.task.scheduling.enabled=false"
 })
@@ -41,6 +47,12 @@ class StockDashboardQueryPersistenceTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private StockDailyQuoteMapper quoteMapper;
+
+    @Autowired
+    private StockSignalDailyMapper signalMapper;
 
     @BeforeEach
     void resetSchema() {
@@ -325,6 +337,56 @@ class StockDashboardQueryPersistenceTest {
                 ('mock', 'stock_list', 'skipped', NULL, '2026-07-10', '2026-07-10 19:00:00', '2026-07-10 19:01:00'),
                 ('mock', 'trade_calendar', 'success', NULL, '2026-07-10', '2026-07-10 20:00:00', '2026-07-10 20:01:00')
                 """);
+    }
+
+    @Test
+    void readsOnlyLatestDashboardRecordsWhilePreservingStrategyVersionsAndStaleQuotes() {
+        String symbol = "000009.SZ";
+        jdbcTemplate.update("DELETE FROM stock_daily_quote WHERE symbol = ?", symbol);
+        for (int daysAgo = 1; daysAgo <= 200; daysAgo++) {
+            LocalDate date = DATE.minusDays(daysAgo);
+            jdbcTemplate.update("""
+                    INSERT INTO stock_daily_quote(symbol, trade_date, close_price, sync_time)
+                    VALUES (?, ?, ?, ?)
+                    """, symbol, date, daysAgo, date.atTime(15, 0));
+            jdbcTemplate.update("""
+                    INSERT INTO stock_signal_daily(symbol, signal_date, strategy_code, strategy_version,
+                        `signal`, trace_json, created_at)
+                    VALUES (?, ?, 'PLAN_A', 'v1', 'bullish', ?, ?)
+                    """, symbol, date, "x".repeat(7000), date.atTime(16, 0));
+        }
+        jdbcTemplate.update("""
+                INSERT INTO stock_signal_daily(symbol, signal_date, strategy_code, strategy_version, `signal`)
+                VALUES (?, ?, 'PLAN_A', 'v2', 'bearish'),
+                       (?, ?, 'PLAN_B', 'v1', 'watch'),
+                       (?, ?, 'PLAN_A', 'v1', 'high_risk')
+                """, symbol, DATE.minusDays(5), symbol, DATE.minusDays(10), symbol, DATE.plusDays(1));
+        jdbcTemplate.update("""
+                INSERT INTO stock_daily_quote(symbol, trade_date, close_price)
+                VALUES (?, ?, NULL), (?, ?, 999)
+                """, symbol, DATE, symbol, DATE.plusDays(1));
+
+        List<StockDailyQuote> quotes = quoteMapper.selectLatestForDashboard(List.of(symbol), DATE);
+        assertThat(quotes).singleElement().satisfies(quote -> {
+            assertThat(quote.getTradeDate()).isEqualTo(DATE.minusDays(1));
+            assertThat(quote.getClosePrice()).isEqualByComparingTo("1");
+            assertThat(quote.getSyncTime()).isEqualTo(DATE.minusDays(1).atTime(15, 0));
+        });
+        List<StockSignalDaily> signals = signalMapper.selectLatestForDashboard(List.of(symbol), DATE, null, null);
+        assertThat(signals).hasSize(3).allSatisfy(signal -> {
+            assertThat(signal.getSymbol()).isEqualTo(symbol);
+            assertThat(signal.getTraceJson()).isNull();
+            assertThat(signal.getSignalDate()).isBeforeOrEqualTo(DATE);
+        });
+        assertThat(signals).filteredOn(signal -> "PLAN_A".equals(signal.getStrategyCode())
+                        && "v1".equals(signal.getStrategyVersion()))
+                .singleElement().satisfies(signal -> {
+                    assertThat(signal.getSignalDate()).isEqualTo(DATE.minusDays(1));
+                    assertThat(signal.getCreatedTime()).isEqualTo(DATE.minusDays(1).atTime(16, 0));
+                    assertThat(signal.getSignal()).isEqualTo("bullish");
+                });
+        assertThat(signalMapper.selectLatestForDashboard(List.of(symbol), DATE, "PLAN_A", "v2"))
+                .singleElement().satisfies(signal -> assertThat(signal.getSignal()).isEqualTo("bearish"));
     }
 
     @Test

@@ -101,19 +101,10 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .distinct()
                 .toList();
         LocalDate tradeDate = resolveTradeDate(query.date(), candidateSymbols);
-        Map<String, StockBase> stocksBySymbol = candidates.stream().collect(Collectors.toMap(
-                StockBase::getSymbol,
-                Function.identity(),
-                (first, ignored) -> first,
-                LinkedHashMap::new
-        ));
         List<StockSignalDaily> signals = tradeDate == null
                 ? List.of()
-                : stockSignalDailyMapper.selectList(new LambdaQueryWrapper<StockSignalDaily>()
-                .le(StockSignalDaily::getSignalDate, tradeDate)
-                .in(StockSignalDaily::getSymbol, candidateSymbols)
-                .eq(query.strategyCode() != null, StockSignalDaily::getStrategyCode, query.strategyCode())
-                .eq(query.strategyVersion() != null, StockSignalDaily::getStrategyVersion, query.strategyVersion()));
+                : stockSignalDailyMapper.selectLatestForDashboard(
+                        candidateSymbols, tradeDate, query.strategyCode(), query.strategyVersion());
         Set<String> candidateSymbolSet = Set.copyOf(candidateSymbols);
         Map<String, StockSignalDaily> signalsByIdentity = signals.stream()
                 .filter(signal -> signal.getSignalDate() != null && !signal.getSignalDate().isAfter(tradeDate))
@@ -129,12 +120,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
 
         List<StockDailyQuote> quotes = tradeDate == null
                 ? List.of()
-                : stockDailyQuoteMapper.selectList(new LambdaQueryWrapper<StockDailyQuote>()
-                // Candidates may have different latest trading dates (for
-                // example, suspended stocks). Keep the dashboard date as the
-                // upper bound while selecting each symbol's newest usable bar.
-                .le(StockDailyQuote::getTradeDate, tradeDate)
-                .in(StockDailyQuote::getSymbol, candidateSymbols));
+                : stockDailyQuoteMapper.selectLatestForDashboard(candidateSymbols, tradeDate);
         Map<String, StockDailyQuote> quotesBySymbol = quotes.stream()
                 .filter(quote -> quote.getTradeDate() != null && quote.getClosePrice() != null
                         && !quote.getTradeDate().isAfter(tradeDate))
@@ -174,11 +160,12 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
                 .filter(result -> currentSignals.stream().anyMatch(signal -> matchesActual(signal, result)))
                 .toList();
 
+        Map<String, List<StockSignalDaily>> signalsBySymbol = signalsByIdentity.values().stream()
+                .collect(Collectors.groupingBy(signal -> SymbolNormalizer.normalize(signal.getSymbol())));
         List<StockConsoleVo.SignalRow> rows = candidates.stream()
                 .flatMap(stock -> {
                     String symbol = SymbolNormalizer.normalize(stock.getSymbol());
-                    List<StockSignalDaily> stockSignals = signalsByIdentity.values().stream()
-                            .filter(signal -> symbol.equals(SymbolNormalizer.normalize(signal.getSymbol()))).toList();
+                    List<StockSignalDaily> stockSignals = signalsBySymbol.getOrDefault(symbol, List.of());
                     if (stockSignals.isEmpty()) return java.util.stream.Stream.of(toRow(null, stock, quotesBySymbol.get(symbol), tradeDate));
                     return stockSignals.stream().map(signal -> toRow(signal, stock, quotesBySymbol.get(symbol), tradeDate));
                 })
@@ -218,6 +205,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             return requestedDate;
         }
         StockDailyQuote latestQuote = stockDailyQuoteMapper.selectOne(new LambdaQueryWrapper<StockDailyQuote>()
+                .select(StockDailyQuote::getTradeDate)
                 .in(StockDailyQuote::getSymbol, candidateSymbols)
                 .orderByDesc(StockDailyQuote::getTradeDate)
                 .last("LIMIT 1"));
@@ -225,6 +213,7 @@ public class StockDashboardQueryServiceImpl implements StockDashboardQueryServic
             return latestQuote.getTradeDate();
         }
         StockSignalDaily latest = stockSignalDailyMapper.selectOne(new LambdaQueryWrapper<StockSignalDaily>()
+                .select(StockSignalDaily::getSignalDate)
                 .in(StockSignalDaily::getSymbol, candidateSymbols)
                 .orderByDesc(StockSignalDaily::getSignalDate)
                 .last("LIMIT 1"));

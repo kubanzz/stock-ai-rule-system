@@ -5,11 +5,46 @@ import com.jx.tracker.domain.entity.StockSignalDaily;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface StockSignalDailyMapper extends BaseMapper<StockSignalDaily> {
+
+    /** 看板只读取每股每方案的最新信号，不载入历史明细及大型推理审计 JSON。 */
+    @Select("""
+            <script>
+            SELECT signal_record.id, signal_record.symbol, signal_record.signal_date,
+                   signal_record.strategy_code, signal_record.strategy_version, signal_record.strategy_name,
+                   signal_record.generation_type, signal_record.generated_at, signal_record.`signal`,
+                   signal_record.signal_direction, signal_record.signal_level,
+                   signal_record.bullish_score, signal_record.bearish_score, signal_record.risk_score,
+                   signal_record.confidence, signal_record.triggered_rules,
+                   signal_record.created_at AS createdTime
+            FROM stock_signal_daily signal_record
+            JOIN (
+                SELECT symbol, strategy_code, strategy_version, MAX(signal_date) AS signal_date
+                FROM stock_signal_daily
+                WHERE signal_date &lt;= #{tradeDate} AND symbol IN
+                  <foreach collection="symbols" item="symbol" open="(" separator="," close=")">
+                    #{symbol}
+                  </foreach>
+                  <if test="strategyCode != null">AND strategy_code = #{strategyCode}</if>
+                  <if test="strategyVersion != null">AND strategy_version = #{strategyVersion}</if>
+                GROUP BY symbol, strategy_code, strategy_version
+            ) latest ON latest.symbol = signal_record.symbol
+                AND latest.strategy_code = signal_record.strategy_code
+                AND latest.strategy_version = signal_record.strategy_version
+                AND latest.signal_date = signal_record.signal_date
+            </script>
+            """)
+    List<StockSignalDaily> selectLatestForDashboard(@Param("symbols") List<String> symbols,
+                                                  @Param("tradeDate") LocalDate tradeDate,
+                                                  @Param("strategyCode") String strategyCode,
+                                                  @Param("strategyVersion") String strategyVersion);
 
     @Insert("""
             INSERT INTO stock_signal_daily (

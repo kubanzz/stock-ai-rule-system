@@ -202,7 +202,7 @@ public class SignalBackfillService {
         save(queued, true);
         activeRunId = queued.runId();
         try {
-            taskExecutor.execute(() -> run(queued));
+            taskExecutor.execute(() -> run(queued, provider.dataSource()));
         } catch (RuntimeException ex) {
             fail(new Progress(queued), "QUEUED", ex);
             activeRunId = null;
@@ -223,8 +223,9 @@ public class SignalBackfillService {
         return run == null ? null : parse(run);
     }
 
-    private void run(SignalBackfillRunVo queued) {
+    private void run(SignalBackfillRunVo queued, String dataSource) {
         Progress progress = new Progress(queued);
+        boolean refreshLegacyTushare = "tushare".equalsIgnoreCase(dataSource);
         try {
             progress.status = "RUNNING";
             progress.stage = "CALENDAR";
@@ -332,7 +333,8 @@ public class SignalBackfillService {
             progress.stage = "SCANNING";
             publish(progress);
 
-            Map<String, List<LocalDate>> gapsBySymbol = scanGaps(symbols, starts, dates);
+            Map<String, List<LocalDate>> gapsBySymbol = scanGaps(symbols, starts, dates,
+                    refreshLegacyTushare);
             LocalDate latestOpenDate = dates.getLast();
             Map<String, Boolean> latestRefreshSucceeded = new HashMap<>();
             boolean benchmarkRefreshed = reboundSymbols.isEmpty()
@@ -440,7 +442,7 @@ public class SignalBackfillService {
                             .eq(StockDailyQuote::getSymbol, symbol)
                             .eq(StockDailyQuote::getTradeDate, date)
                             .last("LIMIT 1"));
-                    if (!completeQuote(quote)) {
+                    if (!usableQuote(quote, refreshLegacyTushare)) {
                         allQuotesComplete = false;
                         boolean preListingWarmup = Boolean.TRUE.equals(warmingUp.get(symbol))
                                 && earliestKnownDate.get(symbol) != null
@@ -452,7 +454,10 @@ public class SignalBackfillService {
                                 blockedByGap.put(symbol, true);
                             }
                             progress.missingQuotes.add(new SignalBackfillRunVo.Gap(symbol, date,
-                                    quote == null ? "行情未发布或缺失" : "行情字段不完整或来源为模拟数据"));
+                                    quote == null ? "行情未发布或缺失" : refreshLegacyTushare
+                                            && "tushare".equalsIgnoreCase(quote.getDataSource())
+                                            ? "旧 Tushare 行情单位与来源尚未重新同步确认"
+                                            : "行情字段不完整或来源为模拟数据"));
                         }
                         progress.completedTasks++;
                         continue;
@@ -477,7 +482,7 @@ public class SignalBackfillService {
                             // Shared inputs can satisfy a short-history plan even while another plan warms up.
                             // Research-specific availability is evaluated independently after factor calculation.
                             int requiredHistory = FACTOR_HISTORY_SIZE;
-                            if (!hasRealFactorHistory(symbol, date, false)) {
+                            if (!hasRealFactorHistory(symbol, date, false, refreshLegacyTushare)) {
                                 if (!Boolean.TRUE.equals(warmingUp.get(symbol))
                                         || completeBars.get(symbol) >= requiredHistory || date.equals(latestOpenDate)) {
                                     progress.failures.add(new SignalBackfillRunVo.Failure(symbol, date,
@@ -599,7 +604,7 @@ public class SignalBackfillService {
     }
 
     private Map<String, List<LocalDate>> scanGaps(List<String> symbols, Map<String, LocalDate> starts,
-                                                   List<LocalDate> dates) {
+                                               List<LocalDate> dates, boolean refreshLegacyTushare) {
         Map<String, List<LocalDate>> gaps = new HashMap<>();
         for (String symbol : symbols) {
             List<LocalDate> symbolDates = dates.stream().filter(date -> !date.isBefore(starts.get(symbol))).toList();
@@ -610,7 +615,11 @@ public class SignalBackfillService {
                     .le(StockDailyQuote::getTradeDate, dates.getLast()));
             Map<LocalDate, StockDailyQuote> byDate = quotes.stream().filter(q -> q.getTradeDate() != null)
                     .collect(Collectors.toMap(StockDailyQuote::getTradeDate, q -> q, (left, right) -> left));
-            gaps.put(symbol, symbolDates.stream().filter(date -> !completeQuote(byDate.get(date))).toList());
+            // Older Tushare rows retained lots/thousand yuan and ambiguous provenance.
+            // Re-fetch them within this job's existing lookback instead of guessing
+            // corrected historical values or overwriting another provider's rows.
+            gaps.put(symbol, symbolDates.stream()
+                    .filter(date -> !usableQuote(byDate.get(date), refreshLegacyTushare)).toList());
         }
         return gaps;
     }
@@ -646,7 +655,13 @@ public class SignalBackfillService {
                 && quote.getDataSource() != null && !"mock".equalsIgnoreCase(quote.getDataSource());
     }
 
-    private boolean hasRealFactorHistory(String symbol, LocalDate date, boolean rebound) {
+    private boolean usableQuote(StockDailyQuote quote, boolean refreshLegacyTushare) {
+        return completeQuote(quote) && (!refreshLegacyTushare
+                || !"tushare".equalsIgnoreCase(quote.getDataSource()));
+    }
+
+    private boolean hasRealFactorHistory(String symbol, LocalDate date, boolean rebound,
+                                         boolean refreshLegacyTushare) {
         // The factor calculation uses up to 80 real rows; ensure at least its
         // 26-bar minimum exists before spending a calculation attempt.
         List<StockDailyQuote> history = quoteMapper.selectList(Wrappers.<StockDailyQuote>lambdaQuery()
@@ -658,7 +673,23 @@ public class SignalBackfillService {
             return false;
         }
         long realComplete = history.stream().filter(quote -> rebound
-                ? ResearchReboundApplicationScope.validQuote(quote, true) : completeQuote(quote)).count();
+                ? ResearchReboundApplicationScope.validQuote(quote, true)
+                : usableQuote(quote, refreshLegacyTushare)).count();
+        if (refreshLegacyTushare && !rebound) {
+            // The factor service re-reads all non-mock rows; having 26 good
+            // older rows does not make a mixed-unit row in its recent window safe.
+            List<StockDailyQuote> recentInput = history.stream().filter(Objects::nonNull)
+                    .filter(quote -> quote.getTradeDate() != null && !quote.getTradeDate().isAfter(date))
+                    .filter(quote -> quote.getDataSource() != null
+                            && !"mock".equalsIgnoreCase(quote.getDataSource()))
+                    .filter(quote -> quote.getClosePrice() != null && quote.getVolume() != null)
+                    .sorted(Comparator.comparing(StockDailyQuote::getTradeDate).reversed())
+                    .limit(FACTOR_HISTORY_SIZE).toList();
+            if (recentInput.size() < FACTOR_HISTORY_SIZE
+                    || recentInput.stream().anyMatch(quote -> !usableQuote(quote, true))) {
+                return false;
+            }
+        }
         return realComplete >= (rebound ? 252 : FACTOR_HISTORY_SIZE);
     }
 

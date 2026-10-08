@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { selectMockSignalDashboard } from '#/api/stock/mock';
 
 import {
+  backfillErrorMessage,
   backfillProgress,
   isHistoricalSignal,
   signalIdentityKey,
@@ -42,4 +43,21 @@ describe('signal dashboard date and backfill presentation', () => {
     ).toBe(100);
   });
 
+  it('shows the server message rejected as a plain object', () => {
+    expect(
+      backfillErrorMessage({ code: 500, msg: '服务暂时不可用' }, '查询失败'),
+    ).toBe('服务暂时不可用');
+    expect(backfillErrorMessage(new Error('连接失败'), '查询失败')).toBe(
+      '连接失败',
+    );
+  });
+
+  it('does not dump response objects or stack traces into the status panel', () => {
+    expect(backfillErrorMessage({ stack: 'internal stack' }, '查询失败')).toBe(
+      '查询失败',
+    );
+    expect(
+      backfillErrorMessage({ msg: '查询异常\n at internal.Class' }, '查询失败'),
+    ).toBe('查询异常');
+  });
 });

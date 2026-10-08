@@ -34,6 +34,7 @@ import SignalTable from './components/signal-table.vue';
 import StockPickerDrawer from './components/stock-picker-drawer.vue';
 import WatchlistManagerDrawer from './components/watchlist-manager-drawer.vue';
 import {
+  backfillErrorMessage,
   backfillProgress,
   backfillStageLabel,
   backfillStatusLabel,
@@ -61,6 +62,7 @@ const backfillRunning = computed(
 );
 let backfillTimer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
+let dashboardRequestId = 0;
 const managerOpen = ref(false);
 const pickerOpen = ref(false);
 const dashboard = ref<SignalDashboardOverview>();
@@ -80,37 +82,48 @@ const initialMetrics: DashboardMetricCard[] = [
 const metrics = computed(() => dashboard.value?.metrics ?? initialMetrics);
 
 async function loadPageData(reloadPools = false) {
+  const requestId = ++dashboardRequestId;
+  const requestQuery = { ...query };
   loading.value = true;
   try {
-    const dashboardPromise = getSignalDashboard({ ...query });
+    const dashboardPromise = getSignalDashboard(requestQuery);
     if (reloadPools || watchlists.value.length === 0) {
       const [dashboardResult, poolResult, strategyResult] = await Promise.all([
         dashboardPromise,
-        getWatchlists({ market: query.market }),
+        getWatchlists({ market: requestQuery.market }),
         getRuleStrategies(),
       ]);
-      dashboard.value = dashboardResult;
+      if (disposed || requestId !== dashboardRequestId) return;
       watchlists.value = poolResult;
       strategies.value = strategyResult.rows;
-      if (!poolResult.some((pool) => pool.poolId === query.poolCode)) {
+      let resolvedDashboard = dashboardResult;
+      if (!poolResult.some((pool) => pool.poolId === requestQuery.poolCode)) {
         const fallback =
           poolResult.find((pool) => pool.poolId === 'my-follow') ??
           poolResult[0];
-        if (fallback) query.poolCode = fallback.poolId;
+        if (fallback) {
+          query.poolCode = fallback.poolId;
+          requestQuery.poolCode = fallback.poolId;
+          resolvedDashboard = await getSignalDashboard(requestQuery);
+          if (disposed || requestId !== dashboardRequestId) return;
+        }
       }
+      dashboard.value = resolvedDashboard;
     } else {
-      dashboard.value = await dashboardPromise;
+      const dashboardResult = await dashboardPromise;
+      if (disposed || requestId !== dashboardRequestId) return;
+      dashboard.value = dashboardResult;
     }
     loadError.value = '';
     lastSuccessfulLoadAt.value = new Date().toLocaleString('zh-CN', {
       hour12: false,
     });
   } catch (error) {
-    loadError.value =
-      error instanceof Error ? error.message : '信号看板加载失败';
+    if (disposed || requestId !== dashboardRequestId) return;
+    loadError.value = backfillErrorMessage(error, '信号看板加载失败');
     message.error(loadError.value);
   } finally {
-    loading.value = false;
+    if (!disposed && requestId === dashboardRequestId) loading.value = false;
   }
 }
 

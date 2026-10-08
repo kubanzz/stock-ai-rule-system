@@ -11,7 +11,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.net.SocketTimeoutException;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -23,6 +25,11 @@ import java.util.Map;
 
 public class TushareMarketDataProvider implements MarketDataProvider {
 
+    public static final String STOCK_QUOTE_SOURCE = "tushare:daily:unadjusted:shares:yuan";
+    public static final String INDEX_QUOTE_SOURCE = "tushare:index_daily:unadjusted:shares:yuan";
+    private static final String HS300_SYMBOL = "000300.SH";
+    private static final BigDecimal SHARES_PER_LOT = BigDecimal.valueOf(100);
+    private static final BigDecimal YUAN_PER_THOUSAND = BigDecimal.valueOf(1000);
     private static final DateTimeFormatter TUSHARE_DATE = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final String token;
@@ -64,8 +71,10 @@ public class TushareMarketDataProvider implements MarketDataProvider {
         if (!StringUtils.hasText(symbol)) {
             throw new ServiceException("Tushare 日 K 同步必须指定 targetSymbol");
         }
+        String normalizedSymbol = SymbolNormalizer.normalize(symbol);
+        boolean index = HS300_SYMBOL.equals(normalizedSymbol);
         Map<String, String> params = new HashMap<>();
-        params.put("ts_code", SymbolNormalizer.normalize(symbol));
+        params.put("ts_code", normalizedSymbol);
         if (startDate != null) {
             params.put("start_date", startDate.format(TUSHARE_DATE));
         }
@@ -73,7 +82,7 @@ public class TushareMarketDataProvider implements MarketDataProvider {
             params.put("end_date", endDate.format(TUSHARE_DATE));
         }
 
-        JsonNode data = post("daily", params,
+        JsonNode data = post(index ? "index_daily" : "daily", params,
                 "ts_code,trade_date,open,high,low,close,pre_close,pct_chg,vol,amount");
         List<StockDailyQuoteUpsertDto> rows = new ArrayList<>();
         for (Map<String, String> row : rows(data)) {
@@ -86,9 +95,11 @@ public class TushareMarketDataProvider implements MarketDataProvider {
             dto.setClosePrice(parseDecimal(row.get("close")));
             dto.setPreClose(parseDecimal(row.get("pre_close")));
             dto.setChangePct(parseDecimal(row.get("pct_chg")));
-            dto.setVolume(parseDecimal(row.get("vol")));
-            dto.setAmount(parseDecimal(row.get("amount")));
-            dto.setDataSource("tushare");
+            // Tushare daily and index_daily report volume in lots and amount in
+            // thousand yuan. Existing factors consume shares and yuan.
+            dto.setVolume(scaleDecimal(row.get("vol"), SHARES_PER_LOT));
+            dto.setAmount(scaleDecimal(row.get("amount"), YUAN_PER_THOUSAND));
+            dto.setDataSource(index ? INDEX_QUOTE_SOURCE : STOCK_QUOTE_SOURCE);
             dto.setSyncTime(LocalDateTime.now());
             rows.add(dto);
         }
@@ -161,10 +172,21 @@ public class TushareMarketDataProvider implements MarketDataProvider {
             if (ex instanceof ServiceException serviceException) {
                 throw serviceException;
             }
-            throw new ServiceException("调用 Tushare 行情 Provider 失败", ex);
+            throw new ServiceException(isTimeout(ex)
+                    ? "调用 Tushare 行情 Provider 超时，请检查数据源网络后重试"
+                    : "调用 Tushare 行情 Provider 失败", ex);
         } catch (Exception ex) {
             throw new ServiceException("解析 Tushare 行情 Provider 响应失败", ex);
         }
+    }
+
+    private boolean isTimeout(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpTimeoutException || cause instanceof SocketTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<Map<String, String>> rows(JsonNode data) {
@@ -199,6 +221,11 @@ public class TushareMarketDataProvider implements MarketDataProvider {
 
     private LocalDate parseDate(String value) {
         return StringUtils.hasText(value) ? LocalDate.parse(value, TUSHARE_DATE) : null;
+    }
+
+    private BigDecimal scaleDecimal(String value, BigDecimal multiplier) {
+        BigDecimal decimal = parseDecimal(value);
+        return decimal == null ? null : decimal.multiply(multiplier);
     }
 
     private BigDecimal parseDecimal(String value) {

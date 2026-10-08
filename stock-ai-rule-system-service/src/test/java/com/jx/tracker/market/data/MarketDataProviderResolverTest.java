@@ -5,14 +5,21 @@ import com.jx.tracker.market.data.provider.AkToolsMarketDataProvider;
 import com.jx.tracker.market.data.provider.MarketDataProviderProperties;
 import com.jx.tracker.market.data.provider.MarketDataProviderResolver;
 import com.jx.tracker.market.data.provider.MockMarketDataProvider;
+import com.jx.tracker.exception.ServiceException;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.net.InetSocketAddress;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MarketDataProviderResolverTest {
 
@@ -131,5 +138,42 @@ class MarketDataProviderResolverTest {
         assertThat(selection.dataSource()).isEqualTo("mock");
         assertThat(selection.fallback()).isTrue();
         assertThat(selection.fallbackReason()).contains("HTTPS");
+    }
+
+    @Test
+    void configuredReadTimeoutEndsAnUnresponsiveProviderRequest() throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        server.setExecutor(executor);
+        server.createContext("/", exchange -> {
+            try {
+                Thread.sleep(1500);
+                exchange.sendResponseHeaders(200, 0);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            MarketDataProviderProperties properties = new MarketDataProviderProperties();
+            properties.setType("tushare");
+            properties.setToken("test-token");
+            properties.setApiUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            properties.setConnectTimeout(Duration.ofMillis(500));
+            properties.setReadTimeout(Duration.ofMillis(100));
+            var resolver = new MarketDataProviderResolver(properties,
+                    new MockMarketDataProvider(), RestClient.builder(), new ObjectMapper());
+            var provider = resolver.resolve().provider();
+
+            assertThatThrownBy(() -> provider.fetchDailyQuotes("600519.SH",
+                    LocalDate.of(2026, 9, 30), LocalDate.of(2026, 9, 30)))
+                    .isInstanceOf(ServiceException.class)
+                    .hasMessageContaining("超时");
+        } finally {
+            server.stop(0);
+            executor.shutdownNow();
+        }
     }
 }

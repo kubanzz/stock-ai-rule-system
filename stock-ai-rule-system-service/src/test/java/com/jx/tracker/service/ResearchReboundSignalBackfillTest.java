@@ -101,6 +101,102 @@ class ResearchReboundSignalBackfillTest {
         verifyNoInteractions(fixture.watchlists, fixture.watchlistItems, fixture.sync, fixture.factors, fixture.signals);
     }
 
+    @Test
+    void resynchronizesLegacyTushareRowsInsideTheExistingWindowWithoutTouchingOtherSources() {
+        Fixture fixture = new Fixture(true);
+        when(fixture.resolver.resolve()).thenReturn(new MarketDataProviderSelection(
+                mock(MarketDataProvider.class), "tushare", false, null));
+        when(fixture.scope.activeSymbols()).thenReturn(Set.of());
+        LocalDate first = DATE.minusDays(1);
+        when(fixture.calendar.pageTradeCalendars(any())).thenReturn(PageResult.getDataTable(List.of(
+                TradeCalendar.builder().tradeDate(first).open(true).dataSource("tushare").build(),
+                TradeCalendar.builder().tradeDate(DATE).open(true).dataSource("tushare").build()), 2L));
+        includeEarlierKnownQuote(fixture, first);
+        StockDailyQuote legacy = quote(first);
+        legacy.setDataSource("tushare");
+        when(fixture.quotes.selectList(any())).thenReturn(List.of(legacy, quote(DATE)));
+
+        fixture.service.get(fixture.service.start().runId());
+
+        ArgumentCaptor<DailyQuoteSyncRequestDto> requests = ArgumentCaptor.forClass(DailyQuoteSyncRequestDto.class);
+        verify(fixture.sync).syncDailyQuotes(requests.capture());
+        assertThat(requests.getValue().getStartDate()).isEqualTo(first);
+        assertThat(requests.getValue().getEndDate()).isEqualTo(DATE);
+    }
+
+    @Test
+    void leavesCompleteOtherProviderHistoryOutsideTheLatestRefreshUntouched() {
+        Fixture fixture = new Fixture(true);
+        when(fixture.resolver.resolve()).thenReturn(new MarketDataProviderSelection(
+                mock(MarketDataProvider.class), "tushare", false, null));
+        when(fixture.scope.activeSymbols()).thenReturn(Set.of());
+        LocalDate first = DATE.minusDays(1);
+        when(fixture.calendar.pageTradeCalendars(any())).thenReturn(PageResult.getDataTable(List.of(
+                TradeCalendar.builder().tradeDate(first).open(true).dataSource("tushare").build(),
+                TradeCalendar.builder().tradeDate(DATE).open(true).dataSource("tushare").build()), 2L));
+        includeEarlierKnownQuote(fixture, first);
+        when(fixture.quotes.selectList(any())).thenReturn(List.of(quote(first), quote(DATE)));
+
+        fixture.service.get(fixture.service.start().runId());
+
+        ArgumentCaptor<DailyQuoteSyncRequestDto> requests = ArgumentCaptor.forClass(DailyQuoteSyncRequestDto.class);
+        verify(fixture.sync).syncDailyQuotes(requests.capture());
+        assertThat(requests.getValue().getStartDate()).isEqualTo(DATE);
+        assertThat(requests.getValue().getEndDate()).isEqualTo(DATE);
+    }
+
+    @Test
+    void failedLegacyTushareRefreshCannotPublishSignalsFromTheOldUnitValues() {
+        Fixture fixture = new Fixture(true);
+        when(fixture.resolver.resolve()).thenReturn(new MarketDataProviderSelection(
+                mock(MarketDataProvider.class), "tushare", false, null));
+        when(fixture.scope.activeSymbols()).thenReturn(Set.of());
+        StockDailyQuote legacy = quote(DATE);
+        legacy.setDataSource("tushare");
+        when(fixture.quotes.selectOne(any())).thenReturn(legacy);
+        when(fixture.quotes.selectList(any())).thenReturn(List.of(legacy));
+        MarketDataSyncResultDto failed = new MarketDataSyncResultDto();
+        failed.setStatus("failed");
+        when(fixture.sync.syncDailyQuotes(any())).thenReturn(failed);
+
+        var run = fixture.service.get(fixture.service.start().runId());
+
+        assertThat(run.status()).isEqualTo("PARTIAL");
+        assertThat(run.generatedSignals()).isZero();
+        assertThat(run.syncedQuotes()).isZero();
+        assertThat(run.missingQuotes()).anySatisfy(gap -> assertThat(gap.reason()).contains("旧 Tushare"));
+        verifyNoInteractions(fixture.factors, fixture.signals);
+    }
+
+    @Test
+    void isolatedLegacyTushareInsideRecentFactorWindowBlocksCalculationDespite26OlderValidRows() {
+        Fixture fixture = new Fixture(true);
+        when(fixture.resolver.resolve()).thenReturn(new MarketDataProviderSelection(
+                mock(MarketDataProvider.class), "tushare", false, null));
+        List<StockDailyQuote> history = IntStream.range(0, 30)
+                .mapToObj(offset -> quote(DATE.minusDays(offset))).toList();
+        history.get(4).setDataSource("tushare");
+        when(fixture.quotes.selectList(any())).thenReturn(history);
+
+        var run = fixture.service.get(fixture.service.start().runId());
+
+        assertThat(run.status()).isEqualTo("PARTIAL");
+        assertThat(run.generatedSignals()).isZero();
+        assertThat(run.failures()).anySatisfy(failure -> assertThat(failure.reason()).contains("真实行情历史不足"));
+        verifyNoInteractions(fixture.factors);
+        verify(fixture.signals, never()).backfillMissingSignalsBatch(any(), any(), any(), anyBoolean());
+    }
+
+    private void includeEarlierKnownQuote(Fixture fixture, LocalDate first) {
+        AtomicInteger lookups = new AtomicInteger();
+        when(fixture.quotes.selectOne(any())).thenAnswer(invocation -> {
+            int index = lookups.getAndIncrement();
+            StockDailyQuote quote = quote(index == 1 ? first : DATE);
+            quote.setSyncTime(LocalDateTime.of(2026, 9, 30, index >= 3 ? 18 : 14, 0));
+            return quote;
+        });
+    }
+
     private static class Fixture {
         final MarketDataSyncService sync = mock(MarketDataSyncService.class);
         final IStockFactorDailyService factors = mock(IStockFactorDailyService.class);
@@ -108,10 +204,12 @@ class ResearchReboundSignalBackfillTest {
         final ResearchReboundApplicationScope scope = mock(ResearchReboundApplicationScope.class);
         final StockWatchlistMapper watchlists = mock(StockWatchlistMapper.class);
         final StockWatchlistItemMapper watchlistItems = mock(StockWatchlistItemMapper.class);
+        final MarketDataProviderResolver resolver = mock(MarketDataProviderResolver.class);
+        final TradeCalendarService calendar = mock(TradeCalendarService.class);
+        final StockDailyQuoteMapper quotes = mock(StockDailyQuoteMapper.class);
         final SignalBackfillService service;
 
         Fixture(boolean hasBenchmark) {
-            var resolver = mock(MarketDataProviderResolver.class);
             when(resolver.resolve()).thenReturn(new MarketDataProviderSelection(
                     mock(MarketDataProvider.class), "aktools/akshare", false, null));
             MarketDataSyncResultDto success = new MarketDataSyncResultDto();
@@ -119,14 +217,12 @@ class ResearchReboundSignalBackfillTest {
             success.setScanned(1);
             when(sync.syncTradeCalendar(any())).thenReturn(success);
             when(sync.syncDailyQuotes(any())).thenReturn(success);
-            var calendar = mock(TradeCalendarService.class);
             when(calendar.pageTradeCalendars(any())).thenReturn(PageResult.getDataTable(List.of(
                     TradeCalendar.builder().tradeDate(DATE).open(true).dataSource("aktools/akshare").build()), 1L));
             when(scope.hasBoundStockPool()).thenReturn(true);
             when(scope.activeApplicationSymbols()).thenReturn(Set.of(SYMBOL));
             when(scope.activeSymbols()).thenReturn(Set.of(SYMBOL));
             when(scope.historyStart(SYMBOL, DATE)).thenReturn(DATE.minusDays(60));
-            var quotes = mock(StockDailyQuoteMapper.class);
             when(quotes.selectCount(any())).thenReturn(252L);
             AtomicInteger lookups = new AtomicInteger();
             when(quotes.selectOne(any())).thenAnswer(invocation -> {

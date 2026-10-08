@@ -44,6 +44,19 @@ const strategyOptions = computed(() => [
   })),
 ]);
 
+const selectedPoolLabel = computed(
+  () =>
+    poolOptions.value.find((option) => option.value === props.query.poolCode)
+      ?.label,
+);
+
+const selectedStrategyLabel = computed(
+  () =>
+    strategyOptions.value.find(
+      (option) => option.value === props.query.strategyCode,
+    )?.label,
+);
+
 const marketOptions = [
   { label: 'A股', value: 'A股' },
   { label: '港股', value: '港股' },
@@ -85,23 +98,27 @@ function updateRiskHorizon(value: unknown) {
     <div class="toolbar-filters">
       <div class="field-group field-pool">
         <span class="field-label">股票池</span>
-        <Select
-          :options="poolOptions"
-          :value="query.poolCode"
-          @update:value="updatePool"
-        />
+        <Tooltip :title="selectedPoolLabel">
+          <Select
+            :options="poolOptions"
+            :value="query.poolCode"
+            @update:value="updatePool"
+          />
+        </Tooltip>
       </div>
       <div class="field-group field-strategy">
         <span class="field-label">应用方案</span>
-        <Select
-          allow-clear
-          show-search
-          option-filter-prop="label"
-          placeholder="全部方案"
-          :options="strategyOptions"
-          :value="query.strategyCode"
-          @update:value="updateStrategy"
-        />
+        <Tooltip :title="selectedStrategyLabel">
+          <Select
+            allow-clear
+            show-search
+            option-filter-prop="label"
+            placeholder="全部方案"
+            :options="strategyOptions"
+            :value="query.strategyCode"
+            @update:value="updateStrategy"
+          />
+        </Tooltip>
       </div>
       <div class="field-group field-market">
         <span class="field-label">市场</span>
@@ -173,29 +190,46 @@ function updateRiskHorizon(value: unknown) {
 <style scoped>
 .toolbar-shell {
   display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: flex-end;
-  justify-content: space-between;
+  min-width: 0;
   padding: 14px 16px;
+  container: signal-toolbar / inline-size;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
 }
 
-.toolbar-filters,
-.toolbar-actions {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
 .toolbar-filters {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 3fr) minmax(0, 2.5fr) minmax(0, 1fr)
+    minmax(0, 1.4fr) minmax(0, 1.4fr);
+  gap: 12px 16px;
+  align-items: end;
 }
 
 .field-group {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.field-group :deep(.ant-select),
+.field-group :deep(.ant-picker) {
+  width: 100%;
+  min-width: 0;
+}
+
+.field-group :deep(.ant-select-selector) {
+  min-width: 0;
+}
+
+.field-group :deep(.ant-select-selection-item) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-label {
@@ -203,24 +237,18 @@ function updateRiskHorizon(value: unknown) {
   color: hsl(var(--muted-foreground));
 }
 
-.field-pool {
-  width: 190px;
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid hsl(var(--border));
 }
 
-.field-strategy {
-  width: 220px;
-}
-
-.field-market {
-  width: 112px;
-}
-
-.field-date {
-  width: 148px;
-}
-
-.field-risk-horizon {
-  width: 152px;
+.toolbar-actions :deep(.ant-btn) {
+  flex-shrink: 0;
 }
 
 .button-icon {
@@ -233,37 +261,47 @@ function updateRiskHorizon(value: unknown) {
   margin-right: 0;
 }
 
-@media (max-width: 900px) {
-  .toolbar-shell {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
+@container signal-toolbar (max-width: 1080px) {
   .toolbar-filters {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .field-pool,
-  .field-strategy,
+  .field-strategy {
+    grid-column: span 3;
+  }
+
   .field-market,
   .field-date,
   .field-risk-horizon {
-    width: auto;
-  }
-
-  .toolbar-actions {
-    flex-wrap: wrap;
+    grid-column: span 2;
   }
 }
 
-@media (max-width: 640px) {
+@container signal-toolbar (max-width: 680px) {
   .toolbar-filters {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .field-date {
+  .field-pool,
+  .field-strategy {
+    grid-column: 1 / -1;
+  }
+
+  .field-market,
+  .field-date,
+  .field-risk-horizon {
     grid-column: auto;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+@container signal-toolbar (max-width: 420px) {
+  .toolbar-filters {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

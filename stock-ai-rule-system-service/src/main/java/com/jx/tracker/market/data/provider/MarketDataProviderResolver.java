@@ -1,9 +1,13 @@
 package com.jx.tracker.market.data.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 @Component
 public class MarketDataProviderResolver {
@@ -41,7 +45,7 @@ public class MarketDataProviderResolver {
     private MarketDataProviderSelection resolveAkTools() {
         return new MarketDataProviderSelection(
                 new AkToolsMarketDataProvider(
-                        properties.getAkToolsBaseUrl(), restClientBuilder, objectMapper),
+                        properties.getAkToolsBaseUrl(), externalClientBuilder(), objectMapper),
                 AkToolsMarketDataProvider.DATA_SOURCE,
                 false,
                 null
@@ -54,7 +58,7 @@ public class MarketDataProviderResolver {
         }
         try {
             return new MarketDataProviderSelection(
-                    new TushareMarketDataProvider(properties.getToken(), properties.getApiUrl(), restClientBuilder, objectMapper),
+                    new TushareMarketDataProvider(properties.getToken(), properties.getApiUrl(), externalClientBuilder(), objectMapper),
                     "tushare",
                     false,
                     null
@@ -62,6 +66,23 @@ public class MarketDataProviderResolver {
         } catch (RuntimeException ex) {
             return fallback("tushare provider failed: " + ex.getMessage());
         }
+    }
+
+    private RestClient.Builder externalClientBuilder() {
+        Duration connectTimeout = positiveTimeout(properties.getConnectTimeout(), "connectTimeout");
+        Duration readTimeout = positiveTimeout(properties.getReadTimeout(), "readTimeout");
+        HttpClient client = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);
+        factory.setReadTimeout(readTimeout);
+        // Preserve the shared builder and unrelated derived-gateway transports.
+        return restClientBuilder.clone().requestFactory(factory);
+    }
+
+    private Duration positiveTimeout(Duration timeout, String field) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("行情数据源 " + field + " 必须大于零");
+        }
+        return timeout;
     }
 
     private MarketDataProviderSelection fallback(String reason) {
